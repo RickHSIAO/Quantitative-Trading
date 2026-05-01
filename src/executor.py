@@ -16,7 +16,9 @@ except ImportError:
 
 
 def _yf_to_bybit(symbol: str) -> str:
-    """BTC-USD → BTCUSDT"""
+    """BYBIT:BTCUSDT.P → BTCUSDT"""
+    if symbol.startswith('BYBIT:') and symbol.endswith('.P'):
+        return symbol[6:-2]
     return symbol.replace('-USD', 'USDT')
 
 

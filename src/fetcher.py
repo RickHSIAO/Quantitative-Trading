@@ -7,21 +7,95 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 from src.database import init_db, upsert_prices, get_last_date
 
+try:
+    from pybit.unified_trading import HTTP as BybitHTTP
+    PYBIT_AVAILABLE = True
+except ImportError:
+    PYBIT_AVAILABLE = False
+
+_COMMODITY_YF_MAP = {
+    'XAUUSD': 'GC=F',
+    'XAGUSD': 'SI=F',
+}
+
+
+def _to_yf_symbol(symbol: str) -> str:
+    if symbol in _COMMODITY_YF_MAP:
+        return _COMMODITY_YF_MAP[symbol]
+    return symbol
+
 
 def asset_type_of(symbol: str) -> str:
     if symbol.endswith('.TW') or symbol.endswith('.TWO'):
         return 'TW Stock'
-    if symbol.endswith('-USD'):
+    if symbol.startswith('BYBIT:'):
         return 'Crypto'
     if symbol in config.COMMODITIES:
         return 'Commodity'
     return 'US Stock'
 
 
+def _download_bybit(symbol: str, start: str, end: str) -> pd.DataFrame | None:
+    """從 Bybit 公開 API 抓永續合約日線 OHLCV，自動分頁取完整區間。"""
+    if not PYBIT_AVAILABLE:
+        print(f'  [WARN] pybit 未安裝，無法抓取 {symbol}，執行: pip install pybit')
+        return None
+
+    bybit_sym = symbol[6:-2]  # BYBIT:BTCUSDT.P → BTCUSDT
+    start_ts  = int(datetime.strptime(start, '%Y-%m-%d').timestamp() * 1000)
+    end_ts    = int(datetime.strptime(end,   '%Y-%m-%d').timestamp() * 1000)
+
+    session  = BybitHTTP()  # K線為公開端點，無需 API Key
+    all_rows = []
+    cursor   = end_ts
+
+    while True:
+        try:
+            res = session.get_kline(
+                category='linear',
+                symbol=bybit_sym,
+                interval='D',
+                start=start_ts,
+                end=cursor,
+                limit=200,
+            )
+        except Exception as e:
+            print(f'  [ERROR] {symbol}: {e}')
+            return None
+
+        rows = res.get('result', {}).get('list', [])
+        if not rows:
+            break
+
+        all_rows.extend(rows)
+        oldest_ts = int(rows[-1][0])
+        if oldest_ts <= start_ts:
+            break
+        cursor = oldest_ts - 1
+
+    if not all_rows:
+        return None
+
+    df = pd.DataFrame(all_rows, columns=['ts', 'Open', 'High', 'Low', 'Close', 'Volume', '_'])
+    df['ts'] = pd.to_datetime(df['ts'].astype(int), unit='ms')
+    df = df.set_index('ts').sort_index()
+    df = df[['Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
+    df.index.name = None
+    df = df[
+        (df.index >= pd.Timestamp(start)) &
+        (df.index <= pd.Timestamp(end))
+    ].dropna(subset=['Close'])
+    return df if not df.empty else None
+
+
 def _download_single(symbol: str, start: str, end: str) -> pd.DataFrame | None:
+    if symbol.startswith('BYBIT:'):
+        return _download_bybit(symbol, start, end)
+
+    yf_sym = _to_yf_symbol(symbol)
     try:
         df = yf.download(
-            symbol,
+            yf_sym,
             start=start,
             end=end,
             auto_adjust=True,
