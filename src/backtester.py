@@ -240,9 +240,18 @@ class Backtester:
                 for sym, pos in open_positions.items()
                 if dt in data[sym].index
             )
+            allocated = sum(
+                pos.entry_price * pos.quantity
+                for sym, pos in open_positions.items()
+                if dt in data[sym].index
+            )
+            total_equity = round(self.capital + unrealised, 2)
             self.equity_curve.append({
                 'date':           date_str,
-                'capital':        round(self.capital + unrealised, 2),
+                'capital':        total_equity,
+                'allocated':      round(allocated, 2),
+                'remaining':      round(total_equity - allocated, 2),
+                'pnl':            round(total_equity - self.initial_capital, 2),
                 'open_positions': len(open_positions),
             })
 

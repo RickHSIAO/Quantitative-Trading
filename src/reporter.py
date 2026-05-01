@@ -582,11 +582,26 @@ def _write_summary(wb: Workbook, metrics: dict, equity_curve: list[dict]):
     if equity_curve:
         eq_df    = pd.DataFrame(equity_curve)
         eq_start = ws.max_row + 3
-        ws.cell(eq_start, 4, 'Date').font  = BOLD
-        ws.cell(eq_start, 5, 'Equity').font = BOLD
+
+        eq_headers = ['Date', '總資金(Equity)', '購買艙位資金', '剩餘資金', '獲利(虧損)']
+        for j, h in enumerate(eq_headers):
+            cell = ws.cell(eq_start, 4 + j, h)
+            cell.font      = BOLD
+            cell.alignment = CENTER
+            cell.border    = THIN
+
         for i, rec in enumerate(eq_df.itertuples()):
-            ws.cell(eq_start + 1 + i, 4, rec.date)
-            ws.cell(eq_start + 1 + i, 5, rec.capital)
+            row = eq_start + 1 + i
+            ws.cell(row, 4, rec.date)
+            ws.cell(row, 5, rec.capital)
+            ws.cell(row, 6, getattr(rec, 'allocated',  0))
+            ws.cell(row, 7, getattr(rec, 'remaining',  rec.capital))
+            pnl_val = getattr(rec, 'pnl', 0)
+            cell = ws.cell(row, 8, pnl_val)
+            cell.fill = WIN_FILL if pnl_val >= 0 else LOSS_FILL
+            for col in range(4, 9):
+                ws.cell(row, col).alignment = CENTER
+                ws.cell(row, col).border    = THIN
 
         chart = LineChart()
         chart.title  = 'Equity Curve'
