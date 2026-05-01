@@ -109,6 +109,15 @@ MAX_POSITION_PCT       = 0.10   # 單筆最大倉位 10%
 MAX_TOTAL_POSITIONS    = 15     # 同時持倉上限
 KELLY_MIN_TRADES       = 10     # 觸發 Kelly 所需最少交易紀錄
 
+# 每個資產類別的同時持倉上限（名額隔離，非資金隔離）
+# 各類別上限之和可大於 MAX_TOTAL_POSITIONS，整體仍受 MAX_TOTAL_POSITIONS 限制
+MAX_POS_PER_CLASS: dict = {
+    'US Stock':  6,
+    'TW Stock':  6,
+    'Crypto':    2,
+    'Commodity': 2,
+}
+
 # ─── 資料庫 ────────────────────────────────────────
 DB_PATH   = 'data/trading.db'
 DATA_YEARS = 5

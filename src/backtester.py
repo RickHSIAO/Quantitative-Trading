@@ -210,10 +210,19 @@ class Backtester:
                 # Phase 2：共識分數由高到低排序，3 分（三策略同向）優先開倉
                 candidates.sort(key=lambda x: x[2], reverse=True)
 
-                # Phase 3：依序開倉直到上限
+                # Phase 3：依序開倉，同時檢查整體上限與各資產類別名額
+                class_counts: dict[str, int] = {}
+                for pos in open_positions.values():
+                    class_counts[pos.asset_type] = class_counts.get(pos.asset_type, 0) + 1
+
                 for sym, sig_val, _ in candidates:
                     if len(open_positions) >= config.MAX_TOTAL_POSITIONS:
                         break
+
+                    atype       = asset_types.get(sym, '')
+                    class_limit = config.MAX_POS_PER_CLASS.get(atype, config.MAX_TOTAL_POSITIONS)
+                    if class_counts.get(atype, 0) >= class_limit:
+                        continue
 
                     df    = data[sym]
                     row   = df.loc[dt]
@@ -239,12 +248,13 @@ class Backtester:
                         quantity     = qty,
                         stop_loss    = sl,
                         take_profit  = tp,
-                        asset_type   = asset_types.get(sym, ''),
+                        asset_type   = atype,
                         entry_reason = _entry_reason(strat, sig_val),
                         risk_usd     = round(r_dist * qty, 2),
                     )
-                    open_positions[sym]  = trade
-                    self._orig_stop[sym] = sl
+                    open_positions[sym]      = trade
+                    self._orig_stop[sym]     = sl
+                    class_counts[atype]      = class_counts.get(atype, 0) + 1
 
             # ── Step 3: 記錄淨值 ──────────────────────────────────────────
             unrealised = sum(
