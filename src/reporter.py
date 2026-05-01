@@ -580,6 +580,111 @@ def _write_summary(wb: Workbook, metrics: dict, equity_curve: list[dict]):
     return ws
 
 
+# ─── Per-Symbol Stats ────────────────────────────────────────────────────────
+SYM_COLS = [
+    '代號', '資產類型',
+    '買進次數', '賣出次數', '做多次數', '做空次數',
+    '勝率(%)', '多單勝率(%)', '空單勝率(%)',
+    '平均獲利(USD)', '平均虧損(USD)',
+    '最大獲利(USD)', '最大虧損(USD)',
+    '合計損益(USD)', '平均持倉天數', '平均R倍數',
+]
+
+
+def _write_symbol_stats(wb: Workbook, df: pd.DataFrame):
+    ws = wb.create_sheet(title='Per Symbol Stats')
+    ws.cell(1, 1, '各標的交易統計').font = TITLE_FONT
+    ws.cell(2, 1, '依合計損益由高到低排序').font = Font(italic=True, color='595959')
+    ws.append([])
+
+    if df.empty or 'P&L (USD)' not in df.columns:
+        ws.cell(4, 1, '無交易資料')
+        return ws
+
+    rows = []
+    for sym, grp in df.groupby('代號'):
+        pnl   = grp['P&L (USD)'].dropna()
+        wins  = pnl[pnl > 0]
+        losses = pnl[pnl <= 0]
+        longs  = grp[grp['方向'].str.contains('多', na=False)]
+        shorts = grp[grp['方向'].str.contains('空', na=False)]
+        l_wins = longs['P&L (USD)'].dropna()
+        s_wins = shorts['P&L (USD)'].dropna()
+
+        hold = grp['持倉天數'].dropna()
+        r_m  = grp['R倍數'].dropna()
+
+        rows.append({
+            '代號':         sym,
+            '資產類型':     grp['資產類型'].iloc[0] if len(grp) else '',
+            '買進次數':     int((grp['方向'].str.contains('多', na=False)).sum()),
+            '賣出次數':     int((grp['方向'].str.contains('空', na=False)).sum()),
+            '做多次數':     len(longs),
+            '做空次數':     len(shorts),
+            '勝率(%)':      round(len(wins) / len(pnl) * 100, 1) if len(pnl) else 0,
+            '多單勝率(%)':  round((l_wins > 0).sum() / len(longs) * 100, 1) if len(longs) else 0,
+            '空單勝率(%)':  round((s_wins > 0).sum() / len(shorts) * 100, 1) if len(shorts) else 0,
+            '平均獲利(USD)': round(wins.mean(), 2)    if len(wins)   else 0,
+            '平均虧損(USD)': round(losses.mean(), 2)  if len(losses) else 0,
+            '最大獲利(USD)': round(pnl.max(), 2)      if len(pnl)    else 0,
+            '最大虧損(USD)': round(pnl.min(), 2)      if len(pnl)    else 0,
+            '合計損益(USD)': round(pnl.sum(), 2),
+            '平均持倉天數':  round(hold.mean(), 1)    if len(hold)   else 0,
+            '平均R倍數':     round(r_m.mean(), 2)     if len(r_m)    else 0,
+        })
+
+    result = pd.DataFrame(rows, columns=SYM_COLS)
+    result = result.sort_values('合計損益(USD)', ascending=False).reset_index(drop=True)
+
+    # Header
+    ws.append(SYM_COLS)
+    hdr_row = ws.max_row
+    _style_row(ws, hdr_row, fill=HDR_FILL, font=HDR_FONT)
+
+    pnl_col  = SYM_COLS.index('合計損益(USD)') + 1
+    win_col  = SYM_COLS.index('勝率(%)') + 1
+
+    for _, r in result.iterrows():
+        ws.append([r[c] for c in SYM_COLS])
+        cur = ws.max_row
+        try:
+            fill = WIN_FILL if float(r['合計損益(USD)'] or 0) > 0 else LOSS_FILL
+        except (TypeError, ValueError):
+            fill = NEUT_FILL
+        for c in range(1, len(SYM_COLS) + 1):
+            cell = ws.cell(cur, c)
+            cell.fill      = fill
+            cell.alignment = CENTER
+            cell.border    = THIN
+
+    # 合計損益色階
+    pnl_letter = get_column_letter(pnl_col)
+    ws.conditional_formatting.add(
+        f"{pnl_letter}{hdr_row+1}:{pnl_letter}{ws.max_row}",
+        ColorScaleRule(
+            start_type='min', start_color='F8696B',
+            mid_type='num',   mid_value=0,   mid_color='FFFFFF',
+            end_type='max',   end_color='63BE7B',
+        )
+    )
+
+    # 勝率色階
+    wr_letter = get_column_letter(win_col)
+    ws.conditional_formatting.add(
+        f"{wr_letter}{hdr_row+1}:{wr_letter}{ws.max_row}",
+        ColorScaleRule(
+            start_type='num', start_value=0,  start_color='F8696B',
+            mid_type='num',   mid_value=50,   mid_color='FFEB9C',
+            end_type='num',   end_value=100,  end_color='63BE7B',
+        )
+    )
+
+    ws.freeze_panes = ws.cell(hdr_row + 1, 1)
+    _add_autofilter(ws, hdr_row)
+    _auto_width(ws)
+    return ws
+
+
 # ─── 主入口 ───────────────────────────────────────────────────────────────────
 def generate_excel_report(trades: list[Trade],
                           metrics: dict,
@@ -618,6 +723,10 @@ def generate_excel_report(trades: list[Trade],
         _write_trade_sheet(wb, '📋 All Trades',
                            df_w.drop(columns=['_year']),
                            title='全部交易記錄')
+
+    # 7. Per-symbol stats
+    if not df.empty:
+        _write_symbol_stats(wb, df)
 
     wb.save(output_path)
     print(f'\n[OK] 回測報告已儲存：{output_path}')
