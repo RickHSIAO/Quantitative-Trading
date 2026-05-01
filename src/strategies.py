@@ -32,8 +32,8 @@ def trend_following_signals(df: pd.DataFrame) -> pd.Series:
 def volume_profile_signals(df: pd.DataFrame, tol: float = 0.015) -> pd.Series:
     """
     價格接近 POC（±tol）時判斷多空方向：
-    - 前一根 Close 低於 POC → 反彈做多
-    - 前一根 Close 高於 POC → 壓力做空
+    - 前一根 Close 高於 POC → 從上方跌回 POC（支撐）→ 做多
+    - 前一根 Close 低於 POC → 從下方漲到 POC（壓力）→ 做空
     同時配合 RSI 避免追高殺低。
     """
     sig = pd.Series(FLAT, index=df.index, dtype=int)
@@ -44,11 +44,13 @@ def volume_profile_signals(df: pd.DataFrame, tol: float = 0.015) -> pd.Series:
         (df['Close'] >= df['poc'] * (1 - tol)) &
         (df['Close'] <= df['poc'] * (1 + tol))
     )
-    prev_below = df['Close'].shift(1) < df['poc']
+    # prev_above: 從上方跌到 POC → POC 扮演支撐 → 做多
+    # prev_below: 從下方漲到 POC → POC 扮演壓力 → 做空
     prev_above = df['Close'].shift(1) > df['poc']
+    prev_below = df['Close'].shift(1) < df['poc']
 
-    long_  = near_poc & prev_below & (df['rsi'] < 60)
-    short_ = near_poc & prev_above & (df['rsi'] > 40)
+    long_  = near_poc & prev_above & (df['rsi'] < 60)
+    short_ = near_poc & prev_below & (df['rsi'] > 40)
 
     sig[long_]  = LONG
     sig[short_] = SHORT
@@ -82,27 +84,31 @@ def bollinger_reversion_signals(df: pd.DataFrame,
     return sig
 
 
-# ─── 多數決合併 ───────────────────────────────────────────────────────────────
-def combine_signals(tf: pd.Series, vp: pd.Series, bb: pd.Series,
-                    threshold: int = 2) -> pd.Series:
+# ─── 主從濾網合併 ─────────────────────────────────────────────────────────────
+def combine_signals(df: pd.DataFrame,
+                    tf: pd.Series, vp: pd.Series, bb: pd.Series) -> pd.Series:
     """
-    至少 threshold 個策略同向才產生信號。
-    threshold=2 → 三取二，減少假訊號。
+    以 EMA200 趨勢方向為環境濾網（主），各策略只在大方向一致時才允許進場（從）。
+    - 多頭環境（Close > EMA200）：只接受 LONG 訊號
+    - 空頭環境（Close < EMA200）：只接受 SHORT 訊號
     """
-    vote = tf + vp + bb
     result = pd.Series(FLAT, index=tf.index, dtype=int)
-    result[vote >=  threshold] = LONG
-    result[vote <= -threshold] = SHORT
+
+    if 'ema200' not in df.columns:
+        return result
+
+    bull_env = df['Close'] > df['ema200']
+    bear_env = df['Close'] < df['ema200']
+
+    any_long  = (tf == LONG)  | (vp == LONG)  | (bb == LONG)
+    any_short = (tf == SHORT) | (vp == SHORT) | (bb == SHORT)
+
+    result[bull_env & any_long]  = LONG
+    result[bear_env & any_short] = SHORT
     return result
 
 
-def generate_all_signals(df: pd.DataFrame,
-                         threshold: int = 2) -> dict[str, pd.Series]:
-    """
-    threshold=1: 任一策略觸發即交易（較激進，交易次數多）
-    threshold=2: 至少兩個策略同向（預設，平衡品質與數量）
-    threshold=3: 三策略全同向（最保守，高品質信號）
-    """
+def generate_all_signals(df: pd.DataFrame) -> dict[str, pd.Series]:
     tf = trend_following_signals(df)
     vp = volume_profile_signals(df)
     bb = bollinger_reversion_signals(df)
@@ -110,5 +116,5 @@ def generate_all_signals(df: pd.DataFrame,
         'trend':    tf,
         'vp':       vp,
         'bb':       bb,
-        'combined': combine_signals(tf, vp, bb, threshold=threshold),
+        'combined': combine_signals(df, tf, vp, bb),
     }
