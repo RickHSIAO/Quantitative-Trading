@@ -1,0 +1,237 @@
+//@version=5
+strategy("三策略量化系統 | Supertrend + VP + Bollinger",
+         overlay            = true,
+         initial_capital    = 100000,
+         default_qty_type   = strategy.percent_of_equity,
+         default_qty_value  = 10,
+         commission_type    = strategy.commission.percent,
+         commission_value   = 0.1,
+         slippage           = 1,
+         calc_on_every_tick = false,
+         pyramiding         = 0)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 參數設定
+// ══════════════════════════════════════════════════════════════════════════════
+var string G1 = "策略1：Supertrend 趨勢動能"
+var string G2 = "策略2：Volume Profile POC"
+var string G3 = "策略3：Bollinger 均值回歸"
+var string GC = "共用 / 風控"
+
+st_period   = input.int  (10,    "ATR 期間",           group=G1)
+st_mult     = input.float(3.0,   "乘數",                group=G1, step=0.1)
+
+// VP 回顧建議 ≤ 120，否則 Pine Script 運算會超時
+vp_lookback = input.int  (60,    "回顧 K 棒數（建議 ≤120）", group=G2, minval=20, maxval=120)
+vp_bins     = input.int  (30,    "分箱數",               group=G2, minval=10, maxval=50)
+vp_tol_pct  = input.float(1.5,   "POC 容差 %",           group=G2, step=0.1)
+
+bb_period   = input.int  (20,    "期間",                group=G3)
+bb_std_mult = input.float(2.0,   "標準差倍數",           group=G3, step=0.1)
+bb_bw_mult  = input.float(1.5,   "帶寬過濾乘數",         group=G3, step=0.1)
+rsi_os      = input.int  (30,    "RSI 超賣門檻",         group=G3)
+rsi_ob      = input.int  (70,    "RSI 超買門檻",         group=G3)
+
+ema_len     = input.int  (200,   "EMA 環境濾網期間",     group=GC)
+rsi_len     = input.int  (14,    "RSI 期間",             group=GC)
+atr_len     = input.int  (14,    "ATR 止損期間",         group=GC)
+atr_sl_mult = input.float(2.0,   "ATR 止損乘數",         group=GC, step=0.1)
+rr_ratio    = input.float(3.0,   "風報比 1:N",           group=GC, step=0.5)
+use_short   = input.bool (true,  "允許做空",             group=GC)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 基礎指標
+// ══════════════════════════════════════════════════════════════════════════════
+[st_line, st_dir]          = ta.supertrend(st_mult, st_period)
+ema200                     = ta.ema(close, ema_len)
+[bb_upper, bb_mid, bb_low] = ta.bb(close, bb_period, bb_std_mult)
+bb_bw                      = (bb_upper - bb_low) / bb_mid * 100
+bw_avg50                   = ta.sma(bb_bw, 50)
+rsi                        = ta.rsi(close, rsi_len)
+atr                        = ta.atr(atr_len)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 策略2：滾動 Volume Profile → POC
+// 邏輯等同 Python compute_volume_profile()：將每根 K 棒的成交量
+// 依 high/low 均分至對應的價格分箱，找出成交量最大的分箱中心
+// ══════════════════════════════════════════════════════════════════════════════
+f_rolling_poc(int lb, int bins) =>
+    float plo   = ta.lowest (low,  lb)
+    float phi   = ta.highest(high, lb)
+    float bsize = (phi - plo) / bins
+
+    float result = float(na)
+
+    if bsize > 0
+        float[] vp = array.new_float(bins, 0.0)
+
+        for i = 0 to lb - 1
+            float li = low  [i]
+            float hi = high [i]
+            float vi = volume[i]
+            // 找出此 K 棒 low/high 對應的 bin 區間
+            int sb = math.max(0, math.min(int(math.floor((li - plo) / bsize)), bins - 1))
+            int eb = math.max(0, math.min(int(math.ceil ((hi - plo) / bsize)), bins - 1))
+            int nb = eb - sb + 1
+            if nb > 0
+                float vpb = vi / nb
+                for j = sb to eb
+                    array.set(vp, j, array.get(vp, j) + vpb)
+
+        int   poc_idx = array.indexof(vp, array.max(vp))
+        result       := plo + (poc_idx + 0.5) * bsize
+
+    result
+
+poc = f_rolling_poc(vp_lookback, vp_bins)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 子策略訊號（+1 多 / -1 空 / 0 無）
+// ══════════════════════════════════════════════════════════════════════════════
+float vp_tol = vp_tol_pct / 100.0
+
+// 策略1：Supertrend 方向即訊號
+int sig_tf = st_dir == 1 ? 1 : -1
+
+// 策略2：前一根 Close 在 POC 上/下 → 今日觸碰 POC（支撐/壓力）
+bool near_poc  = not na(poc) and
+                 close >= poc * (1 - vp_tol) and
+                 close <= poc * (1 + vp_tol)
+bool prev_abv  = not na(poc) and close[1] > poc   // 修正：對比今日 POC 而非昨日 POC
+bool prev_blw  = not na(poc) and close[1] < poc
+int  sig_vp    = near_poc and prev_abv and rsi < 60 ?  1 :
+                 near_poc and prev_blw and rsi > 40 ? -1 : 0
+
+// 策略3：Bollinger 均值回歸 + ATR 帶寬過濾
+bool normal_vol = bb_bw < bw_avg50 * bb_bw_mult
+bool ready      = bar_index >= 50
+int  sig_bb     = close <= bb_low   and rsi < rsi_os and normal_vol and ready ?  1 :
+                  close >= bb_upper and rsi > rsi_ob and normal_vol and ready ? -1 : 0
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EMA200 環境濾網合併（主從架構）
+// ══════════════════════════════════════════════════════════════════════════════
+bool bull_env  = close > ema200
+bool bear_env  = close < ema200
+
+bool any_long  = sig_tf == 1  or sig_vp == 1  or sig_bb == 1
+bool any_short = sig_tf == -1 or sig_vp == -1 or sig_bb == -1
+
+int sig = bull_env and any_long              ?  1 :
+          bear_env and any_short and use_short ? -1 : 0
+
+// 共識分數（1~3 分，越高優先度越高）
+int score_l = (sig_tf == 1  ? 1 : 0) + (sig_vp == 1  ? 1 : 0) + (sig_bb == 1  ? 1 : 0)
+int score_s = (sig_tf == -1 ? 1 : 0) + (sig_vp == -1 ? 1 : 0) + (sig_bb == -1 ? 1 : 0)
+int score   = sig ==  1 ? score_l :
+              sig == -1 ? score_s : 0
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 動態 ATR 移動停利管理
+// 等同 Python backtester：多頭追蹤最高價，空頭追蹤最低價
+// ══════════════════════════════════════════════════════════════════════════════
+var float trail_peak    = na   // 多頭存最高價 / 空頭存最低價
+var float entry_sl_dist = na   // 進場時的 ATR 止損距離（固定不變）
+
+bool is_long  = strategy.position_size > 0
+bool is_short = strategy.position_size < 0
+
+// 偵測新倉位建立（前一根無部位，現在有部位）
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    trail_peak    := strategy.position_avg_price
+    entry_sl_dist := atr[1] * atr_sl_mult   // 用進場前一根的 ATR
+
+// 更新極值
+if is_long
+    trail_peak := math.max(trail_peak, high)
+
+if is_short
+    trail_peak := math.min(trail_peak, low)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 進出場指令
+// ══════════════════════════════════════════════════════════════════════════════
+// ── 進場
+if sig == 1 and not is_long and not is_short
+    strategy.entry("Long",  strategy.long,  comment="L" + str.tostring(score) + "★")
+
+if sig == -1 and not is_long and not is_short
+    strategy.entry("Short", strategy.short, comment="S" + str.tostring(score) + "★")
+
+// ── 動態止損 + 固定止盈（每根 K 棒更新一次）
+if is_long and not na(entry_sl_dist)
+    float dyn_sl = trail_peak - entry_sl_dist
+    float tp     = strategy.position_avg_price + entry_sl_dist * rr_ratio
+    // 訊號翻轉優先平倉，否則維護動態止損/止盈
+    if sig == -1
+        strategy.close("Long", comment="Flip↓")
+    else
+        strategy.exit("LX", "Long", stop=dyn_sl, limit=tp, comment="Exit")
+
+if is_short and not na(entry_sl_dist)
+    float dyn_sl = trail_peak + entry_sl_dist
+    float tp     = strategy.position_avg_price - entry_sl_dist * rr_ratio
+    if sig == 1
+        strategy.close("Short", comment="Flip↑")
+    else
+        strategy.exit("SX", "Short", stop=dyn_sl, limit=tp, comment="Exit")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 視覺化
+// ══════════════════════════════════════════════════════════════════════════════
+// 主要指標線
+plot(ema200,    "EMA200",     color.new(color.orange, 0),  2)
+plot(st_line,   "Supertrend", st_dir == 1 ? color.new(color.teal,  20)
+                                          : color.new(color.red,   20), 1)
+plot(poc,       "POC",        color.new(color.purple, 30), 1, plot.style_circles)
+plot(bb_upper,  "BB Upper",   color.new(color.blue,   65))
+plot(bb_low,    "BB Lower",   color.new(color.blue,   65))
+
+// 進場訊號標記
+plotshape(sig ==  1 and strategy.position_size[1] == 0,
+          "做多訊號", shape.triangleup,   location.belowbar,
+          color.lime, size=size.small)
+plotshape(sig == -1 and strategy.position_size[1] == 0,
+          "做空訊號", shape.triangledown, location.abovebar,
+          color.red,  size=size.small)
+
+// 共識分數標籤（分數 ≥ 2 且訊號剛出現才顯示）
+if score >= 2 and sig != 0 and sig != sig[1]
+    label.new(bar_index,
+              sig == 1 ? low  * 0.998 : high * 1.002,
+              str.tostring(score) + "★",
+              color     = sig == 1 ? color.new(color.lime, 20)
+                                   : color.new(color.red,  20),
+              textcolor = color.white,
+              style     = sig == 1 ? label.style_label_up
+                                   : label.style_label_down,
+              size      = size.tiny)
+
+// 多空環境背景色
+bgcolor(bull_env ? color.new(color.green, 96) :
+        bear_env ? color.new(color.red,   96) : na,
+        title="環境背景")
+
+// ── 右上角子策略狀態表
+var table tbl = table.new(position.top_right, 3, 4,
+                          bgcolor     = color.new(color.black, 55),
+                          border_width = 1)
+if barstate.islast
+    table.cell(tbl, 0, 0, "策略",      text_color=color.silver, text_size=size.tiny)
+    table.cell(tbl, 1, 0, "多  ▲",    text_color=color.lime,   text_size=size.tiny)
+    table.cell(tbl, 2, 0, "空  ▼",    text_color=color.red,    text_size=size.tiny)
+    table.cell(tbl, 0, 1, "Supertrend",text_color=color.white,  text_size=size.tiny)
+    table.cell(tbl, 1, 1, sig_tf == 1  ? "●" : "",
+               text_color=color.lime,  text_size=size.small)
+    table.cell(tbl, 2, 1, sig_tf == -1 ? "●" : "",
+               text_color=color.red,   text_size=size.small)
+    table.cell(tbl, 0, 2, "VP POC",   text_color=color.white,  text_size=size.tiny)
+    table.cell(tbl, 1, 2, sig_vp == 1  ? "●" : "",
+               text_color=color.lime,  text_size=size.small)
+    table.cell(tbl, 2, 2, sig_vp == -1 ? "●" : "",
+               text_color=color.red,   text_size=size.small)
+    table.cell(tbl, 0, 3, "Bollinger", text_color=color.white,  text_size=size.tiny)
+    table.cell(tbl, 1, 3, sig_bb == 1  ? "●" : "",
+               text_color=color.lime,  text_size=size.small)
+    table.cell(tbl, 2, 3, sig_bb == -1 ? "●" : "",
+               text_color=color.red,   text_size=size.small)
