@@ -243,9 +243,10 @@ class Backtester:
         avg_l  = float(np.mean(losses)) if losses else 0.0
         pf     = sum(wins) / max(sum(losses), 1e-9)
 
-        ret_s  = pd.Series(pnls)
-        sharpe = (ret_s.mean() / ret_s.std() * np.sqrt(252)
-                  if ret_s.std() > 0 else 0.0)
+        equity_s      = pd.Series([e['capital'] for e in self.equity_curve])
+        daily_ret     = equity_s.pct_change().dropna()
+        sharpe        = (daily_ret.mean() / daily_ret.std() * np.sqrt(252)
+                         if daily_ret.std() > 0 else 0.0)
 
         equity    = pd.Series([e['capital'] for e in self.equity_curve])
         dd_series = (equity - equity.cummax()) / equity.cummax() * 100
@@ -253,7 +254,9 @@ class Backtester:
         dd_usd    = float((equity - equity.cummax()).min())
 
         total_ret  = (self.capital - self.initial_capital) / self.initial_capital * 100
-        annual_ret = total_ret / max(len(self.equity_curve) / 252, 1)
+        eq_dates   = [e['date'] for e in self.equity_curve]
+        years      = (pd.Timestamp(eq_dates[-1]) - pd.Timestamp(eq_dates[0])).days / 365.25 if len(eq_dates) > 1 else 1.0
+        annual_ret = total_ret / max(years, 1)
         calmar     = annual_ret / abs(max_dd) if max_dd != 0 else 0.0
         recovery   = (self.capital - self.initial_capital) / abs(dd_usd) if dd_usd != 0 else 0.0
         expectancy = wr * avg_w - (1 - wr) * avg_l  # USD per trade

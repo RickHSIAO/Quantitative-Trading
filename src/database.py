@@ -73,7 +73,9 @@ def upsert_prices(df: pd.DataFrame, symbol: str, asset_type: str):
             """INSERT INTO asset_registry(symbol, asset_type, first_date, last_date, bar_count)
                VALUES (?,?,?,?,?)
                ON CONFLICT(symbol) DO UPDATE SET
-               last_date=excluded.last_date, bar_count=excluded.bar_count""",
+               last_date  = MAX(last_date,  excluded.last_date),
+               first_date = MIN(first_date, excluded.first_date),
+               bar_count  = bar_count + excluded.bar_count""",
             (symbol, asset_type, first, last, count),
         )
 

@@ -97,8 +97,9 @@ def combine_signals(df: pd.DataFrame,
     if 'ema200' not in df.columns:
         return result
 
-    bull_env = df['Close'] > df['ema200']
-    bear_env = df['Close'] < df['ema200']
+    # 使用 >= / <= 避免 Close 剛好等於 EMA200 時雙邊皆為 False 封鎖所有訊號
+    bull_env = df['Close'] >= df['ema200']
+    bear_env = df['Close'] <= df['ema200']
 
     any_long  = (tf == LONG)  | (vp == LONG)  | (bb == LONG)
     any_short = (tf == SHORT) | (vp == SHORT) | (bb == SHORT)

@@ -57,7 +57,8 @@ def compute_supertrend(df: pd.DataFrame,
 
     final_upper = basic_upper.copy()
     final_lower = basic_lower.copy()
-    direction   = np.ones(n, dtype=int)   # +1 bullish
+    direction   = np.ones(n, dtype=int)
+    direction[0] = 1 if c[0] >= hl2[0] else -1
     st_line     = np.empty(n)
 
     for i in range(1, n):
@@ -109,11 +110,14 @@ def compute_rsi(df: pd.DataFrame, period: int = config.RSI_PERIOD) -> pd.DataFra
     alpha = 1.0 / period
     avg_g = gain.ewm(alpha=alpha, adjust=False).mean()
     avg_l = loss.ewm(alpha=alpha, adjust=False).mean()
-    rs    = avg_g / avg_l.replace(0, np.nan)
-    rsi   = 100 - 100 / (1 + rs)
+    rs  = avg_g / avg_l.replace(0, np.nan)
+    rsi = 100 - 100 / (1 + rs)
+    # avg_l==0 (純上漲) → RSI=100；avg_g==0 (純下跌) → RSI=0
+    rsi = rsi.where(avg_l != 0, 100.0)
+    rsi = rsi.where(avg_g != 0, 0.0)
 
     out = df.copy()
-    out['rsi'] = rsi.fillna(50)
+    out['rsi'] = rsi
     return out
 
 
@@ -142,7 +146,7 @@ def compute_volume_profile(df: pd.DataFrame,
         vol = volumes[s:i]
 
         pmin, pmax = lo.min(), hi.max()
-        if pmax <= pmin or vol.sum() == 0:
+        if pmax < pmin or vol.sum() == 0:
             continue
 
         edges       = np.linspace(pmin, pmax, bins + 1)
