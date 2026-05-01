@@ -88,7 +88,7 @@ def cmd_backtest(args):
 
         try:
             df = compute_all_indicators(df, include_vp=use_vp)
-            sigs = generate_all_signals(df, threshold=args.threshold)
+            sigs = generate_all_signals(df)
             data[sym]    = df
             signals[sym] = sigs
         except Exception as exc:
@@ -256,7 +256,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument('--capital', type=float, default=100_000.0, help='初始資金 (USD)')
     p_bt.add_argument('--seed',    type=int,   default=42,        help='隨機種子')
     p_bt.add_argument('--no-vp',    action='store_true',           help='跳過 Volume Profile（加快速度）')
-    p_bt.add_argument('--threshold',type=int,  default=2,         help='合併信號門檻（1=任一策略觸發，2=需2/3同向，3=全同向）')
     p_bt.add_argument('--output',   type=str,  default=None,      help='自訂輸出路徑')
 
     # live
