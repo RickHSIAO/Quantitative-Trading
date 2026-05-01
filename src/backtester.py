@@ -187,16 +187,13 @@ class Backtester:
                         history_by_sym[sym].append(pos)
                         del open_positions[sym]
 
-            # ── Step 2: 開新倉 ────────────────────────────────────────────
+            # ── Step 2: 開新倉（依訊號共識度優先）────────────────────────
             if len(open_positions) < config.MAX_TOTAL_POSITIONS:
+                # Phase 1：蒐集當日所有有效候選，附帶共識分數
+                candidates: list[tuple[str, int, int]] = []
                 for sym, df in data.items():
-                    if sym in open_positions:
+                    if sym in open_positions or dt not in df.index:
                         continue
-                    if len(open_positions) >= config.MAX_TOTAL_POSITIONS:
-                        break
-                    if dt not in df.index:
-                        continue
-
                     sym_sigs = signals.get(sym, {})
                     comb     = sym_sigs.get('combined')
                     if comb is None or dt not in comb.index:
@@ -204,21 +201,36 @@ class Backtester:
                     sig_val = int(comb.loc[dt])
                     if sig_val == 0:
                         continue
+                    score_ser = sym_sigs.get('score')
+                    score_val = (int(score_ser.loc[dt])
+                                 if score_ser is not None and dt in score_ser.index
+                                 else 1)
+                    candidates.append((sym, sig_val, score_val))
 
+                # Phase 2：共識分數由高到低排序，3 分（三策略同向）優先開倉
+                candidates.sort(key=lambda x: x[2], reverse=True)
+
+                # Phase 3：依序開倉直到上限
+                for sym, sig_val, _ in candidates:
+                    if len(open_positions) >= config.MAX_TOTAL_POSITIONS:
+                        break
+
+                    df    = data[sym]
                     row   = df.loc[dt]
                     price = float(row['Close'])
                     atr   = float(row.get('atr', price * 0.02) or price * 0.02)
 
-                    sl, tp  = calculate_stops(price, sig_val, atr)
-                    kf      = estimate_kelly_from_history(history_by_sym[sym])
-                    qty     = position_size(self.capital, kf, price, sl)
+                    sl, tp = calculate_stops(price, sig_val, atr)
+                    kf     = estimate_kelly_from_history(history_by_sym[sym])
+                    qty    = position_size(self.capital, kf, price, sl)
 
                     if qty <= 0 or self.capital < price * qty * 0.05:
                         continue
 
-                    strat  = _dominant_strategy(sym_sigs, dt, sig_val)
-                    r_dist = abs(price - sl)
-                    trade  = Trade(
+                    sym_sigs = signals.get(sym, {})
+                    strat    = _dominant_strategy(sym_sigs, dt, sig_val)
+                    r_dist   = abs(price - sl)
+                    trade    = Trade(
                         symbol       = sym,
                         strategy     = strat,
                         direction    = sig_val,
@@ -231,8 +243,8 @@ class Backtester:
                         entry_reason = _entry_reason(strat, sig_val),
                         risk_usd     = round(r_dist * qty, 2),
                     )
-                    open_positions[sym]      = trade
-                    self._orig_stop[sym]     = sl
+                    open_positions[sym]  = trade
+                    self._orig_stop[sym] = sl
 
             # ── Step 3: 記錄淨值 ──────────────────────────────────────────
             unrealised = sum(

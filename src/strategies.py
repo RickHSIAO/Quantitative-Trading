@@ -107,12 +107,22 @@ def combine_signals(df: pd.DataFrame,
 
 
 def generate_all_signals(df: pd.DataFrame) -> dict[str, pd.Series]:
-    tf = trend_following_signals(df)
-    vp = volume_profile_signals(df)
-    bb = bollinger_reversion_signals(df)
+    tf       = trend_following_signals(df)
+    vp       = volume_profile_signals(df)
+    bb       = bollinger_reversion_signals(df)
+    combined = combine_signals(df, tf, vp, bb)
+
+    # 共識度計分：計算有幾個子策略的方向與最終訊號一致（1~3 分）
+    long_score  = (tf == LONG).astype(int)  + (vp == LONG).astype(int)  + (bb == LONG).astype(int)
+    short_score = (tf == SHORT).astype(int) + (vp == SHORT).astype(int) + (bb == SHORT).astype(int)
+    score = pd.Series(0, index=combined.index, dtype=int)
+    score[combined == LONG]  = long_score[combined == LONG]
+    score[combined == SHORT] = short_score[combined == SHORT]
+
     return {
         'trend':    tf,
         'vp':       vp,
         'bb':       bb,
-        'combined': combine_signals(df, tf, vp, bb),
+        'combined': combined,
+        'score':    score,
     }
