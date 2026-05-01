@@ -71,13 +71,24 @@ def _add_autofilter(ws, header_row: int):
 TRADE_COLS = [
     '進場日期', '出場日期', '持倉天數',
     '代號', '資產類型', '策略',
-    '方向', '進場原因',
+    '方向', '數量',
+    '進場原因',
     '進場價格', '止損點位', '止盈點位', '出場價格',
     '出場原因',
     '風險金額(USD)', 'R倍數',
     'P&L (USD)', '報酬率(%)',
     'MAE(%)', 'MFE(%)',
 ]
+
+
+def _fmt_qty(symbol: str, qty: float) -> str:
+    """台股（.TW/.TWO）轉換為張（1張=1000股），其餘原樣顯示。"""
+    if symbol.endswith('.TW') or symbol.endswith('.TWO'):
+        zhang = qty / 1000
+        return f'{zhang:.2f} 張'
+    if '-USD' in symbol:
+        return f'{qty:.4f} 顆'
+    return f'{qty:.2f} 股'
 
 
 def trades_to_df(trades: list[Trade]) -> pd.DataFrame:
@@ -93,6 +104,7 @@ def trades_to_df(trades: list[Trade]) -> pd.DataFrame:
             '資產類型':    t.asset_type or '',
             '策略':        _strat_label(t.strategy),
             '方向':        '多 ▲' if t.direction == 1 else '空 ▼',
+            '數量':        _fmt_qty(t.symbol, t.quantity),
             '進場原因':    t.entry_reason or '',
             '進場價格':    round(t.entry_price, 6),
             '止損點位':    round(t.stop_loss, 6),

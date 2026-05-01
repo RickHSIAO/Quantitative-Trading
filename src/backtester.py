@@ -69,10 +69,11 @@ def _entry_reason(strategy: str, direction: int) -> str:
 def _exit_reason(code: str, r_mult: float) -> str:
     r_str = f'({r_mult:+.2f}R)' if r_mult is not None else ''
     mapping = {
-        'stop_loss':    f'止損出場 SL  {r_str}',
-        'take_profit':  f'止盈出場 TP 1:{int(config.RISK_REWARD_RATIO)}  {r_str}',
-        'signal_flip':  f'信號翻轉平倉  {r_str}',
-        'eod':          f'回測結束強制平倉  {r_str}',
+        'stop_loss':     f'止損出場 SL  {r_str}',
+        'trailing_stop': f'移動停利出場 TSL  {r_str}',
+        'take_profit':   f'止盈出場 TP 1:{int(config.RISK_REWARD_RATIO)}  {r_str}',
+        'signal_flip':   f'信號翻轉平倉  {r_str}',
+        'eod':           f'回測結束強制平倉  {r_str}',
     }
     return mapping.get(code, code)
 
@@ -84,8 +85,10 @@ class Backtester:
         self.capital: float   = initial_capital
         self.trades:  list[Trade] = []
         self.equity_curve: list[dict] = []
-        # MAE/MFE 追蹤：{symbol: (worst_pct, best_pct)}
-        self._excursion: dict[str, list[float]] = {}
+        self._excursion:   dict[str, list[float]] = {}
+        # ATR 移動停利：記錄極值與原始止損，用於判斷是否為移動停利出場
+        self._trail_peak:  dict[str, float] = {}
+        self._orig_stop:   dict[str, float] = {}
 
     # ── 平倉輔助 ─────────────────────────────────────────────────────────────
     def _close_trade(self, trade: Trade, exit_date: str,
@@ -109,6 +112,8 @@ class Backtester:
             trade.mae = round(min(excursions), 2)
             trade.mfe = round(max(excursions), 2)
 
+        self._trail_peak.pop(trade.symbol, None)
+        self._orig_stop.pop(trade.symbol, None)
         self.capital += pnl
         return pnl
 
@@ -139,14 +144,35 @@ class Backtester:
                 chg_pct = (price / pos.entry_price - 1.0) * pos.direction * 100
                 self._excursion.setdefault(sym, []).append(chg_pct)
 
+                # ATR 移動停利：止損只往有利方向移動
+                row_data = data[sym].loc[dt]
+                atr_now  = float(row_data.get('atr', price * 0.02) or price * 0.02)
+                trail_dist = atr_now * config.ATR_STOP_MULTIPLIER
+                if pos.direction == 1:   # 多頭：追蹤最高價
+                    peak = max(self._trail_peak.get(sym, pos.entry_price), price)
+                    self._trail_peak[sym] = peak
+                    new_sl = peak - trail_dist
+                    if new_sl > pos.stop_loss:
+                        pos.stop_loss = new_sl
+                else:                    # 空頭：追蹤最低價
+                    trough = min(self._trail_peak.get(sym, pos.entry_price), price)
+                    self._trail_peak[sym] = trough
+                    new_sl = trough + trail_dist
+                    if new_sl < pos.stop_loss:
+                        pos.stop_loss = new_sl
+
                 hit_sl = ((pos.direction ==  1 and price <= pos.stop_loss) or
                           (pos.direction == -1 and price >= pos.stop_loss))
                 hit_tp = ((pos.direction ==  1 and price >= pos.take_profit) or
                           (pos.direction == -1 and price <= pos.take_profit))
 
                 if hit_sl or hit_tp:
-                    ep     = pos.stop_loss if hit_sl else pos.take_profit
-                    code   = 'stop_loss' if hit_sl else 'take_profit'
+                    ep   = pos.stop_loss if hit_sl else pos.take_profit
+                    if hit_sl:
+                        orig = self._orig_stop.get(sym, pos.stop_loss)
+                        code = 'trailing_stop' if pos.stop_loss != orig else 'stop_loss'
+                    else:
+                        code = 'take_profit'
                     self._close_trade(pos, date_str, ep, code)
                     history_by_sym[sym].append(pos)
                     del open_positions[sym]
@@ -205,7 +231,8 @@ class Backtester:
                         entry_reason = _entry_reason(strat, sig_val),
                         risk_usd     = round(r_dist * qty, 2),
                     )
-                    open_positions[sym] = trade
+                    open_positions[sym]      = trade
+                    self._orig_stop[sym]     = sl
 
             # ── Step 3: 記錄淨值 ──────────────────────────────────────────
             unrealised = sum(
@@ -288,9 +315,10 @@ class Backtester:
         # 出場原因分布
         exit_dist: dict[str, int] = {}
         for t in closed:
-            key = 'TP' if t.exit_reason and '止盈' in t.exit_reason else \
-                  'SL' if t.exit_reason and '止損' in t.exit_reason else \
-                  'Flip' if t.exit_reason and '翻轉' in t.exit_reason else 'EOD'
+            key = 'TP'  if t.exit_reason and '止盈'   in t.exit_reason else \
+                  'TSL' if t.exit_reason and '移動停利' in t.exit_reason else \
+                  'SL'  if t.exit_reason and '止損'   in t.exit_reason else \
+                  'Flip' if t.exit_reason and '翻轉'  in t.exit_reason else 'EOD'
             exit_dist[key] = exit_dist.get(key, 0) + 1
 
         # 各策略分解
