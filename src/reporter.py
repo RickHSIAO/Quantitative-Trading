@@ -119,70 +119,163 @@ def _strat_label(s: str) -> str:
             'combined': '多策略確認'}.get(s, s)
 
 
-# ─── 寫入交易明細工作表 ────────────────────────────────────────────────────────
-def _write_trade_sheet(wb: Workbook, name: str, df: pd.DataFrame, title: str = ''):
-    ws = wb.create_sheet(title=name[:31])
-    row = 1
+MONTH_ZH = ['一月','二月','三月','四月','五月','六月',
+            '七月','八月','九月','十月','十一月','十二月']
 
-    if title:
-        ws.cell(row, 1, title).font = TITLE_FONT
-        row += 2
+MONTH_HDR_FILL = PatternFill('solid', fgColor='2E75B6')
+MONTH_HDR_FONT = Font(color='FFFFFF', bold=True, size=11)
+MONTH_TOT_FILL = PatternFill('solid', fgColor='D9E1F2')
 
-    if df.empty:
-        ws.cell(row, 1, '此期間無交易記錄')
-        return ws
 
-    display = df.copy()
-    for col in ['進場日期', '出場日期']:
-        if col in display.columns and pd.api.types.is_datetime64_any_dtype(display[col]):
-            display[col] = display[col].dt.strftime('%Y-%m-%d')
-
-    # 計算本期彙總
-    pnl_col_data = display['P&L (USD)'].dropna()
-    if not pnl_col_data.empty:
-        summary = [
-            f"本期交易：{len(display)} 筆",
-            f"獲利筆數：{(pnl_col_data > 0).sum()}",
-            f"虧損筆數：{(pnl_col_data <= 0).sum()}",
-            f"勝率：{(pnl_col_data > 0).mean()*100:.1f}%",
-            f"合計損益：${pnl_col_data.sum():+,.2f}",
-        ]
-        for i, s in enumerate(summary):
-            ws.cell(row, 1 + i, s).font = Font(bold=True, color='1F3864')
-        row += 2
-
-    # Header
-    ws.append(TRADE_COLS)
-    _style_row(ws, ws.max_row, fill=HDR_FILL, font=HDR_FONT)
-    hdr_row = ws.max_row
-    row = hdr_row + 1
-
-    # Data rows
-    pnl_idx = TRADE_COLS.index('P&L (USD)') + 1
-    r_idx   = TRADE_COLS.index('R倍數') + 1
-
+def _write_data_rows(ws, display: pd.DataFrame, pnl_idx: int):
+    """寫入交易資料列（綠獲利 / 紅虧損），回傳最後一列列號。"""
     for _, r in display.iterrows():
         ws.append([r[c] for c in TRADE_COLS])
         cur = ws.max_row
-        pnl_val = ws.cell(cur, pnl_idx).value
         try:
-            fill = WIN_FILL if float(pnl_val) > 0 else LOSS_FILL
+            fill = WIN_FILL if float(ws.cell(cur, pnl_idx).value or 0) > 0 else LOSS_FILL
         except (TypeError, ValueError):
             fill = NEUT_FILL
         for c in range(1, len(TRADE_COLS) + 1):
             cell = ws.cell(cur, c)
             cell.fill      = fill
-            cell.alignment = LEFT if c in (8, 13) else CENTER  # 進場/出場原因靠左
+            cell.alignment = LEFT if c in (8, 13) else CENTER
             cell.border    = THIN
+    return ws.max_row
 
-    # R倍數條件格式（深紅深綠）
-    from openpyxl.formatting.rule import CellIsRule
+
+def _write_month_total_row(ws, month_pnl: float, month_trades: int,
+                           month_wins: int):
+    """月份小計列。"""
+    wr = month_wins / month_trades * 100 if month_trades else 0
+    label = (f"小計：{month_trades} 筆 | 勝率 {wr:.0f}% | "
+             f"損益 ${month_pnl:+,.2f}")
+    ws.append([label] + [''] * (len(TRADE_COLS) - 1))
+    cur = ws.max_row
+    ws.merge_cells(f'A{cur}:{get_column_letter(len(TRADE_COLS))}{cur}')
+    cell = ws.cell(cur, 1)
+    cell.fill      = WIN_FILL if month_pnl >= 0 else LOSS_FILL
+    cell.font      = Font(bold=True, size=10)
+    cell.alignment = LEFT
+    cell.border    = THIN
+
+
+# ─── 寫入年度工作表（內含月份分隔）────────────────────────────────────────────
+def _write_year_sheet(wb: Workbook, year: int, df: pd.DataFrame):
+    """
+    每個年度一張工作表，內部依月份分組。
+    每月開頭有藍色月份標題列，結尾有月份小計列。
+    """
+    ws = wb.create_sheet(title=str(year))
+    n_cols = len(TRADE_COLS)
+
+    # ── 年度標題 ──────────────────────────────────────────────────────────
+    ws.cell(1, 1, f'{year} 年交易明細').font = TITLE_FONT
+    ws.append([])
+
+    # ── 年度彙總 ──────────────────────────────────────────────────────────
+    pnl_data = df['P&L (USD)'].dropna()
+    summary_vals = [
+        f"全年交易：{len(df)} 筆",
+        f"獲利：{(pnl_data > 0).sum()} 筆",
+        f"虧損：{(pnl_data <= 0).sum()} 筆",
+        f"勝率：{(pnl_data > 0).mean()*100:.1f}%" if len(pnl_data) else '勝率：—',
+        f"全年損益：${pnl_data.sum():+,.2f}",
+    ]
+    for i, s in enumerate(summary_vals):
+        ws.cell(3, 1 + i, s).font = Font(bold=True, color='1F3864')
+    ws.append([])
+
+    pnl_idx = TRADE_COLS.index('P&L (USD)') + 1
+    r_idx   = TRADE_COLS.index('R倍數') + 1
+    first_hdr_row = None
+
+    # ── 依月份分組 ────────────────────────────────────────────────────────
+    df_w = df.copy()
+    df_w['_month'] = df_w['出場日期'].dt.month
+
+    for month_num in range(1, 13):
+        m_df = df_w[df_w['_month'] == month_num].drop(columns=['_month'])
+        if m_df.empty:
+            continue
+
+        # 月份標題列
+        month_label = f"{MONTH_ZH[month_num-1]}（{year}/{month_num:02d}）"
+        ws.append([month_label] + [''] * (n_cols - 1))
+        cur = ws.max_row
+        ws.merge_cells(f'A{cur}:{get_column_letter(n_cols)}{cur}')
+        ws.cell(cur, 1).fill      = MONTH_HDR_FILL
+        ws.cell(cur, 1).font      = MONTH_HDR_FONT
+        ws.cell(cur, 1).alignment = LEFT
+        ws.cell(cur, 1).border    = THIN
+
+        # 欄位標題（第一次才固定；之後省略，靠 freeze 參照）
+        ws.append(TRADE_COLS)
+        hdr_row = ws.max_row
+        _style_row(ws, hdr_row, fill=HDR_FILL, font=HDR_FONT)
+        if first_hdr_row is None:
+            first_hdr_row = hdr_row
+
+        # 交易資料列
+        display = m_df.copy()
+        for col in ['進場日期', '出場日期']:
+            if pd.api.types.is_datetime64_any_dtype(display[col]):
+                display[col] = display[col].dt.strftime('%Y-%m-%d')
+        _write_data_rows(ws, display, pnl_idx)
+
+        # 月份小計
+        m_pnl   = m_df['P&L (USD)'].dropna().sum()
+        m_wins  = (m_df['P&L (USD)'] > 0).sum()
+        _write_month_total_row(ws, m_pnl, len(m_df), int(m_wins))
+
+        ws.append([])  # 空行間隔
+
+    # R倍數條件格式
+    if first_hdr_row:
+        r_col_letter = get_column_letter(r_idx)
+        data_rng = f"{r_col_letter}{first_hdr_row+1}:{r_col_letter}{ws.max_row}"
+        ws.conditional_formatting.add(data_rng,
+            CellIsRule(operator='greaterThan', formula=['0'],
+                       fill=PatternFill('solid', fgColor='375623')))
+        ws.conditional_formatting.add(data_rng,
+            CellIsRule(operator='lessThan', formula=['0'],
+                       fill=PatternFill('solid', fgColor='9C0006')))
+        ws.freeze_panes = ws.cell(first_hdr_row + 1, 1)
+
+    _auto_width(ws)
+    return ws
+
+
+def _write_trade_sheet(wb: Workbook, name: str, df: pd.DataFrame, title: str = ''):
+    """All Trades 用的單一平面工作表（無月份分組）。"""
+    ws = wb.create_sheet(title=name[:31])
+    if title:
+        ws.cell(1, 1, title).font = TITLE_FONT
+        ws.append([])
+
+    if df.empty:
+        ws.cell(ws.max_row + 1, 1, '無交易記錄')
+        return ws
+
+    display = df.copy()
+    for col in ['進場日期', '出場日期']:
+        if pd.api.types.is_datetime64_any_dtype(display.get(col, pd.Series())):
+            display[col] = display[col].dt.strftime('%Y-%m-%d')
+
+    ws.append(TRADE_COLS)
+    _style_row(ws, ws.max_row, fill=HDR_FILL, font=HDR_FONT)
+    hdr_row = ws.max_row
+    pnl_idx = TRADE_COLS.index('P&L (USD)') + 1
+    r_idx   = TRADE_COLS.index('R倍數') + 1
+
+    _write_data_rows(ws, display, pnl_idx)
+
     r_col_letter = get_column_letter(r_idx)
-    data_range = f"{r_col_letter}{hdr_row+1}:{r_col_letter}{ws.max_row}"
-    ws.conditional_formatting.add(data_range,
+    data_rng = f"{r_col_letter}{hdr_row+1}:{r_col_letter}{ws.max_row}"
+    ws.conditional_formatting.add(data_rng,
         CellIsRule(operator='greaterThan', formula=['0'],
                    fill=PatternFill('solid', fgColor='375623')))
-    ws.conditional_formatting.add(data_range,
+    ws.conditional_formatting.add(data_rng,
         CellIsRule(operator='lessThan', formula=['0'],
                    fill=PatternFill('solid', fgColor='9C0006')))
 
@@ -513,18 +606,17 @@ def generate_excel_report(trades: list[Trade],
     # 4. Asset stats
     _write_asset_stats(wb, df, metrics)
 
-    # 5. Quarterly trade sheets
+    # 5. 年度工作表（每年一張，內分月份）
     if not df.empty:
         df_w = df.copy()
-        df_w['quarter'] = df_w['出場日期'].dt.to_period('Q')
-        for quarter in sorted(df_w['quarter'].unique()):
-            q_df = df_w[df_w['quarter'] == quarter].drop(columns=['quarter'])
-            _write_trade_sheet(wb, str(quarter), q_df,
-                               title=f'交易明細 — {quarter}')
+        df_w['_year'] = df_w['出場日期'].dt.year
+        for year in sorted(df_w['_year'].unique()):
+            y_df = df_w[df_w['_year'] == year].drop(columns=['_year'])
+            _write_year_sheet(wb, int(year), y_df)
 
-        # 6. All trades
+        # 6. All trades（平面總覽）
         _write_trade_sheet(wb, '📋 All Trades',
-                           df_w.drop(columns=['quarter']),
+                           df_w.drop(columns=['_year']),
                            title='全部交易記錄')
 
     wb.save(output_path)

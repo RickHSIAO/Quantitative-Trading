@@ -4,7 +4,8 @@
       "Bash(python -c ' *)",
       "Bash(python -c 'import ast, pathlib *)",
       "Bash(pip install *)",
-      "Bash(python -c \"import config; print\\('API Key OK:', bool\\(config.BYBIT_API_KEY\\)\\); print\\('Demo:', config.BYBIT_DEMO\\); print\\('Testnet:', config.BYBIT_TESTNET\\)\")"
+      "Bash(python -c \"import config; print\\('API Key OK:', bool\\(config.BYBIT_API_KEY\\)\\); print\\('Demo:', config.BYBIT_DEMO\\); print\\('Testnet:', config.BYBIT_TESTNET\\)\")",
+      "Bash(python -c \"import sys; data=sys.stdin.buffer.read\\(\\); print\\(data.decode\\('utf-8', errors='replace'\\)\\)\")"
     ]
   }
 }

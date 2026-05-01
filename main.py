@@ -28,6 +28,13 @@ def cmd_fetch(args):
     fetch_all_assets(assets, years=args.years)
 
 
+def cmd_update(args):
+    from config import get_selected_assets
+    from src.fetcher import update_all_assets
+    assets = get_selected_assets(args.seed)
+    update_all_assets(assets)
+
+
 def cmd_info(args):
     from src.database import get_registry
     reg = get_registry()
@@ -237,6 +244,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch.add_argument('--years', type=int, default=5, help='下載年數 (default=5)')
     p_fetch.add_argument('--seed',  type=int, default=42, help='隨機種子')
 
+    # update
+    p_upd = sub.add_parser('update', help='增量更新：只補最新資料（平日收盤後執行）')
+    p_upd.add_argument('--seed', type=int, default=42, help='隨機種子')
+
     # info
     sub.add_parser('info', help='顯示資料庫已下載資產資訊')
 
@@ -262,6 +273,8 @@ def main():
 
     if args.command == 'fetch':
         cmd_fetch(args)
+    elif args.command == 'update':
+        cmd_update(args)
     elif args.command == 'info':
         cmd_info(args)
     elif args.command == 'backtest':

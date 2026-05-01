@@ -97,6 +97,15 @@ def load_prices(symbol: str, start_date: str = None, end_date: str = None) -> pd
     return df
 
 
+def get_last_date(symbol: str) -> str | None:
+    """回傳該標的在 DB 中最新的日期字串（YYYY-MM-DD），不存在則 None。"""
+    with get_connection() as conn:
+        row = conn.execute(
+            'SELECT last_date FROM asset_registry WHERE symbol=?', (symbol,)
+        ).fetchone()
+    return row[0] if row else None
+
+
 def get_all_symbols() -> list[str]:
     with get_connection() as conn:
         rows = conn.execute('SELECT symbol FROM asset_registry').fetchall()
