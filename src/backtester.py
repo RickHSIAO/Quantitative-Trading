@@ -216,7 +216,7 @@ class Backtester:
                     if qty <= 0 or self.capital < price * qty * 0.05:
                         continue
 
-                    strat  = _dominant_strategy(sym_sigs, dt)
+                    strat  = _dominant_strategy(sym_sigs, dt, sig_val)
                     r_dist = abs(price - sl)
                     trade  = Trade(
                         symbol       = sym,
@@ -380,9 +380,9 @@ class Backtester:
 
 
 # ─── 輔助函式 ─────────────────────────────────────────────────────────────────
-def _dominant_strategy(sym_sigs: dict[str, pd.Series], dt: pd.Timestamp) -> str:
+def _dominant_strategy(sym_sigs: dict[str, pd.Series], dt: pd.Timestamp, direction: int) -> str:
     for s in ('trend', 'vp', 'bb'):
         ser = sym_sigs.get(s)
-        if ser is not None and dt in ser.index and ser.loc[dt] != 0:
+        if ser is not None and dt in ser.index and int(ser.loc[dt]) == direction:
             return s
     return 'combined'

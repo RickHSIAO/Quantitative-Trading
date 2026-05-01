@@ -10,21 +10,19 @@ SHORT = -1
 FLAT  =  0
 
 
-# ─── 策略 1：趨勢動能 (Supertrend + EMA 200) ──────────────────────────────────
+# ─── 策略 1：趨勢動能 (Supertrend) ───────────────────────────────────────────
 def trend_following_signals(df: pd.DataFrame) -> pd.Series:
     """
-    做多：supertrend_dir == +1  AND  Close > EMA200
-    做空：supertrend_dir == -1  AND  Close < EMA200
+    做多：supertrend_dir == +1
+    做空：supertrend_dir == -1
+    EMA200 環境濾網由 combine_signals 統一處理，此處只負責觸發訊號。
     """
     sig = pd.Series(FLAT, index=df.index, dtype=int)
-    if 'supertrend_dir' not in df.columns or 'ema200' not in df.columns:
+    if 'supertrend_dir' not in df.columns:
         return sig
 
-    long_  = (df['supertrend_dir'] == 1)  & (df['Close'] > df['ema200'])
-    short_ = (df['supertrend_dir'] == -1) & (df['Close'] < df['ema200'])
-
-    sig[long_]  = LONG
-    sig[short_] = SHORT
+    sig[df['supertrend_dir'] == 1]  = LONG
+    sig[df['supertrend_dir'] == -1] = SHORT
     return sig
 
 
@@ -46,8 +44,8 @@ def volume_profile_signals(df: pd.DataFrame, tol: float = 0.015) -> pd.Series:
     )
     # prev_above: 從上方跌到 POC → POC 扮演支撐 → 做多
     # prev_below: 從下方漲到 POC → POC 扮演壓力 → 做空
-    prev_above = df['Close'].shift(1) > df['poc']
-    prev_below = df['Close'].shift(1) < df['poc']
+    prev_above = df['Close'].shift(1) > df['poc'].shift(1)
+    prev_below = df['Close'].shift(1) < df['poc'].shift(1)
 
     long_  = near_poc & prev_above & (df['rsi'] < 60)
     short_ = near_poc & prev_below & (df['rsi'] > 40)
@@ -97,9 +95,8 @@ def combine_signals(df: pd.DataFrame,
     if 'ema200' not in df.columns:
         return result
 
-    # 使用 >= / <= 避免 Close 剛好等於 EMA200 時雙邊皆為 False 封鎖所有訊號
-    bull_env = df['Close'] >= df['ema200']
-    bear_env = df['Close'] <= df['ema200']
+    bull_env = df['Close'] > df['ema200']
+    bear_env = df['Close'] < df['ema200']
 
     any_long  = (tf == LONG)  | (vp == LONG)  | (bb == LONG)
     any_short = (tf == SHORT) | (vp == SHORT) | (bb == SHORT)
