@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(python -c 'import ast, pathlib *)",
+      "Bash(pip install *)",
+      "Bash(python -c \"import config; print\\('API Key OK:', bool\\(config.BYBIT_API_KEY\\)\\); print\\('Demo:', config.BYBIT_DEMO\\); print\\('Testnet:', config.BYBIT_TESTNET\\)\")"
+    ]
+  }
+}
