@@ -161,7 +161,8 @@ def _write_month_total_row(ws, month_pnl: float, month_trades: int,
 
 
 # ─── 寫入年度工作表（內含月份分隔）────────────────────────────────────────────
-def _write_year_sheet(wb: Workbook, year: int, df: pd.DataFrame):
+def _write_year_sheet(wb: Workbook, year: int, df: pd.DataFrame,
+                      year_start_cap: float = 0.0):
     """
     每個年度一張工作表，內部依月份分組。
     每月開頭有藍色月份標題列，結尾有月份小計列。
@@ -175,15 +176,25 @@ def _write_year_sheet(wb: Workbook, year: int, df: pd.DataFrame):
 
     # ── 年度彙總 ──────────────────────────────────────────────────────────
     pnl_data = df['P&L (USD)'].dropna()
+    year_pnl = pnl_data.sum()
+    year_ret  = year_pnl / year_start_cap * 100 if year_start_cap else 0.0
+    ret_str   = f"年度報酬率：{year_ret:+.2f}%"
+
     summary_vals = [
         f"全年交易：{len(df)} 筆",
         f"獲利：{(pnl_data > 0).sum()} 筆",
         f"虧損：{(pnl_data <= 0).sum()} 筆",
         f"勝率：{(pnl_data > 0).mean()*100:.1f}%" if len(pnl_data) else '勝率：—',
-        f"全年損益：${pnl_data.sum():+,.2f}",
+        f"全年損益：${year_pnl:+,.2f}",
+        ret_str,
     ]
     for i, s in enumerate(summary_vals):
-        ws.cell(3, 1 + i, s).font = Font(bold=True, color='1F3864')
+        cell = ws.cell(3, 1 + i, s)
+        cell.font = Font(bold=True, color='1F3864')
+
+    # 年度報酬率用顏色強調
+    ret_cell = ws.cell(3, len(summary_vals))
+    ret_cell.font = Font(bold=True, color=('375623' if year_ret >= 0 else '9C0006'), size=11)
     ws.append([])
 
     pnl_idx = TRADE_COLS.index('P&L (USD)') + 1
@@ -715,9 +726,23 @@ def generate_excel_report(trades: list[Trade],
     if not df.empty:
         df_w = df.copy()
         df_w['_year'] = df_w['出場日期'].dt.year
+
+        # 從 equity_curve 算出每年初的資金作為報酬率基礎
+        year_start_caps: dict[int, float] = {}
+        if equity_curve:
+            eq_df = pd.DataFrame(equity_curve)
+            eq_df['_eq_year'] = pd.to_datetime(eq_df['date']).dt.year
+            initial_cap = metrics.get('initial_capital', config.INITIAL_CAPITAL)
+            for year in sorted(df_w['_year'].unique()):
+                prev = eq_df[eq_df['_eq_year'] < year]
+                year_start_caps[year] = (
+                    float(prev.iloc[-1]['capital']) if not prev.empty else initial_cap
+                )
+
         for year in sorted(df_w['_year'].unique()):
             y_df = df_w[df_w['_year'] == year].drop(columns=['_year'])
-            _write_year_sheet(wb, int(year), y_df)
+            _write_year_sheet(wb, int(year), y_df,
+                              year_start_cap=year_start_caps.get(year, 0.0))
 
         # 6. All trades（平面總覽）
         _write_trade_sheet(wb, '📋 All Trades',
