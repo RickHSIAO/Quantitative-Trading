@@ -47,7 +47,7 @@ def estimate_kelly_from_history(closed_trades: list) -> float:
     avg_l = sum(losses) / len(losses)
     k     = quarter_kelly(wr, avg_w, avg_l)
     # 限制上限，避免過度槓桿
-    return min(k, config.MAX_POSITION_PCT)
+    return min(k, config.MAX_RISK_PCT)
 
 
 # ─── 倉位計算 ─────────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ def position_size(capital: float,
     if price_risk == 0 or entry_price == 0:
         return 0.0
 
-    risk_amount = capital * min(kelly_frac, config.MAX_POSITION_PCT)
+    risk_amount = capital * min(kelly_frac, config.MAX_RISK_PCT)
     qty = risk_amount / price_risk
     max_qty = (capital * config.MAX_POSITION_PCT) / entry_price
     return max(0.0, min(qty, max_qty))

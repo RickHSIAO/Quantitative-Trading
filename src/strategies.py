@@ -44,8 +44,8 @@ def volume_profile_signals(df: pd.DataFrame, tol: float = 0.015) -> pd.Series:
     )
     # prev_above: 從上方跌到 POC → POC 扮演支撐 → 做多
     # prev_below: 從下方漲到 POC → POC 扮演壓力 → 做空
-    prev_above = df['Close'].shift(1) > df['poc'].shift(1)
-    prev_below = df['Close'].shift(1) < df['poc'].shift(1)
+    prev_above = df['Close'].shift(1) > df['poc']
+    prev_below = df['Close'].shift(1) < df['poc']
 
     long_  = near_poc & prev_above & (df['rsi'] < 60)
     short_ = near_poc & prev_below & (df['rsi'] > 40)

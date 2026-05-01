@@ -17,7 +17,7 @@ US_STOCKS_POOL = [
     # 消費
     'WMT','TGT','COST','HD','LOW','MCD','SBUX','NKE','DG','DLTR',
     # 傳媒電信（PARA 已下市，改用 FOXA）
-    'DIS','CMCSA','VZ','T','TMUS','CHTR','FOXA','WBD','NFLX','SIRI',
+    'DIS','CMCSA','VZ','T','TMUS','CHTR','FOXA','WBD','SIRI','ROKU',
     # 工業
     'BA','LMT','RTX','NOC','GD','CAT','DE','MMM','GE','HON',
     'EMR','ETN','PH','ROK','ITW','DOV','FDX','UPS','DAL','UAL',
@@ -105,7 +105,8 @@ RISK_REWARD_RATIO      = 3.0    # 1:3
 KELLY_FRACTION         = 0.25   # 1/4 Kelly
 ATR_STOP_MULTIPLIER    = 2.0
 INITIAL_CAPITAL        = 100_000.0  # USD
-MAX_POSITION_PCT       = 0.10   # 單筆最大倉位 10%
+MAX_RISK_PCT           = 0.02   # 單筆最大虧損佔總資金 2%（Kelly risk_amount 上限）
+MAX_POSITION_PCT       = 0.10   # 單筆持倉市值上限 10%（position_size max_qty 上限）
 MAX_TOTAL_POSITIONS    = 15     # 同時持倉上限
 KELLY_MIN_TRADES       = 10     # 觸發 Kelly 所需最少交易紀錄
 

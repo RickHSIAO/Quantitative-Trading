@@ -233,7 +233,7 @@ class Backtester:
                     kf     = estimate_kelly_from_history(history_by_sym[sym])
                     qty    = position_size(self.capital, kf, price, sl)
 
-                    if qty <= 0 or self.capital < price * qty * 0.05:
+                    if qty <= 0 or self.capital < price:
                         continue
 
                     sym_sigs = signals.get(sym, {})
@@ -314,7 +314,7 @@ class Backtester:
         total_ret  = (self.capital - self.initial_capital) / self.initial_capital * 100
         eq_dates   = [e['date'] for e in self.equity_curve]
         years      = (pd.Timestamp(eq_dates[-1]) - pd.Timestamp(eq_dates[0])).days / 365.25 if len(eq_dates) > 1 else 1.0
-        annual_ret = total_ret / max(years, 1)
+        annual_ret = ((self.capital / self.initial_capital) ** (1.0 / max(years, 1)) - 1.0) * 100
         calmar     = annual_ret / abs(max_dd) if max_dd != 0 else 0.0
         recovery   = (self.capital - self.initial_capital) / abs(dd_usd) if dd_usd != 0 else 0.0
         expectancy = wr * avg_w - (1 - wr) * avg_l  # USD per trade
@@ -365,7 +365,7 @@ class Backtester:
                     'avg_pnl':   round(float(np.mean(sp)), 2),
                     'avg_r':     round(float(np.mean([t.r_multiple for t in st
                                                        if t.r_multiple is not None])), 2)
-                                 if any(t.r_multiple for t in st) else 0.0,
+                                 if any(t.r_multiple is not None for t in st) else 0.0,
                 }
 
         # 各資產類型分解
