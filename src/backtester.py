@@ -144,9 +144,14 @@ class Backtester:
                 lo    = float(row_data['Low'])
                 pos   = open_positions[sym]
 
-                # 追蹤最大有利/不利偏移（%，用收盤價計算百分比）
-                chg_pct = (price / pos.entry_price - 1.0) * pos.direction * 100
-                self._excursion.setdefault(sym, []).append(chg_pct)
+                # 追蹤 MAE/MFE：多頭用 Low/High；空頭用 High/Low
+                if pos.direction == 1:
+                    adv_pct = (lo  / pos.entry_price - 1.0) * 100
+                    fav_pct = (hi  / pos.entry_price - 1.0) * 100
+                else:
+                    adv_pct = (1.0 - hi / pos.entry_price) * 100
+                    fav_pct = (1.0 - lo / pos.entry_price) * 100
+                self._excursion.setdefault(sym, []).extend([adv_pct, fav_pct])
 
                 # ATR 移動停利：止損只往有利方向移動，用 High/Low 追蹤極值
                 atr_now    = float(row_data.get('atr', price * 0.02) or price * 0.02)
@@ -194,6 +199,12 @@ class Backtester:
                         history_by_sym[sym].append(pos)
                         del open_positions[sym]
 
+                # 資料截止自動平倉：避免持倉在無資料期間成為「幽靈倉」
+                if sym in open_positions and dt == data[sym].index[-1]:
+                    self._close_trade(pos, date_str, price, 'eod')
+                    history_by_sym[sym].append(pos)
+                    del open_positions[sym]
+
             # ── Step 2: 開新倉（依訊號共識度優先）────────────────────────
             if len(open_positions) < config.MAX_TOTAL_POSITIONS:
                 # Phase 1：蒐集當日所有有效候選，附帶共識分數
@@ -240,9 +251,16 @@ class Backtester:
 
                     sl, tp = calculate_stops(price, sig_val, atr)
                     kf     = estimate_kelly_from_history(history_by_sym[sym])
-                    qty    = position_size(self.capital, kf, price, sl)
 
-                    if qty <= 0 or qty * price > self.capital:
+                    available_cash = self.capital - sum(
+                        pos.entry_price * pos.quantity for pos in open_positions.values()
+                    )
+                    if available_cash <= 0:
+                        break
+
+                    qty = position_size(available_cash, kf, price, sl)
+
+                    if qty <= 0 or qty * price > available_cash:
                         continue
 
                     sym_sigs = signals.get(sym, {})
@@ -421,8 +439,10 @@ class Backtester:
 
 # ─── 輔助函式 ─────────────────────────────────────────────────────────────────
 def _dominant_strategy(sym_sigs: dict[str, pd.Series], dt: pd.Timestamp, direction: int) -> str:
-    for s in ('trend', 'vp', 'bb'):
-        ser = sym_sigs.get(s)
-        if ser is not None and dt in ser.index and int(ser.loc[dt]) == direction:
-            return s
-    return 'combined'
+    matched = [
+        s for s in ('trend', 'vp', 'bb')
+        if (ser := sym_sigs.get(s)) is not None
+        and dt in ser.index
+        and int(ser.loc[dt]) == direction
+    ]
+    return matched[0] if len(matched) == 1 else 'combined'

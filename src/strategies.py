@@ -74,12 +74,12 @@ def bollinger_reversion_signals(df: pd.DataFrame,
     if not all(c in df.columns for c in needed):
         return sig
 
-    bw_mean      = df['bb_bw'].rolling(50).mean()
-    normal_vol   = df['bb_bw'] < bw_mean * bw_multiplier
-    not_first_50 = df['bb_bw'].rolling(50).count() >= 50
+    bw_mean        = df['bb_bw'].rolling(50).mean()
+    normal_vol     = df['bb_bw'] < bw_mean * bw_multiplier
+    has_bw_history = df['bb_bw'].rolling(50).count() >= 50   # 前 BB_PERIOD+50 棒暖身完成
 
-    long_  = (df['Close'] <= df['bb_lower']) & (df['rsi'] < rsi_oversold)  & normal_vol & not_first_50
-    short_ = (df['Close'] >= df['bb_upper']) & (df['rsi'] > rsi_overbought) & normal_vol & not_first_50
+    long_  = (df['Close'] <= df['bb_lower']) & (df['rsi'] < rsi_oversold)  & normal_vol & has_bw_history
+    short_ = (df['Close'] >= df['bb_upper']) & (df['rsi'] > rsi_overbought) & normal_vol & has_bw_history
 
     sig[long_]  = LONG
     sig[short_] = SHORT
@@ -132,6 +132,12 @@ def combine_signals(df: pd.DataFrame,
     result = pd.Series(FLAT, index=tf.index, dtype=int)
     result[bull_env & any_long]  = LONG
     result[bear_env & any_short] = SHORT
+
+    # 衝突解消：兩方向 EMA 門檻同時達標且子策略訊號方向相反
+    # bull_ema 較強 → 恢復 LONG；完全相同 → FLAT（不進場）
+    conflict = bull_env & any_long & bear_env & any_short
+    result[conflict & (bull_ema >  bear_ema)] = LONG
+    result[conflict & (bull_ema == bear_ema)] = FLAT
     return result
 
 

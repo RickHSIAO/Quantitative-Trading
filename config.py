@@ -1,4 +1,7 @@
 import random
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # ─── 美股池 (120+) ────────────────────────────────────────
 US_STOCKS_POOL = [
@@ -131,8 +134,8 @@ DB_PATH   = 'data/trading.db'
 DATA_YEARS = 5
 
 # ─── Bybit ────────────────────────────────────────
-BYBIT_API_KEY    = 'v3rxkOnsC0ZNyK6qrN'
-BYBIT_API_SECRET = 'hhSHbry624FWBQRPXXZOOAzWOSZEK2wISojN'
+BYBIT_API_KEY    = os.environ.get('BYBIT_API_KEY',    '')
+BYBIT_API_SECRET = os.environ.get('BYBIT_API_SECRET', '')
 # 此為模擬帳號
 BYBIT_DEMO       = True   # 模擬帳號（Demo Trading）設 True
 BYBIT_TESTNET    = False  # 測試網（testnet.bybit.com）才設 True；一般模擬帳號設 False

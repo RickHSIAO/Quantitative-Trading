@@ -253,7 +253,9 @@ def cmd_live(args):
                 if sym not in open_pos and latest_sig != 0:
                     kf  = estimate_kelly_from_history(trade_history[sym])
                     sl, tp = calculate_stops(price, latest_sig, atr)
-                    qty = position_size(balance, kf, price, sl)
+                    allocated = sum(p['entry'] * p['qty'] for p in open_pos.values())
+                    available = max(0.0, balance - allocated)
+                    qty = position_size(available, kf, price, sl)
                     if qty > 0:
                         res = executor.place_order(sym, latest_sig, qty, sl, tp)
                         if res.get('retCode') == 0:
