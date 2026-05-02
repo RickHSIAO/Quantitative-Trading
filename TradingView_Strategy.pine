@@ -119,10 +119,8 @@ else if close >= bb_upper and rsi > rsi_ob and normal_vol and has_bw_history
 // EMA 比例分數環境濾網（對應 Python _ema_scores + combine_signals）
 // 多頭/空頭分數：收盤高/低於幾根 EMA（20/50/100/200），各 0–4 分
 // ══════════════════════════════════════════════════════════════════════════════
-int bull_score = (close > ema20  ? 1 : 0) + (close > ema50  ? 1 : 0) +
-                (close > ema100 ? 1 : 0) + (close > ema200 ? 1 : 0)
-int bear_score = (close < ema20  ? 1 : 0) + (close < ema50  ? 1 : 0) +
-                (close < ema100 ? 1 : 0) + (close < ema200 ? 1 : 0)
+int bull_score = (close > ema20 ? 1 : 0) + (close > ema50 ? 1 : 0) + (close > ema100 ? 1 : 0) + (close > ema200 ? 1 : 0)
+int bear_score = (close < ema20 ? 1 : 0) + (close < ema50 ? 1 : 0) + (close < ema100 ? 1 : 0) + (close < ema200 ? 1 : 0)
 
 bool bull_env  = bull_score >= ema_min_score
 bool bear_env  = bear_score >= ema_min_score
@@ -226,10 +224,15 @@ if score >= 2 and sig != 0 and sig != sig[1]
               size      = size.tiny)
 
 // 環境背景：依 EMA 分數強弱顯示深淺（≥3 較深，=2 較淡）
-color env_bg = bull_score >= 3 ? color.new(color.green, 93) :
-               bull_score == 2 ? color.new(color.green, 96) :
-               bear_score >= 3 ? color.new(color.red,   93) :
-               bear_score == 2 ? color.new(color.red,   96) : na
+color env_bg = color(na)
+if bull_score >= 3
+    env_bg := color.new(color.green, 93)
+else if bull_score == 2
+    env_bg := color.new(color.green, 96)
+else if bear_score >= 3
+    env_bg := color.new(color.red, 93)
+else if bear_score == 2
+    env_bg := color.new(color.red, 96)
 bgcolor(env_bg, title="環境背景")
 
 // ── 右上角子策略狀態表（新增 EMA 分數列）
