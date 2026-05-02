@@ -155,13 +155,15 @@ class Backtester:
                     peak = max(self._trail_peak.get(sym, pos.entry_price), hi)
                     self._trail_peak[sym] = peak
                     new_sl = peak - trail_dist
-                    if new_sl > pos.stop_loss:
+                    # 只有浮盈超過進場價才啟動追蹤，避免在虧損區觸發 TSL
+                    if new_sl > pos.stop_loss and new_sl > pos.entry_price:
                         pos.stop_loss = new_sl
                 else:                    # 空頭：追蹤最低價
                     trough = min(self._trail_peak.get(sym, pos.entry_price), lo)
                     self._trail_peak[sym] = trough
                     new_sl = trough + trail_dist
-                    if new_sl < pos.stop_loss:
+                    # 同上，空頭需停損點低於進場價才啟動
+                    if new_sl < pos.stop_loss and new_sl < pos.entry_price:
                         pos.stop_loss = new_sl
 
                 # 用 High/Low 判斷日內是否觸及 SL/TP，TP 優先
@@ -210,6 +212,8 @@ class Backtester:
                     score_val = (int(score_ser.loc[dt])
                                  if score_ser is not None and dt in score_ser.index
                                  else 1)
+                    if score_val < config.MIN_ENTRY_SCORE:
+                        continue
                     candidates.append((sym, sig_val, score_val))
 
                 # Phase 2：共識分數由高到低排序，3 分（三策略同向）優先開倉

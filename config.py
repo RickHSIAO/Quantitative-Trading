@@ -98,6 +98,7 @@ SUPERTREND_MULTIPLIER  = 3.0
 EMA_PERIOD             = 200
 EMA_FAST_PERIODS       = [20, 50, 100]   # 搭配 EMA200 組成 4 根 EMA 比例分數
 EMA_MIN_SCORE          = 2               # 允許進場的最低 EMA 比例分數（4 根中至少幾根）
+MIN_ENTRY_SCORE        = 4               # 進場最低信心分數（子策略共識 + EMA 分數，最高 7）
 BB_PERIOD              = 20
 BB_STD                 = 2.0
 RSI_PERIOD             = 14

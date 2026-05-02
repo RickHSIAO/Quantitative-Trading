@@ -12,7 +12,8 @@
       "Bash(Select-Object FullName)",
       "Bash(Sort-Object FullName)",
       "PowerShell(Get-ChildItem -Path \"f:\\\\RickHSIAO\\\\Python\\\\量化交易\" -MaxDepth 1 -File | Where-Object {$_.Extension -eq '.py' -or $_.Extension -eq '.ipynb'})",
-      "PowerShell(Get-ChildItem -Path \"f:\\\\RickHSIAO\\\\Python\\\\量化交易\" -File | Where-Object {$_.Extension -match '\\\\.\\(py|ipynb\\)$'})"
+      "PowerShell(Get-ChildItem -Path \"f:\\\\RickHSIAO\\\\Python\\\\量化交易\" -File | Where-Object {$_.Extension -match '\\\\.\\(py|ipynb\\)$'})",
+      "Bash(.venvScriptspython.exe -c ' *)"
     ]
   }
 }
