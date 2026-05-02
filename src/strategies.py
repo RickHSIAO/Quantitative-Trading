@@ -126,6 +126,15 @@ def combine_signals(df: pd.DataFrame,
     bull_env = bull_ema >= ema_min_score
     bear_env = bear_ema >= ema_min_score
 
+    # EMA200 斜率濾網：即使 EMA 分數達標，若 EMA200 向下彎且價格跌破 EMA50，
+    # 代表趨勢已在轉空，提早封鎖做多；反之封鎖做空。
+    if 'ema200' in df.columns and 'ema50' in df.columns:
+        ema200_slope = df['ema200'].diff(config.EMA200_SLOPE_PERIOD)
+        early_bear = (df['Close'] < df['ema50']) & (ema200_slope < 0)
+        early_bull = (df['Close'] > df['ema50']) & (ema200_slope > 0)
+        bull_env = bull_env & ~early_bear
+        bear_env = bear_env & ~early_bull
+
     any_long  = (tf == LONG)  | (vp == LONG)  | (bb == LONG)
     any_short = (tf == SHORT) | (vp == SHORT) | (bb == SHORT)
 

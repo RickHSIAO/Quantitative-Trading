@@ -101,6 +101,7 @@ SUPERTREND_MULTIPLIER  = 3.0
 EMA_PERIOD             = 200
 EMA_FAST_PERIODS       = [20, 50, 100]   # 搭配 EMA200 組成 4 根 EMA 比例分數
 EMA_MIN_SCORE          = 2               # 允許進場的最低 EMA 比例分數（4 根中至少幾根）
+EMA200_SLOPE_PERIOD    = 10              # EMA200 斜率回望期（K 棒數）
 MIN_ENTRY_SCORE        = 4               # 進場最低信心分數（子策略共識 + EMA 分數，最高 7）
 BB_PERIOD              = 20
 BB_STD                 = 2.0
@@ -141,7 +142,7 @@ BYBIT_DEMO       = True   # 模擬帳號（Demo Trading）設 True
 BYBIT_TESTNET    = False  # 測試網（testnet.bybit.com）才設 True；一般模擬帳號設 False
 
 # ─── 系統版號 ────────────────────────────────────────
-SYSTEM_VERSION  = 'v1.0'
+SYSTEM_VERSION  = 'v1.1'
 
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'
