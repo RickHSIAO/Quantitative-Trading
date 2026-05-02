@@ -21,8 +21,8 @@ const string GC = "共用 / 風控"
 st_period   = input.int  (10,    "ATR 期間",                  group=G1)
 st_mult     = input.float(3.0,   "乘數",                       group=G1, step=0.1)
 
-vp_lookback = input.int  (60,    "回顧 K 棒數（建議 ≤120）",   group=G2, minval=20, maxval=120)
-vp_bins     = input.int  (30,    "分箱數",                     group=G2, minval=10, maxval=50)
+vp_lookback = input.int  (252,   "回顧 K 棒數（建議 ≤252）",   group=G2, minval=20, maxval=300)
+vp_bins     = input.int  (80,    "分箱數",                     group=G2, minval=10, maxval=100)
 vp_tol_pct  = input.float(1.5,   "POC 容差 %",                 group=G2, step=0.1)
 
 bb_period   = input.int  (20,    "期間",                       group=G3)
@@ -163,7 +163,6 @@ if is_long and not na(entry_sl_dist)
     float tp     = strategy.position_avg_price + entry_sl_dist * rr_ratio
     if sig == -1
         strategy.close("Long", comment="Flip↓")
-        strategy.entry("Short", strategy.short, comment="Flip↓")
     else
         strategy.exit("LX", "Long", stop=dyn_sl, limit=tp, comment="Exit")
 
@@ -172,7 +171,6 @@ if is_short and not na(entry_sl_dist)
     float tp     = strategy.position_avg_price - entry_sl_dist * rr_ratio
     if sig == 1
         strategy.close("Short", comment="Flip↑")
-        strategy.entry("Long", strategy.long, comment="Flip↑")
     else
         strategy.exit("SX", "Short", stop=dyn_sl, limit=tp, comment="Exit")
 

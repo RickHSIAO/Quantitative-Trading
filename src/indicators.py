@@ -1,11 +1,29 @@
 """
 Technical indicators — pure numpy/pandas, no external TA library needed.
+All smoothing uses Wilder's RMA with SMA seed to match TradingView ta.rma / ta.atr / ta.rsi.
 """
 import numpy as np
 import pandas as pd
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
+
+
+# ─── Wilder's RMA（對齊 TradingView ta.rma）────────────────────────────────
+def _rma(values: np.ndarray, period: int) -> np.ndarray:
+    """
+    Wilder's Running Moving Average：前 period 根用 SMA 作種子，
+    之後 rma = (prev * (period-1) + cur) / period。
+    與 TradingView ta.rma / ta.atr / ta.rsi 內部平滑完全一致。
+    """
+    n = len(values)
+    result = np.full(n, np.nan)
+    if n < period:
+        return result
+    result[period - 1] = np.nanmean(values[:period])
+    for i in range(period, n):
+        result[i] = (result[i - 1] * (period - 1) + values[i]) / period
+    return result
 
 
 # ─── ATR ────────────────────────────────────────────────────────────────────
@@ -17,9 +35,8 @@ def compute_atr(high: pd.Series, low: pd.Series, close: pd.Series,
         (high - prev_close).abs(),
         (low  - prev_close).abs(),
     ], axis=1).max(axis=1)
-    # Wilder smoothing
-    atr = tr.ewm(alpha=1 / period, adjust=False).mean()
-    return atr
+    atr_arr = _rma(tr.values, period)
+    return pd.Series(atr_arr, index=close.index)
 
 
 # ─── EMA ────────────────────────────────────────────────────────────────────
@@ -35,21 +52,17 @@ def compute_supertrend(df: pd.DataFrame,
     """
     Returns df with columns: supertrend, supertrend_dir
     supertrend_dir: +1 = bullish, -1 = bearish
+    ATR uses Wilder's RMA with SMA seed (matches ta.supertrend in Pine Script).
     """
     h, l, c = df['High'].values, df['Low'].values, df['Close'].values
     n = len(c)
 
-    # ATR (Wilder)
     tr = np.empty(n)
     tr[0] = h[0] - l[0]
     for i in range(1, n):
         tr[i] = max(h[i] - l[i], abs(h[i] - c[i-1]), abs(l[i] - c[i-1]))
 
-    atr = np.empty(n)
-    atr[0] = tr[0]
-    alpha = 1.0 / period
-    for i in range(1, n):
-        atr[i] = alpha * tr[i] + (1 - alpha) * atr[i-1]
+    atr = _rma(tr, period)
 
     hl2 = (h + l) / 2.0
     basic_upper = hl2 + multiplier * atr
@@ -58,18 +71,16 @@ def compute_supertrend(df: pd.DataFrame,
     final_upper = basic_upper.copy()
     final_lower = basic_lower.copy()
     direction   = np.ones(n, dtype=int)
-    direction[0] = 1 if c[0] >= hl2[0] else -1
-    st_line     = np.empty(n)
 
     for i in range(1, n):
-        # Ratchet bands
+        if np.isnan(atr[i]) or np.isnan(atr[i - 1]):
+            continue
         final_upper[i] = (basic_upper[i]
                           if basic_upper[i] < final_upper[i-1] or c[i-1] > final_upper[i-1]
                           else final_upper[i-1])
         final_lower[i] = (basic_lower[i]
                           if basic_lower[i] > final_lower[i-1] or c[i-1] < final_lower[i-1]
                           else final_lower[i-1])
-        # Direction flip
         if direction[i-1] == -1:
             direction[i] = 1 if c[i] > final_upper[i] else -1
         else:
@@ -92,7 +103,7 @@ def compute_bollinger(df: pd.DataFrame,
     std   = roll.std(ddof=0)
     upper = mid + std_mult * std
     lower = mid - std_mult * std
-    bw    = (upper - lower) / mid.replace(0, np.nan) * 100  # bandwidth %
+    bw    = (upper - lower) / mid.replace(0, np.nan) * 100
 
     out = df.copy()
     out['bb_upper'] = upper
@@ -105,19 +116,21 @@ def compute_bollinger(df: pd.DataFrame,
 # ─── RSI ────────────────────────────────────────────────────────────────────
 def compute_rsi(df: pd.DataFrame, period: int = config.RSI_PERIOD) -> pd.DataFrame:
     delta = df['Close'].diff()
-    gain  = delta.clip(lower=0)
-    loss  = (-delta).clip(lower=0)
-    alpha = 1.0 / period
-    avg_g = gain.ewm(alpha=alpha, adjust=False).mean()
-    avg_l = loss.ewm(alpha=alpha, adjust=False).mean()
-    rs  = avg_g / avg_l.replace(0, np.nan)
-    rsi = 100 - 100 / (1 + rs)
-    # avg_l==0 (純上漲) → RSI=100；avg_g==0 (純下跌) → RSI=0
-    rsi = rsi.where(avg_l != 0, 100.0)
-    rsi = rsi.where(avg_g != 0, 0.0)
+    gain  = delta.clip(lower=0).values
+    loss  = (-delta).clip(lower=0).values
+
+    avg_g = _rma(gain, period)
+    avg_l = _rma(loss, period)
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        rs  = np.where(avg_l != 0, avg_g / avg_l, np.nan)
+        rsi = np.where(np.isnan(rs), np.nan,
+              np.where(avg_l == 0, 100.0,
+              np.where(avg_g == 0,   0.0,
+              100 - 100 / (1 + rs))))
 
     out = df.copy()
-    out['rsi'] = rsi
+    out['rsi'] = pd.Series(rsi, index=df.index)
     return out
 
 
@@ -127,7 +140,7 @@ def compute_volume_profile(df: pd.DataFrame,
                            lookback: int = config.VP_LOOKBACK) -> pd.DataFrame:
     """
     Rolling VPVR: POC, Value Area High (VAH), Value Area Low (VAL).
-    Only computed where lookback bars are available.
+    Bin assignment uses floor/ceil to match TradingView f_rolling_poc exactly.
     """
     out = df.copy()
     out['poc'] = np.nan
@@ -139,33 +152,32 @@ def compute_volume_profile(df: pd.DataFrame,
     volumes = df['Volume'].values
     n       = len(df)
 
-    for i in range(lookback, n):
-        s   = max(0, i - lookback)
-        lo  = lows[s:i]
-        hi  = highs[s:i]
-        vol = volumes[s:i]
+    for i in range(lookback - 1, n):
+        s   = max(0, i - lookback + 1)   # 含當前 K 棒，共 lookback 根（對齊 TradingView）
+        lo  = lows[s:i + 1]
+        hi  = highs[s:i + 1]
+        vol = volumes[s:i + 1]
 
-        pmin, pmax = lo.min(), hi.max()
-        if pmax < pmin or vol.sum() == 0:
+        plo = lo.min()
+        phi = hi.max()
+        bsize = (phi - plo) / bins
+        if bsize <= 0 or vol.sum() == 0:
             continue
 
-        edges       = np.linspace(pmin, pmax, bins + 1)
         vol_profile = np.zeros(bins)
 
-        # Distribute each candle's volume across overlapping bins
-        starts = np.searchsorted(edges[1:], lo,  side='left')
-        ends   = np.searchsorted(edges[:-1], hi, side='right')
+        # TradingView-aligned：sb=floor, eb=ceil，含頭含尾
+        sb_arr = np.clip(np.floor((lo - plo) / bsize).astype(int), 0, bins - 1)
+        eb_arr = np.clip(np.ceil ((hi - plo) / bsize).astype(int), 0, bins - 1)
         for j in range(len(lo)):
-            sb, eb = starts[j], min(ends[j], bins)
-            nb = eb - sb
-            if nb > 0:
-                vol_profile[sb:eb] += vol[j] / nb
+            sb, eb = int(sb_arr[j]), int(eb_arr[j])
+            nb = eb - sb + 1
+            vol_profile[sb:eb + 1] += vol[j] / nb
 
-        poc_idx = int(np.argmax(vol_profile))
-        centers = (edges[:-1] + edges[1:]) / 2
-        out.iat[i, out.columns.get_loc('poc')] = centers[poc_idx]
+        poc_idx   = int(np.argmax(vol_profile))
+        poc_price = plo + (poc_idx + 0.5) * bsize
+        out.iat[i, out.columns.get_loc('poc')] = poc_price
 
-        # Value Area = top 70% of volume
         total   = vol_profile.sum()
         sorted_ = np.argsort(vol_profile)[::-1]
         cum, va = 0.0, []
@@ -174,6 +186,7 @@ def compute_volume_profile(df: pd.DataFrame,
             va.append(idx)
             if cum >= 0.70 * total:
                 break
+        centers = plo + (np.arange(bins) + 0.5) * bsize
         out.iat[i, out.columns.get_loc('vah')] = centers[max(va)]
         out.iat[i, out.columns.get_loc('val')] = centers[min(va)]
 
