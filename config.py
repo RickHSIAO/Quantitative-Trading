@@ -112,7 +112,7 @@ VP_LOOKBACK            = 252  # 1年
 # ─── 風控參數 ────────────────────────────────────────
 RISK_REWARD_RATIO      = 3.0    # 1:3
 KELLY_FRACTION         = 0.25   # 1/4 Kelly
-ATR_STOP_MULTIPLIER    = 2.0
+ATR_STOP_MULTIPLIER    = 3.0
 INITIAL_CAPITAL        = 100_000.0  # USD
 MAX_RISK_PCT           = 0.02   # 單筆最大虧損佔總資金 2%（Kelly risk_amount 上限）
 MAX_POSITION_PCT       = 0.10   # 單筆持倉市值上限 10%（position_size max_qty 上限）
