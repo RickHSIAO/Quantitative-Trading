@@ -104,8 +104,6 @@ BB_STD                 = 2.0
 RSI_PERIOD             = 14
 ATR_PERIOD             = 14
 ADX_PERIOD             = 14
-ADX_TREND_THRESH       = 25   # ADX > 25 → 趨勢市，啟用 Supertrend，禁用 BB
-ADX_CHOPPY_THRESH      = 20   # ADX < 20 → 盤整市，啟用 BB，禁用 Supertrend
 VOLUME_BINS            = 80
 VP_LOOKBACK            = 252  # 1年
 
