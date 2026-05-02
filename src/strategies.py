@@ -111,24 +111,41 @@ def combine_signals(df: pd.DataFrame,
                     tf: pd.Series, vp: pd.Series, bb: pd.Series,
                     ema_min_score: int = config.EMA_MIN_SCORE) -> pd.Series:
     """
-    EMA 比例分數環境濾網：
-    多頭/空頭分數 = 收盤高/低於幾根 EMA（EMA20/50/100/200）。
-    達到 ema_min_score 根（預設 2/4）才開放該方向的進場訊號。
+    濾網一：ADX 市場狀態分流（武器選擇）
+      ADX > ADX_TREND_THRESH  → 趨勢市：禁用 BB 均值回歸，保留 Supertrend
+      ADX < ADX_CHOPPY_THRESH → 盤整市：禁用 Supertrend，保留 BB 均值回歸
+      兩閾值之間（灰色地帶）：三種策略均允許，VP 策略不受 ADX 限制
 
-    分數含義：
-      4 = 完美多頭排列（收盤全數高於 EMA20>50>100>200）
-      3 = 強多頭環境
-      2 = 溫和多頭環境（預設門檻）
-      1 = 混沌，禁止進場
-      0 = 完全相反方向
+    濾網二：EMA 比例分數環境濾網（方向確認）
+      多頭/空頭分數 = 收盤高/低於幾根 EMA（EMA20/50/100/200）
+      達到 ema_min_score 根（預設 2/4）才開放該方向的進場訊號
+
+      分數含義：
+        4 = 完美多頭排列
+        3 = 強多頭環境
+        2 = 溫和多頭環境（預設門檻）
+        1 = 混沌，禁止進場
+        0 = 完全相反方向
     """
-    bull_ema, bear_ema = _ema_scores(df)
+    # 濾網一：ADX 武器分流
+    if 'adx' in df.columns:
+        trend_mkt  = df['adx'] > config.ADX_TREND_THRESH
+        choppy_mkt = df['adx'] < config.ADX_CHOPPY_THRESH
+        tf_filtered = tf.copy()
+        bb_filtered = bb.copy()
+        tf_filtered[choppy_mkt] = FLAT   # 盤整市禁用趨勢策略
+        bb_filtered[trend_mkt]  = FLAT   # 趨勢市禁用均值回歸策略
+    else:
+        tf_filtered = tf
+        bb_filtered = bb
 
+    # 濾網二：EMA 比例分數方向確認
+    bull_ema, bear_ema = _ema_scores(df)
     bull_env = bull_ema >= ema_min_score
     bear_env = bear_ema >= ema_min_score
 
-    any_long  = (tf == LONG)  | (vp == LONG)  | (bb == LONG)
-    any_short = (tf == SHORT) | (vp == SHORT) | (bb == SHORT)
+    any_long  = (tf_filtered == LONG)  | (vp == LONG)  | (bb_filtered == LONG)
+    any_short = (tf_filtered == SHORT) | (vp == SHORT) | (bb_filtered == SHORT)
 
     result = pd.Series(FLAT, index=tf.index, dtype=int)
     result[bull_env & any_long]  = LONG

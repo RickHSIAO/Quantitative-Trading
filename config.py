@@ -33,8 +33,8 @@ TW_STOCKS_POOL = [
     '2408.TW','2406.TW','3481.TW','6415.TW','6669.TW','6770.TW','6491.TW',
     '6533.TW','3008.TW','3037.TW','3017.TW','3006.TW','3016.TW','2376.TW',
     '2377.TW','2352.TW','2353.TW','2356.TW','2360.TW','2362.TW','2363.TW',
-    '5388.TW','6239.TW','6271.TW','6278.TW','6285.TW','6289.TW','6290.TW',
-    '5347.TW','3443.TW',
+    '6239.TW','6271.TW','6278.TW','6285.TW','6289.TW','6290.TW',
+    '5347.TW','3443.TW','2327.TW',
     # 金融
     '2882.TW','2881.TW','2886.TW','2884.TW','2891.TW','2892.TW','2880.TW',
     '2801.TW','5880.TW','2855.TW','2845.TW','5876.TW','2836.TW','2809.TW',
@@ -102,6 +102,9 @@ BB_PERIOD              = 20
 BB_STD                 = 2.0
 RSI_PERIOD             = 14
 ATR_PERIOD             = 14
+ADX_PERIOD             = 14
+ADX_TREND_THRESH       = 25   # ADX > 25 → 趨勢市，啟用 Supertrend，禁用 BB
+ADX_CHOPPY_THRESH      = 20   # ADX < 20 → 盤整市，啟用 BB，禁用 Supertrend
 VOLUME_BINS            = 80
 VP_LOOKBACK            = 252  # 1年
 

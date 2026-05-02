@@ -94,6 +94,46 @@ def compute_supertrend(df: pd.DataFrame,
     return out
 
 
+# ─── ADX ────────────────────────────────────────────────────────────────────
+def compute_adx(df: pd.DataFrame, period: int = config.ADX_PERIOD) -> pd.DataFrame:
+    """
+    ADX + ±DI — Wilder's RMA with SMA seed, matches TradingView ta.adx / ta.dmi.
+    Adds columns: adx, plus_di, minus_di
+    """
+    h, l, c = df['High'].values, df['Low'].values, df['Close'].values
+    n = len(h)
+
+    tr       = np.empty(n)
+    plus_dm  = np.zeros(n)
+    minus_dm = np.zeros(n)
+
+    tr[0] = h[0] - l[0]
+    for i in range(1, n):
+        tr[i] = max(h[i] - l[i], abs(h[i] - c[i-1]), abs(l[i] - c[i-1]))
+        up   = h[i] - h[i-1]
+        down = l[i-1] - l[i]
+        plus_dm[i]  = up   if up > down and up > 0   else 0.0
+        minus_dm[i] = down if down > up and down > 0 else 0.0
+
+    tr_rma  = _rma(tr,       period)
+    pdm_rma = _rma(plus_dm,  period)
+    mdm_rma = _rma(minus_dm, period)
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        plus_di  = np.where(tr_rma > 0, 100.0 * pdm_rma / tr_rma, 0.0)
+        minus_di = np.where(tr_rma > 0, 100.0 * mdm_rma / tr_rma, 0.0)
+        denom    = plus_di + minus_di
+        dx       = np.where(denom > 0, 100.0 * np.abs(plus_di - minus_di) / denom, 0.0)
+
+    adx = _rma(dx, period)
+
+    out = df.copy()
+    out['adx']      = pd.Series(adx,      index=df.index)
+    out['plus_di']  = pd.Series(plus_di,  index=df.index)
+    out['minus_di'] = pd.Series(minus_di, index=df.index)
+    return out
+
+
 # ─── Bollinger Bands ─────────────────────────────────────────────────────────
 def compute_bollinger(df: pd.DataFrame,
                       period: int = config.BB_PERIOD,
@@ -202,6 +242,7 @@ def compute_all_indicators(df: pd.DataFrame, include_vp: bool = True) -> pd.Data
     df = compute_bollinger(df)
     df = compute_rsi(df)
     df['atr'] = compute_atr(df['High'], df['Low'], df['Close'], config.ATR_PERIOD)
+    df = compute_adx(df)
     if include_vp:
         df = compute_volume_profile(df)
     return df
