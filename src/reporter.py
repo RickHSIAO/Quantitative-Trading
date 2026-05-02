@@ -581,25 +581,26 @@ def _write_summary(wb: Workbook, metrics: dict, equity_curve: list[dict]):
     # ── 資金曲線圖 ────────────────────────────────────────────────────────
     if equity_curve:
         eq_df    = pd.DataFrame(equity_curve)
-        eq_start = ws.max_row + 3
+        # 確保資料表列在圖表浮動區（D4 往下約 34 列）之後，避免疊蓋
+        eq_start = max(ws.max_row + 3, 38)
 
-        eq_headers = ['Date', '總資金(Equity)', '購買艙位資金', '剩餘資金', '獲利(虧損)']
+        eq_headers = ['Date', '總資金(Equity)', '已配置資金', '剩餘現金', '累計損益(USD)']
         for j, h in enumerate(eq_headers):
-            cell = ws.cell(eq_start, 4 + j, h)
+            cell = ws.cell(eq_start, 1 + j, h)   # A–E 欄
             cell.font      = BOLD
             cell.alignment = CENTER
             cell.border    = THIN
 
         for i, rec in enumerate(eq_df.itertuples()):
             row = eq_start + 1 + i
-            ws.cell(row, 4, rec.date)
-            ws.cell(row, 5, rec.capital)
-            ws.cell(row, 6, getattr(rec, 'allocated',  0))
-            ws.cell(row, 7, getattr(rec, 'remaining',  rec.capital))
+            ws.cell(row, 1, rec.date)
+            ws.cell(row, 2, rec.capital)
+            ws.cell(row, 3, getattr(rec, 'allocated', 0))
+            ws.cell(row, 4, getattr(rec, 'remaining', rec.capital))
             pnl_val = getattr(rec, 'pnl', 0)
-            cell = ws.cell(row, 8, pnl_val)
+            cell = ws.cell(row, 5, pnl_val)
             cell.fill = WIN_FILL if pnl_val >= 0 else LOSS_FILL
-            for col in range(4, 9):
+            for col in range(1, 6):
                 ws.cell(row, col).alignment = CENTER
                 ws.cell(row, col).border    = THIN
 
@@ -610,11 +611,15 @@ def _write_summary(wb: Workbook, metrics: dict, equity_curve: list[dict]):
         chart.width  = 32
         chart.y_axis.title = 'Capital (USD)'
         chart.x_axis.title = 'Date'
-        data_ref = Reference(ws, min_col=5, min_row=eq_start,
+        data_ref = Reference(ws, min_col=2, min_row=eq_start,   # B 欄 = 總資金
+                             max_row=eq_start + len(eq_df))
+        cat_ref  = Reference(ws, min_col=1, min_row=eq_start + 1,
                              max_row=eq_start + len(eq_df))
         chart.add_data(data_ref, titles_from_data=True)
-        ws.add_chart(chart, 'D4')
+        chart.set_categories(cat_ref)
+        ws.add_chart(chart, 'D4')   # 浮動在 KV 指標右側
 
+    _auto_width(ws)
     return ws
 
 
