@@ -4,6 +4,9 @@ Signal values: +1 = LONG, -1 = SHORT, 0 = FLAT
 """
 import pandas as pd
 import numpy as np
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import config
 
 LONG  =  1
 SHORT = -1
@@ -83,25 +86,51 @@ def bollinger_reversion_signals(df: pd.DataFrame,
     return sig
 
 
+# ─── EMA 比例分數 ─────────────────────────────────────────────────────────────
+def _ema_scores(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """
+    計算多空 EMA 比例分數（各 0–4）。
+    讀取 df 中所有 ema{p} 欄位（EMA20/50/100/200）：
+      收盤高於該 EMA → 多頭 +1
+      收盤低於該 EMA → 空頭 +1
+    分數越高代表多空排列越整齊，環境越強。
+    """
+    periods = config.EMA_FAST_PERIODS + [config.EMA_PERIOD]   # [20, 50, 100, 200]
+    bull = pd.Series(0, index=df.index, dtype=int)
+    bear = pd.Series(0, index=df.index, dtype=int)
+    for p in periods:
+        col = f'ema{p}'
+        if col in df.columns:
+            bull += (df['Close'] > df[col]).astype(int)
+            bear += (df['Close'] < df[col]).astype(int)
+    return bull, bear
+
+
 # ─── 主從濾網合併 ─────────────────────────────────────────────────────────────
 def combine_signals(df: pd.DataFrame,
-                    tf: pd.Series, vp: pd.Series, bb: pd.Series) -> pd.Series:
+                    tf: pd.Series, vp: pd.Series, bb: pd.Series,
+                    ema_min_score: int = config.EMA_MIN_SCORE) -> pd.Series:
     """
-    以 EMA200 趨勢方向為環境濾網（主），各策略只在大方向一致時才允許進場（從）。
-    - 多頭環境（Close > EMA200）：只接受 LONG 訊號
-    - 空頭環境（Close < EMA200）：只接受 SHORT 訊號
+    EMA 比例分數環境濾網：
+    多頭/空頭分數 = 收盤高/低於幾根 EMA（EMA20/50/100/200）。
+    達到 ema_min_score 根（預設 2/4）才開放該方向的進場訊號。
+
+    分數含義：
+      4 = 完美多頭排列（收盤全數高於 EMA20>50>100>200）
+      3 = 強多頭環境
+      2 = 溫和多頭環境（預設門檻）
+      1 = 混沌，禁止進場
+      0 = 完全相反方向
     """
-    result = pd.Series(FLAT, index=tf.index, dtype=int)
+    bull_ema, bear_ema = _ema_scores(df)
 
-    if 'ema200' not in df.columns:
-        return result
-
-    bull_env = df['Close'] > df['ema200']
-    bear_env = df['Close'] < df['ema200']
+    bull_env = bull_ema >= ema_min_score
+    bear_env = bear_ema >= ema_min_score
 
     any_long  = (tf == LONG)  | (vp == LONG)  | (bb == LONG)
     any_short = (tf == SHORT) | (vp == SHORT) | (bb == SHORT)
 
+    result = pd.Series(FLAT, index=tf.index, dtype=int)
     result[bull_env & any_long]  = LONG
     result[bear_env & any_short] = SHORT
     return result
@@ -113,12 +142,17 @@ def generate_all_signals(df: pd.DataFrame) -> dict[str, pd.Series]:
     bb       = bollinger_reversion_signals(df)
     combined = combine_signals(df, tf, vp, bb)
 
-    # 共識度計分：計算有幾個子策略的方向與最終訊號一致（1~3 分）
-    long_score  = (tf == LONG).astype(int)  + (vp == LONG).astype(int)  + (bb == LONG).astype(int)
-    short_score = (tf == SHORT).astype(int) + (vp == SHORT).astype(int) + (bb == SHORT).astype(int)
+    # 子策略共識分數（1–3）
+    long_strat  = (tf == LONG).astype(int)  + (vp == LONG).astype(int)  + (bb == LONG).astype(int)
+    short_strat = (tf == SHORT).astype(int) + (vp == SHORT).astype(int) + (bb == SHORT).astype(int)
+
+    # EMA 比例分數（0–4）
+    bull_ema, bear_ema = _ema_scores(df)
+
+    # 總分 = 子策略分數（1–3）+ EMA 對齊分數（0–4），最高 7 分
     score = pd.Series(0, index=combined.index, dtype=int)
-    score[combined == LONG]  = long_score[combined == LONG]
-    score[combined == SHORT] = short_score[combined == SHORT]
+    score[combined == LONG]  = long_strat[combined == LONG]  + bull_ema[combined == LONG]
+    score[combined == SHORT] = short_strat[combined == SHORT] + bear_ema[combined == SHORT]
 
     return {
         'trend':    tf,
@@ -126,4 +160,6 @@ def generate_all_signals(df: pd.DataFrame) -> dict[str, pd.Series]:
         'bb':       bb,
         'combined': combined,
         'score':    score,
+        'ema_bull': bull_ema,
+        'ema_bear': bear_ema,
     }

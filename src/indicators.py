@@ -196,6 +196,8 @@ def compute_volume_profile(df: pd.DataFrame,
 # ─── Compute All ─────────────────────────────────────────────────────────────
 def compute_all_indicators(df: pd.DataFrame, include_vp: bool = True) -> pd.DataFrame:
     df = compute_supertrend(df)
+    for p in config.EMA_FAST_PERIODS:
+        df[f'ema{p}'] = compute_ema(df['Close'], p)
     df['ema200'] = compute_ema(df['Close'], config.EMA_PERIOD)
     df = compute_bollinger(df)
     df = compute_rsi(df)
