@@ -31,7 +31,9 @@ bb_bw_mult  = input.float(1.5,   "帶寬過濾乘數",               group=G3, s
 rsi_os      = input.int  (30,    "RSI 超賣門檻",               group=G3)
 rsi_ob      = input.int  (70,    "RSI 超買門檻",               group=G3)
 
-ema_len     = input.int  (200,   "EMA 環境濾網期間",           group=GC)
+// EMA 環境濾網：固定使用 EMA20/50/100/200（對應 Python EMA_FAST_PERIODS + EMA_PERIOD）
+// ema_min_score：多頭/空頭各需達到幾根 EMA 門檻才開放進場（預設 2/4）
+ema_min_score = input.int  (2,    "EMA 環境最低分數（1–4）",   group=GC, minval=1, maxval=4)
 rsi_len     = input.int  (14,    "RSI 期間",                   group=GC)
 atr_len     = input.int  (14,    "ATR 止損期間",               group=GC)
 atr_sl_mult = input.float(2.0,   "ATR 止損乘數",               group=GC, step=0.1)
@@ -42,7 +44,10 @@ use_short   = input.bool (true,  "允許做空",                   group=GC)
 // 基礎指標
 // ══════════════════════════════════════════════════════════════════════════════
 [st_line, st_dir]          = ta.supertrend(st_mult, st_period)
-ema200                     = ta.ema(close, ema_len)
+ema20                      = ta.ema(close, 20)
+ema50                      = ta.ema(close, 50)
+ema100                     = ta.ema(close, 100)
+ema200                     = ta.ema(close, 200)
 [bb_upper, bb_mid, bb_low] = ta.bb(close, bb_period, bb_std_mult)
 bb_bw                      = (bb_upper - bb_low) / bb_mid * 100
 bw_avg50                   = ta.sma(bb_bw, 50)
@@ -102,29 +107,46 @@ else if near_poc and prev_blw and rsi > 40
     sig_vp := -1
 
 // 策略3：Bollinger 均值回歸 + ATR 帶寬過濾
-bool normal_vol = bb_bw < bw_avg50 * bb_bw_mult
-bool ready      = bar_index >= 50
+bool normal_vol     = bb_bw < bw_avg50 * bb_bw_mult
+bool has_bw_history = bar_index >= 50   // 前 BB_PERIOD+50 棒暖身完成
 int sig_bb = 0
-if close <= bb_low and rsi < rsi_os and normal_vol and ready
+if close <= bb_low and rsi < rsi_os and normal_vol and has_bw_history
     sig_bb := 1
-else if close >= bb_upper and rsi > rsi_ob and normal_vol and ready
+else if close >= bb_upper and rsi > rsi_ob and normal_vol and has_bw_history
     sig_bb := -1
 
 // ══════════════════════════════════════════════════════════════════════════════
-// EMA200 環境濾網合併（主從架構）
+// EMA 比例分數環境濾網（對應 Python _ema_scores + combine_signals）
+// 多頭/空頭分數：收盤高/低於幾根 EMA（20/50/100/200），各 0–4 分
 // ══════════════════════════════════════════════════════════════════════════════
-bool bull_env  = close > ema200
-bool bear_env  = close < ema200
+int bull_score = (close > ema20  ? 1 : 0) + (close > ema50  ? 1 : 0) +
+                (close > ema100 ? 1 : 0) + (close > ema200 ? 1 : 0)
+int bear_score = (close < ema20  ? 1 : 0) + (close < ema50  ? 1 : 0) +
+                (close < ema100 ? 1 : 0) + (close < ema200 ? 1 : 0)
+
+bool bull_env  = bull_score >= ema_min_score
+bool bear_env  = bear_score >= ema_min_score
 bool any_long  = sig_tf == 1  or sig_vp == 1  or sig_bb == 1
 bool any_short = sig_tf == -1 or sig_vp == -1 or sig_bb == -1
 
+// 合併訊號（對應 Python combine_signals Bug 2 修正）
+// 優先設 LONG，SHORT 再覆蓋；衝突時以 EMA 分數決勝，完全相同則 FLAT
 int sig = 0
 if bull_env and any_long
     sig := 1
-else if bear_env and any_short and use_short
+if bear_env and any_short and use_short
     sig := -1
 
-// 共識分數（1~3 分，越高優先度越高）
+// 衝突解消：兩方向 EMA 門檻同時達標且子策略訊號方向相反
+bool conflict = bull_env and any_long and bear_env and any_short and use_short
+if conflict
+    if bull_score > bear_score
+        sig := 1
+    else if bull_score == bear_score
+        sig := 0
+    // bear_score > bull_score → sig 維持 -1
+
+// 共識分數（1–3 分，越高優先度越高）
 int score_l = (sig_tf == 1  ? 1 : 0) + (sig_vp == 1  ? 1 : 0) + (sig_bb == 1  ? 1 : 0)
 int score_s = (sig_tf == -1 ? 1 : 0) + (sig_vp == -1 ? 1 : 0) + (sig_bb == -1 ? 1 : 0)
 int score = sig == 1 ? score_l : sig == -1 ? score_s : 0
@@ -177,15 +199,17 @@ if is_short and not na(entry_sl_dist)
 // ══════════════════════════════════════════════════════════════════════════════
 // 視覺化
 // ══════════════════════════════════════════════════════════════════════════════
-plot(ema200,    "EMA200",    color.new(color.orange, 0), 2)
+plot(ema20,    "EMA20",    color.new(color.yellow, 65), 1)
+plot(ema50,    "EMA50",    color.new(color.orange, 50), 1)
+plot(ema100,   "EMA100",   color.new(color.orange, 20), 1)
+plot(ema200,   "EMA200",   color.new(color.orange,  0), 2)
 
-// 修正：避免跨行三元運算子，先賦值再傳入
 color st_color = st_dir == 1 ? color.new(color.teal, 20) : color.new(color.red, 20)
-plot(st_line,   "Supertrend", st_color, 1)
+plot(st_line,  "Supertrend", st_color, 1)
 
-plot(poc,       "POC",       color.new(color.purple, 30), 1, plot.style_circles)
-plot(bb_upper,  "BB Upper",  color.new(color.blue, 65))
-plot(bb_low,    "BB Lower",  color.new(color.blue, 65))
+plot(poc,      "POC",      color.new(color.purple, 30), 1, plot.style_circles)
+plot(bb_upper, "BB Upper", color.new(color.blue, 65))
+plot(bb_low,   "BB Lower", color.new(color.blue, 65))
 
 plotshape(sig ==  1 and strategy.position_size[1] == 0, "做多訊號",
           shape.triangleup,   location.belowbar, color.lime, size=size.small)
@@ -201,23 +225,29 @@ if score >= 2 and sig != 0 and sig != sig[1]
               style     = sig == 1 ? label.style_label_up : label.style_label_down,
               size      = size.tiny)
 
-// 修正：環境背景色先賦值，避免跨行三元運算子語法錯誤
-color env_bg = bull_env ? color.new(color.green, 96) : bear_env ? color.new(color.red, 96) : na
+// 環境背景：依 EMA 分數強弱顯示深淺（≥3 較深，=2 較淡）
+color env_bg = bull_score >= 3 ? color.new(color.green, 93) :
+               bull_score == 2 ? color.new(color.green, 96) :
+               bear_score >= 3 ? color.new(color.red,   93) :
+               bear_score == 2 ? color.new(color.red,   96) : na
 bgcolor(env_bg, title="環境背景")
 
-// ── 右上角子策略狀態表
-var table tbl = table.new(position.top_right, 3, 4,
+// ── 右上角子策略狀態表（新增 EMA 分數列）
+var table tbl = table.new(position.top_right, 3, 5,
                           bgcolor=color.new(color.black, 55), border_width=1)
 if barstate.islast
-    table.cell(tbl, 0, 0, "策略",       text_color=color.silver, text_size=size.tiny)
-    table.cell(tbl, 1, 0, "多  ▲",     text_color=color.lime,   text_size=size.tiny)
-    table.cell(tbl, 2, 0, "空  ▼",     text_color=color.red,    text_size=size.tiny)
-    table.cell(tbl, 0, 1, "Supertrend", text_color=color.white,  text_size=size.tiny)
+    table.cell(tbl, 0, 0, "策略",        text_color=color.silver, text_size=size.tiny)
+    table.cell(tbl, 1, 0, "多  ▲",      text_color=color.lime,   text_size=size.tiny)
+    table.cell(tbl, 2, 0, "空  ▼",      text_color=color.red,    text_size=size.tiny)
+    table.cell(tbl, 0, 1, "Supertrend",  text_color=color.white,  text_size=size.tiny)
     table.cell(tbl, 1, 1, sig_tf == 1  ? "●" : "", text_color=color.lime, text_size=size.small)
     table.cell(tbl, 2, 1, sig_tf == -1 ? "●" : "", text_color=color.red,  text_size=size.small)
-    table.cell(tbl, 0, 2, "VP POC",    text_color=color.white,  text_size=size.tiny)
+    table.cell(tbl, 0, 2, "VP POC",     text_color=color.white,  text_size=size.tiny)
     table.cell(tbl, 1, 2, sig_vp == 1  ? "●" : "", text_color=color.lime, text_size=size.small)
     table.cell(tbl, 2, 2, sig_vp == -1 ? "●" : "", text_color=color.red,  text_size=size.small)
-    table.cell(tbl, 0, 3, "Bollinger", text_color=color.white,  text_size=size.tiny)
+    table.cell(tbl, 0, 3, "Bollinger",  text_color=color.white,  text_size=size.tiny)
     table.cell(tbl, 1, 3, sig_bb == 1  ? "●" : "", text_color=color.lime, text_size=size.small)
     table.cell(tbl, 2, 3, sig_bb == -1 ? "●" : "", text_color=color.red,  text_size=size.small)
+    table.cell(tbl, 0, 4, "EMA 分數",   text_color=color.silver, text_size=size.tiny)
+    table.cell(tbl, 1, 4, str.tostring(bull_score) + "/4", text_color=color.lime, text_size=size.tiny)
+    table.cell(tbl, 2, 4, str.tostring(bear_score) + "/4", text_color=color.red,  text_size=size.tiny)
