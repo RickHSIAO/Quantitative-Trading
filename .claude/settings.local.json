@@ -13,7 +13,9 @@
       "Bash(Sort-Object FullName)",
       "PowerShell(Get-ChildItem -Path \"f:\\\\RickHSIAO\\\\Python\\\\量化交易\" -MaxDepth 1 -File | Where-Object {$_.Extension -eq '.py' -or $_.Extension -eq '.ipynb'})",
       "PowerShell(Get-ChildItem -Path \"f:\\\\RickHSIAO\\\\Python\\\\量化交易\" -File | Where-Object {$_.Extension -match '\\\\.\\(py|ipynb\\)$'})",
-      "Bash(.venvScriptspython.exe -c ' *)"
+      "Bash(.venvScriptspython.exe -c ' *)",
+      "Bash(python main.py backtest --start-date 2024-01-01 --end-date 2026-12-31 --note \"WF-OOS: 2024-2026 盲測\")",
+      "Bash(python main.py history --limit 5)"
     ]
   }
 }

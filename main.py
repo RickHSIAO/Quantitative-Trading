@@ -97,6 +97,25 @@ def cmd_backtest(args):
 
     print(f'\n有效資產：{len(data)} 檔，跳過：{skipped} 檔')
 
+    # 日期區間篩選：指標用完整歷史暖身，交易只在指定區間內發生
+    start_date = getattr(args, 'start_date', None)
+    end_date   = getattr(args, 'end_date',   None)
+    if start_date or end_date:
+        import pandas as pd
+        for sym in list(data.keys()):
+            df_sym = data[sym]
+            mask = pd.Series(True, index=df_sym.index)
+            if start_date:
+                mask &= df_sym.index >= pd.Timestamp(start_date)
+            if end_date:
+                mask &= df_sym.index <= pd.Timestamp(end_date)
+            data[sym] = df_sym.loc[mask]
+            for k, s in signals[sym].items():
+                signals[sym][k] = s.loc[mask]
+            if data[sym].empty:
+                del data[sym]
+                del signals[sym]
+
     bt     = Backtester(initial_capital=args.capital)
     trades = bt.run(data, signals, type_map)
     metrics = bt.get_metrics()
@@ -289,7 +308,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument('--seed',    type=int,   default=42,        help='隨機種子')
     p_bt.add_argument('--no-vp',    action='store_true',           help='跳過 Volume Profile（加快速度）')
     p_bt.add_argument('--output',   type=str,  default=None,      help='自訂輸出路徑')
-    p_bt.add_argument('--note',     type=str,  default='',        help='本次回測備註（儲存至 DB）')
+    p_bt.add_argument('--note',       type=str,  default='',        help='本次回測備註（儲存至 DB）')
+    p_bt.add_argument('--start-date', type=str,  default=None,      help='回測起始日（YYYY-MM-DD），指標仍用完整歷史暖身')
+    p_bt.add_argument('--end-date',   type=str,  default=None,      help='回測結束日（YYYY-MM-DD）')
 
     # history
     p_hist = sub.add_parser('history', help='查詢歷史回測記錄')
