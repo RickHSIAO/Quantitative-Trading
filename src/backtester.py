@@ -400,10 +400,12 @@ class Backtester:
         for atype in set(t.asset_type for t in closed):
             at = [t for t in closed if t.asset_type == atype]
             ap = [t.pnl for t in at]
+            type_pnl = sum(ap)
             type_stats[atype] = {
-                'trades':    len(at),
-                'win_rate':  round(len([p for p in ap if p > 0]) / len(ap), 4),
-                'total_pnl': round(sum(ap), 2),
+                'trades':          len(at),
+                'win_rate':        round(len([p for p in ap if p > 0]) / len(ap), 4),
+                'total_pnl':       round(type_pnl, 2),
+                'annual_pnl_pct':  round(type_pnl / self.initial_capital / max(years, 1) * 100, 2),
             }
 
         return {

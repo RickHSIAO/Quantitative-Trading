@@ -457,7 +457,7 @@ def _write_asset_stats(wb: Workbook, df: pd.DataFrame, metrics: dict):
     ws.cell(1, 1, '資產類型統計').font = TITLE_FONT
 
     by_type = metrics.get('by_asset_type', {})
-    header  = ['資產類型', '交易次數', '勝率', '合計損益(USD)', '佔總損益%']
+    header  = ['資產類型', '交易次數', '勝率', '合計損益(USD)', '佔總損益%', '年化貢獻(%)']
     ws.append([])
     ws.append(header)
     _style_row(ws, ws.max_row, fill=HDR_FILL, font=HDR_FONT)
@@ -470,11 +470,13 @@ def _write_asset_stats(wb: Workbook, df: pd.DataFrame, metrics: dict):
         if not stat or atype in shown:
             continue
         shown.add(atype)
-        pct = stat['total_pnl'] / total_pnl * 100 if total_pnl else 0
+        pct         = stat['total_pnl'] / total_pnl * 100 if total_pnl else 0
+        annual_pct  = stat.get('annual_pnl_pct', 0)
         ws.append([atype, stat['trades'],
                    f"{stat['win_rate']*100:.1f}%",
                    f"${stat['total_pnl']:+,.2f}",
-                   f"{pct:.1f}%"])
+                   f"{pct:.1f}%",
+                   f"{annual_pct:+.2f}%"])
         fill = WIN_FILL if stat['total_pnl'] > 0 else LOSS_FILL
         for c in range(1, len(header)+1):
             ws.cell(ws.max_row, c).fill      = fill
