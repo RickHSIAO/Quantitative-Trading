@@ -137,6 +137,9 @@ BYBIT_API_SECRET = 'hhSHbry624FWBQRPXXZOOAzWOSZEK2wISojN'
 BYBIT_DEMO       = True   # 模擬帳號（Demo Trading）設 True
 BYBIT_TESTNET    = False  # 測試網（testnet.bybit.com）才設 True；一般模擬帳號設 False
 
+# ─── 系統版號 ────────────────────────────────────────
+SYSTEM_VERSION  = 'v1.0'
+
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'
 OUTPUT_FILENAME = 'Output.xlsx'

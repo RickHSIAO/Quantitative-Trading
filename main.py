@@ -147,9 +147,10 @@ def cmd_backtest(args):
 
     # ── 儲存回測結果到 SQLite ─────────────────────────────────────────────
     from src.database import save_backtest_run
-    note = getattr(args, 'note', '') or ''
-    run_id = save_backtest_run(trades, metrics, note=note)
-    print(f'\n  [DB] 回測記錄已儲存  run_id={run_id}  (python main.py history 查詢歷史)')
+    note    = getattr(args, 'note', '') or ''
+    version = getattr(args, 'ver',  None) or config.SYSTEM_VERSION
+    run_id  = save_backtest_run(trades, metrics, note=note, version=version)
+    print(f'\n  [DB] 回測記錄已儲存  run_id={run_id}  version={version}  (python main.py history 查詢歷史)')
 
 
 def cmd_history(args):
@@ -171,9 +172,9 @@ def cmd_history(args):
             print('尚無回測記錄，請先執行: python main.py backtest')
             return
         print(f'\n== 最近 {len(df)} 次回測記錄 ==')
-        cols = ['run_id', 'run_at', 'initial_capital', 'final_capital',
+        cols = ['run_id', 'version', 'run_at', 'initial_capital', 'final_capital',
                 'total_return_pct', 'annual_return_pct', 'total_trades',
-                'win_rate', 'profit_factor', 'sharpe_ratio', 'max_drawdown_pct']
+                'win_rate', 'profit_factor', 'sharpe_ratio', 'max_drawdown_pct', 'note']
         print(df[cols].to_string(index=False))
         print('\n  提示：python main.py history --run-id <ID>  查看該次交易明細')
 
@@ -309,6 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument('--no-vp',    action='store_true',           help='跳過 Volume Profile（加快速度）')
     p_bt.add_argument('--output',   type=str,  default=None,      help='自訂輸出路徑')
     p_bt.add_argument('--note',       type=str,  default='',        help='本次回測備註（儲存至 DB）')
+    p_bt.add_argument('--ver',        type=str,  default=None,      help='版號（預設讀 config.SYSTEM_VERSION）')
     p_bt.add_argument('--start-date', type=str,  default=None,      help='回測起始日（YYYY-MM-DD），指標仍用完整歷史暖身')
     p_bt.add_argument('--end-date',   type=str,  default=None,      help='回測結束日（YYYY-MM-DD）')
 

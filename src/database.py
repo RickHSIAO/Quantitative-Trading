@@ -42,6 +42,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS backtest_runs (
                 run_id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_at            TEXT    NOT NULL,
+                version           TEXT,
                 initial_capital   REAL,
                 final_capital     REAL,
                 total_return_pct  REAL,
@@ -77,6 +78,10 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_bt_trades_run
                 ON backtest_trades(run_id);
         """)
+        # 舊資料庫 migration：補 version 欄位
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(backtest_runs)")}
+        if 'version' not in existing:
+            conn.execute("ALTER TABLE backtest_runs ADD COLUMN version TEXT")
 
 
 def upsert_prices(df: pd.DataFrame, symbol: str, asset_type: str):
@@ -160,7 +165,8 @@ def get_registry() -> pd.DataFrame:
 
 
 # ─── 回測歷史 ─────────────────────────────────────────────────────────────────
-def save_backtest_run(trades: list, metrics: dict, note: str = '') -> int:
+def save_backtest_run(trades: list, metrics: dict, note: str = '',
+                      version: str = '') -> int:
     """
     將回測結果寫入 backtest_runs 和 backtest_trades。
     回傳本次回測的 run_id。
@@ -171,12 +177,13 @@ def save_backtest_run(trades: list, metrics: dict, note: str = '') -> int:
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO backtest_runs
-               (run_at, initial_capital, final_capital,
+               (run_at, version, initial_capital, final_capital,
                 total_return_pct, annual_return_pct, total_trades,
                 win_rate, profit_factor, sharpe_ratio, max_drawdown_pct, note)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 run_at,
+                version,
                 metrics.get('initial_capital'),
                 metrics.get('final_capital'),
                 metrics.get('total_return_pct'),

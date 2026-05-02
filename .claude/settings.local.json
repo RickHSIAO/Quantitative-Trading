@@ -15,7 +15,9 @@
       "PowerShell(Get-ChildItem -Path \"f:\\\\RickHSIAO\\\\Python\\\\量化交易\" -File | Where-Object {$_.Extension -match '\\\\.\\(py|ipynb\\)$'})",
       "Bash(.venvScriptspython.exe -c ' *)",
       "Bash(python main.py backtest --start-date 2024-01-01 --end-date 2026-12-31 --note \"WF-OOS: 2024-2026 盲測\")",
-      "Bash(python main.py history --limit 5)"
+      "Bash(python main.py history --limit 5)",
+      "Bash(python -c \"from src.database import init_db, load_backtest_history; init_db\\(\\); df = load_backtest_history\\(5\\); print\\(df[['run_id','version','run_at','total_return_pct','note']].to_string\\(index=False\\)\\)\")",
+      "Bash(python main.py history --limit 3)"
     ]
   }
 }
