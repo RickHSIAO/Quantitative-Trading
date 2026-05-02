@@ -123,8 +123,8 @@ def compute_rsi(df: pd.DataFrame, period: int = config.RSI_PERIOD) -> pd.DataFra
     avg_l = _rma(loss, period)
 
     with np.errstate(divide='ignore', invalid='ignore'):
-        rs  = np.where(avg_l != 0, avg_g / avg_l, np.nan)
-        rsi = np.where(np.isnan(rs), np.nan,
+        rs  = np.where(avg_l > 0, avg_g / avg_l, np.inf)
+        rsi = np.where(np.isnan(avg_g) | np.isnan(avg_l), np.nan,
               np.where(avg_l == 0, 100.0,
               np.where(avg_g == 0,   0.0,
               100 - 100 / (1 + rs))))

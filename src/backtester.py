@@ -95,8 +95,9 @@ class Backtester:
                      exit_price: float, reason_code: str) -> float:
         pnl = (exit_price - trade.entry_price) * trade.quantity * trade.direction
         ret = (exit_price / trade.entry_price - 1.0) * trade.direction * 100 if trade.entry_price else 0.0
-        r_dist = abs(trade.entry_price - trade.stop_loss)
-        r_mult = (pnl / (r_dist * trade.quantity)) if r_dist > 0 and trade.quantity > 0 else 0.0
+        orig_sl = self._orig_stop.get(trade.symbol, trade.stop_loss)
+        r_dist  = abs(trade.entry_price - orig_sl)
+        r_mult  = (pnl / (r_dist * trade.quantity)) if r_dist > 0 and trade.quantity > 0 else 0.0
 
         trade.exit_date    = exit_date
         trade.exit_price   = exit_price
@@ -137,34 +138,38 @@ class Backtester:
             for sym in list(open_positions.keys()):
                 if dt not in data[sym].index:
                     continue
-                price = float(data[sym].loc[dt, 'Close'])
+                row_data = data[sym].loc[dt]
+                price = float(row_data['Close'])
+                hi    = float(row_data['High'])
+                lo    = float(row_data['Low'])
                 pos   = open_positions[sym]
 
-                # 追蹤最大有利/不利偏移（%）
+                # 追蹤最大有利/不利偏移（%，用收盤價計算百分比）
                 chg_pct = (price / pos.entry_price - 1.0) * pos.direction * 100
                 self._excursion.setdefault(sym, []).append(chg_pct)
 
-                # ATR 移動停利：止損只往有利方向移動
-                row_data = data[sym].loc[dt]
-                atr_now  = float(row_data.get('atr', price * 0.02) or price * 0.02)
+                # ATR 移動停利：止損只往有利方向移動，用 High/Low 追蹤極值
+                atr_now    = float(row_data.get('atr', price * 0.02) or price * 0.02)
                 trail_dist = atr_now * config.ATR_STOP_MULTIPLIER
                 if pos.direction == 1:   # 多頭：追蹤最高價
-                    peak = max(self._trail_peak.get(sym, pos.entry_price), price)
+                    peak = max(self._trail_peak.get(sym, pos.entry_price), hi)
                     self._trail_peak[sym] = peak
                     new_sl = peak - trail_dist
                     if new_sl > pos.stop_loss:
                         pos.stop_loss = new_sl
                 else:                    # 空頭：追蹤最低價
-                    trough = min(self._trail_peak.get(sym, pos.entry_price), price)
+                    trough = min(self._trail_peak.get(sym, pos.entry_price), lo)
                     self._trail_peak[sym] = trough
                     new_sl = trough + trail_dist
                     if new_sl < pos.stop_loss:
                         pos.stop_loss = new_sl
 
-                hit_sl = ((pos.direction ==  1 and price <= pos.stop_loss) or
-                          (pos.direction == -1 and price >= pos.stop_loss))
-                hit_tp = ((pos.direction ==  1 and price >= pos.take_profit) or
-                          (pos.direction == -1 and price <= pos.take_profit))
+                # 用 High/Low 判斷日內是否觸及 SL/TP，TP 優先
+                hit_tp = ((pos.direction ==  1 and hi  >= pos.take_profit) or
+                          (pos.direction == -1 and lo  <= pos.take_profit))
+                hit_sl = (not hit_tp) and (
+                         (pos.direction ==  1 and lo  <= pos.stop_loss) or
+                         (pos.direction == -1 and hi  >= pos.stop_loss))
 
                 if hit_sl or hit_tp:
                     ep   = pos.stop_loss if hit_sl else pos.take_profit
@@ -233,7 +238,7 @@ class Backtester:
                     kf     = estimate_kelly_from_history(history_by_sym[sym])
                     qty    = position_size(self.capital, kf, price, sl)
 
-                    if qty <= 0 or self.capital < price:
+                    if qty <= 0 or qty * price > self.capital:
                         continue
 
                     sym_sigs = signals.get(sym, {})

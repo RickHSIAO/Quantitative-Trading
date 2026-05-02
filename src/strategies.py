@@ -13,16 +13,17 @@ FLAT  =  0
 # ─── 策略 1：趨勢動能 (Supertrend) ───────────────────────────────────────────
 def trend_following_signals(df: pd.DataFrame) -> pd.Series:
     """
-    做多：supertrend_dir == +1
-    做空：supertrend_dir == -1
+    只在 Supertrend 方向反轉那根 K 棒觸發訊號（對齊 Pine Script）：
+      -1 → +1 翻多 / +1 → -1 翻空
     EMA200 環境濾網由 combine_signals 統一處理，此處只負責觸發訊號。
     """
     sig = pd.Series(FLAT, index=df.index, dtype=int)
     if 'supertrend_dir' not in df.columns:
         return sig
 
-    sig[df['supertrend_dir'] == 1]  = LONG
-    sig[df['supertrend_dir'] == -1] = SHORT
+    dir_chg = df['supertrend_dir'].diff()
+    sig[dir_chg > 0] = LONG   # -1 → +1
+    sig[dir_chg < 0] = SHORT  # +1 → -1
     return sig
 
 

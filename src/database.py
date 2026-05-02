@@ -75,7 +75,7 @@ def upsert_prices(df: pd.DataFrame, symbol: str, asset_type: str):
                ON CONFLICT(symbol) DO UPDATE SET
                last_date  = MAX(last_date,  excluded.last_date),
                first_date = MIN(first_date, excluded.first_date),
-               bar_count  = bar_count + excluded.bar_count""",
+               bar_count  = (SELECT COUNT(*) FROM prices WHERE symbol=excluded.symbol)""",
             (symbol, asset_type, first, last, count),
         )
 
