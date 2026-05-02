@@ -1,6 +1,8 @@
 import sqlite3
+import json
 import pandas as pd
 from pathlib import Path
+from datetime import datetime
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
@@ -36,6 +38,44 @@ def init_db():
                 last_date   TEXT,
                 bar_count   INTEGER
             );
+
+            CREATE TABLE IF NOT EXISTS backtest_runs (
+                run_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_at            TEXT    NOT NULL,
+                initial_capital   REAL,
+                final_capital     REAL,
+                total_return_pct  REAL,
+                annual_return_pct REAL,
+                total_trades      INTEGER,
+                win_rate          REAL,
+                profit_factor     REAL,
+                sharpe_ratio      REAL,
+                max_drawdown_pct  REAL,
+                note              TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS backtest_trades (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id       INTEGER NOT NULL REFERENCES backtest_runs(run_id),
+                symbol       TEXT,
+                strategy     TEXT,
+                direction    INTEGER,
+                asset_type   TEXT,
+                entry_date   TEXT,
+                exit_date    TEXT,
+                entry_price  REAL,
+                exit_price   REAL,
+                quantity     REAL,
+                pnl          REAL,
+                return_pct   REAL,
+                holding_days INTEGER,
+                r_multiple   REAL,
+                mae          REAL,
+                mfe          REAL,
+                exit_reason  TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_bt_trades_run
+                ON backtest_trades(run_id);
         """)
 
 
@@ -117,3 +157,79 @@ def get_all_symbols() -> list[str]:
 def get_registry() -> pd.DataFrame:
     with get_connection() as conn:
         return pd.read_sql_query('SELECT * FROM asset_registry ORDER BY asset_type, symbol', conn)
+
+
+# ─── 回測歷史 ─────────────────────────────────────────────────────────────────
+def save_backtest_run(trades: list, metrics: dict, note: str = '') -> int:
+    """
+    將回測結果寫入 backtest_runs 和 backtest_trades。
+    回傳本次回測的 run_id。
+    """
+    init_db()
+    run_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT INTO backtest_runs
+               (run_at, initial_capital, final_capital,
+                total_return_pct, annual_return_pct, total_trades,
+                win_rate, profit_factor, sharpe_ratio, max_drawdown_pct, note)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                run_at,
+                metrics.get('initial_capital'),
+                metrics.get('final_capital'),
+                metrics.get('total_return_pct'),
+                metrics.get('annual_return_pct'),
+                metrics.get('total_trades'),
+                metrics.get('win_rate'),
+                metrics.get('profit_factor'),
+                metrics.get('sharpe_ratio'),
+                metrics.get('max_drawdown_pct'),
+                note,
+            ),
+        )
+        run_id = cur.lastrowid
+
+        rows = [
+            (
+                run_id,
+                t.symbol, t.strategy, t.direction, t.asset_type,
+                t.entry_date, t.exit_date,
+                t.entry_price, t.exit_price, t.quantity,
+                t.pnl, t.return_pct, t.holding_days,
+                t.r_multiple, t.mae, t.mfe, t.exit_reason,
+            )
+            for t in trades if t.exit_date is not None
+        ]
+        conn.executemany(
+            """INSERT INTO backtest_trades
+               (run_id, symbol, strategy, direction, asset_type,
+                entry_date, exit_date, entry_price, exit_price, quantity,
+                pnl, return_pct, holding_days, r_multiple, mae, mfe, exit_reason)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            rows,
+        )
+
+    return run_id
+
+
+def load_backtest_history(limit: int = 20) -> pd.DataFrame:
+    """回傳最近 N 次回測的摘要（最新在前）。"""
+    init_db()
+    with get_connection() as conn:
+        return pd.read_sql_query(
+            f'SELECT * FROM backtest_runs ORDER BY run_id DESC LIMIT {limit}',
+            conn,
+        )
+
+
+def load_backtest_trades(run_id: int) -> pd.DataFrame:
+    """回傳指定 run_id 的所有交易明細。"""
+    init_db()
+    with get_connection() as conn:
+        return pd.read_sql_query(
+            'SELECT * FROM backtest_trades WHERE run_id=? ORDER BY entry_date',
+            conn,
+            params=(run_id,),
+        )

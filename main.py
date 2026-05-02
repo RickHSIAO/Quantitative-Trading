@@ -126,6 +126,38 @@ def cmd_backtest(args):
     output_path = args.output or None
     generate_excel_report(trades, metrics, bt.equity_curve, output_path)
 
+    # ── 儲存回測結果到 SQLite ─────────────────────────────────────────────
+    from src.database import save_backtest_run
+    note = getattr(args, 'note', '') or ''
+    run_id = save_backtest_run(trades, metrics, note=note)
+    print(f'\n  [DB] 回測記錄已儲存  run_id={run_id}  (python main.py history 查詢歷史)')
+
+
+def cmd_history(args):
+    """列出歷史回測摘要，可加 --run-id 查看該次交易明細。"""
+    from src.database import load_backtest_history, load_backtest_trades
+
+    if args.run_id:
+        df = load_backtest_trades(args.run_id)
+        if df.empty:
+            print(f'找不到 run_id={args.run_id} 的交易記錄')
+            return
+        print(f'\n== run_id={args.run_id} 交易明細（共 {len(df)} 筆）==')
+        cols = ['symbol', 'strategy', 'direction', 'entry_date', 'exit_date',
+                'pnl', 'return_pct', 'r_multiple', 'exit_reason']
+        print(df[cols].to_string(index=False))
+    else:
+        df = load_backtest_history(args.limit)
+        if df.empty:
+            print('尚無回測記錄，請先執行: python main.py backtest')
+            return
+        print(f'\n== 最近 {len(df)} 次回測記錄 ==')
+        cols = ['run_id', 'run_at', 'initial_capital', 'final_capital',
+                'total_return_pct', 'annual_return_pct', 'total_trades',
+                'win_rate', 'profit_factor', 'sharpe_ratio', 'max_drawdown_pct']
+        print(df[cols].to_string(index=False))
+        print('\n  提示：python main.py history --run-id <ID>  查看該次交易明細')
+
 
 def cmd_live(args):
     """
@@ -257,6 +289,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument('--seed',    type=int,   default=42,        help='隨機種子')
     p_bt.add_argument('--no-vp',    action='store_true',           help='跳過 Volume Profile（加快速度）')
     p_bt.add_argument('--output',   type=str,  default=None,      help='自訂輸出路徑')
+    p_bt.add_argument('--note',     type=str,  default='',        help='本次回測備註（儲存至 DB）')
+
+    # history
+    p_hist = sub.add_parser('history', help='查詢歷史回測記錄')
+    p_hist.add_argument('--limit',  type=int, default=20,   help='顯示最近幾筆（default=20）')
+    p_hist.add_argument('--run-id', type=int, default=None, help='查看指定回測的交易明細')
 
     # live
     p_live = sub.add_parser('live', help='即時交易（Bybit 加密貨幣）')
@@ -278,6 +316,8 @@ def main():
         cmd_info(args)
     elif args.command == 'backtest':
         cmd_backtest(args)
+    elif args.command == 'history':
+        cmd_history(args)
     elif args.command == 'live':
         cmd_live(args)
     else:
