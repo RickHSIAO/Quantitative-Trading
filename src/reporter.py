@@ -86,7 +86,7 @@ def _fmt_qty(symbol: str, qty: float) -> str:
     if symbol.endswith('.TW') or symbol.endswith('.TWO'):
         zhang = qty / 1000
         return f'{zhang:.2f} 張'
-    if '-USD' in symbol:
+    if symbol.startswith('BYBIT:'):
         return f'{qty:.4f} 顆'
     return f'{qty:.2f} 股'
 
@@ -628,7 +628,7 @@ def _write_summary(wb: Workbook, metrics: dict, equity_curve: list[dict]):
 # ─── Per-Symbol Stats ────────────────────────────────────────────────────────
 SYM_COLS = [
     '代號', '資產類型',
-    '買進次數', '賣出次數', '做多次數', '做空次數',
+    '做多次數', '做空次數',
     '勝率(%)', '多單勝率(%)', '空單勝率(%)',
     '平均獲利(USD)', '平均虧損(USD)',
     '最大獲利(USD)', '最大虧損(USD)',
@@ -662,8 +662,6 @@ def _write_symbol_stats(wb: Workbook, df: pd.DataFrame):
         rows.append({
             '代號':         sym,
             '資產類型':     grp['資產類型'].iloc[0] if len(grp) else '',
-            '買進次數':     int((grp['方向'].str.contains('多', na=False)).sum()),
-            '賣出次數':     int((grp['方向'].str.contains('空', na=False)).sum()),
             '做多次數':     len(longs),
             '做空次數':     len(shorts),
             '勝率(%)':      round(len(wins) / len(pnl) * 100, 1) if len(pnl) else 0,

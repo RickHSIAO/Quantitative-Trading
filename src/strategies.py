@@ -212,8 +212,16 @@ def generate_all_signals(df: pd.DataFrame,
                                moat_tf_only=moat_tf_only, rs_pct=rs_pct)
 
     # 子策略共識分數（1–3）
-    long_strat  = (tf == LONG).astype(int)  + (vp == LONG).astype(int)  + (bb == LONG).astype(int)
-    short_strat = (tf == SHORT).astype(int) + (vp == SHORT).astype(int) + (bb == SHORT).astype(int)
+    # moat_tf_only=True 時，Supertrend 多單受護城河限制；評分只計通過護城河的 tf 多單
+    if moat_tf_only:
+        market_ok    = _market_moat_filter(df, asset_type, benchmark_df, rs_pct=rs_pct)
+        tf_long_eff  = (tf == LONG) & market_ok
+        tf_short_eff = (tf == SHORT)
+    else:
+        tf_long_eff  = (tf == LONG)
+        tf_short_eff = (tf == SHORT)
+    long_strat  = tf_long_eff.astype(int)  + (vp == LONG).astype(int)  + (bb == LONG).astype(int)
+    short_strat = tf_short_eff.astype(int) + (vp == SHORT).astype(int) + (bb == SHORT).astype(int)
 
     # EMA 比例分數（0–4）
     bull_ema, bear_ema = _ema_scores(df)

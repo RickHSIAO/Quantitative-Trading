@@ -298,8 +298,8 @@ def cmd_live(args):
                     sl, tp = calculate_stops(price, latest_sig, atr)
                     allocated = sum(p['entry'] * p['qty'] for p in open_pos.values())
                     available = max(0.0, balance - allocated)
-                    qty = position_size(available, kf, price, sl)
-                    if qty > 0:
+                    qty = position_size(balance, kf, price, sl)   # 基數用帳戶總餘額
+                    if qty > 0 and qty * price <= available:       # 買得起才下單
                         res = executor.place_order(sym, latest_sig, qty, sl, tp)
                         if res.get('retCode') == 0:
                             open_pos[sym] = {'dir': latest_sig, 'qty': qty,

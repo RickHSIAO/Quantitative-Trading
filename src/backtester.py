@@ -258,7 +258,7 @@ class Backtester:
                     if available_cash <= 0:
                         break
 
-                    qty = position_size(available_cash, kf, price, sl)
+                    qty = position_size(self.capital, kf, price, sl)
 
                     if qty <= 0 or qty * price > available_cash:
                         continue
@@ -299,7 +299,7 @@ class Backtester:
                 'date':           date_str,
                 'capital':        total_equity,
                 'allocated':      round(allocated, 2),
-                'remaining':      round(total_equity - allocated, 2),
+                'remaining':      round(self.capital - allocated, 2),
                 'pnl':            round(total_equity - self.initial_capital, 2),
                 'open_positions': len(open_positions),
             })
@@ -322,7 +322,7 @@ class Backtester:
 
         pnls   = [t.pnl for t in closed]
         wins   = [p for p in pnls if p > 0]
-        losses = [abs(p) for p in pnls if p <= 0]
+        losses = [abs(p) for p in pnls if p < 0]
         wr     = len(wins) / len(pnls)
         avg_w  = float(np.mean(wins))   if wins   else 0.0
         avg_l  = float(np.mean(losses)) if losses else 0.0
