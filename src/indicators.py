@@ -217,7 +217,8 @@ def compute_volume_profile(df: pd.DataFrame,
         plo = lo.min()
         phi = hi.max()
         bsize = (phi - plo) / bins
-        if bsize <= 0 or vol.sum() == 0:
+        vol_clean = np.nan_to_num(vol, nan=0.0)   # 部分資料來源 Volume 含 NaN，防止 NaN 汙染整個 profile
+        if bsize <= 0 or vol_clean.sum() == 0:
             continue
 
         vol_profile = np.zeros(bins)
@@ -228,7 +229,7 @@ def compute_volume_profile(df: pd.DataFrame,
         for j in range(len(lo)):
             sb, eb = int(sb_arr[j]), int(eb_arr[j])
             nb = eb - sb + 1
-            vol_profile[sb:eb + 1] += vol[j] / nb
+            vol_profile[sb:eb + 1] += vol_clean[j] / nb
 
         poc_idx   = int(np.argmax(vol_profile))
         poc_price = plo + (poc_idx + 0.5) * bsize

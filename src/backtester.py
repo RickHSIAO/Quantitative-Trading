@@ -381,7 +381,7 @@ class Backtester:
 
         # 各策略分解
         strat_stats: dict[str, dict] = {}
-        for strat in ('trend', 'vp', 'bb'):
+        for strat in ('trend', 'vp', 'bb', 'combined'):
             st = [t for t in closed if t.strategy == strat]
             if st:
                 sp = [t.pnl for t in st]

@@ -68,7 +68,7 @@ def trend_following_signals(df: pd.DataFrame, asset_type: str = '') -> pd.Series
 
 
 # ─── 策略 2：成交量分布 POC 支撐/阻力 ────────────────────────────────────────
-def volume_profile_signals(df: pd.DataFrame, tol: float = 0.015) -> pd.Series:
+def volume_profile_signals(df: pd.DataFrame, tol: float = config.VP_POC_TOLERANCE) -> pd.Series:
     """
     價格接近 POC（±tol）時判斷多空方向：
     - 前一根 Close 高於 POC → 從上方跌回 POC（支撐）→ 做多
@@ -195,6 +195,7 @@ def combine_signals(df: pd.DataFrame,
     conflict = (bull_env & any_long  & chip_ok & not_disposed &
                 bear_env & any_short & not_disposed)
     result[conflict & (bull_ema >  bear_ema)] = LONG
+    result[conflict & (bull_ema <  bear_ema)] = SHORT
     result[conflict & (bull_ema == bear_ema)] = FLAT
     return result
 

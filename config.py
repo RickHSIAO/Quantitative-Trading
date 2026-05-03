@@ -110,6 +110,7 @@ ATR_PERIOD             = 14
 ADX_PERIOD             = 14
 VOLUME_BINS            = 80
 VP_LOOKBACK            = 252  # 1年
+VP_POC_TOLERANCE       = 0.015  # POC 觸碰容差 ±1.5%
 
 # ─── MACD ────────────────────────────────────────
 MACD_FAST              = 12
