@@ -258,7 +258,7 @@ class Backtester:
                     if available_cash <= 0:
                         break
 
-                    qty = position_size(self.capital, kf, price, sl)
+                    qty = position_size(available_cash, kf, price, sl)
 
                     if qty <= 0 or qty * price > available_cash:
                         continue

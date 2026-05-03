@@ -61,7 +61,7 @@ def trend_following_signals(df: pd.DataFrame, asset_type: str = '') -> pd.Series
 
     # 美股 HFT 假突破過濾：MACD 柱狀圖 > 0（動能由空轉多）才允許做多
     # 只要求 hist > 0，不強求 macd > 0，避免 MACD 滯後砍掉早期有效翻多
-    if asset_type == 'US Stock' and 'macd_hist' in df.columns:
+    if config.ENABLE_US_MACD_FILTER and asset_type == 'US Stock' and 'macd_hist' in df.columns:
         sig[(sig == LONG) & (df['macd_hist'] <= 0)] = FLAT
 
     return sig

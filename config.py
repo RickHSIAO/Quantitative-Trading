@@ -116,6 +116,7 @@ VP_POC_TOLERANCE       = 0.015  # POC 觸碰容差 ±1.5%
 MACD_FAST              = 12
 MACD_SLOW              = 26
 MACD_SIGNAL            = 9
+ENABLE_US_MACD_FILTER  = False
 
 # ─── 大盤護城河 ────────────────────────────────────
 TW_MARKET_SYMBOL       = '^TWII'   # 加權指數
