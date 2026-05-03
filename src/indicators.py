@@ -174,6 +174,22 @@ def compute_rsi(df: pd.DataFrame, period: int = config.RSI_PERIOD) -> pd.DataFra
     return out
 
 
+# ─── MACD ────────────────────────────────────────────────────────────────────
+def compute_macd(df: pd.DataFrame,
+                 fast: int   = config.MACD_FAST,
+                 slow: int   = config.MACD_SLOW,
+                 signal: int = config.MACD_SIGNAL) -> pd.DataFrame:
+    ema_fast  = compute_ema(df['Close'], fast)
+    ema_slow  = compute_ema(df['Close'], slow)
+    macd_line = ema_fast - ema_slow
+    sig_line  = macd_line.ewm(span=signal, adjust=False).mean()
+    out = df.copy()
+    out['macd']      = macd_line
+    out['macd_sig']  = sig_line
+    out['macd_hist'] = macd_line - sig_line
+    return out
+
+
 # ─── Volume Profile (VPVR) ───────────────────────────────────────────────────
 def compute_volume_profile(df: pd.DataFrame,
                            bins: int = config.VOLUME_BINS,
@@ -243,6 +259,7 @@ def compute_all_indicators(df: pd.DataFrame, include_vp: bool = True) -> pd.Data
     df = compute_rsi(df)
     df['atr'] = compute_atr(df['High'], df['Low'], df['Close'], config.ATR_PERIOD)
     df = compute_adx(df)
+    df = compute_macd(df)
     if include_vp:
         df = compute_volume_profile(df)
     return df

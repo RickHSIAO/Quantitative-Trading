@@ -7,18 +7,49 @@ import numpy as np
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
+from typing import Optional
 
 LONG  =  1
 SHORT = -1
 FLAT  =  0
 
 
+# ─── 大盤護城河濾網 ───────────────────────────────────────────────────────────
+def _market_moat_filter(df: pd.DataFrame,
+                         asset_type: str,
+                         benchmark_df: Optional[pd.DataFrame],
+                         rs_pct: float = config.RS_OUTPERFORM_PCT) -> pd.Series:
+    """
+    True = 市場環境允許做多進場。
+    台股：加權指數 > SMA250，否則封鎖多單；
+          近 RS_LOOKBACK_DAYS 天個股漲幅超越大盤 RS_OUTPERFORM_PCT 可豁免。
+    美股：S&P500 > SMA200，邏輯相同。
+    其他類別：永遠 True（不限制）。
+    """
+    if benchmark_df is None or asset_type not in ('TW Stock', 'US Stock'):
+        return pd.Series(True, index=df.index)
+
+    ma_period = config.TW_MARKET_MA_PERIOD if asset_type == 'TW Stock' else config.US_MARKET_MA_PERIOD
+    bm_close  = benchmark_df['Close']
+    bm_ma     = bm_close.rolling(ma_period).mean()
+
+    bm_above  = (bm_close >= bm_ma).reindex(df.index, method='ffill').fillna(False)
+
+    stock_ret = df['Close'].pct_change(config.RS_LOOKBACK_DAYS)
+    bm_ret    = bm_close.pct_change(config.RS_LOOKBACK_DAYS) \
+                        .reindex(df.index, method='ffill').fillna(0)
+    rs_strong = ((stock_ret - bm_ret) > rs_pct).fillna(False)
+
+    return bm_above | rs_strong
+
+
 # ─── 策略 1：趨勢動能 (Supertrend) ───────────────────────────────────────────
-def trend_following_signals(df: pd.DataFrame) -> pd.Series:
+def trend_following_signals(df: pd.DataFrame, asset_type: str = '') -> pd.Series:
     """
     只在 Supertrend 方向反轉那根 K 棒觸發訊號（對齊 Pine Script）：
       -1 → +1 翻多 / +1 → -1 翻空
     EMA200 環境濾網由 combine_signals 統一處理，此處只負責觸發訊號。
+    美股額外要求：Supertrend 翻多時 MACD > 0 且柱狀圖 > 0（雙重確認，過濾假突破）。
     """
     sig = pd.Series(FLAT, index=df.index, dtype=int)
     if 'supertrend_dir' not in df.columns:
@@ -27,6 +58,12 @@ def trend_following_signals(df: pd.DataFrame) -> pd.Series:
     dir_chg = df['supertrend_dir'].diff()
     sig[dir_chg > 0] = LONG   # -1 → +1
     sig[dir_chg < 0] = SHORT  # +1 → -1
+
+    # 美股 HFT 假突破過濾：MACD 柱狀圖 > 0（動能由空轉多）才允許做多
+    # 只要求 hist > 0，不強求 macd > 0，避免 MACD 滯後砍掉早期有效翻多
+    if asset_type == 'US Stock' and 'macd_hist' in df.columns:
+        sig[(sig == LONG) & (df['macd_hist'] <= 0)] = FLAT
+
     return sig
 
 
@@ -109,25 +146,21 @@ def _ema_scores(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
 # ─── 主從濾網合併 ─────────────────────────────────────────────────────────────
 def combine_signals(df: pd.DataFrame,
                     tf: pd.Series, vp: pd.Series, bb: pd.Series,
-                    ema_min_score: int = config.EMA_MIN_SCORE) -> pd.Series:
+                    ema_min_score: int = config.EMA_MIN_SCORE,
+                    asset_type: str = '',
+                    benchmark_df: Optional[pd.DataFrame] = None,
+                    moat_tf_only: bool = False,
+                    rs_pct: float = config.RS_OUTPERFORM_PCT) -> pd.Series:
     """
-    EMA 比例分數環境濾網（方向確認）：
-    多頭/空頭分數 = 收盤高/低於幾根 EMA（EMA20/50/100/200）。
-    達到 ema_min_score 根（預設 2/4）才開放該方向的進場訊號。
+    EMA 比例分數環境濾網 + 市場護城河 + 處置股/籌碼濾網。
 
-    分數含義：
-      4 = 完美多頭排列（收盤全數高於 EMA20>50>100>200）
-      3 = 強多頭環境
-      2 = 溫和多頭環境（預設門檻）
-      1 = 混沌，禁止進場
-      0 = 完全相反方向
+    moat_tf_only=True：護城河只封鎖 Supertrend 多單，VP/BB 均值回歸訊號豁免。
+    rs_pct：覆蓋 RS_OUTPERFORM_PCT，用於測試不同豁免門檻。
     """
     bull_ema, bear_ema = _ema_scores(df)
     bull_env = bull_ema >= ema_min_score
     bear_env = bear_ema >= ema_min_score
 
-    # EMA200 斜率濾網：即使 EMA 分數達標，若 EMA200 向下彎且價格跌破 EMA50，
-    # 代表趨勢已在轉空，提早封鎖做多；反之封鎖做空。
     if 'ema200' in df.columns and 'ema50' in df.columns:
         ema200_slope = df['ema200'].diff(config.EMA200_SLOPE_PERIOD)
         early_bear = (df['Close'] < df['ema50']) & (ema200_slope < 0)
@@ -135,26 +168,48 @@ def combine_signals(df: pd.DataFrame,
         bull_env = bull_env & ~early_bear
         bear_env = bear_env & ~early_bull
 
-    any_long  = (tf == LONG)  | (vp == LONG)  | (bb == LONG)
+    market_long_ok = _market_moat_filter(df, asset_type, benchmark_df, rs_pct=rs_pct)
+
+    not_disposed = (~df['is_disposition'].astype(bool)) \
+                   if 'is_disposition' in df.columns \
+                   else pd.Series(True, index=df.index)
+
+    chip_ok = (df['chip_buy_days'] >= config.TW_CHIP_MIN_DAYS) \
+              if 'chip_buy_days' in df.columns \
+              else pd.Series(True, index=df.index)
+
+    if moat_tf_only:
+        # 護城河只管 Supertrend；VP/BB 均值回歸繞過
+        tf_long_ok  = (tf == LONG)  & market_long_ok
+        other_long  = (vp == LONG)  | (bb == LONG)
+        any_long    = tf_long_ok    | other_long
+    else:
+        any_long    = ((tf == LONG) | (vp == LONG) | (bb == LONG)) & market_long_ok
+
     any_short = (tf == SHORT) | (vp == SHORT) | (bb == SHORT)
 
     result = pd.Series(FLAT, index=tf.index, dtype=int)
-    result[bull_env & any_long]  = LONG
-    result[bear_env & any_short] = SHORT
+    result[bull_env & any_long  & chip_ok & not_disposed] = LONG
+    result[bear_env & any_short & not_disposed]           = SHORT
 
-    # 衝突解消：兩方向 EMA 門檻同時達標且子策略訊號方向相反
-    # bull_ema 較強 → 恢復 LONG；完全相同 → FLAT（不進場）
-    conflict = bull_env & any_long & bear_env & any_short
+    conflict = (bull_env & any_long  & chip_ok & not_disposed &
+                bear_env & any_short & not_disposed)
     result[conflict & (bull_ema >  bear_ema)] = LONG
     result[conflict & (bull_ema == bear_ema)] = FLAT
     return result
 
 
-def generate_all_signals(df: pd.DataFrame) -> dict[str, pd.Series]:
-    tf       = trend_following_signals(df)
+def generate_all_signals(df: pd.DataFrame,
+                          asset_type: str = '',
+                          benchmark_df: Optional[pd.DataFrame] = None,
+                          moat_tf_only: bool = False,
+                          rs_pct: float = config.RS_OUTPERFORM_PCT) -> dict[str, pd.Series]:
+    tf       = trend_following_signals(df, asset_type)
     vp       = volume_profile_signals(df)
     bb       = bollinger_reversion_signals(df)
-    combined = combine_signals(df, tf, vp, bb)
+    combined = combine_signals(df, tf, vp, bb, asset_type=asset_type,
+                               benchmark_df=benchmark_df,
+                               moat_tf_only=moat_tf_only, rs_pct=rs_pct)
 
     # 子策略共識分數（1–3）
     long_strat  = (tf == LONG).astype(int)  + (vp == LONG).astype(int)  + (bb == LONG).astype(int)

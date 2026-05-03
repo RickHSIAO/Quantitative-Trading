@@ -111,6 +111,23 @@ ADX_PERIOD             = 14
 VOLUME_BINS            = 80
 VP_LOOKBACK            = 252  # 1年
 
+# ─── MACD ────────────────────────────────────────
+MACD_FAST              = 12
+MACD_SLOW              = 26
+MACD_SIGNAL            = 9
+
+# ─── 大盤護城河 ────────────────────────────────────
+TW_MARKET_SYMBOL       = '^TWII'   # 加權指數
+US_MARKET_SYMBOL       = '^GSPC'   # S&P 500
+TW_MARKET_MA_PERIOD    = 250       # 台股年線（SMA250）
+US_MARKET_MA_PERIOD    = 200       # 美股 200MA（SMA200）
+RS_LOOKBACK_DAYS       = 10        # 相對強弱回望天數
+RS_OUTPERFORM_PCT      = 0.03      # 近 N 天領先大盤 3% 可豁免市場封鎖
+
+# ─── 台股籌碼濾網 ────────────────────────────────────
+# 需外部提供 chip_buy_days 欄位（主力連買天數）；未提供時此濾網不啟動
+TW_CHIP_MIN_DAYS       = 3
+
 # ─── 風控參數 ────────────────────────────────────────
 RISK_REWARD_RATIO      = 3.0    # 1:3
 KELLY_FRACTION         = 0.25   # 1/4 Kelly
@@ -142,7 +159,7 @@ BYBIT_DEMO       = True   # 模擬帳號（Demo Trading）設 True
 BYBIT_TESTNET    = False  # 測試網（testnet.bybit.com）才設 True；一般模擬帳號設 False
 
 # ─── 系統版號 ────────────────────────────────────────
-SYSTEM_VERSION  = 'v1.1'
+SYSTEM_VERSION  = 'v1.2'
 
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'

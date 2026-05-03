@@ -5,8 +5,8 @@
 用法：
   python main.py fetch              # 下載 120 個資產的歷史資料至 SQLite
   python main.py fetch --years 3    # 只抓 3 年
-  python main.py backtest           # 執行回測並輸出 Output.xlsx
-  python main.py backtest --no-vp   # 跳過 Volume Profile（加快速度）
+  python main.py backtest           # 執行回測並輸出 Output.xlsx（Volume Profile 預設關閉）
+  python main.py backtest --with-vp # 啟用 Volume Profile（速度較慢）
   python main.py live               # 即時交易（Bybit，僅加密貨幣）
   python main.py info               # 顯示已下載資產摘要
 """
@@ -45,6 +45,28 @@ def cmd_info(args):
     print(f'\n共 {len(reg)} 個資產，總計 {reg["bar_count"].sum():,} 筆K線')
 
 
+def _load_benchmark(symbol: str, years: int = 6) -> 'pd.DataFrame | None':
+    """下載基準指數日線（^TWII, ^GSPC），用於大盤護城河濾網。"""
+    import yfinance as yf
+    import pandas as pd
+    from datetime import datetime, timedelta
+    end   = datetime.now()
+    start = (end - timedelta(days=years * 365 + 60)).strftime('%Y-%m-%d')
+    end   = end.strftime('%Y-%m-%d')
+    try:
+        df = yf.download(symbol, start=start, end=end, auto_adjust=True,
+                         progress=False, threads=False)
+        if df is None or df.empty:
+            return None
+        if isinstance(df.columns, __import__('pandas').MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df.index = __import__('pandas').DatetimeIndex(df.index).tz_localize(None)
+        return df.dropna(subset=['Close'])
+    except Exception as e:
+        print(f'[WARN] 無法載入基準指數 {symbol}: {e}')
+        return None
+
+
 def cmd_backtest(args):
     import pandas as pd
     from tqdm import tqdm
@@ -69,6 +91,19 @@ def cmd_backtest(args):
     for sym in assets['cryptos']:    type_map[sym] = 'Crypto'
     for sym in assets['commodities']:type_map[sym] = 'Commodity'
 
+    # 下載大盤基準指數（用於護城河濾網）
+    print('\n下載大盤基準指數...')
+    tw_benchmark = _load_benchmark(config.TW_MARKET_SYMBOL)
+    us_benchmark = _load_benchmark(config.US_MARKET_SYMBOL)
+    if tw_benchmark is not None:
+        print(f'  ^TWII: {len(tw_benchmark)} 筆  ({tw_benchmark.index[0].date()} → {tw_benchmark.index[-1].date()})')
+    else:
+        print('  [WARN] 台股大盤指數載入失敗，台股護城河濾網停用')
+    if us_benchmark is not None:
+        print(f'  ^GSPC: {len(us_benchmark)} 筆  ({us_benchmark.index[0].date()} → {us_benchmark.index[-1].date()})')
+    else:
+        print('  [WARN] 美股大盤指數載入失敗，美股護城河濾網停用')
+
     selected = [s for s in assets['all'] if s in available]
     print(f'\n載入 {len(selected)} 個資產，計算指標與信號中...\n')
 
@@ -76,9 +111,9 @@ def cmd_backtest(args):
     signals: dict[str, dict[str, pd.Series]] = {}
     skipped = 0
 
-    use_vp = not getattr(args, 'no_vp', False)
+    use_vp = getattr(args, 'with_vp', False)
     if not use_vp:
-        print('[INFO] 已跳過 Volume Profile（--no-vp）')
+        print('[INFO] Volume Profile 已停用（預設）；加 --with-vp 可啟用')
 
     for sym in tqdm(selected, desc='指標計算', unit='檔'):
         df = load_prices(sym)
@@ -87,8 +122,16 @@ def cmd_backtest(args):
             continue
 
         try:
+            atype = type_map.get(sym, '')
+            bm    = tw_benchmark if atype == 'TW Stock' else \
+                    us_benchmark if atype == 'US Stock' else None
+
             df = compute_all_indicators(df, include_vp=use_vp)
-            sigs = generate_all_signals(df)
+            sigs = generate_all_signals(
+                df, asset_type=atype, benchmark_df=bm,
+                moat_tf_only=getattr(args, 'moat_tf_only', False),
+                rs_pct=getattr(args, 'rs_pct', None) or config.RS_OUTPERFORM_PCT,
+            )
             data[sym]    = df
             signals[sym] = sigs
         except Exception as exc:
@@ -309,12 +352,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt = sub.add_parser('backtest', help='執行回測並輸出 Excel')
     p_bt.add_argument('--capital', type=float, default=100_000.0, help='初始資金 (USD)')
     p_bt.add_argument('--seed',    type=int,   default=42,        help='隨機種子')
-    p_bt.add_argument('--no-vp',    action='store_true',           help='跳過 Volume Profile（加快速度）')
+    p_bt.add_argument('--with-vp',   action='store_true',           help='啟用 Volume Profile 策略（速度較慢，預設關閉）')
     p_bt.add_argument('--output',   type=str,  default=None,      help='自訂輸出路徑')
     p_bt.add_argument('--note',       type=str,  default='',        help='本次回測備註（儲存至 DB）')
     p_bt.add_argument('--ver',        type=str,  default=None,      help='版號（預設讀 config.SYSTEM_VERSION）')
-    p_bt.add_argument('--start-date', type=str,  default=None,      help='回測起始日（YYYY-MM-DD），指標仍用完整歷史暖身')
-    p_bt.add_argument('--end-date',   type=str,  default=None,      help='回測結束日（YYYY-MM-DD）')
+    p_bt.add_argument('--start-date',    type=str,   default=None,   help='回測起始日（YYYY-MM-DD），指標仍用完整歷史暖身')
+    p_bt.add_argument('--end-date',      type=str,   default=None,   help='回測結束日（YYYY-MM-DD）')
+    p_bt.add_argument('--moat-tf-only',  action='store_true',        help='護城河只封鎖 Supertrend，VP/BB 豁免')
+    p_bt.add_argument('--rs-pct',        type=float, default=None,   help='RS 豁免門檻（預設 0.03）')
 
     # history
     p_hist = sub.add_parser('history', help='查詢歷史回測記錄')
