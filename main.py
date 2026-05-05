@@ -5,8 +5,8 @@
 用法：
   python main.py fetch              # 下載 120 個資產的歷史資料至 SQLite
   python main.py fetch --years 3    # 只抓 3 年
-  python main.py backtest           # 執行回測並輸出 Output.xlsx（Volume Profile 預設關閉）
-  python main.py backtest --with-vp # 啟用 Volume Profile（速度較慢）
+  python main.py backtest           # 執行預設完整模式回測並輸出 Output.xlsx（VP + moat-tf-only）
+  python main.py backtest --no-with-vp # 關閉 Volume Profile（速度較快）
   python main.py live               # 即時交易（Bybit，僅加密貨幣）
   python main.py info               # 顯示已下載資產摘要
 """
@@ -23,16 +23,20 @@ sys.path.insert(0, os.path.dirname(__file__))
 def cmd_fetch(args):
     from config import get_selected_assets
     from src.fetcher import fetch_all_assets
+    from src.benchmarks import fetch_benchmarks
     assets = get_selected_assets(args.seed)
     _print_asset_summary(assets)
     fetch_all_assets(assets, years=args.years)
+    fetch_benchmarks(years=max(args.years, 6))
 
 
 def cmd_update(args):
     from config import get_selected_assets
     from src.fetcher import update_all_assets
+    from src.benchmarks import update_benchmarks
     assets = get_selected_assets(args.seed)
     update_all_assets(assets)
+    update_benchmarks()
 
 
 def cmd_info(args):
@@ -77,6 +81,7 @@ def cmd_backtest(args):
     from src.strategies import generate_all_signals
     from src.backtester import Backtester
     from src.reporter import generate_excel_report
+    from src.benchmarks import load_or_update_benchmark
 
     assets    = get_selected_assets(args.seed)
     available = set(get_all_symbols())
@@ -92,9 +97,9 @@ def cmd_backtest(args):
     for sym in assets['commodities']:type_map[sym] = 'Commodity'
 
     # 下載大盤基準指數（用於護城河濾網）
-    print('\n下載大盤基準指數...')
-    tw_benchmark = _load_benchmark(config.TW_MARKET_SYMBOL)
-    us_benchmark = _load_benchmark(config.US_MARKET_SYMBOL)
+    print('\n載入/更新大盤基準指數...')
+    tw_benchmark = load_or_update_benchmark(config.TW_MARKET_SYMBOL)
+    us_benchmark = load_or_update_benchmark(config.US_MARKET_SYMBOL)
     if tw_benchmark is not None:
         print(f'  ^TWII: {len(tw_benchmark)} 筆  ({tw_benchmark.index[0].date()} → {tw_benchmark.index[-1].date()})')
     else:
@@ -111,9 +116,9 @@ def cmd_backtest(args):
     signals: dict[str, dict[str, pd.Series]] = {}
     skipped = 0
 
-    use_vp = getattr(args, 'with_vp', False)
+    use_vp = getattr(args, 'with_vp', True)
     if not use_vp:
-        print('[INFO] Volume Profile 已停用（預設）；加 --with-vp 可啟用')
+        print('[INFO] Volume Profile 已停用；移除 --no-with-vp 可回到預設完整模式')
 
     for sym in tqdm(selected, desc='指標計算', unit='檔'):
         df = load_prices(sym)
@@ -129,7 +134,7 @@ def cmd_backtest(args):
             df = compute_all_indicators(df, include_vp=use_vp)
             sigs = generate_all_signals(
                 df, asset_type=atype, benchmark_df=bm,
-                moat_tf_only=getattr(args, 'moat_tf_only', False),
+                moat_tf_only=getattr(args, 'moat_tf_only', True),
                 rs_pct=getattr(args, 'rs_pct', None) or config.RS_OUTPERFORM_PCT,
             )
             data[sym]    = df
@@ -352,13 +357,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt = sub.add_parser('backtest', help='執行回測並輸出 Excel')
     p_bt.add_argument('--capital', type=float, default=100_000.0, help='初始資金 (USD)')
     p_bt.add_argument('--seed',    type=int,   default=42,        help='隨機種子')
-    p_bt.add_argument('--with-vp',   action='store_true',           help='啟用 Volume Profile 策略（速度較慢，預設關閉）')
+    p_bt.add_argument('--with-vp', action=argparse.BooleanOptionalAction, default=True,
+                      help='啟用 Volume Profile 策略（預設啟用；用 --no-with-vp 關閉）')
     p_bt.add_argument('--output',   type=str,  default=None,      help='自訂輸出路徑')
     p_bt.add_argument('--note',       type=str,  default='',        help='本次回測備註（儲存至 DB）')
     p_bt.add_argument('--ver',        type=str,  default=None,      help='版號（預設讀 config.SYSTEM_VERSION）')
     p_bt.add_argument('--start-date',    type=str,   default=None,   help='回測起始日（YYYY-MM-DD），指標仍用完整歷史暖身')
     p_bt.add_argument('--end-date',      type=str,   default=None,   help='回測結束日（YYYY-MM-DD）')
-    p_bt.add_argument('--moat-tf-only',  action='store_true',        help='護城河只封鎖 Supertrend，VP/BB 豁免')
+    p_bt.add_argument('--moat-tf-only', action=argparse.BooleanOptionalAction, default=True,
+                      help='護城河只封鎖 Supertrend，VP/BB 豁免（預設啟用；用 --no-moat-tf-only 關閉）')
     p_bt.add_argument('--rs-pct',        type=float, default=None,   help='RS 豁免門檻（預設 0.03）')
 
     # history

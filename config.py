@@ -131,10 +131,34 @@ RS_OUTPERFORM_PCT      = 0.03      # 近 N 天領先大盤 3% 可豁免市場封
 TW_CHIP_MIN_DAYS       = 3
 
 # ─── 風控參數 ────────────────────────────────────────
-RISK_REWARD_RATIO      = 3.0    # 1:3
+RISK_REWARD_RATIO      = 3.0    # 預設 RR（沒有指定 strategy 時的 fallback）
 KELLY_FRACTION         = 0.25   # 1/4 Kelly
-ATR_STOP_MULTIPLIER    = 3.0
+ATR_STOP_MULTIPLIER    = 3.0    # 預設 ATR 停損倍數（fallback）
 INITIAL_CAPITAL        = 100_000.0  # USD
+
+# ─── 分策略出場參數（v1.3 分流）─────────────────────────
+# 趨勢單（Supertrend / 多策略 combined）：讓利潤奔跑
+STRAT_TREND_ATR_MULT   = 3.0
+STRAT_TREND_RR         = 3.0
+# 拉回單（Volume Profile POC）：中等持有時間
+STRAT_VP_ATR_MULT      = 2.0
+STRAT_VP_RR            = 2.0
+# 抄底單（Bollinger 下軌）：搶反彈，不抱長線；硬停利只是兜底，主要靠早出
+STRAT_BB_ATR_MULT      = 1.5
+STRAT_BB_RR            = 2.0
+STRAT_BB_PROFIT_PCT    = 0.03   # 浮盈 ≥ 3% 即出
+STRAT_BB_RSI_EXIT      = 50     # RSI 回到中性即出（多頭 ≥50 / 空頭 ≤50）
+STRAT_BB_DISABLE_TSL   = True   # BB 單關閉 ATR 移動停利（避免抄底單變趨勢單）
+
+# ─── Plan A：BB 進場放寬（不受嚴格 EMA 守門員限制）────────────────────
+# True 時 BB 用「Close vs EMA200 + 至少 BB_LOOSE_MIN_EMA_SCORE 根 EMA 對齊」做環境檢查
+# False 時 BB 仍受主守門員 EMA_MIN_SCORE 限制（與 v1.3 一致）
+BB_BYPASS_EMA_GATE     = False
+BB_LOOSE_MIN_EMA_SCORE = 1
+
+# ─── Plan B：每策略並行倉位上限（dict 為空時不啟用）────────────────────
+# 例：{'trend': 8, 'vp': 4, 'bb': 3}；'combined' 不限額
+MAX_POS_PER_STRATEGY: dict = {'trend': 12, 'vp': 8, 'bb': 4}
 MAX_RISK_PCT           = 0.02   # 單筆最大虧損佔總資金 2%（Kelly risk_amount 上限）
 MAX_POSITION_PCT       = 0.10   # 單筆持倉市值上限 10%（position_size max_qty 上限）
 MAX_TOTAL_POSITIONS    = 15     # 同時持倉上限
@@ -161,7 +185,7 @@ BYBIT_DEMO       = True   # 模擬帳號（Demo Trading）設 True
 BYBIT_TESTNET    = False  # 測試網（testnet.bybit.com）才設 True；一般模擬帳號設 False
 
 # ─── 系統版號 ────────────────────────────────────────
-SYSTEM_VERSION  = 'v1.2'
+SYSTEM_VERSION  = 'v1.4'
 
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'

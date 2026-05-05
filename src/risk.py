@@ -71,16 +71,36 @@ def position_size(capital: float,
 
 
 # ─── 止損/止盈 ────────────────────────────────────────────────────────────────
+_STRAT_PARAMS = {
+    'trend':    (config.STRAT_TREND_ATR_MULT, config.STRAT_TREND_RR),
+    'combined': (config.STRAT_TREND_ATR_MULT, config.STRAT_TREND_RR),
+    'vp':       (config.STRAT_VP_ATR_MULT,    config.STRAT_VP_RR),
+    'bb':       (config.STRAT_BB_ATR_MULT,    config.STRAT_BB_RR),
+}
+
+
 def calculate_stops(entry_price: float,
                     direction: int,
                     atr: float,
-                    rr: float = config.RISK_REWARD_RATIO,
-                    atr_mult: float = config.ATR_STOP_MULTIPLIER) -> tuple[float, float]:
+                    strategy: str = 'trend',
+                    rr: float | None = None,
+                    atr_mult: float | None = None) -> tuple[float, float]:
     """
-    止損距離 = ATR × atr_mult
-    止盈距離 = 止損距離 × RR (1:3)
+    依進場通道分流停損/停利：
+      trend / combined : ATR×3.0, RR 3:1（讓利潤奔跑）
+      vp               : ATR×2.0, RR 2:1（中等持有）
+      bb               : ATR×1.5, RR 2:1（窄停損兜底；主要靠早出條件）
+    呼叫者可顯式覆寫 rr / atr_mult 強制指定。
     Returns: (stop_loss, take_profit)
     """
+    default_mult, default_rr = _STRAT_PARAMS.get(
+        strategy, (config.ATR_STOP_MULTIPLIER, config.RISK_REWARD_RATIO)
+    )
+    if atr_mult is None:
+        atr_mult = default_mult
+    if rr is None:
+        rr = default_rr
+
     dist = atr * atr_mult
     if direction == 1:   # Long
         return entry_price - dist, entry_price + dist * rr

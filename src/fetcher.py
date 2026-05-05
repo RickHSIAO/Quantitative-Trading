@@ -18,7 +18,6 @@ _COMMODITY_YF_MAP = {
     'XAGUSD': 'SI=F',
 }
 
-
 def _to_yf_symbol(symbol: str) -> str:
     if symbol in _COMMODITY_YF_MAP:
         return _COMMODITY_YF_MAP[symbol]

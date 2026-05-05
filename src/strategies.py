@@ -161,12 +161,22 @@ def combine_signals(df: pd.DataFrame,
     bull_env = bull_ema >= ema_min_score
     bear_env = bear_ema >= ema_min_score
 
+    # BB 寬鬆環境（Plan A）：Close vs EMA200 ＋ 至少 N 根 EMA 對齊
+    if config.BB_BYPASS_EMA_GATE and 'ema200' in df.columns:
+        bb_bull_env = (df['Close'] > df['ema200']) & (bull_ema >= config.BB_LOOSE_MIN_EMA_SCORE)
+        bb_bear_env = (df['Close'] < df['ema200']) & (bear_ema >= config.BB_LOOSE_MIN_EMA_SCORE)
+    else:
+        bb_bull_env = bull_env
+        bb_bear_env = bear_env
+
     if 'ema200' in df.columns and 'ema50' in df.columns:
         ema200_slope = df['ema200'].diff(config.EMA200_SLOPE_PERIOD)
         early_bear = (df['Close'] < df['ema50']) & (ema200_slope < 0)
         early_bull = (df['Close'] > df['ema50']) & (ema200_slope > 0)
-        bull_env = bull_env & ~early_bear
-        bear_env = bear_env & ~early_bull
+        bull_env    = bull_env    & ~early_bear
+        bear_env    = bear_env    & ~early_bull
+        bb_bull_env = bb_bull_env & ~early_bear
+        bb_bear_env = bb_bear_env & ~early_bull
 
     market_long_ok = _market_moat_filter(df, asset_type, benchmark_df, rs_pct=rs_pct)
 
@@ -178,22 +188,28 @@ def combine_signals(df: pd.DataFrame,
               if 'chip_buy_days' in df.columns \
               else pd.Series(True, index=df.index)
 
+    # 各策略獨立守門員（BB 用 bb_bull_env / bb_bear_env，可能比主濾網寬鬆）
     if moat_tf_only:
-        # 護城河只管 Supertrend；VP/BB 均值回歸繞過
-        tf_long_ok  = (tf == LONG)  & market_long_ok
-        other_long  = (vp == LONG)  | (bb == LONG)
-        any_long    = tf_long_ok    | other_long
+        tf_long_eff = (tf == LONG) & market_long_ok & bull_env
+        vp_long_eff = (vp == LONG) & bull_env
+        bb_long_eff = (bb == LONG) & bb_bull_env
     else:
-        any_long    = ((tf == LONG) | (vp == LONG) | (bb == LONG)) & market_long_ok
+        tf_long_eff = (tf == LONG) & market_long_ok & bull_env
+        vp_long_eff = (vp == LONG) & market_long_ok & bull_env
+        bb_long_eff = (bb == LONG) & market_long_ok & bb_bull_env
 
-    any_short = (tf == SHORT) | (vp == SHORT) | (bb == SHORT)
+    any_long = tf_long_eff | vp_long_eff | bb_long_eff
+
+    tf_short_eff = (tf == SHORT) & bear_env
+    vp_short_eff = (vp == SHORT) & bear_env
+    bb_short_eff = (bb == SHORT) & bb_bear_env
+    any_short    = tf_short_eff | vp_short_eff | bb_short_eff
 
     result = pd.Series(FLAT, index=tf.index, dtype=int)
-    result[bull_env & any_long  & chip_ok & not_disposed] = LONG
-    result[bear_env & any_short & not_disposed]           = SHORT
+    result[any_long  & chip_ok & not_disposed] = LONG
+    result[any_short & not_disposed]           = SHORT
 
-    conflict = (bull_env & any_long  & chip_ok & not_disposed &
-                bear_env & any_short & not_disposed)
+    conflict = (any_long & chip_ok & not_disposed & any_short & not_disposed)
     result[conflict & (bull_ema >  bear_ema)] = LONG
     result[conflict & (bull_ema <  bear_ema)] = SHORT
     result[conflict & (bull_ema == bear_ema)] = FLAT

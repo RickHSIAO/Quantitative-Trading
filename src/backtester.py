@@ -69,11 +69,14 @@ def _entry_reason(strategy: str, direction: int) -> str:
 def _exit_reason(code: str, r_mult: float) -> str:
     r_str = f'({r_mult:+.2f}R)' if r_mult is not None else ''
     mapping = {
-        'stop_loss':     f'止損出場 SL  {r_str}',
-        'trailing_stop': f'移動停利出場 TSL  {r_str}',
-        'take_profit':   f'止盈出場 TP 1:{int(config.RISK_REWARD_RATIO)}  {r_str}',
-        'signal_flip':   f'信號翻轉平倉  {r_str}',
-        'eod':           f'回測結束強制平倉  {r_str}',
+        'stop_loss':        f'止損出場 SL  {r_str}',
+        'trailing_stop':    f'移動停利出場 TSL  {r_str}',
+        'take_profit':      f'止盈出場 TP  {r_str}',
+        'signal_flip':      f'信號翻轉平倉  {r_str}',
+        'eod':              f'回測結束強制平倉  {r_str}',
+        'bb_mid':           f'BB 抄底單 · 觸及中軌平倉  {r_str}',
+        'bb_rsi':           f'BB 抄底單 · RSI 回中性平倉  {r_str}',
+        'bb_target_profit': f'BB 抄底單 · 達 +{int(config.STRAT_BB_PROFIT_PCT*100)}% 短打停利  {r_str}',
     }
     return mapping.get(code, code)
 
@@ -153,23 +156,25 @@ class Backtester:
                     fav_pct = (1.0 - lo / pos.entry_price) * 100
                 self._excursion.setdefault(sym, []).extend([adv_pct, fav_pct])
 
-                # ATR 移動停利：止損只往有利方向移動，用 High/Low 追蹤極值
-                atr_now    = float(row_data.get('atr', price * 0.02) or price * 0.02)
-                trail_dist = atr_now * config.ATR_STOP_MULTIPLIER
-                if pos.direction == 1:   # 多頭：追蹤最高價
-                    peak = max(self._trail_peak.get(sym, pos.entry_price), hi)
-                    self._trail_peak[sym] = peak
-                    new_sl = peak - trail_dist
-                    # 只有浮盈超過進場價才啟動追蹤，避免在虧損區觸發 TSL
-                    if new_sl > pos.stop_loss and new_sl > pos.entry_price:
-                        pos.stop_loss = new_sl
-                else:                    # 空頭：追蹤最低價
-                    trough = min(self._trail_peak.get(sym, pos.entry_price), lo)
-                    self._trail_peak[sym] = trough
-                    new_sl = trough + trail_dist
-                    # 同上，空頭需停損點低於進場價才啟動
-                    if new_sl < pos.stop_loss and new_sl < pos.entry_price:
-                        pos.stop_loss = new_sl
+                # ATR 移動停利：BB 抄底單不啟用 TSL（避免抄底變趨勢）；其餘正常追蹤
+                bb_no_tsl = config.STRAT_BB_DISABLE_TSL and pos.strategy == 'bb'
+                if not bb_no_tsl:
+                    atr_now    = float(row_data.get('atr', price * 0.02) or price * 0.02)
+                    trail_dist = atr_now * config.ATR_STOP_MULTIPLIER
+                    if pos.direction == 1:   # 多頭：追蹤最高價
+                        peak = max(self._trail_peak.get(sym, pos.entry_price), hi)
+                        self._trail_peak[sym] = peak
+                        new_sl = peak - trail_dist
+                        # 只有浮盈超過進場價才啟動追蹤，避免在虧損區觸發 TSL
+                        if new_sl > pos.stop_loss and new_sl > pos.entry_price:
+                            pos.stop_loss = new_sl
+                    else:                    # 空頭：追蹤最低價
+                        trough = min(self._trail_peak.get(sym, pos.entry_price), lo)
+                        self._trail_peak[sym] = trough
+                        new_sl = trough + trail_dist
+                        # 同上，空頭需停損點低於進場價才啟動
+                        if new_sl < pos.stop_loss and new_sl < pos.entry_price:
+                            pos.stop_loss = new_sl
 
                 # 用 High/Low 判斷日內是否觸及 SL/TP，TP 優先
                 hit_tp = ((pos.direction ==  1 and hi  >= pos.take_profit) or
@@ -190,6 +195,33 @@ class Backtester:
                     del open_positions[sym]
                     continue
 
+                # BB 抄底單早出：觸 BB 中軌 / RSI 回到中性 / 浮盈 ≥ +N%
+                # 三條件 OR，於收盤價觸發；位於 SL/TP 之後、信號翻轉之前
+                if pos.strategy == 'bb':
+                    bb_mid_val = row_data.get('bb_mid', None)
+                    rsi_val    = row_data.get('rsi', None)
+                    bb_mid     = float(bb_mid_val) if bb_mid_val is not None and not pd.isna(bb_mid_val) else None
+                    rsi_now    = float(rsi_val)    if rsi_val    is not None and not pd.isna(rsi_val)    else None
+                    profit_pct = (price / pos.entry_price - 1.0) * pos.direction
+
+                    early_code = None
+                    if profit_pct >= config.STRAT_BB_PROFIT_PCT:
+                        early_code = 'bb_target_profit'
+                    elif bb_mid is not None and (
+                            (pos.direction ==  1 and price >= bb_mid) or
+                            (pos.direction == -1 and price <= bb_mid)):
+                        early_code = 'bb_mid'
+                    elif rsi_now is not None and (
+                            (pos.direction ==  1 and rsi_now >= config.STRAT_BB_RSI_EXIT) or
+                            (pos.direction == -1 and rsi_now <= config.STRAT_BB_RSI_EXIT)):
+                        early_code = 'bb_rsi'
+
+                    if early_code is not None:
+                        self._close_trade(pos, date_str, price, early_code)
+                        history_by_sym[sym].append(pos)
+                        del open_positions[sym]
+                        continue
+
                 # 信號翻轉 → 平倉
                 comb = signals.get(sym, {}).get('combined')
                 if comb is not None and dt in comb.index:
@@ -207,8 +239,8 @@ class Backtester:
 
             # ── Step 2: 開新倉（依訊號共識度優先）────────────────────────
             if len(open_positions) < config.MAX_TOTAL_POSITIONS:
-                # Phase 1：蒐集當日所有有效候選，附帶共識分數
-                candidates: list[tuple[str, int, int]] = []
+                # Phase 1：蒐集當日所有有效候選，附帶共識分數與主導策略
+                candidates: list[tuple[str, int, int, str]] = []
                 for sym, df in data.items():
                     if sym in open_positions or dt not in df.index:
                         continue
@@ -225,17 +257,20 @@ class Backtester:
                                  else 1)
                     if score_val < config.MIN_ENTRY_SCORE:
                         continue
-                    candidates.append((sym, sig_val, score_val))
+                    strat = _dominant_strategy(sym_sigs, dt, sig_val)
+                    candidates.append((sym, sig_val, score_val, strat))
 
                 # Phase 2：共識分數由高到低排序，3 分（三策略同向）優先開倉
                 candidates.sort(key=lambda x: x[2], reverse=True)
 
-                # Phase 3：依序開倉，同時檢查整體上限與各資產類別名額
+                # Phase 3：依序開倉，同時檢查整體上限、各資產類別名額、各策略名額
                 class_counts: dict[str, int] = {}
+                strat_counts: dict[str, int] = {}
                 for pos in open_positions.values():
                     class_counts[pos.asset_type] = class_counts.get(pos.asset_type, 0) + 1
+                    strat_counts[pos.strategy]   = strat_counts.get(pos.strategy, 0)   + 1
 
-                for sym, sig_val, _ in candidates:
+                for sym, sig_val, _, strat in candidates:
                     if len(open_positions) >= config.MAX_TOTAL_POSITIONS:
                         break
 
@@ -244,12 +279,18 @@ class Backtester:
                     if class_counts.get(atype, 0) >= class_limit:
                         continue
 
+                    # Plan B：每策略名額（dict 為空時不啟用；'combined' 不限）
+                    strat_limit = config.MAX_POS_PER_STRATEGY.get(strat) \
+                                  if config.MAX_POS_PER_STRATEGY else None
+                    if strat_limit is not None and strat_counts.get(strat, 0) >= strat_limit:
+                        continue
+
                     df    = data[sym]
                     row   = df.loc[dt]
                     price = float(row['Close'])
                     atr   = float(row.get('atr', price * 0.02) or price * 0.02)
 
-                    sl, tp = calculate_stops(price, sig_val, atr)
+                    sl, tp = calculate_stops(price, sig_val, atr, strategy=strat)
                     kf     = estimate_kelly_from_history(history_by_sym[sym])
 
                     available_cash = self.capital - sum(
@@ -263,8 +304,6 @@ class Backtester:
                     if qty <= 0 or qty * price > available_cash:
                         continue
 
-                    sym_sigs = signals.get(sym, {})
-                    strat    = _dominant_strategy(sym_sigs, dt, sig_val)
                     r_dist   = abs(price - sl)
                     trade    = Trade(
                         symbol       = sym,
@@ -282,6 +321,7 @@ class Backtester:
                     open_positions[sym]      = trade
                     self._orig_stop[sym]     = sl
                     class_counts[atype]      = class_counts.get(atype, 0) + 1
+                    strat_counts[strat]      = strat_counts.get(strat, 0) + 1
 
             # ── Step 3: 記錄淨值 ──────────────────────────────────────────
             unrealised = sum(
@@ -373,10 +413,16 @@ class Backtester:
         # 出場原因分布
         exit_dist: dict[str, int] = {}
         for t in closed:
-            key = 'TP'  if t.exit_reason and '止盈'   in t.exit_reason else \
-                  'TSL' if t.exit_reason and '移動停利' in t.exit_reason else \
-                  'SL'  if t.exit_reason and '止損'   in t.exit_reason else \
-                  'Flip' if t.exit_reason and '翻轉'  in t.exit_reason else 'EOD'
+            er = t.exit_reason or ''
+            if 'BB 抄底' in er:
+                if   '中軌' in er: key = 'BB-Mid'
+                elif 'RSI'  in er: key = 'BB-RSI'
+                else:              key = 'BB-Tgt'
+            elif '止盈'   in er: key = 'TP'
+            elif '移動停利' in er: key = 'TSL'
+            elif '止損'   in er: key = 'SL'
+            elif '翻轉'   in er: key = 'Flip'
+            else:                key = 'EOD'
             exit_dist[key] = exit_dist.get(key, 0) + 1
 
         # 各策略分解
