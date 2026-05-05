@@ -173,6 +173,31 @@ MAX_POS_PER_CLASS: dict = {
     'Commodity': 2,
 }
 
+# ─── Plan C：分數分級倉位（A/B/C 評分）──────────────────────────────────
+# 依 score（子策略共識 + EMA 對齊，最高 7）動態縮放 Kelly：
+#   7    → 1.0×（A 級：完美共振）
+#   5-6  → 0.6×（B 級：有瑕疵的機會）
+#   4    → 0.3×（C 級：勉強通過，半倉試單）
+ENABLE_SCORE_TIER_SIZING = False
+SCORE_TIER_MULT: dict[int, float] = {7: 1.0, 6: 0.6, 5: 0.6, 4: 0.3}
+
+# ─── 熔斷機制（Circuit Breaker）────────────────────────────────────────
+ENABLE_CIRCUIT_BREAKER    = True   # v1.5 預設啟用（搭配 DD 條件）
+CB_CONSEC_LOSS_LIMIT      = 5      # 連虧 N 筆觸發暫停
+CB_CONSEC_LOSS_PAUSE_DAYS = 5      # 觸發後暫停 N 個交易日
+CB_DAILY_LOSS_PCT         = 0.03   # 當日已實現虧損 ≥ 3% → 當日封盤
+CB_MAX_DAILY_TRADES       = 10     # 當日新進場上限
+# 額外條件：連虧達標時，需同時滿足「當前回撤 ≥ N%」才真正暫停
+# 避免在波段反轉低點誤殺反彈訊號
+CB_REQUIRE_DRAWDOWN       = True
+CB_REQUIRE_DRAWDOWN_PCT   = 0.05   # 5% 帳戶回撤門檻
+
+# ─── 幾何 R:R 檢查 ─────────────────────────────────────────────────────
+# TP 路徑上若有近 N 日 swing high/low 阻擋（距離 < BUFFER×ATR）→ 拒絕進場
+ENABLE_GEOMETRIC_RR  = True        # v1.5 預設啟用（單獨即可 +1.1 pp）
+GEO_RR_LOOKBACK      = 20
+GEO_RR_BUFFER_ATR    = 1.0
+
 # ─── 資料庫 ────────────────────────────────────────
 DB_PATH   = 'data/trading.db'
 DATA_YEARS = 5
@@ -185,7 +210,7 @@ BYBIT_DEMO       = True   # 模擬帳號（Demo Trading）設 True
 BYBIT_TESTNET    = False  # 測試網（testnet.bybit.com）才設 True；一般模擬帳號設 False
 
 # ─── 系統版號 ────────────────────────────────────────
-SYSTEM_VERSION  = 'v1.4'
+SYSTEM_VERSION  = 'v1.5'
 
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'

@@ -92,6 +92,13 @@ class Backtester:
         # ATR 移動停利：記錄極值與原始止損，用於判斷是否為移動停利出場
         self._trail_peak:  dict[str, float] = {}
         self._orig_stop:   dict[str, float] = {}
+        # 熔斷狀態
+        self._cb_consec_loss: int = 0
+        self._cb_pause_until: pd.Timestamp | None = None
+        self._cb_daily_pnl:    dict[str, float] = {}   # date_str → 當日已實現 PnL
+        self._cb_daily_trades: dict[str, int]   = {}   # date_str → 當日新進場數
+        self._cb_trigger_count: int = 0                # 觸發暫停次數
+        self._equity_peak: float = initial_capital     # 即時權益峰值（用於熔斷 DD 條件）
 
     # ── 平倉輔助 ─────────────────────────────────────────────────────────────
     def _close_trade(self, trade: Trade, exit_date: str,
@@ -119,6 +126,28 @@ class Backtester:
         self._trail_peak.pop(trade.symbol, None)
         self._orig_stop.pop(trade.symbol, None)
         self.capital += pnl
+
+        # 熔斷統計：連虧計數 + 當日 PnL
+        if config.ENABLE_CIRCUIT_BREAKER:
+            self._cb_daily_pnl[exit_date] = self._cb_daily_pnl.get(exit_date, 0.0) + pnl
+            if pnl < 0:
+                self._cb_consec_loss += 1
+                if self._cb_consec_loss >= config.CB_CONSEC_LOSS_LIMIT:
+                    # 額外回撤條件：避免在波段低點誤殺反彈
+                    cur_dd_pct = ((self.capital - self._equity_peak) / self._equity_peak
+                                  if self._equity_peak > 0 else 0.0)
+                    dd_ok = (not config.CB_REQUIRE_DRAWDOWN
+                             or cur_dd_pct <= -config.CB_REQUIRE_DRAWDOWN_PCT)
+                    if dd_ok:
+                        pause_days = config.CB_CONSEC_LOSS_PAUSE_DAYS
+                        self._cb_pause_until = (pd.Timestamp(exit_date)
+                                                 + pd.tseries.offsets.BusinessDay(pause_days))
+                        self._cb_consec_loss   = 0
+                        self._cb_trigger_count += 1
+                    # DD 未達標時不重設 consec_loss，等待後續勝/負交易自然處理
+            elif pnl > 0:
+                self._cb_consec_loss = 0
+
         return pnl
 
     # ── 主回測迴圈 ─────────────────────────────────────────────────────────────
@@ -272,7 +301,24 @@ class Backtester:
                     class_counts[pos.asset_type] = class_counts.get(pos.asset_type, 0) + 1
                     strat_counts[pos.strategy]   = strat_counts.get(pos.strategy, 0)   + 1
 
-                for sym, sig_val, _, strat in candidates:
+                # 熔斷：檢查是否仍在暫停期；超過則自動解除
+                cb_paused = (self._cb_pause_until is not None
+                             and dt < self._cb_pause_until)
+                if self._cb_pause_until is not None and dt >= self._cb_pause_until:
+                    self._cb_pause_until = None
+
+                # 當日已實現虧損 / 當日交易筆數
+                daily_pnl    = self._cb_daily_pnl.get(date_str, 0.0)
+                daily_trades = self._cb_daily_trades.get(date_str, 0)
+                daily_loss_blocked = (config.ENABLE_CIRCUIT_BREAKER and
+                                      daily_pnl <= -config.CB_DAILY_LOSS_PCT * self.capital)
+                daily_count_blocked = (config.ENABLE_CIRCUIT_BREAKER and
+                                       daily_trades >= config.CB_MAX_DAILY_TRADES)
+
+                cb_block_today = (config.ENABLE_CIRCUIT_BREAKER and
+                                  (cb_paused or daily_loss_blocked or daily_count_blocked))
+
+                for sym, sig_val, score_val, strat in (candidates if not cb_block_today else []):
                     if len(open_positions) >= config.MAX_TOTAL_POSITIONS:
                         break
 
@@ -295,7 +341,20 @@ class Backtester:
                              and not pd.isna(atr_raw) else price * 0.02)
 
                     sl, tp = calculate_stops(price, sig_val, atr, strategy=strat)
+
+                    # 幾何 R:R：檢查 TP 路徑是否撞到近 N 日 swing 阻力／支撐
+                    if config.ENABLE_GEOMETRIC_RR and not _geometric_rr_ok(
+                            df, dt, sig_val, tp, atr,
+                            lookback=config.GEO_RR_LOOKBACK,
+                            buffer_atr=config.GEO_RR_BUFFER_ATR):
+                        continue
+
                     kf     = estimate_kelly_from_history(history_by_sym[sym])
+
+                    # Plan C：依 score 縮放 Kelly（A/B/C 評分）
+                    if config.ENABLE_SCORE_TIER_SIZING:
+                        tier_mult = config.SCORE_TIER_MULT.get(score_val, 1.0)
+                        kf       = kf * tier_mult
 
                     available_cash = self.capital - sum(
                         pos.entry_price * pos.quantity for pos in open_positions.values()
@@ -307,6 +366,9 @@ class Backtester:
 
                     if qty <= 0 or qty * price > available_cash:
                         continue
+
+                    # 當日進場計數（用於熔斷）
+                    self._cb_daily_trades[date_str] = self._cb_daily_trades.get(date_str, 0) + 1
 
                     r_dist   = abs(price - sl)
                     trade    = Trade(
@@ -339,6 +401,9 @@ class Backtester:
                 if dt in data[sym].index
             )
             total_equity = round(self.capital + unrealised, 2)
+            # 更新峰值（用於熔斷的 DD 條件）
+            if total_equity > self._equity_peak:
+                self._equity_peak = total_equity
             self.equity_curve.append({
                 'date':           date_str,
                 'capital':        total_equity,
@@ -486,6 +551,12 @@ class Backtester:
             'exit_distribution': exit_dist,
             'by_strategy':       strat_stats,
             'by_asset_type':     type_stats,
+            'cb_trigger_count':  self._cb_trigger_count,
+            'features_enabled':  {
+                'score_tier_sizing': bool(config.ENABLE_SCORE_TIER_SIZING),
+                'circuit_breaker':   bool(config.ENABLE_CIRCUIT_BREAKER),
+                'geometric_rr':      bool(config.ENABLE_GEOMETRIC_RR),
+            },
         }
 
 
@@ -506,3 +577,37 @@ def _dominant_strategy(sym_sigs: dict[str, pd.Series], dt: pd.Timestamp, directi
     if len(matched) == 1:
         return matched[0]
     return 'combined'
+
+
+def _geometric_rr_ok(df: pd.DataFrame,
+                     dt: pd.Timestamp,
+                     direction: int,
+                     tp: float,
+                     atr: float,
+                     lookback: int = 20,
+                     buffer_atr: float = 1.0) -> bool:
+    """
+    幾何 R:R 檢查：TP 路徑上若有近 N 日 swing 阻擋（多單為高點、空單為低點），
+    且 swing 距 TP 不到 buffer×ATR，視為「TP 到不了」→ 拒絕進場。
+    """
+    try:
+        idx_loc = df.index.get_loc(dt)
+    except KeyError:
+        return True
+    start = max(0, idx_loc - lookback)
+    window = df.iloc[start:idx_loc]
+    if window.empty or atr <= 0:
+        return True
+
+    if direction == 1:   # 多單：找上方 swing high
+        swing_high = float(window['High'].max())
+        # 若 TP 在 swing 之上，且 TP 距 swing < buffer×ATR → 阻擋
+        if tp > swing_high and (tp - swing_high) < buffer_atr * atr:
+            return False
+        # 若 TP 還沒到 swing，但 swing 在路徑上（entry < swing < tp 通常已被前項涵蓋）
+        return True
+    else:                # 空單：找下方 swing low
+        swing_low = float(window['Low'].min())
+        if tp < swing_low and (swing_low - tp) < buffer_atr * atr:
+            return False
+        return True
