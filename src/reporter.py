@@ -568,6 +568,18 @@ def _write_summary(wb: Workbook, metrics: dict, equity_curve: list[dict]):
     kv('最佳單筆',          f"${metrics.get('best_trade', 0):>+,.2f}", win=True)
     kv('最差單筆',          f"${metrics.get('worst_trade', 0):>+,.2f}", win=False)
 
+    # ── 護城河 / 濾網狀態 ─────────────────────────────────────────────────
+    moat = metrics.get('moat_status')
+    if moat:
+        ws.append([])
+        section('🛡️ 護城河濾網狀態')
+        kv('台股 (^TWII)',      moat.get('TW', '?'),
+           win=(moat.get('TW') == 'enabled'))
+        kv('美股 (^GSPC)',      moat.get('US', '?'),
+           win=(moat.get('US') == 'enabled'))
+        kv('moat_tf_only',     '是（VP/BB 豁免護城河）' if moat.get('moat_tf_only')
+                                else '否（VP/BB 也受護城河封鎖）')
+
     # ── 風險指標 ──────────────────────────────────────────────────────────
     ws.append([])
     section('⚠️ 風險指標')

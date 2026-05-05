@@ -168,6 +168,13 @@ def cmd_backtest(args):
     trades = bt.run(data, signals, type_map)
     metrics = bt.get_metrics()
 
+    # 紀錄護城河啟用狀態，避免之後忘記哪些濾網因資料缺失而失效
+    metrics['moat_status'] = {
+        'TW': 'enabled' if tw_benchmark is not None else 'disabled (^TWII 載入失敗)',
+        'US': 'enabled' if us_benchmark is not None else 'disabled (^GSPC 載入失敗)',
+        'moat_tf_only': bool(getattr(args, 'moat_tf_only', True)),
+    }
+
     # ── 印出績效摘要 ──────────────────────────────────────────────────────
     print('\n' + '='*48)
     print('  回測績效摘要')
@@ -230,11 +237,12 @@ def cmd_history(args):
 def cmd_live(args):
     """
     即時交易迴圈：
-    1. 抓最新 K 線資料
-    2. 計算指標/信號
+    1. 增量更新最新 K 線資料（不重抓整年）
+    2. 計算指標/信號（與回測同參數）
     3. 根據 1/4 Kelly 下單（Bybit，僅限加密貨幣）
     """
     import time
+    import pandas as pd
     import config
     from config import get_selected_assets
     from src.fetcher import _download_single
@@ -257,33 +265,69 @@ def cmd_live(args):
     print('[注意] 測試網模式：', config.BYBIT_TESTNET)
 
     from datetime import datetime, timedelta
-    from src.database import upsert_prices, load_prices
+    from src.database import upsert_prices, load_prices, get_last_date, init_db
     from src.fetcher import asset_type_of
 
+    init_db()
+
+    # 啟動時若 DB 沒有歷史，先做一次完整下載
+    for sym in cryptos:
+        if get_last_date(sym) is None:
+            start_str = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+            end_str   = datetime.now().strftime('%Y-%m-%d')
+            df0 = _download_single(sym, start_str, end_str)
+            if df0 is not None and len(df0) >= 20:
+                upsert_prices(df0, sym, asset_type_of(sym))
+
+    # Lightweight closed-trade record（Kelly 估算只需要 .pnl 屬性）
+    class ClosedTradeStub:
+        __slots__ = ('pnl',)
+        def __init__(self, pnl): self.pnl = pnl
+
     trade_history: dict[str, list] = {s: [] for s in cryptos}
-    open_pos: dict[str, dict] = {}  # symbol → {direction, entry, qty, sl, tp}
+    open_pos: dict[str, dict] = {}  # symbol → {dir, qty, sl, tp, entry}
 
     while True:
         print(f'\n[{datetime.now():%Y-%m-%d %H:%M:%S}] 掃描中...')
         end_str   = datetime.now().strftime('%Y-%m-%d')
-        start_str = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
 
         for sym in cryptos:
             try:
-                df = _download_single(sym, start_str, end_str)
+                # 增量更新：只抓 DB 最後日期之後的新資料
+                last = get_last_date(sym)
+                if last is None:
+                    start_inc = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+                else:
+                    last_dt   = datetime.strptime(last, '%Y-%m-%d')
+                    start_inc = (last_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+
+                if datetime.strptime(start_inc, '%Y-%m-%d').date() <= datetime.now().date():
+                    df_new = _download_single(sym, start_inc, end_str)
+                    if df_new is not None and not df_new.empty:
+                        upsert_prices(df_new, sym, asset_type_of(sym))
+
+                # 從 DB 載入完整歷史做指標
+                df = load_prices(sym)
                 if df is None or len(df) < config.EMA_PERIOD + 10:
                     continue
 
-                upsert_prices(df, sym, asset_type_of(sym))
                 df  = compute_all_indicators(df, include_vp=False)
-                sig = generate_all_signals(df)['combined']
+                # 與回測一致的訊號參數（moat_tf_only=True；crypto 不受影響但保持參數對齊）
+                sig = generate_all_signals(
+                    df,
+                    asset_type=asset_type_of(sym),
+                    benchmark_df=None,
+                    moat_tf_only=True,
+                )['combined']
 
                 if len(sig) == 0:
                     continue
 
                 latest_sig = int(sig.iloc[-1])
                 price      = float(df['Close'].iloc[-1])
-                atr        = float(df['atr'].iloc[-1] or price * 0.02)
+                atr_raw    = df['atr'].iloc[-1]
+                atr        = (float(atr_raw) if atr_raw is not None
+                              and not pd.isna(atr_raw) else price * 0.02)
 
                 # 管理現有倉位
                 if sym in open_pos:
@@ -294,7 +338,11 @@ def cmd_live(args):
                              (pos['dir'] == -1 and price <= pos['tp'])
                     if hit_sl or hit_tp or (latest_sig != 0 and latest_sig != pos['dir']):
                         executor.close_position(sym, pos['qty'], pos['dir'])
-                        print(f'  平倉 {sym} @ {price:.4f}')
+                        # 估算本筆損益並寫入 Kelly 樣本
+                        pnl = (price - pos['entry']) * pos['qty'] * pos['dir']
+                        trade_history[sym].append(ClosedTradeStub(pnl))
+                        reason = 'SL' if hit_sl else ('TP' if hit_tp else 'FLIP')
+                        print(f'  平倉 {sym} @ {price:.4f}  PnL={pnl:+.2f}  ({reason})')
                         del open_pos[sym]
 
                 # 開新倉
@@ -304,13 +352,17 @@ def cmd_live(args):
                     allocated = sum(p['entry'] * p['qty'] for p in open_pos.values())
                     available = max(0.0, balance - allocated)
                     qty = position_size(balance, kf, price, sl)   # 基數用帳戶總餘額
+                    # 用 executor 提供的精度修正再下單
+                    qty_str = executor.format_qty(sym, qty)
+                    sl_str  = executor.format_price(sym, sl)
+                    tp_str  = executor.format_price(sym, tp)
                     if qty > 0 and qty * price <= available:       # 買得起才下單
-                        res = executor.place_order(sym, latest_sig, qty, sl, tp)
+                        res = executor.place_order(sym, latest_sig, qty_str, sl_str, tp_str)
                         if res.get('retCode') == 0:
                             open_pos[sym] = {'dir': latest_sig, 'qty': qty,
                                              'sl': sl, 'tp': tp, 'entry': price}
                             print(f'  {"做多" if latest_sig==1 else "做空"} {sym} '
-                                  f'qty={qty:.4f} @ {price:.4f}  SL={sl:.4f}  TP={tp:.4f}')
+                                  f'qty={qty_str} @ {price:.4f}  SL={sl_str}  TP={tp_str}')
                         else:
                             print(f'  [ORDER FAIL] {sym}: {res.get("retMsg")}')
 

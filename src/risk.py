@@ -36,13 +36,14 @@ def estimate_kelly_from_history(closed_trades: list) -> float:
         return 0.02
 
     pnls = [t.pnl for t in closed_trades if t.pnl is not None]
-    wins  = [p for p in pnls if p > 0]
-    losses = [abs(p) for p in pnls if p <= 0]
+    wins   = [p      for p in pnls if p > 0]
+    losses = [abs(p) for p in pnls if p < 0]   # 與 backtester 一致：零損益不計入贏也不計入輸
 
     if not wins or not losses:
         return 0.02
 
-    wr    = len(wins) / len(pnls)
+    decisive = len(wins) + len(losses)          # 排除平手交易，勝率分母對齊
+    wr    = len(wins) / decisive
     avg_w = sum(wins)   / len(wins)
     avg_l = sum(losses) / len(losses)
     k     = quarter_kelly(wr, avg_w, avg_l)

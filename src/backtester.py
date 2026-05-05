@@ -159,7 +159,9 @@ class Backtester:
                 # ATR 移動停利：BB 抄底單不啟用 TSL（避免抄底變趨勢）；其餘正常追蹤
                 bb_no_tsl = config.STRAT_BB_DISABLE_TSL and pos.strategy == 'bb'
                 if not bb_no_tsl:
-                    atr_now    = float(row_data.get('atr', price * 0.02) or price * 0.02)
+                    atr_raw    = row_data.get('atr', None)
+                    atr_now    = (float(atr_raw) if atr_raw is not None
+                                  and not pd.isna(atr_raw) else price * 0.02)
                     trail_dist = atr_now * config.ATR_STOP_MULTIPLIER
                     if pos.direction == 1:   # 多頭：追蹤最高價
                         peak = max(self._trail_peak.get(sym, pos.entry_price), hi)
@@ -288,7 +290,9 @@ class Backtester:
                     df    = data[sym]
                     row   = df.loc[dt]
                     price = float(row['Close'])
-                    atr   = float(row.get('atr', price * 0.02) or price * 0.02)
+                    atr_raw = row.get('atr', None)
+                    atr   = (float(atr_raw) if atr_raw is not None
+                             and not pd.isna(atr_raw) else price * 0.02)
 
                     sl, tp = calculate_stops(price, sig_val, atr, strategy=strat)
                     kf     = estimate_kelly_from_history(history_by_sym[sym])
@@ -487,10 +491,18 @@ class Backtester:
 
 # ─── 輔助函式 ─────────────────────────────────────────────────────────────────
 def _dominant_strategy(sym_sigs: dict[str, pd.Series], dt: pd.Timestamp, direction: int) -> str:
+    """
+    回傳當日主導策略：
+      恰好一個子策略命中該方向 → 該策略名稱
+      多個命中                  → 'combined'（多策略共識）
+      皆未命中（理論上不該發生） → 'combined' 並 fallback（保守處理）
+    """
     matched = [
         s for s in ('trend', 'vp', 'bb')
         if (ser := sym_sigs.get(s)) is not None
         and dt in ser.index
         and int(ser.loc[dt]) == direction
     ]
-    return matched[0] if len(matched) == 1 else 'combined'
+    if len(matched) == 1:
+        return matched[0]
+    return 'combined'
