@@ -87,8 +87,9 @@ def volume_profile_signals(df: pd.DataFrame, tol: float = config.VP_POC_TOLERANC
     # prev_below: 從下方漲到 POC → POC 扮演壓力 → 做空
     # 用前一根的 poc 比前一根的 close，避免拿當前視窗（含今日）的 POC 反推昨日位置
     poc_prev   = df['poc'].shift(1)
-    prev_above = df['Close'].shift(1) > poc_prev
-    prev_below = df['Close'].shift(1) < poc_prev
+    close_prev = df['Close'].shift(1)
+    prev_above = close_prev > poc_prev
+    prev_below = close_prev < poc_prev
 
     long_  = near_poc & prev_above & (df['rsi'] < 60)
     short_ = near_poc & prev_below & (df['rsi'] > 40)
@@ -115,7 +116,8 @@ def bollinger_reversion_signals(df: pd.DataFrame,
 
     bw_mean        = df['bb_bw'].rolling(50).mean()
     normal_vol     = df['bb_bw'] < bw_mean * bw_multiplier
-    has_bw_history = df['bb_bw'].rolling(50).count() >= 50   # 前 BB_PERIOD+50 棒暖身完成
+    # rolling(50).mean() 預設 min_periods=50，前 49 棒回 NaN，與 count()>=50 等價
+    has_bw_history = bw_mean.notna()
 
     long_  = (df['Close'] <= df['bb_lower']) & (df['rsi'] < rsi_oversold)  & normal_vol & has_bw_history
     short_ = (df['Close'] >= df['bb_upper']) & (df['rsi'] > rsi_overbought) & normal_vol & has_bw_history
@@ -152,7 +154,8 @@ def combine_signals(df: pd.DataFrame,
                     asset_type: str = '',
                     benchmark_df: Optional[pd.DataFrame] = None,
                     moat_tf_only: bool = False,
-                    rs_pct: float = config.RS_OUTPERFORM_PCT) -> pd.Series:
+                    rs_pct: float = config.RS_OUTPERFORM_PCT,
+                    market_long_ok: Optional[pd.Series] = None) -> pd.Series:
     """
     EMA 比例分數環境濾網 + 市場護城河 + 處置股/籌碼濾網。
 
@@ -180,7 +183,8 @@ def combine_signals(df: pd.DataFrame,
         bb_bull_env = bb_bull_env & ~early_bear
         bb_bear_env = bb_bear_env & ~early_bull
 
-    market_long_ok = _market_moat_filter(df, asset_type, benchmark_df, rs_pct=rs_pct)
+    if market_long_ok is None:
+        market_long_ok = _market_moat_filter(df, asset_type, benchmark_df, rs_pct=rs_pct)
 
     not_disposed = (~df['is_disposition'].astype(bool)) \
                    if 'is_disposition' in df.columns \
@@ -207,14 +211,19 @@ def combine_signals(df: pd.DataFrame,
     bb_short_eff = (bb == SHORT) & bb_bear_env
     any_short    = tf_short_eff | vp_short_eff | bb_short_eff
 
-    result = pd.Series(FLAT, index=tf.index, dtype=int)
-    result[any_long  & chip_ok & not_disposed] = LONG
-    result[any_short & not_disposed]           = SHORT
+    valid_long  = any_long  & chip_ok & not_disposed
+    valid_short = any_short & not_disposed
 
-    conflict = (any_long & chip_ok & not_disposed & any_short & not_disposed)
-    result[conflict & (bull_ema >  bear_ema)] = LONG
-    result[conflict & (bull_ema <  bear_ema)] = SHORT
-    result[conflict & (bull_ema == bear_ema)] = FLAT
+    result = pd.Series(FLAT, index=tf.index, dtype=int)
+    result[valid_long]  = LONG
+    result[valid_short] = SHORT
+
+    # 多空雙向同日觸發（罕見，~0.1%）：用 EMA 比例分數決勝；只在真有衝突時計算
+    conflict = valid_long & valid_short
+    if conflict.any():
+        result[conflict & (bull_ema >  bear_ema)] = LONG
+        result[conflict & (bull_ema <  bear_ema)] = SHORT
+        result[conflict & (bull_ema == bear_ema)] = FLAT
     return result
 
 
@@ -226,14 +235,17 @@ def generate_all_signals(df: pd.DataFrame,
     tf       = trend_following_signals(df, asset_type)
     vp       = volume_profile_signals(df)
     bb       = bollinger_reversion_signals(df)
-    combined = combine_signals(df, tf, vp, bb, asset_type=asset_type,
-                               benchmark_df=benchmark_df,
-                               moat_tf_only=moat_tf_only, rs_pct=rs_pct)
+
+    # 算一次大盤護城河，傳給 combine_signals 與下方共識分數共用
+    market_ok = _market_moat_filter(df, asset_type, benchmark_df, rs_pct=rs_pct)
+    combined  = combine_signals(df, tf, vp, bb, asset_type=asset_type,
+                                benchmark_df=benchmark_df,
+                                moat_tf_only=moat_tf_only, rs_pct=rs_pct,
+                                market_long_ok=market_ok)
 
     # 子策略共識分數（1–3）
     # moat_tf_only=True 時，Supertrend 多單受護城河限制；評分只計通過護城河的 tf 多單
     if moat_tf_only:
-        market_ok    = _market_moat_filter(df, asset_type, benchmark_df, rs_pct=rs_pct)
         tf_long_eff  = (tf == LONG) & market_ok
         tf_short_eff = (tf == SHORT)
     else:
