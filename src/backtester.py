@@ -77,6 +77,8 @@ def _exit_reason(code: str, r_mult: float) -> str:
         'bb_mid':           f'BB 抄底單 · 觸及中軌平倉  {r_str}',
         'bb_rsi':           f'BB 抄底單 · RSI 回中性平倉  {r_str}',
         'bb_target_profit': f'BB 抄底單 · 達 +{int(config.STRAT_BB_PROFIT_PCT*100)}% 短打停利  {r_str}',
+        'soft_stop':        f'軟停損出場（浮虧≥{int(config.SOFT_STOP_PCT*100)}%）  {r_str}',
+        'max_hold':         f'最長持倉強制出場（{config.MAX_HOLD_DAYS}天）  {r_str}',
     }
     return mapping.get(code, code)
 
@@ -165,6 +167,7 @@ class Backtester:
         a_high:     dict[str, np.ndarray] = {}
         a_low:      dict[str, np.ndarray] = {}
         a_atr:      dict[str, np.ndarray] = {}
+        a_atr_med:  dict[str, np.ndarray] = {}
         a_bbmid:    dict[str, np.ndarray] = {}
         a_rsi:      dict[str, np.ndarray] = {}
 
@@ -173,6 +176,7 @@ class Backtester:
                     if col in df.columns
                     else np.full(len(df), np.nan, dtype=float))
 
+        atr_med_enabled = config.ATR_KELLY_MULT > 0
         for sym, df in data.items():
             n = len(df)
             idx_map[sym]  = {ts: i for i, ts in enumerate(df.index)}
@@ -183,6 +187,11 @@ class Backtester:
             a_atr[sym]    = _arr(df, 'atr')
             a_bbmid[sym]  = _arr(df, 'bb_mid')
             a_rsi[sym]    = _arr(df, 'rsi')
+            # ATR 50-day rolling median (only built when ATR_KELLY_MULT enabled)
+            if atr_med_enabled:
+                a_atr_med[sym] = (pd.Series(a_atr[sym])
+                                  .rolling(50, min_periods=10).median()
+                                  .to_numpy())
 
         # Signal arrays (combined / score / per-strategy)
         sig_idx_map: dict[str, dict[pd.Timestamp, int]] = {}
@@ -216,6 +225,9 @@ class Backtester:
 
         open_positions:  dict[str, Trade]       = {}
         history_by_sym:  dict[str, list[Trade]] = {s: [] for s in data}
+        # Cache entry timestamp per open symbol (for hold-day computation
+        # without re-parsing pos.entry_date string each iteration).
+        entry_dt_cache:  dict[str, pd.Timestamp] = {}
 
         for dt in all_dates:
             date_str = dt.strftime('%Y-%m-%d')
@@ -278,10 +290,16 @@ class Backtester:
                     self._close_trade(pos, date_str, ep, code)
                     history_by_sym[sym].append(pos)
                     del open_positions[sym]
+                    entry_dt_cache.pop(sym, None)
                     continue
 
-                # BB 抄底單早出
-                if pos.strategy == 'bb':
+                # 持倉天數（用於 MIN_HOLD_DAYS 閘門 + SOFT_STOP / MAX_HOLD）
+                entry_dt   = entry_dt_cache.get(sym, dt)
+                hold_days  = (dt - entry_dt).days
+                min_hold_ok = hold_days >= config.MIN_HOLD_DAYS
+
+                # BB 抄底單早出（受 MIN_HOLD_DAYS 限制）
+                if pos.strategy == 'bb' and min_hold_ok:
                     bb_v  = a_bbmid[sym][i]
                     rsi_v = a_rsi[sym][i]
                     bb_mid  = float(bb_v)  if not np.isnan(bb_v)  else None
@@ -304,11 +322,30 @@ class Backtester:
                         self._close_trade(pos, date_str, price, early_code)
                         history_by_sym[sym].append(pos)
                         del open_positions[sym]
+                        entry_dt_cache.pop(sym, None)
                         continue
 
-                # 信號翻轉 → 平倉
+                # 軟停損：滿 MIN_HOLD_DAYS 後浮虧 ≥ SOFT_STOP_PCT 即出場
+                if config.SOFT_STOP_PCT > 0 and min_hold_ok:
+                    unrealised_pct = (price / pos.entry_price - 1.0) * pos.direction
+                    if unrealised_pct <= -config.SOFT_STOP_PCT:
+                        self._close_trade(pos, date_str, price, 'soft_stop')
+                        history_by_sym[sym].append(pos)
+                        del open_positions[sym]
+                        entry_dt_cache.pop(sym, None)
+                        continue
+
+                # 最長持倉強制出場（不問盈虧，釋放卡死資金）
+                if config.MAX_HOLD_DAYS > 0 and hold_days >= config.MAX_HOLD_DAYS:
+                    self._close_trade(pos, date_str, price, 'max_hold')
+                    history_by_sym[sym].append(pos)
+                    del open_positions[sym]
+                    entry_dt_cache.pop(sym, None)
+                    continue
+
+                # 信號翻轉 → 平倉（受 MIN_HOLD_DAYS 限制）
                 sim = sig_idx_map.get(sym)
-                if sim is not None:
+                if sim is not None and min_hold_ok:
                     si = sim.get(dt)
                     if si is not None:
                         sig_val = int(s_combined[sym][si])
@@ -316,12 +353,14 @@ class Backtester:
                             self._close_trade(pos, date_str, price, 'signal_flip')
                             history_by_sym[sym].append(pos)
                             del open_positions[sym]
+                            entry_dt_cache.pop(sym, None)
 
-                # 資料截止自動平倉
+                # 資料截止自動平倉（始終允許）
                 if sym in open_positions and i == last_idx[sym]:
                     self._close_trade(pos, date_str, price, 'eod')
                     history_by_sym[sym].append(pos)
                     del open_positions[sym]
+                    entry_dt_cache.pop(sym, None)
 
             # ── Step 2: 開新倉（依訊號共識度優先）────────────────────────
             if len(open_positions) < config.MAX_TOTAL_POSITIONS:
@@ -344,6 +383,13 @@ class Backtester:
                     score_val = int(s_score[sym][si])
                     if score_val < config.MIN_ENTRY_SCORE:
                         continue
+                    # 個股勝率過濾：近 SYM_WR_WINDOW 筆勝率低於門檻則跳過
+                    if config.SYM_MIN_WINRATE > 0:
+                        hist = history_by_sym[sym][-config.SYM_WR_WINDOW:]
+                        if len(hist) >= config.SYM_WR_MIN_TRADES:
+                            wins = sum(1 for t in hist if t.pnl is not None and t.pnl > 0)
+                            if wins / len(hist) < config.SYM_MIN_WINRATE:
+                                continue
                     # Dominant strategy via cached arrays
                     matched = []
                     if int(s_trend[sym][si]) == sig_val: matched.append('trend')
@@ -407,13 +453,27 @@ class Backtester:
                         tier_mult = config.SCORE_TIER_MULT.get(score_val, 1.0)
                         kf       = kf * tier_mult
 
+                    # ATR 高波動減半：當日 ATR > 50 日中位數 × N → Kelly × 0.5
+                    if atr_med_enabled and sym in a_atr_med:
+                        med = a_atr_med[sym][i]
+                        if (not np.isnan(med) and med > 0
+                                and atr > med * config.ATR_KELLY_MULT):
+                            kf = kf * 0.5
+
                     available_cash = self.capital - sum(
                         pos.entry_price * pos.quantity for pos in open_positions.values()
                     )
                     if available_cash <= 0:
                         break
 
-                    qty = position_size(available_cash, kf, price, sl)
+                    # 同日候選均分剩餘現金（依剩餘可進場名額）
+                    if config.EQUAL_CASH_SPLIT:
+                        slots_left = config.MAX_TOTAL_POSITIONS - len(open_positions)
+                        budget = available_cash / max(slots_left, 1)
+                    else:
+                        budget = available_cash
+
+                    qty = position_size(budget, kf, price, sl)
                     if qty <= 0 or qty * price > available_cash:
                         continue
 
@@ -435,6 +495,7 @@ class Backtester:
                     )
                     open_positions[sym]  = trade
                     self._orig_stop[sym] = sl
+                    entry_dt_cache[sym]  = dt
                     class_counts[atype]  = class_counts.get(atype, 0) + 1
                     strat_counts[strat]  = strat_counts.get(strat, 0) + 1
 
@@ -471,6 +532,7 @@ class Backtester:
             self._close_trade(pos, last_dt.strftime('%Y-%m-%d'),
                               float(a_close[sym][i]), 'eod')
             history_by_sym[sym].append(pos)
+            entry_dt_cache.pop(sym, None)
 
         self.trades = [t for lst in history_by_sym.values() for t in lst]
         return self.trades

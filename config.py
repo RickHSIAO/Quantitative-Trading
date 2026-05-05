@@ -209,6 +209,17 @@ BYBIT_API_SECRET = os.environ.get('BYBIT_API_SECRET', '')
 BYBIT_DEMO       = True   # 模擬帳號（Demo Trading）設 True
 BYBIT_TESTNET    = False  # 測試網（testnet.bybit.com）才設 True；一般模擬帳號設 False
 
+# ─── A/B 測試開關（Stock_01_share 借鑑，預設全停用以保留 v1.5 行為）──
+# 把任一項從預設值改掉，會直接影響 PnL；目的是逐項測試效果。
+MIN_HOLD_DAYS      = 0       # 持倉 < N 天時，只允許硬 SL/TP；其餘出場延後（0 = 停用）
+SOFT_STOP_PCT      = 0.0     # 軟停損：滿 MIN_HOLD_DAYS 後浮虧 ≥ N → 出場（0 = 停用）
+MAX_HOLD_DAYS      = 0       # 最長持倉 N 天，到期強制平倉（0 = 停用）
+SYM_MIN_WINRATE    = 0.35    # 該 symbol 近 SYM_WR_WINDOW 筆勝率 < N → 暫停做多（0 = 停用）
+SYM_WR_MIN_TRADES  = 5       # SYM_MIN_WINRATE 啟動所需最少樣本
+SYM_WR_WINDOW      = 30      # 計算個股勝率的滾動視窗
+ATR_KELLY_MULT     = 0.0     # 當日 ATR > 50 日中位數 × N → Kelly 減半（0 = 停用）
+EQUAL_CASH_SPLIT   = False   # 同日多訊號時將剩餘現金均分至剩餘進場名額
+
 # ─── 系統版號 ────────────────────────────────────────
 SYSTEM_VERSION  = 'v1.5'
 
