@@ -27,11 +27,14 @@ def quarter_kelly(win_rate: float, avg_win: float, avg_loss: float) -> float:
     return kelly_criterion(win_rate, avg_win, avg_loss) * config.KELLY_FRACTION
 
 
-def estimate_kelly_from_history(closed_trades: list) -> float:
+def estimate_kelly_from_history(closed_trades: list, window: int = 0) -> float:
     """
     從已平倉交易估算 1/4 Kelly。
     若樣本不足 KELLY_MIN_TRADES 則使用保守預設值 2%。
+    window > 0 時只取最近 N 筆（避免遠期 regime 干擾當下倉位）。
     """
+    if window > 0 and len(closed_trades) > window:
+        closed_trades = closed_trades[-window:]
     if len(closed_trades) < config.KELLY_MIN_TRADES:
         return 0.02
 

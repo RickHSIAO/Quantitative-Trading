@@ -220,6 +220,17 @@ SYM_WR_WINDOW      = 30      # 計算個股勝率的滾動視窗
 ATR_KELLY_MULT     = 0.0     # 當日 ATR > 50 日中位數 × N → Kelly 減半（0 = 停用）
 EQUAL_CASH_SPLIT   = False   # 同日多訊號時將剩餘現金均分至剩餘進場名額
 
+# ─── B 系列 A/B 旗標（出場機制 + 倉位精修，預設全停用）────────────────────
+ENABLE_BREAKEVEN_STOP   = False  # B1a：浮盈 ≥ N×R 時把 stop_loss 移到進場價
+BREAKEVEN_TRIGGER_R     = 1.0    # B1a：觸發倍數（1.0 = +1R）
+TSL_USE_CLOSE           = False  # B2a：TSL 追蹤改用收盤價（取代日內 High/Low）
+TSL_TIGHT_AFTER_R       = 0.0    # B2b：浮盈 ≥ N×R 時收緊 ATR 倍數（0 = 停用）
+TSL_TIGHT_ATR_MULT      = 1.5    # B2b：收緊後的 ATR 倍數
+ENABLE_MARKET_SHORT_MOAT = False # B3：大盤指數 < SMA(N) 才允許做空
+MARKET_SHORT_MA_PERIOD  = 50     # B3：空頭濾網的 SMA 週期
+KELLY_WINDOW            = 0      # B4：Kelly 只取最近 N 筆（0 = 全歷史）
+CLOSE_BASED_SL_TREND    = False  # B5：trend/combined 改成「收盤跌破才停損」
+
 # ─── 系統版號 ────────────────────────────────────────
 SYSTEM_VERSION  = 'v1.5'
 

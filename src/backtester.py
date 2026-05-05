@@ -254,34 +254,72 @@ class Backtester:
                     fav_pct = (1.0 - lo / pos.entry_price) * 100
                 self._excursion.setdefault(sym, []).extend([adv_pct, fav_pct])
 
+                # 計算 R 距離（給 breakeven / TSL 加速 / close-based SL 共用）
+                orig_sl_for_r = self._orig_stop.get(sym, pos.stop_loss)
+                r_dist = abs(pos.entry_price - orig_sl_for_r)
+                profit_r = 0.0
+                if r_dist > 0:
+                    if pos.direction == 1:
+                        profit_r = (price - pos.entry_price) / r_dist
+                    else:
+                        profit_r = (pos.entry_price - price) / r_dist
+
                 # ATR 移動停利：BB 抄底單不啟用 TSL（避免抄底變趨勢）；其餘正常追蹤
                 bb_no_tsl = config.STRAT_BB_DISABLE_TSL and pos.strategy == 'bb'
                 if not bb_no_tsl:
                     atr_v   = a_atr[sym][i]
                     atr_now = float(atr_v) if not np.isnan(atr_v) else price * 0.02
-                    trail_dist = atr_now * config.ATR_STOP_MULTIPLIER
-                    if pos.direction == 1:   # 多頭：追蹤最高價
-                        peak = max(self._trail_peak.get(sym, pos.entry_price), hi)
+                    # B2b：浮盈 ≥ TSL_TIGHT_AFTER_R 時用較緊的 ATR 倍數
+                    if (config.TSL_TIGHT_AFTER_R > 0
+                            and profit_r >= config.TSL_TIGHT_AFTER_R):
+                        eff_mult = config.TSL_TIGHT_ATR_MULT
+                    else:
+                        eff_mult = config.ATR_STOP_MULTIPLIER
+                    trail_dist = atr_now * eff_mult
+                    # B2a：peak 改用收盤價（取代日內 High/Low），減少上影線拉高
+                    track_long  = price if config.TSL_USE_CLOSE else hi
+                    track_short = price if config.TSL_USE_CLOSE else lo
+                    if pos.direction == 1:   # 多頭：追蹤最高
+                        peak = max(self._trail_peak.get(sym, pos.entry_price), track_long)
                         self._trail_peak[sym] = peak
                         new_sl = peak - trail_dist
                         if new_sl > pos.stop_loss and new_sl > pos.entry_price:
                             pos.stop_loss = new_sl
-                    else:                    # 空頭：追蹤最低價
-                        trough = min(self._trail_peak.get(sym, pos.entry_price), lo)
+                    else:                    # 空頭：追蹤最低
+                        trough = min(self._trail_peak.get(sym, pos.entry_price), track_short)
                         self._trail_peak[sym] = trough
                         new_sl = trough + trail_dist
                         if new_sl < pos.stop_loss and new_sl < pos.entry_price:
                             pos.stop_loss = new_sl
 
-                # 用 High/Low 判斷日內是否觸及 SL/TP，TP 優先
-                hit_tp = ((pos.direction ==  1 and hi  >= pos.take_profit) or
-                          (pos.direction == -1 and lo  <= pos.take_profit))
-                hit_sl = (not hit_tp) and (
-                         (pos.direction ==  1 and lo  <= pos.stop_loss) or
-                         (pos.direction == -1 and hi  >= pos.stop_loss))
+                # B1a：Breakeven — 浮盈 ≥ N×R 時把 SL 移到進場價（不再倒退）
+                if config.ENABLE_BREAKEVEN_STOP and r_dist > 0:
+                    if profit_r >= config.BREAKEVEN_TRIGGER_R:
+                        if pos.direction == 1 and pos.stop_loss < pos.entry_price:
+                            pos.stop_loss = pos.entry_price
+                        elif pos.direction == -1 and pos.stop_loss > pos.entry_price:
+                            pos.stop_loss = pos.entry_price
+
+                # SL/TP 觸發判斷：B5 對 trend/combined 改用收盤確認制
+                close_based = (config.CLOSE_BASED_SL_TREND
+                               and pos.strategy in ('trend', 'combined'))
+                if close_based:
+                    hit_tp = ((pos.direction ==  1 and price >= pos.take_profit) or
+                              (pos.direction == -1 and price <= pos.take_profit))
+                    hit_sl = (not hit_tp) and (
+                             (pos.direction ==  1 and price <= pos.stop_loss) or
+                             (pos.direction == -1 and price >= pos.stop_loss))
+                    sl_exit_price = price                # 收盤確認 → 出場價就是收盤
+                else:
+                    hit_tp = ((pos.direction ==  1 and hi  >= pos.take_profit) or
+                              (pos.direction == -1 and lo  <= pos.take_profit))
+                    hit_sl = (not hit_tp) and (
+                             (pos.direction ==  1 and lo  <= pos.stop_loss) or
+                             (pos.direction == -1 and hi  >= pos.stop_loss))
+                    sl_exit_price = pos.stop_loss
 
                 if hit_sl or hit_tp:
-                    ep   = pos.stop_loss if hit_sl else pos.take_profit
+                    ep   = sl_exit_price if hit_sl else pos.take_profit
                     if hit_sl:
                         orig = self._orig_stop.get(sym, pos.stop_loss)
                         code = 'trailing_stop' if pos.stop_loss != orig else 'stop_loss'
@@ -447,7 +485,8 @@ class Backtester:
                             buffer_atr=config.GEO_RR_BUFFER_ATR):
                         continue
 
-                    kf = estimate_kelly_from_history(history_by_sym[sym])
+                    kf = estimate_kelly_from_history(history_by_sym[sym],
+                                                     window=config.KELLY_WINDOW)
 
                     if config.ENABLE_SCORE_TIER_SIZING:
                         tier_mult = config.SCORE_TIER_MULT.get(score_val, 1.0)

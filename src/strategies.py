@@ -43,6 +43,24 @@ def _market_moat_filter(df: pd.DataFrame,
     return bm_above | rs_strong
 
 
+def _market_short_ok(df: pd.DataFrame,
+                     asset_type: str,
+                     benchmark_df: Optional[pd.DataFrame],
+                     ma_period: Optional[int] = None) -> pd.Series:
+    """
+    True = 市場環境允許做空進場。
+    台股/美股：大盤指數 < SMA(MARKET_SHORT_MA_PERIOD) 才允許做空（牛市禁空）；
+    其他類別：永遠 True。
+    """
+    if benchmark_df is None or asset_type not in ('TW Stock', 'US Stock'):
+        return pd.Series(True, index=df.index)
+    if ma_period is None:
+        ma_period = config.MARKET_SHORT_MA_PERIOD
+    bm_close = benchmark_df['Close']
+    bm_ma    = bm_close.rolling(ma_period).mean()
+    return (bm_close < bm_ma).reindex(df.index, method='ffill').fillna(False)
+
+
 # ─── 策略 1：趨勢動能 (Supertrend) ───────────────────────────────────────────
 def trend_following_signals(df: pd.DataFrame, asset_type: str = '') -> pd.Series:
     """
@@ -155,7 +173,8 @@ def combine_signals(df: pd.DataFrame,
                     benchmark_df: Optional[pd.DataFrame] = None,
                     moat_tf_only: bool = False,
                     rs_pct: float = config.RS_OUTPERFORM_PCT,
-                    market_long_ok: Optional[pd.Series] = None) -> pd.Series:
+                    market_long_ok: Optional[pd.Series] = None,
+                    market_short_ok: Optional[pd.Series] = None) -> pd.Series:
     """
     EMA 比例分數環境濾網 + 市場護城河 + 處置股/籌碼濾網。
 
@@ -186,6 +205,13 @@ def combine_signals(df: pd.DataFrame,
     if market_long_ok is None:
         market_long_ok = _market_moat_filter(df, asset_type, benchmark_df, rs_pct=rs_pct)
 
+    # 大盤空頭濾網：預設 True（不限制），啟用 ENABLE_MARKET_SHORT_MOAT 才會收緊
+    if market_short_ok is None:
+        if config.ENABLE_MARKET_SHORT_MOAT:
+            market_short_ok = _market_short_ok(df, asset_type, benchmark_df)
+        else:
+            market_short_ok = pd.Series(True, index=df.index)
+
     not_disposed = (~df['is_disposition'].astype(bool)) \
                    if 'is_disposition' in df.columns \
                    else pd.Series(True, index=df.index)
@@ -206,9 +232,15 @@ def combine_signals(df: pd.DataFrame,
 
     any_long = tf_long_eff | vp_long_eff | bb_long_eff
 
-    tf_short_eff = (tf == SHORT) & bear_env
-    vp_short_eff = (vp == SHORT) & bear_env
-    bb_short_eff = (bb == SHORT) & bb_bear_env
+    # market_short_ok 對稱套用 moat_tf_only：True 時只擋 trend 空單，VP/BB 豁免
+    if moat_tf_only:
+        tf_short_eff = (tf == SHORT) & market_short_ok & bear_env
+        vp_short_eff = (vp == SHORT) & bear_env
+        bb_short_eff = (bb == SHORT) & bb_bear_env
+    else:
+        tf_short_eff = (tf == SHORT) & market_short_ok & bear_env
+        vp_short_eff = (vp == SHORT) & market_short_ok & bear_env
+        bb_short_eff = (bb == SHORT) & market_short_ok & bb_bear_env
     any_short    = tf_short_eff | vp_short_eff | bb_short_eff
 
     valid_long  = any_long  & chip_ok & not_disposed
@@ -238,10 +270,16 @@ def generate_all_signals(df: pd.DataFrame,
 
     # 算一次大盤護城河，傳給 combine_signals 與下方共識分數共用
     market_ok = _market_moat_filter(df, asset_type, benchmark_df, rs_pct=rs_pct)
+    market_short_ok = (
+        _market_short_ok(df, asset_type, benchmark_df)
+        if config.ENABLE_MARKET_SHORT_MOAT
+        else None
+    )
     combined  = combine_signals(df, tf, vp, bb, asset_type=asset_type,
                                 benchmark_df=benchmark_df,
                                 moat_tf_only=moat_tf_only, rs_pct=rs_pct,
-                                market_long_ok=market_ok)
+                                market_long_ok=market_ok,
+                                market_short_ok=market_short_ok)
 
     # 子策略共識分數（1–3）
     # moat_tf_only=True 時，Supertrend 多單受護城河限制；評分只計通過護城河的 tf 多單

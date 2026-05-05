@@ -65,13 +65,13 @@ def run_one(data, signals, tm, overrides: dict, note: str) -> dict:
 
 
 RUNS = [
-    ('A0_current_default',   {}),  # 用當前 config.py 預設（含已啟用的旗標）
-    ('A1_min_hold_3',        {'MIN_HOLD_DAYS': 3}),
-    ('A2_soft_stop_4pct',    {'SOFT_STOP_PCT': 0.04}),
-    ('A3_max_hold_120',      {'MAX_HOLD_DAYS': 120}),
-    ('A4_sym_wr_35pct',      {'SYM_MIN_WINRATE': 0.35}),
-    ('A5_atr_kelly_15x',     {'ATR_KELLY_MULT': 1.5}),
-    ('A6_equal_cash_split',  {'EQUAL_CASH_SPLIT': True}),
+    ('B0_current_default',   {}),  # 當前 config.py 預設（含 SYM_MIN_WINRATE=0.35）
+    ('B1a_breakeven_1R',     {'ENABLE_BREAKEVEN_STOP': True}),
+    ('B2a_tsl_close',        {'TSL_USE_CLOSE': True}),
+    ('B2b_tsl_tight_2R',     {'TSL_TIGHT_AFTER_R': 2.0}),
+    ('B3_short_moat_50',     {'ENABLE_MARKET_SHORT_MOAT': True}),
+    ('B4_kelly_window_50',   {'KELLY_WINDOW': 50}),
+    ('B5_close_sl_trend',    {'CLOSE_BASED_SL_TREND': True}),
 ]
 
 
