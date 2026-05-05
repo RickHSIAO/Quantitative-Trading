@@ -156,6 +156,60 @@ class Backtester:
             signals:    dict[str, dict[str, pd.Series]],
             asset_types: dict[str, str]) -> list[Trade]:
 
+        # ── Pre-build per-symbol numpy caches ────────────────────────────────
+        # Hot loop avoids pandas .loc / Series construction by reading from
+        # ndarrays via O(1) date→index dict lookups.
+        idx_map:    dict[str, dict[pd.Timestamp, int]] = {}
+        last_idx:   dict[str, int]                    = {}
+        a_close:    dict[str, np.ndarray] = {}
+        a_high:     dict[str, np.ndarray] = {}
+        a_low:      dict[str, np.ndarray] = {}
+        a_atr:      dict[str, np.ndarray] = {}
+        a_bbmid:    dict[str, np.ndarray] = {}
+        a_rsi:      dict[str, np.ndarray] = {}
+
+        def _arr(df: pd.DataFrame, col: str) -> np.ndarray:
+            return (df[col].to_numpy(dtype=float)
+                    if col in df.columns
+                    else np.full(len(df), np.nan, dtype=float))
+
+        for sym, df in data.items():
+            n = len(df)
+            idx_map[sym]  = {ts: i for i, ts in enumerate(df.index)}
+            last_idx[sym] = n - 1
+            a_close[sym]  = df['Close'].to_numpy(dtype=float)
+            a_high[sym]   = df['High'].to_numpy(dtype=float)
+            a_low[sym]    = df['Low'].to_numpy(dtype=float)
+            a_atr[sym]    = _arr(df, 'atr')
+            a_bbmid[sym]  = _arr(df, 'bb_mid')
+            a_rsi[sym]    = _arr(df, 'rsi')
+
+        # Signal arrays (combined / score / per-strategy)
+        sig_idx_map: dict[str, dict[pd.Timestamp, int]] = {}
+        s_combined:  dict[str, np.ndarray] = {}
+        s_score:     dict[str, np.ndarray] = {}
+        s_trend:     dict[str, np.ndarray] = {}
+        s_vp:        dict[str, np.ndarray] = {}
+        s_bb:        dict[str, np.ndarray] = {}
+
+        def _sig_arr(sigs: dict, key: str, n: int) -> np.ndarray:
+            ser = sigs.get(key)
+            if ser is None:
+                return np.zeros(n, dtype=np.int64)
+            return ser.fillna(0).to_numpy(dtype=np.int64)
+
+        for sym, sigs in signals.items():
+            ref = sigs.get('combined')
+            if ref is None:
+                continue
+            n = len(ref)
+            sig_idx_map[sym] = {ts: i for i, ts in enumerate(ref.index)}
+            s_combined[sym]  = _sig_arr(sigs, 'combined', n)
+            s_score[sym]     = _sig_arr(sigs, 'score',    n)
+            s_trend[sym]     = _sig_arr(sigs, 'trend',    n)
+            s_vp[sym]        = _sig_arr(sigs, 'vp',       n)
+            s_bb[sym]        = _sig_arr(sigs, 'bb',       n)
+
         all_dates: list[pd.Timestamp] = sorted(
             {d for df in data.values() for d in df.index}
         )
@@ -168,12 +222,15 @@ class Backtester:
 
             # ── Step 1: 更新持倉 MAE/MFE，檢查止損/止盈 ──────────────────
             for sym in list(open_positions.keys()):
-                if dt not in data[sym].index:
+                im = idx_map.get(sym)
+                if im is None:
                     continue
-                row_data = data[sym].loc[dt]
-                price = float(row_data['Close'])
-                hi    = float(row_data['High'])
-                lo    = float(row_data['Low'])
+                i = im.get(dt)
+                if i is None:
+                    continue
+                price = float(a_close[sym][i])
+                hi    = float(a_high[sym][i])
+                lo    = float(a_low[sym][i])
                 pos   = open_positions[sym]
 
                 # 追蹤 MAE/MFE：多頭用 Low/High；空頭用 High/Low
@@ -188,22 +245,19 @@ class Backtester:
                 # ATR 移動停利：BB 抄底單不啟用 TSL（避免抄底變趨勢）；其餘正常追蹤
                 bb_no_tsl = config.STRAT_BB_DISABLE_TSL and pos.strategy == 'bb'
                 if not bb_no_tsl:
-                    atr_raw    = row_data.get('atr', None)
-                    atr_now    = (float(atr_raw) if atr_raw is not None
-                                  and not pd.isna(atr_raw) else price * 0.02)
+                    atr_v   = a_atr[sym][i]
+                    atr_now = float(atr_v) if not np.isnan(atr_v) else price * 0.02
                     trail_dist = atr_now * config.ATR_STOP_MULTIPLIER
                     if pos.direction == 1:   # 多頭：追蹤最高價
                         peak = max(self._trail_peak.get(sym, pos.entry_price), hi)
                         self._trail_peak[sym] = peak
                         new_sl = peak - trail_dist
-                        # 只有浮盈超過進場價才啟動追蹤，避免在虧損區觸發 TSL
                         if new_sl > pos.stop_loss and new_sl > pos.entry_price:
                             pos.stop_loss = new_sl
                     else:                    # 空頭：追蹤最低價
                         trough = min(self._trail_peak.get(sym, pos.entry_price), lo)
                         self._trail_peak[sym] = trough
                         new_sl = trough + trail_dist
-                        # 同上，空頭需停損點低於進場價才啟動
                         if new_sl < pos.stop_loss and new_sl < pos.entry_price:
                             pos.stop_loss = new_sl
 
@@ -226,13 +280,12 @@ class Backtester:
                     del open_positions[sym]
                     continue
 
-                # BB 抄底單早出：觸 BB 中軌 / RSI 回到中性 / 浮盈 ≥ +N%
-                # 三條件 OR，於收盤價觸發；位於 SL/TP 之後、信號翻轉之前
+                # BB 抄底單早出
                 if pos.strategy == 'bb':
-                    bb_mid_val = row_data.get('bb_mid', None)
-                    rsi_val    = row_data.get('rsi', None)
-                    bb_mid     = float(bb_mid_val) if bb_mid_val is not None and not pd.isna(bb_mid_val) else None
-                    rsi_now    = float(rsi_val)    if rsi_val    is not None and not pd.isna(rsi_val)    else None
+                    bb_v  = a_bbmid[sym][i]
+                    rsi_v = a_rsi[sym][i]
+                    bb_mid  = float(bb_v)  if not np.isnan(bb_v)  else None
+                    rsi_now = float(rsi_v) if not np.isnan(rsi_v) else None
                     profit_pct = (price / pos.entry_price - 1.0) * pos.direction
 
                     early_code = None
@@ -254,67 +307,70 @@ class Backtester:
                         continue
 
                 # 信號翻轉 → 平倉
-                comb = signals.get(sym, {}).get('combined')
-                if comb is not None and dt in comb.index:
-                    sig_val = int(comb.loc[dt])
-                    if sig_val != 0 and sig_val != pos.direction:
-                        self._close_trade(pos, date_str, price, 'signal_flip')
-                        history_by_sym[sym].append(pos)
-                        del open_positions[sym]
+                sim = sig_idx_map.get(sym)
+                if sim is not None:
+                    si = sim.get(dt)
+                    if si is not None:
+                        sig_val = int(s_combined[sym][si])
+                        if sig_val != 0 and sig_val != pos.direction:
+                            self._close_trade(pos, date_str, price, 'signal_flip')
+                            history_by_sym[sym].append(pos)
+                            del open_positions[sym]
 
-                # 資料截止自動平倉：避免持倉在無資料期間成為「幽靈倉」
-                if sym in open_positions and dt == data[sym].index[-1]:
+                # 資料截止自動平倉
+                if sym in open_positions and i == last_idx[sym]:
                     self._close_trade(pos, date_str, price, 'eod')
                     history_by_sym[sym].append(pos)
                     del open_positions[sym]
 
             # ── Step 2: 開新倉（依訊號共識度優先）────────────────────────
             if len(open_positions) < config.MAX_TOTAL_POSITIONS:
-                # Phase 1：蒐集當日所有有效候選，附帶共識分數與主導策略
                 candidates: list[tuple[str, int, int, str]] = []
-                for sym, df in data.items():
-                    if sym in open_positions or dt not in df.index:
+                for sym in data:
+                    if sym in open_positions:
                         continue
-                    sym_sigs = signals.get(sym, {})
-                    comb     = sym_sigs.get('combined')
-                    if comb is None or dt not in comb.index:
+                    im = idx_map.get(sym)
+                    if im is None or dt not in im:
                         continue
-                    sig_val = int(comb.loc[dt])
+                    sim = sig_idx_map.get(sym)
+                    if sim is None:
+                        continue
+                    si = sim.get(dt)
+                    if si is None:
+                        continue
+                    sig_val = int(s_combined[sym][si])
                     if sig_val == 0:
                         continue
-                    score_ser = sym_sigs.get('score')
-                    score_val = (int(score_ser.loc[dt])
-                                 if score_ser is not None and dt in score_ser.index
-                                 else 1)
+                    score_val = int(s_score[sym][si])
                     if score_val < config.MIN_ENTRY_SCORE:
                         continue
-                    strat = _dominant_strategy(sym_sigs, dt, sig_val)
+                    # Dominant strategy via cached arrays
+                    matched = []
+                    if int(s_trend[sym][si]) == sig_val: matched.append('trend')
+                    if int(s_vp[sym][si])    == sig_val: matched.append('vp')
+                    if int(s_bb[sym][si])    == sig_val: matched.append('bb')
+                    strat = matched[0] if len(matched) == 1 else 'combined'
                     candidates.append((sym, sig_val, score_val, strat))
 
-                # Phase 2：共識分數由高到低排序，3 分（三策略同向）優先開倉
                 candidates.sort(key=lambda x: x[2], reverse=True)
 
-                # Phase 3：依序開倉，同時檢查整體上限、各資產類別名額、各策略名額
                 class_counts: dict[str, int] = {}
                 strat_counts: dict[str, int] = {}
                 for pos in open_positions.values():
                     class_counts[pos.asset_type] = class_counts.get(pos.asset_type, 0) + 1
                     strat_counts[pos.strategy]   = strat_counts.get(pos.strategy, 0)   + 1
 
-                # 熔斷：檢查是否仍在暫停期；超過則自動解除
                 cb_paused = (self._cb_pause_until is not None
                              and dt < self._cb_pause_until)
                 if self._cb_pause_until is not None and dt >= self._cb_pause_until:
                     self._cb_pause_until = None
 
-                # 當日已實現虧損 / 當日交易筆數
                 daily_pnl    = self._cb_daily_pnl.get(date_str, 0.0)
                 daily_trades = self._cb_daily_trades.get(date_str, 0)
                 daily_loss_blocked = (config.ENABLE_CIRCUIT_BREAKER and
                                       daily_pnl <= -config.CB_DAILY_LOSS_PCT * self.capital)
                 daily_count_blocked = (config.ENABLE_CIRCUIT_BREAKER and
                                        daily_trades >= config.CB_MAX_DAILY_TRADES)
-
                 cb_block_today = (config.ENABLE_CIRCUIT_BREAKER and
                                   (cb_paused or daily_loss_blocked or daily_count_blocked))
 
@@ -327,31 +383,26 @@ class Backtester:
                     if class_counts.get(atype, 0) >= class_limit:
                         continue
 
-                    # Plan B：每策略名額（dict 為空時不啟用；'combined' 不限）
                     strat_limit = config.MAX_POS_PER_STRATEGY.get(strat) \
                                   if config.MAX_POS_PER_STRATEGY else None
                     if strat_limit is not None and strat_counts.get(strat, 0) >= strat_limit:
                         continue
 
-                    df    = data[sym]
-                    row   = df.loc[dt]
-                    price = float(row['Close'])
-                    atr_raw = row.get('atr', None)
-                    atr   = (float(atr_raw) if atr_raw is not None
-                             and not pd.isna(atr_raw) else price * 0.02)
+                    i = idx_map[sym][dt]
+                    price = float(a_close[sym][i])
+                    atr_v = a_atr[sym][i]
+                    atr   = float(atr_v) if not np.isnan(atr_v) else price * 0.02
 
                     sl, tp = calculate_stops(price, sig_val, atr, strategy=strat)
 
-                    # 幾何 R:R：檢查 TP 路徑是否撞到近 N 日 swing 阻力／支撐
-                    if config.ENABLE_GEOMETRIC_RR and not _geometric_rr_ok(
-                            df, dt, sig_val, tp, atr,
+                    if config.ENABLE_GEOMETRIC_RR and not _geometric_rr_ok_arr(
+                            a_high[sym], a_low[sym], i, sig_val, tp, atr,
                             lookback=config.GEO_RR_LOOKBACK,
                             buffer_atr=config.GEO_RR_BUFFER_ATR):
                         continue
 
-                    kf     = estimate_kelly_from_history(history_by_sym[sym])
+                    kf = estimate_kelly_from_history(history_by_sym[sym])
 
-                    # Plan C：依 score 縮放 Kelly（A/B/C 評分）
                     if config.ENABLE_SCORE_TIER_SIZING:
                         tier_mult = config.SCORE_TIER_MULT.get(score_val, 1.0)
                         kf       = kf * tier_mult
@@ -363,15 +414,13 @@ class Backtester:
                         break
 
                     qty = position_size(available_cash, kf, price, sl)
-
                     if qty <= 0 or qty * price > available_cash:
                         continue
 
-                    # 當日進場計數（用於熔斷）
                     self._cb_daily_trades[date_str] = self._cb_daily_trades.get(date_str, 0) + 1
 
-                    r_dist   = abs(price - sl)
-                    trade    = Trade(
+                    r_dist = abs(price - sl)
+                    trade  = Trade(
                         symbol       = sym,
                         strategy     = strat,
                         direction    = sig_val,
@@ -384,24 +433,26 @@ class Backtester:
                         entry_reason = _entry_reason(strat, sig_val),
                         risk_usd     = round(r_dist * qty, 2),
                     )
-                    open_positions[sym]      = trade
-                    self._orig_stop[sym]     = sl
-                    class_counts[atype]      = class_counts.get(atype, 0) + 1
-                    strat_counts[strat]      = strat_counts.get(strat, 0) + 1
+                    open_positions[sym]  = trade
+                    self._orig_stop[sym] = sl
+                    class_counts[atype]  = class_counts.get(atype, 0) + 1
+                    strat_counts[strat]  = strat_counts.get(strat, 0) + 1
 
             # ── Step 3: 記錄淨值 ──────────────────────────────────────────
-            unrealised = sum(
-                (float(data[sym].loc[dt, 'Close']) - pos.entry_price) * pos.quantity * pos.direction
-                for sym, pos in open_positions.items()
-                if dt in data[sym].index
-            )
-            allocated = sum(
-                pos.entry_price * pos.quantity
-                for sym, pos in open_positions.items()
-                if dt in data[sym].index
-            )
+            unrealised = 0.0
+            allocated  = 0.0
+            for sym, pos in open_positions.items():
+                im = idx_map.get(sym)
+                if im is None:
+                    continue
+                i = im.get(dt)
+                if i is None:
+                    continue
+                close_v = float(a_close[sym][i])
+                unrealised += (close_v - pos.entry_price) * pos.quantity * pos.direction
+                allocated  += pos.entry_price * pos.quantity
+
             total_equity = round(self.capital + unrealised, 2)
-            # 更新峰值（用於熔斷的 DD 條件）
             if total_equity > self._equity_peak:
                 self._equity_peak = total_equity
             self.equity_curve.append({
@@ -415,9 +466,10 @@ class Backtester:
 
         # ── Step 4: 強制平倉（回測結束）─────────────────────────────────
         for sym, pos in open_positions.items():
-            df = data[sym]
-            self._close_trade(pos, df.index[-1].strftime('%Y-%m-%d'),
-                              float(df['Close'].iloc[-1]), 'eod')
+            i = last_idx[sym]
+            last_dt = data[sym].index[i]
+            self._close_trade(pos, last_dt.strftime('%Y-%m-%d'),
+                              float(a_close[sym][i]), 'eod')
             history_by_sym[sym].append(pos)
 
         self.trades = [t for lst in history_by_sym.values() for t in lst]
@@ -577,6 +629,31 @@ def _dominant_strategy(sym_sigs: dict[str, pd.Series], dt: pd.Timestamp, directi
     if len(matched) == 1:
         return matched[0]
     return 'combined'
+
+
+def _geometric_rr_ok_arr(high_arr: np.ndarray,
+                          low_arr:  np.ndarray,
+                          i:         int,
+                          direction: int,
+                          tp:        float,
+                          atr:       float,
+                          lookback:  int = 20,
+                          buffer_atr: float = 1.0) -> bool:
+    """Array-backed geometric R:R check. Equivalent to `_geometric_rr_ok`
+    but reads ndarrays directly instead of slicing a DataFrame."""
+    start = max(0, i - lookback)
+    if start >= i or atr <= 0:
+        return True
+    if direction == 1:
+        swing_high = float(high_arr[start:i].max())
+        if tp > swing_high and (tp - swing_high) < buffer_atr * atr:
+            return False
+        return True
+    else:
+        swing_low = float(low_arr[start:i].min())
+        if tp < swing_low and (swing_low - tp) < buffer_atr * atr:
+            return False
+        return True
 
 
 def _geometric_rr_ok(df: pd.DataFrame,

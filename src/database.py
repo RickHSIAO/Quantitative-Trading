@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import threading
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
@@ -8,13 +9,45 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 
 
+_conn: sqlite3.Connection | None = None
+_conn_lock = threading.Lock()
+_write_lock = threading.Lock()
+
+
 def get_connection() -> sqlite3.Connection:
-    Path(config.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(config.DB_PATH)
+    """Singleton connection with WAL + tuned PRAGMAs.
+
+    sqlite3 's `with conn:` context manager commits on exit but does NOT close
+    the connection — the singleton stays alive for the process lifetime.
+    """
+    global _conn
+    if _conn is None:
+        with _conn_lock:
+            if _conn is None:
+                Path(config.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+                conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("PRAGMA cache_size=-65536")     # ~64 MB page cache
+                conn.execute("PRAGMA temp_store=MEMORY")
+                conn.execute("PRAGMA mmap_size=268435456")    # 256 MB mmap
+                conn.commit()
+                _conn = conn
+    return _conn
+
+
+def close_connection() -> None:
+    """Close the singleton (test teardown / explicit shutdown)."""
+    global _conn
+    with _conn_lock:
+        if _conn is not None:
+            _conn.close()
+            _conn = None
 
 
 def init_db():
-    with get_connection() as conn:
+    conn = get_connection()
+    with _write_lock, conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS prices (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,34 +119,47 @@ def init_db():
 
 def upsert_prices(df: pd.DataFrame, symbol: str, asset_type: str):
     """Insert or ignore duplicate (symbol, date) rows."""
-    work = df.copy()
-    if isinstance(work.index, pd.DatetimeIndex):
-        work.index = work.index.strftime('%Y-%m-%d')
-    work.index.name = 'date'
-    work = work.reset_index()
+    if df is None or df.empty:
+        return
 
-    # Normalise column names to lowercase
-    work.columns = [c.lower() for c in work.columns]
-    work['symbol']     = symbol
-    work['asset_type'] = asset_type
+    # Build (symbol, date, open, high, low, close, volume, asset_type) tuples
+    # without copying the whole frame.
+    if isinstance(df.index, pd.DatetimeIndex):
+        date_iter = df.index.strftime('%Y-%m-%d')
+    else:
+        date_iter = df.index.astype(str)
 
-    needed = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume', 'asset_type']
-    for col in needed:
-        if col not in work.columns:
-            work[col] = None
-    work = work[needed].dropna(subset=['close'])
+    cols_lower = {c.lower(): c for c in df.columns}
+    def _col(name):
+        return df[cols_lower[name]] if name in cols_lower else pd.Series([None] * len(df), index=df.index)
 
-    with get_connection() as conn:
+    o = _col('open').to_numpy()
+    h = _col('high').to_numpy()
+    lo = _col('low').to_numpy()
+    c = _col('close').to_numpy()
+    v = _col('volume').to_numpy()
+    dates = list(date_iter)
+
+    rows = [
+        (symbol, dates[i], o[i], h[i], lo[i], c[i], v[i], asset_type)
+        for i in range(len(df))
+        if pd.notna(c[i])
+    ]
+    if not rows:
+        return
+
+    first = min(r[1] for r in rows)
+    last  = max(r[1] for r in rows)
+    count = len(rows)
+
+    conn = get_connection()
+    with _write_lock, conn:
         conn.executemany(
             """INSERT OR IGNORE INTO prices
                (symbol, date, open, high, low, close, volume, asset_type)
                VALUES (?,?,?,?,?,?,?,?)""",
-            work[needed].itertuples(index=False, name=None),
+            rows,
         )
-        # Update registry
-        first = work['date'].min()
-        last  = work['date'].max()
-        count = len(work)
         conn.execute(
             """INSERT INTO asset_registry(symbol, asset_type, first_date, last_date, bar_count)
                VALUES (?,?,?,?,?)
@@ -174,7 +220,8 @@ def save_backtest_run(trades: list, metrics: dict, note: str = '',
     init_db()
     run_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    with get_connection() as conn:
+    conn = get_connection()
+    with _write_lock, conn:
         cur = conn.execute(
             """INSERT INTO backtest_runs
                (run_at, version, initial_capital, final_capital,
