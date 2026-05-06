@@ -2,16 +2,57 @@
 
 ## Latest Local Update: BTC Long-Only Crypto Moat
 
-This local version keeps the existing v1.8 silo architecture and adds one
-cross-asset filter for crypto entries:
+This local version keeps the v1.8 silo architecture because each silo maps to a
+different exchange/account:
 
+- `Crypto`: Bybit
+- `TW Stock`: Taiwan broker
+- `US+Commodity`: US broker
+
+The silo mode is a hard execution constraint, not only a backtest option. Funds
+cannot be shared across these accounts, so non-silo optimizations are not
+tradeable even when they improve headline return.
+
+Current tradable architecture:
+
+- `ENABLE_SILO_MODE = True`
+- `STRATEGY_PROFILES` defines the three account-level strategies.
+- Each profile has its own capital, max total positions, and max position pct.
+- `US+Commodity` is the only profile with class-level position limits because
+  US stocks and gold/silver share the same broker account.
 - `ENABLE_CRYPTO_BTC_MOAT = True`
 - `CRYPTO_BTC_MOAT_MODE = 'long_only'`
 - Crypto long entries are allowed only when `BYBIT:BTCUSDT.P` is above EMA200.
 - Crypto short entries remain controlled by each symbol's own signals.
 - TW Stock default risk remains `0.020`.
 
-Yearly sweep versus the clean baseline, using 2021 through 2026 YTD:
+Current profile limits:
+
+| Profile | Account | Asset Types | Max Positions | Class Limits |
+|---|---|---|---:|---|
+| Crypto | Bybit | Crypto | 2 | none |
+| TW Stock | Taiwan broker | TW Stock | 6 | none |
+| US+Commodity | US broker | US Stock, Commodity | 8 | US Stock 6, Commodity 2 |
+
+Current tradable profile backtest:
+
+| Scope | Annual Return | Profit Factor | Max Drawdown | Trades |
+|---|---:|---:|---:|---:|
+| Overall | 5.26% | 1.207 | -12.43% | 903 |
+| Crypto | 10.16% | 1.387 | -29.86% | 122 |
+| TW Stock | 3.35% | 1.146 | -13.51% | 383 |
+| US+Commodity | 1.43% | 1.053 | -13.37% | 398 |
+
+Rejected non-tradeable sweep result:
+
+- `ENABLE_SILO_MODE = False`, `MAX_TOTAL_POSITIONS = 20`
+- Annual return: about `9.66%`
+- Profit Factor: about `1.296`
+- Max drawdown: about `-10.29%`
+- Rejected because it assumes one shared capital pool across separate brokers.
+
+Previous BTC moat-only yearly sweep versus the clean baseline, using 2021
+through 2026 YTD:
 
 | Year | Baseline PnL | New PnL | Delta |
 |---|---:|---:|---:|

@@ -202,11 +202,13 @@ LEVERAGE_BY_CLASS: dict = {
     'TW Stock':  1.0,
     'Commodity': 1.0,
 }
-MAX_TOTAL_POSITIONS    = 15     # 同時持倉上限
+MAX_TOTAL_POSITIONS    = 15     # 單一資金池/舊版模式的同時持倉上限；silo 使用 STRATEGY_PROFILES
 KELLY_MIN_TRADES       = 10     # 觸發 Kelly 所需最少交易紀錄
 
 # 每個資產類別的同時持倉上限（名額隔離，非資金隔離）
-# 各類別上限之和可大於 MAX_TOTAL_POSITIONS，整體仍受 MAX_TOTAL_POSITIONS 限制
+# 分倉模式下 Crypto / TW Stock 是獨立交易所帳戶；US Stock 與 Commodity
+# 共用同一個 US+Commodity silo，因此比例與持倉名額的互相擠壓主要發生在美股/黃金。
+# 各類別上限之和可大於 MAX_TOTAL_POSITIONS，整體仍受 MAX_TOTAL_POSITIONS 限制。
 MAX_POS_PER_CLASS: dict = {
     'US Stock':  6,
     'TW Stock':  6,
@@ -280,6 +282,8 @@ CRYPTO_SHORT_EMA_SLOPE_LOOKBACK = 100
 # ─── 艙位回測模式（v1.8 新增）──────────────────────────────────────────
 # True  → 三家交易所各自獨立 SILO_CAPITAL 起跑，各艙位 P&L 完全隔離
 # False → 舊版單一資金池回測（--capital 參數有效）
+# 實盤限制：此專案的 silo 對應不同交易所/帳戶（Bybit、台股券商、美股券商），
+# 底層資金不可互相調度，因此最佳化不可關閉 silo 來提高帳面資金效率。
 ENABLE_SILO_MODE = True
 SILO_CAPITAL     = 10_000.0   # 每個艙位初始資金 (USD)
 # 艙位名稱 → 包含的資產類型清單
@@ -288,6 +292,36 @@ SILO_CLASSES: dict = {
     'Crypto':       ['Crypto'],
     'TW Stock':     ['TW Stock'],
     'US+Commodity': ['US Stock', 'Commodity'],
+}
+
+# Strategy profiles bind strategy rules to the real execution account.
+# The three profiles intentionally remain separate because each maps to a
+# different broker/exchange account and cannot share capital.
+STRATEGY_PROFILES: dict = {
+    'Crypto': {
+        'asset_types': ['Crypto'],
+        'capital': SILO_CAPITAL,
+        'max_total_positions': 2,
+        'max_position_pct': MAX_POSITION_PCT,
+        'max_pos_per_class': {},
+    },
+    'TW Stock': {
+        'asset_types': ['TW Stock'],
+        'capital': SILO_CAPITAL,
+        'max_total_positions': 6,
+        'max_position_pct': MAX_POSITION_PCT,
+        'max_pos_per_class': {},
+    },
+    'US+Commodity': {
+        'asset_types': ['US Stock', 'Commodity'],
+        'capital': SILO_CAPITAL,
+        'max_total_positions': 8,
+        'max_position_pct': MAX_POSITION_PCT,
+        'max_pos_per_class': {
+            'US Stock': 6,
+            'Commodity': 2,
+        },
+    },
 }
 
 # ─── 手續費與滑點（v1.8 新增）────────────────────────────────────────────

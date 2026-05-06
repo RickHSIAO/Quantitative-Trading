@@ -68,7 +68,8 @@ def position_size(capital: float,
                   kelly_frac: float,
                   entry_price: float,
                   stop_loss_price: float,
-                  asset_type: str = '') -> float:
+                  asset_type: str = '',
+                  max_position_pct: float | None = None) -> float:
     """
     風險金額 = 資金 × Kelly 比例 × 類別槓桿
     倉位數量 = 風險金額 / 每單位風險（entry - stop）
@@ -82,10 +83,12 @@ def position_size(capital: float,
         return 0.0
 
     lev = getattr(config, 'LEVERAGE_BY_CLASS', {}).get(asset_type, 1.0)
+    pos_cap = (config.MAX_POSITION_PCT if max_position_pct is None
+               else max_position_pct)
 
     risk_amount = capital * min(kelly_frac, config.MAX_RISK_PCT) * lev
     qty = risk_amount / price_risk
-    max_qty = (capital * config.MAX_POSITION_PCT * lev) / entry_price
+    max_qty = (capital * pos_cap * lev) / entry_price
     return max(0.0, min(qty, max_qty))
 
 

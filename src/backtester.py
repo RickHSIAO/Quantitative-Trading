@@ -111,8 +111,30 @@ def _exit_reason(code: str, r_mult: float) -> str:
 
 # ─── Backtester ────────────────────────────────────────────────────────────────
 class Backtester:
-    def __init__(self, initial_capital: float = config.INITIAL_CAPITAL):
+    def __init__(self, initial_capital: float = config.INITIAL_CAPITAL,
+                 silo_mode: bool = False,
+                 profile_name: str = '',
+                 max_total_positions: int | None = None,
+                 max_position_pct: float | None = None,
+                 max_pos_per_class: dict[str, int] | None = None):
         self.initial_capital = initial_capital
+        self.silo_mode = silo_mode   # True → 艙位模式，資金耗盡前不限各類別張數
+        self.profile_name = profile_name
+        self.max_total_positions = (
+            config.MAX_TOTAL_POSITIONS
+            if max_total_positions is None
+            else max_total_positions
+        )
+        self.max_position_pct = (
+            config.MAX_POSITION_PCT
+            if max_position_pct is None
+            else max_position_pct
+        )
+        self.max_pos_per_class = (
+            config.MAX_POS_PER_CLASS
+            if max_pos_per_class is None
+            else dict(max_pos_per_class)
+        )
         self.capital: float   = initial_capital
         self.trades:  list[Trade] = []
         self.equity_curve: list[dict] = []
@@ -127,6 +149,18 @@ class Backtester:
         self._cb_daily_trades: dict[str, int]   = {}   # date_str → 當日新進場數
         self._cb_trigger_count: int = 0                # 觸發暫停次數
         self._equity_peak: float = initial_capital     # 即時權益峰值（用於熔斷 DD 條件）
+        self._entry_block_stats: dict[str, int] = {
+            'candidates_considered': 0,
+            'entries_opened': 0,
+            'class_limit_hits': 0,
+            'strategy_limit_hits': 0,
+            'max_total_positions_hits': 0,
+            'circuit_breaker_blocked_candidates': 0,
+            'available_cash_breaks': 0,
+            'available_cash_blocked_candidates': 0,
+            'zero_qty_rejections': 0,
+            'insufficient_cash_rejections': 0,
+        }
 
     # ── 平倉輔助 ─────────────────────────────────────────────────────────────
     def _close_trade(self, trade: Trade, exit_date: str,
@@ -439,7 +473,7 @@ class Backtester:
                     entry_dt_cache.pop(sym, None)
 
             # ── Step 2: 開新倉（依訊號共識度優先）────────────────────────
-            if len(open_positions) < config.MAX_TOTAL_POSITIONS:
+            if len(open_positions) < self.max_total_positions:
                 candidates: list[tuple[str, int, int, str]] = []
                 for sym in data:
                     if sym in open_positions:
@@ -495,19 +529,31 @@ class Backtester:
                                        daily_trades >= config.CB_MAX_DAILY_TRADES)
                 cb_block_today = (config.ENABLE_CIRCUIT_BREAKER and
                                   (cb_paused or daily_loss_blocked or daily_count_blocked))
+                if cb_block_today and candidates:
+                    self._entry_block_stats['circuit_breaker_blocked_candidates'] += len(candidates)
 
-                for sym, sig_val, score_val, strat in (candidates if not cb_block_today else []):
-                    if len(open_positions) >= config.MAX_TOTAL_POSITIONS:
+                active_candidates = candidates if not cb_block_today else []
+                for idx, (sym, sig_val, score_val, strat) in enumerate(active_candidates):
+                    self._entry_block_stats['candidates_considered'] += 1
+                    if len(open_positions) >= self.max_total_positions:
+                        self._entry_block_stats['max_total_positions_hits'] += (
+                            len(active_candidates) - idx
+                        )
                         break
 
                     atype       = asset_types.get(sym, '')
-                    class_limit = config.MAX_POS_PER_CLASS.get(atype, config.MAX_TOTAL_POSITIONS)
-                    if class_counts.get(atype, 0) >= class_limit:
-                        continue
+                    if self.max_pos_per_class:
+                        class_limit = self.max_pos_per_class.get(
+                            atype, self.max_total_positions
+                        )
+                        if class_counts.get(atype, 0) >= class_limit:
+                            self._entry_block_stats['class_limit_hits'] += 1
+                            continue
 
                     strat_limit = config.MAX_POS_PER_STRATEGY.get(strat) \
                                   if config.MAX_POS_PER_STRATEGY else None
                     if strat_limit is not None and strat_counts.get(strat, 0) >= strat_limit:
+                        self._entry_block_stats['strategy_limit_hits'] += 1
                         continue
 
                     i = idx_map[sym][dt]
@@ -550,19 +596,31 @@ class Backtester:
                     )
                     available_cash = self.capital - allocated_margin
                     if available_cash <= 0:
+                        self._entry_block_stats['available_cash_breaks'] += 1
+                        self._entry_block_stats['available_cash_blocked_candidates'] += (
+                            len(active_candidates) - idx
+                        )
                         break
 
                     # 同日候選均分剩餘現金（依剩餘可進場名額）
                     if config.EQUAL_CASH_SPLIT:
-                        slots_left = config.MAX_TOTAL_POSITIONS - len(open_positions)
+                        slots_left = self.max_total_positions - len(open_positions)
                         budget = available_cash / max(slots_left, 1)
                     else:
                         budget = available_cash
 
-                    qty = position_size(budget, kf, actual_entry, sl, asset_type=atype)
+                    qty = position_size(
+                        budget, kf, actual_entry, sl,
+                        asset_type=atype,
+                        max_position_pct=self.max_position_pct,
+                    )
                     lev = lev_map.get(atype, 1.0)
                     margin = (qty * actual_entry) / lev   # 實際佔用保證金
-                    if qty <= 0 or margin > available_cash:
+                    if qty <= 0:
+                        self._entry_block_stats['zero_qty_rejections'] += 1
+                        continue
+                    if margin > available_cash:
+                        self._entry_block_stats['insufficient_cash_rejections'] += 1
                         continue
 
                     # 進場手續費（記錄在 Trade，平倉時一起結算）
@@ -590,6 +648,7 @@ class Backtester:
                     entry_dt_cache[sym]  = dt
                     class_counts[atype]  = class_counts.get(atype, 0) + 1
                     strat_counts[strat]  = strat_counts.get(strat, 0) + 1
+                    self._entry_block_stats['entries_opened'] += 1
 
             # ── Step 3: 記錄淨值 ──────────────────────────────────────────
             unrealised = 0.0
@@ -760,6 +819,7 @@ class Backtester:
             'by_strategy':       strat_stats,
             'by_asset_type':     type_stats,
             'cb_trigger_count':  self._cb_trigger_count,
+            'entry_block_stats': dict(self._entry_block_stats),
             'features_enabled':  {
                 'score_tier_sizing': bool(config.ENABLE_SCORE_TIER_SIZING),
                 'circuit_breaker':   bool(config.ENABLE_CIRCUIT_BREAKER),
@@ -815,7 +875,8 @@ def _geometric_rr_ok_arr(high_arr: np.ndarray,
 def _combine_silo_equity_curves(
         silo_equity: dict[str, list[dict]],
         total_initial: float,
-        silo_capital: float = 0.0) -> list[dict]:
+        silo_capital: float = 0.0,
+        silo_capitals: dict[str, float] | None = None) -> list[dict]:
     """
     把各艙位 equity_curve 依日期加總，產生整體資金曲線。
     各艙位交易日可能不同（股票無週末；加密幣有），需 forward-fill，
@@ -831,8 +892,9 @@ def _combine_silo_equity_curves(
             all_dates.add(rec['date'])
         silo_dicts[sname] = d
 
-    per_silo_initial = silo_capital if silo_capital > 0 else (
+    default_initial = silo_capital if silo_capital > 0 else (
         total_initial / max(len(silo_dicts), 1))
+    silo_capitals = silo_capitals or {}
 
     combined = []
     last_rec: dict[str, dict] = {}  # 各艙位最後已知記錄（forward-fill 用）
@@ -843,6 +905,7 @@ def _combine_silo_equity_curves(
         total_pos   = 0
 
         for sname, d in silo_dicts.items():
+            per_silo_initial = silo_capitals.get(sname, default_initial)
             if date in d:
                 last_rec[sname] = d[date]
             rec = last_rec.get(sname)
@@ -871,6 +934,7 @@ def run_silo_backtest(
         asset_types: dict[str, str],
         silo_classes: dict[str, list[str]],
         silo_capital: float,
+        strategy_profiles: dict[str, dict] | None = None,
 ) -> tuple[list[Trade], dict[str, dict]]:
     """
     各艙位獨立跑 Backtester，資金完全隔離。
@@ -879,8 +943,14 @@ def run_silo_backtest(
         silo_results — {silo_name: {'bt', 'trades', 'metrics', 'equity_curve'}}
     """
     silo_results: dict[str, dict] = {}
+    profiles = strategy_profiles or {}
+    profile_items = profiles.items() if profiles else (
+        (sname, {'asset_types': atypes, 'capital': silo_capital})
+        for sname, atypes in silo_classes.items()
+    )
 
-    for sname, atypes in silo_classes.items():
+    for sname, profile in profile_items:
+        atypes = profile.get('asset_types') or silo_classes.get(sname, [])
         atypes_set = set(atypes)
         s_data = {sym: df   for sym, df   in data.items()
                   if asset_types.get(sym, '') in atypes_set}
@@ -889,11 +959,23 @@ def run_silo_backtest(
         if not s_data:
             continue
 
-        bt     = Backtester(initial_capital=silo_capital)
+        capital = float(profile.get('capital', silo_capital))
+        bt     = Backtester(
+            initial_capital=capital,
+            silo_mode=True,
+            profile_name=sname,
+            max_total_positions=profile.get('max_total_positions'),
+            max_position_pct=profile.get('max_position_pct'),
+            max_pos_per_class=profile.get('max_pos_per_class', {}),
+        )
         trades = bt.run(s_data, s_sigs, asset_types)
         metrics = bt.get_metrics()
         if metrics:
             metrics['silo_name'] = sname
+            metrics['asset_types'] = list(atypes)
+            metrics['max_total_positions'] = bt.max_total_positions
+            metrics['max_position_pct'] = bt.max_position_pct
+            metrics['max_pos_per_class'] = bt.max_pos_per_class
         silo_results[sname] = {
             'bt':           bt,
             'trades':       trades,

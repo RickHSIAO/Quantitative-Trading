@@ -172,17 +172,21 @@ def cmd_backtest(args):
         from src.backtester import run_silo_backtest, _combine_silo_equity_curves
         silo_classes = getattr(config, 'SILO_CLASSES', {})
         silo_capital = getattr(config, 'SILO_CAPITAL', 10_000.0)
+        strategy_profiles = getattr(config, 'STRATEGY_PROFILES', {})
 
         trades, silo_results = run_silo_backtest(
-            data, signals, type_map, silo_classes, silo_capital
+            data, signals, type_map, silo_classes, silo_capital,
+            strategy_profiles=strategy_profiles,
         )
 
-        total_initial = silo_capital * len(silo_results)
+        total_initial = sum(sr['bt'].initial_capital for sr in silo_results.values())
         total_final   = sum(sr['bt'].capital for sr in silo_results.values())
+        silo_capitals = {k: sr['bt'].initial_capital for k, sr in silo_results.items()}
         equity_curve  = _combine_silo_equity_curves(
             {k: sr['equity_curve'] for k, sr in silo_results.items()},
             total_initial,
             silo_capital=silo_capital,
+            silo_capitals=silo_capitals,
         )
 
         # 組合整體指標（利用虛擬 Backtester 計算 Sharpe / DD 等）
@@ -305,6 +309,9 @@ def cmd_live(args):
     assets   = get_selected_assets(args.seed)
     cryptos  = assets['cryptos']
     balance  = executor.get_balance()
+    crypto_profile = getattr(config, 'STRATEGY_PROFILES', {}).get('Crypto', {})
+    crypto_max_positions = int(crypto_profile.get('max_total_positions', config.MAX_TOTAL_POSITIONS))
+    crypto_max_position_pct = float(crypto_profile.get('max_position_pct', config.MAX_POSITION_PCT))
     print(f'Bybit 餘額：{balance:.2f} USDT')
     print(f'監控 {len(cryptos)} 個加密貨幣 | 每 {args.interval} 分鐘掃描一次')
     print('[注意] 測試網模式：', config.BYBIT_TESTNET)
@@ -412,7 +419,8 @@ def cmd_live(args):
                         del open_pos[sym]
 
                 # 開新倉
-                if sym not in open_pos and latest_sig != 0:
+                if (sym not in open_pos and latest_sig != 0
+                        and len(open_pos) < crypto_max_positions):
                     atype = 'Crypto'   # live 模式只跑加密
                     kf  = estimate_kelly_from_history(trade_history[sym], asset_type=atype)
                     sl, tp = calculate_stops(price, latest_sig, atr)
@@ -423,7 +431,11 @@ def cmd_live(args):
                         (p['entry'] * p['qty']) / lev for p in open_pos.values()
                     )
                     available = max(0.0, balance - allocated_margin)
-                    qty = position_size(balance, kf, price, sl, asset_type=atype)
+                    qty = position_size(
+                        balance, kf, price, sl,
+                        asset_type=atype,
+                        max_position_pct=crypto_max_position_pct,
+                    )
                     # 用 executor 提供的精度修正再下單
                     qty_str = executor.format_qty(sym, qty)
                     sl_str  = executor.format_price(sym, sl)
