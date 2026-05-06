@@ -77,6 +77,21 @@ def trend_following_signals(df: pd.DataFrame, asset_type: str = '') -> pd.Series
     sig[dir_chg > 0] = LONG   # -1 → +1
     sig[dir_chg < 0] = SHORT  # +1 → -1
 
+    # ADX 趨勢強度濾網（保留參數但預設停用；ADX 滯後砍掉早期入場）
+    if getattr(config, 'TREND_ADX_MIN', 0) > 0 and 'adx' in df.columns:
+        weak_trend = df['adx'] < config.TREND_ADX_MIN
+        sig[weak_trend.fillna(True)] = FLAT
+
+    # EMA50 斜率方向確認：避免下跌段中急彈翻紅、上漲段中假摔翻黑
+    # 用 EMA50 而非 EMA200，靈敏度足以抓中波段；過濾掉 chop 年（2022）
+    # 大量「翻多後立刻被打回」的假訊號
+    if (getattr(config, 'TREND_EMA50_SLOPE_CONFIRM', False)
+            and 'ema50' in df.columns):
+        lb = config.TREND_EMA50_SLOPE_LOOKBACK
+        slope = df['ema50'].diff(lb)
+        sig[(sig == LONG)  & (slope <= 0).fillna(True)] = FLAT
+        sig[(sig == SHORT) & (slope >= 0).fillna(True)] = FLAT
+
     # 美股 HFT 假突破過濾：MACD 柱狀圖 > 0（動能由空轉多）才允許做多
     # 只要求 hist > 0，不強求 macd > 0，避免 MACD 滯後砍掉早期有效翻多
     if config.ENABLE_US_MACD_FILTER and asset_type == 'US Stock' and 'macd_hist' in df.columns:
