@@ -56,6 +56,45 @@ Crypto 達到使用者目標：
 | TW Stock | Taiwan broker | TW Stock | 6 | 0.20 | none |
 | US+Commodity | US broker | US Stock, Commodity | 8 | 0.20 | US Stock 6, Commodity 2 |
 
+### Crypto universe update
+
+Crypto 回測標的已從 18 檔擴充為 30 檔：
+
+- 3 檔固定核心幣：BTC、ETH、ADA
+- 12 檔固定高成交量 Bybit USDT 永續合約
+- 15 檔從原本 `CRYPTO_POOL` 隨機抽樣
+
+新增的固定高成交量清單：
+
+```text
+HYPE, ZEC, FARTCOIN, 1000PEPE, SUI, PIPPIN,
+TAO, WIF, ENA, ASTER, PUMPFUN, XPL
+```
+
+`python main.py backtest --profile Crypto` 現在只載入 Crypto 標的，
+不再掃美股、台股、商品，因此單獨回測 Crypto 會更快，也能確認 30 檔是否全數進入回測。
+
+最新 Crypto 30 檔檢查：
+
+```text
+載入 30 個資產
+有效資產：30 檔
+跳過：0 檔
+年化報酬：19.27%
+勝率：50.7%
+交易：296 筆
+Profit Factor：1.332
+最大回撤：-47.11%
+```
+
+### Report update
+
+Summary 的資金曲線表新增每日交易結果與手續費欄位：
+
+```text
+Date | 總資金 | 已配置資金 | 剩餘現金 | 損益 | 手續費 | 累積損益
+```
+
 ### 重現指令
 
 ```powershell

@@ -507,7 +507,23 @@ def _write_asset_stats(wb: Workbook, df: pd.DataFrame, metrics: dict):
 
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
-def _write_summary(wb: Workbook, metrics: dict, equity_curve: list[dict]):
+def _daily_trade_totals(trades: list[Trade]) -> dict[str, dict[str, float]]:
+    totals: dict[str, dict[str, float]] = {}
+    for t in trades:
+        if t.exit_date is None or t.pnl is None:
+            continue
+        key = pd.Timestamp(t.exit_date).strftime('%Y-%m-%d')
+        rec = totals.setdefault(key, {'pnl': 0.0, 'fee': 0.0})
+        rec['pnl'] += float(t.pnl or 0.0)
+        rec['fee'] += float(getattr(t, 'entry_fee', 0.0) or 0.0)
+        rec['fee'] += float(getattr(t, 'exit_fee', 0.0) or 0.0)
+    return totals
+
+
+def _write_summary(wb: Workbook,
+                   metrics: dict,
+                   equity_curve: list[dict],
+                   trades: list[Trade] | None = None):
     ws = wb.create_sheet(title='📊 Summary', index=0)
     ws.column_dimensions['A'].width = 28
     ws.column_dimensions['B'].width = 22
@@ -596,10 +612,12 @@ def _write_summary(wb: Workbook, metrics: dict, equity_curve: list[dict]):
     # ── 資金曲線圖 ────────────────────────────────────────────────────────
     if equity_curve:
         eq_df    = pd.DataFrame(equity_curve)
+        daily_trade_totals = _daily_trade_totals(trades or [])
         # 確保資料表列在圖表浮動區（D4 往下約 34 列）之後，避免疊蓋
         eq_start = max(ws.max_row + 3, 38)
 
-        eq_headers = ['Date', '總資金(Equity)', '已配置資金', '剩餘現金', '累計損益(USD)']
+        eq_headers = ['Date', '總資金(Equity)', '已配置資金', '剩餘現金',
+                      '損益(USD)', '手續費(USD)', '累積損益(USD)']
         for j, h in enumerate(eq_headers):
             cell = ws.cell(eq_start, 1 + j, h)   # A–E 欄
             cell.font      = BOLD
@@ -612,10 +630,17 @@ def _write_summary(wb: Workbook, metrics: dict, equity_curve: list[dict]):
             ws.cell(row, 2, rec.capital)
             ws.cell(row, 3, getattr(rec, 'allocated', 0))
             ws.cell(row, 4, getattr(rec, 'remaining', rec.capital))
+            date_key = pd.Timestamp(rec.date).strftime('%Y-%m-%d')
+            daily = daily_trade_totals.get(date_key, {'pnl': 0.0, 'fee': 0.0})
+            day_pnl = round(daily.get('pnl', 0.0), 2)
+            day_fee = round(daily.get('fee', 0.0), 4)
+            day_cell = ws.cell(row, 5, day_pnl)
+            day_cell.fill = WIN_FILL if day_pnl > 0 else LOSS_FILL if day_pnl < 0 else NEUT_FILL
+            ws.cell(row, 6, day_fee)
             pnl_val = getattr(rec, 'pnl', 0)
-            cell = ws.cell(row, 5, pnl_val)
+            cell = ws.cell(row, 7, pnl_val)
             cell.fill = WIN_FILL if pnl_val >= 0 else LOSS_FILL
-            for col in range(1, 6):
+            for col in range(1, 8):
                 ws.cell(row, col).alignment = CENTER
                 ws.cell(row, col).border    = THIN
 
@@ -826,7 +851,7 @@ def generate_excel_report(trades: list[Trade],
         del wb['Sheet']
 
     # 1. Summary
-    _write_summary(wb, metrics, equity_curve)
+    _write_summary(wb, metrics, equity_curve, trades)
 
     # 1b. Silo summary（艙位回測模式）
     silo_results = metrics.get('silo_results')

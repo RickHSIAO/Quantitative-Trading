@@ -96,6 +96,16 @@ def cmd_backtest(args):
     for sym in assets['cryptos']:    type_map[sym] = 'Crypto'
     for sym in assets['commodities']:type_map[sym] = 'Commodity'
 
+    strategy_profiles = getattr(config, 'STRATEGY_PROFILES', {})
+    profile_name = getattr(args, 'profile', None)
+    profile_asset_types = None
+    if profile_name:
+        if profile_name not in strategy_profiles:
+            valid = ', '.join(strategy_profiles.keys())
+            print(f'[ERROR] Unknown profile: {profile_name}. Valid profiles: {valid}')
+            return
+        profile_asset_types = set(strategy_profiles[profile_name].get('asset_types', []))
+
     # 下載大盤基準指數（用於護城河濾網）
     print('\n載入/更新大盤基準指數...')
     tw_benchmark = load_or_update_benchmark(config.TW_MARKET_SYMBOL)
@@ -109,7 +119,12 @@ def cmd_backtest(args):
     else:
         print('  [WARN] 美股大盤指數載入失敗，美股護城河濾網停用')
 
-    selected = [s for s in assets['all'] if s in available]
+    selected = [
+        s for s in assets['all']
+        if s in available and (
+            profile_asset_types is None or type_map.get(s) in profile_asset_types
+        )
+    ]
     print(f'\n載入 {len(selected)} 個資產，計算指標與信號中...\n')
 
     data:    dict[str, pd.DataFrame]          = {}
@@ -172,13 +187,7 @@ def cmd_backtest(args):
         from src.backtester import run_silo_backtest, _combine_silo_equity_curves
         silo_classes = getattr(config, 'SILO_CLASSES', {})
         silo_capital = getattr(config, 'SILO_CAPITAL', 10_000.0)
-        strategy_profiles = getattr(config, 'STRATEGY_PROFILES', {})
-        profile_name = getattr(args, 'profile', None)
         if profile_name:
-            if profile_name not in strategy_profiles:
-                valid = ', '.join(strategy_profiles.keys())
-                print(f'[ERROR] Unknown profile: {profile_name}. Valid profiles: {valid}')
-                return
             strategy_profiles = {profile_name: strategy_profiles[profile_name]}
 
         trades, silo_results = run_silo_backtest(

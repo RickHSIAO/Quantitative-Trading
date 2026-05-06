@@ -72,6 +72,14 @@ CRYPTO_POOL = [
     'BYBIT:GRTUSDT.P','BYBIT:FLOWUSDT.P','BYBIT:EGLDUSDT.P','BYBIT:ONEUSDT.P',
     'BYBIT:ZILUSDT.P','BYBIT:CHZUSDT.P','BYBIT:MINAUSDT.P','BYBIT:APTUSDT.P',
 ]
+# Added from Bybit linear USDT perpetual 180-day turnover ranking
+# checked 2026-05-07; existing symbols were skipped and the list was extended.
+CRYPTO_HIGH_VOLUME = [
+    'BYBIT:HYPEUSDT.P','BYBIT:ZECUSDT.P','BYBIT:FARTCOINUSDT.P','BYBIT:1000PEPEUSDT.P',
+    'BYBIT:SUIUSDT.P','BYBIT:PIPPINUSDT.P','BYBIT:TAOUSDT.P','BYBIT:WIFUSDT.P',
+    'BYBIT:ENAUSDT.P','BYBIT:ASTERUSDT.P','BYBIT:PUMPFUNUSDT.P','BYBIT:XPLUSDT.P',
+]
+CRYPTO_EXTRA_COUNT = 15
 
 # ─── 大宗商品 ────────────────────────────────────────
 COMMODITIES = ['XAUUSD', 'XAGUSD']  # 黃金, 白銀
@@ -83,9 +91,9 @@ def get_selected_assets(seed: int = RANDOM_SEED) -> dict:
     rng = random.Random(seed)
     us = rng.sample(US_STOCKS_POOL, min(50, len(US_STOCKS_POOL)))
     tw = rng.sample(TW_STOCKS_POOL, min(50, len(TW_STOCKS_POOL)))
-    crypto_extra = rng.sample(CRYPTO_POOL, 15)
-    cryptos = CRYPTO_FIXED + crypto_extra  # 3 + 15 = 18
-    all_assets = us + tw + cryptos + COMMODITIES  # 50+50+18+2 = 120
+    crypto_extra = rng.sample(CRYPTO_POOL, min(CRYPTO_EXTRA_COUNT, len(CRYPTO_POOL)))
+    cryptos = CRYPTO_FIXED + CRYPTO_HIGH_VOLUME + crypto_extra  # 3 + 12 + 15 = 30
+    all_assets = us + tw + cryptos + COMMODITIES  # 50+50+30+2 = 132
     return {
         'us_stocks': us,
         'tw_stocks': tw,
