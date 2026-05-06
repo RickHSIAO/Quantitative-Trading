@@ -16,6 +16,30 @@ import config
 from src.risk import estimate_kelly_from_history, position_size, calculate_stops
 
 
+# ─── 手續費 / 滑點 helpers ─────────────────────────────────────────────────────
+def _entry_fee_rate(asset_type: str) -> float:
+    """進場手續費比率（Crypto → Taker；其餘 → 股票手續費）。"""
+    if asset_type == 'Crypto':
+        return getattr(config, 'BYBIT_TAKER_FEE', 0.00055)
+    return getattr(config, 'STOCK_FEE_PCT', 0.0005)
+
+
+def _exit_fee_rate(asset_type: str, reason_code: str) -> float:
+    """出場手續費比率（TP limit → Maker；其餘市價 → Taker）。"""
+    if asset_type == 'Crypto':
+        if reason_code == 'take_profit':
+            return getattr(config, 'BYBIT_MAKER_FEE', 0.0002)
+        return getattr(config, 'BYBIT_TAKER_FEE', 0.00055)
+    return getattr(config, 'STOCK_FEE_PCT', 0.0005)
+
+
+def _slip(asset_type: str, is_limit: bool = False) -> float:
+    """滑點比率：limit 出場不計滑點；進場及市價出場均計。"""
+    if is_limit:
+        return 0.0
+    return getattr(config, 'SLIPPAGE_PCT', 0.001)
+
+
 # ─── Trade 資料結構 ────────────────────────────────────────────────────────────
 @dataclass
 class Trade:
@@ -40,6 +64,8 @@ class Trade:
     r_multiple:    Optional[float] = None   # 損益 / 每 R 風險（e.g. +3 = TP, -1 = SL）
     mae:           Optional[float] = None   # 最大不利偏移 (Max Adverse Excursion, %)
     mfe:           Optional[float] = None   # 最大有利偏移 (Max Favorable Excursion, %)
+    entry_fee:     float = 0.0              # 進場手續費 (USD)
+    exit_fee:      float = 0.0              # 出場手續費 (USD)
 
 
 # ─── 進場原因文字 ──────────────────────────────────────────────────────────────
@@ -105,14 +131,26 @@ class Backtester:
     # ── 平倉輔助 ─────────────────────────────────────────────────────────────
     def _close_trade(self, trade: Trade, exit_date: str,
                      exit_price: float, reason_code: str) -> float:
-        pnl = (exit_price - trade.entry_price) * trade.quantity * trade.direction
-        ret = (exit_price / trade.entry_price - 1.0) * trade.direction * 100 if trade.entry_price else 0.0
+        # 滑點：TP limit 出場不計；其餘市價出場計滑點
+        is_limit = (reason_code == 'take_profit')
+        slip_rate = _slip(trade.asset_type, is_limit=is_limit)
+        # Long 賣出：實際成交稍低；Short 回補：實際成交稍高
+        actual_exit = exit_price * (1.0 - trade.direction * slip_rate)
+
+        gross_pnl  = (actual_exit - trade.entry_price) * trade.quantity * trade.direction
+        ef_rate    = _exit_fee_rate(trade.asset_type, reason_code)
+        exit_fee   = actual_exit * trade.quantity * ef_rate
+        # net pnl = 毛利 - 出場手續費 - 進場手續費（已儲存在 trade.entry_fee）
+        pnl = gross_pnl - exit_fee - trade.entry_fee
+
+        ret = (actual_exit / trade.entry_price - 1.0) * trade.direction * 100 if trade.entry_price else 0.0
         orig_sl = self._orig_stop.get(trade.symbol, trade.stop_loss)
         r_dist  = abs(trade.entry_price - orig_sl)
         r_mult  = (pnl / (r_dist * trade.quantity)) if r_dist > 0 and trade.quantity > 0 else 0.0
 
         trade.exit_date    = exit_date
-        trade.exit_price   = exit_price
+        trade.exit_price   = round(actual_exit, 8)
+        trade.exit_fee     = round(exit_fee, 4)
         trade.pnl          = pnl
         trade.return_pct   = ret
         trade.r_multiple   = round(r_mult, 2)
@@ -477,7 +515,11 @@ class Backtester:
                     atr_v = a_atr[sym][i]
                     atr   = float(atr_v) if not np.isnan(atr_v) else price * 0.02
 
-                    sl, tp = calculate_stops(price, sig_val, atr, strategy=strat)
+                    # 進場滑點：Long 多付一點；Short 少收一點
+                    entry_slip = _slip(atype, is_limit=False)
+                    actual_entry = price * (1.0 + sig_val * entry_slip)
+
+                    sl, tp = calculate_stops(actual_entry, sig_val, atr, strategy=strat)
 
                     if config.ENABLE_GEOMETRIC_RR and not _geometric_rr_ok_arr(
                             a_high[sym], a_low[sym], i, sig_val, tp, atr,
@@ -517,27 +559,31 @@ class Backtester:
                     else:
                         budget = available_cash
 
-                    qty = position_size(budget, kf, price, sl, asset_type=atype)
+                    qty = position_size(budget, kf, actual_entry, sl, asset_type=atype)
                     lev = lev_map.get(atype, 1.0)
-                    margin = (qty * price) / lev   # 實際佔用保證金
+                    margin = (qty * actual_entry) / lev   # 實際佔用保證金
                     if qty <= 0 or margin > available_cash:
                         continue
 
+                    # 進場手續費（記錄在 Trade，平倉時一起結算）
+                    ef_entry = actual_entry * qty * _entry_fee_rate(atype)
+
                     self._cb_daily_trades[date_str] = self._cb_daily_trades.get(date_str, 0) + 1
 
-                    r_dist = abs(price - sl)
+                    r_dist = abs(actual_entry - sl)
                     trade  = Trade(
                         symbol       = sym,
                         strategy     = strat,
                         direction    = sig_val,
                         entry_date   = date_str,
-                        entry_price  = price,
+                        entry_price  = actual_entry,
                         quantity     = qty,
                         stop_loss    = sl,
                         take_profit  = tp,
                         asset_type   = atype,
                         entry_reason = _entry_reason(strat, sig_val),
                         risk_usd     = round(r_dist * qty, 2),
+                        entry_fee    = round(ef_entry, 4),
                     )
                     open_positions[sym]  = trade
                     self._orig_stop[sym] = sl
@@ -764,6 +810,99 @@ def _geometric_rr_ok_arr(high_arr: np.ndarray,
         if tp < swing_low and (swing_low - tp) < buffer_atr * atr:
             return False
         return True
+
+
+def _combine_silo_equity_curves(
+        silo_equity: dict[str, list[dict]],
+        total_initial: float,
+        silo_capital: float = 0.0) -> list[dict]:
+    """
+    把各艙位 equity_curve 依日期加總，產生整體資金曲線。
+    各艙位交易日可能不同（股票無週末；加密幣有），需 forward-fill，
+    無記錄前以 silo_capital 作佔位（視為資金靜置未動）。
+    """
+    # 建立 per-silo 的 date → record 字典
+    silo_dicts: dict[str, dict[str, dict]] = {}
+    all_dates: set[str] = set()
+    for sname, curves in silo_equity.items():
+        d: dict[str, dict] = {}
+        for rec in curves:
+            d[rec['date']] = rec
+            all_dates.add(rec['date'])
+        silo_dicts[sname] = d
+
+    per_silo_initial = silo_capital if silo_capital > 0 else (
+        total_initial / max(len(silo_dicts), 1))
+
+    combined = []
+    last_rec: dict[str, dict] = {}  # 各艙位最後已知記錄（forward-fill 用）
+
+    for date in sorted(all_dates):
+        total_cap   = 0.0
+        total_alloc = 0.0
+        total_pos   = 0
+
+        for sname, d in silo_dicts.items():
+            if date in d:
+                last_rec[sname] = d[date]
+            rec = last_rec.get(sname)
+            if rec is not None:
+                total_cap   += rec.get('capital', per_silo_initial)
+                total_alloc += rec.get('allocated', 0.0)
+                total_pos   += rec.get('open_positions', 0)
+            else:
+                # 此艙位尚未開始交易，以初始資金佔位
+                total_cap += per_silo_initial
+
+        combined.append({
+            'date':           date,
+            'capital':        round(total_cap, 2),
+            'allocated':      round(total_alloc, 2),
+            'remaining':      round(total_cap - total_alloc, 2),
+            'pnl':            round(total_cap - total_initial, 2),
+            'open_positions': total_pos,
+        })
+    return combined
+
+
+def run_silo_backtest(
+        data:        dict[str, pd.DataFrame],
+        signals:     dict[str, dict[str, pd.Series]],
+        asset_types: dict[str, str],
+        silo_classes: dict[str, list[str]],
+        silo_capital: float,
+) -> tuple[list[Trade], dict[str, dict]]:
+    """
+    各艙位獨立跑 Backtester，資金完全隔離。
+    Returns:
+        all_trades   — 所有艙位的合併交易清單
+        silo_results — {silo_name: {'bt', 'trades', 'metrics', 'equity_curve'}}
+    """
+    silo_results: dict[str, dict] = {}
+
+    for sname, atypes in silo_classes.items():
+        atypes_set = set(atypes)
+        s_data = {sym: df   for sym, df   in data.items()
+                  if asset_types.get(sym, '') in atypes_set}
+        s_sigs = {sym: sigs for sym, sigs in signals.items()
+                  if asset_types.get(sym, '') in atypes_set}
+        if not s_data:
+            continue
+
+        bt     = Backtester(initial_capital=silo_capital)
+        trades = bt.run(s_data, s_sigs, asset_types)
+        metrics = bt.get_metrics()
+        if metrics:
+            metrics['silo_name'] = sname
+        silo_results[sname] = {
+            'bt':           bt,
+            'trades':       trades,
+            'metrics':      metrics,
+            'equity_curve': bt.equity_curve,
+        }
+
+    all_trades = [t for sr in silo_results.values() for t in sr['trades']]
+    return all_trades, silo_results
 
 
 def _geometric_rr_ok(df: pd.DataFrame,

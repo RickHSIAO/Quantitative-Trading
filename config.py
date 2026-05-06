@@ -268,8 +268,29 @@ MARKET_SHORT_MA_PERIOD  = 50     # B3：空頭濾網的 SMA 週期
 KELLY_WINDOW            = 0      # B4：Kelly 只取最近 N 筆（0 = 全歷史）
 CLOSE_BASED_SL_TREND    = False  # B5：trend/combined 改成「收盤跌破才停損」
 
+# ─── 艙位回測模式（v1.8 新增）──────────────────────────────────────────
+# True  → 三家交易所各自獨立 SILO_CAPITAL 起跑，各艙位 P&L 完全隔離
+# False → 舊版單一資金池回測（--capital 參數有效）
+ENABLE_SILO_MODE = True
+SILO_CAPITAL     = 10_000.0   # 每個艙位初始資金 (USD)
+# 艙位名稱 → 包含的資產類型清單
+SILO_CLASSES: dict = {
+    'Crypto':    ['Crypto'],
+    'Stock':     ['US Stock', 'TW Stock'],
+    'Commodity': ['Commodity'],
+}
+
+# ─── 手續費與滑點（v1.8 新增）────────────────────────────────────────────
+# Bybit 永續合約費率（進場 Taker；TP Maker；SL/其他 Taker）
+BYBIT_MAKER_FEE  = 0.0002    # 0.02%
+BYBIT_TAKER_FEE  = 0.00055   # 0.055%
+# 股票/商品 單向手續費估算（US/TW 券商約 0.05%，可自行調整）
+STOCK_FEE_PCT    = 0.0005    # 0.05% per side
+# 市價成交滑點（進場 + 市價出場各一次；limit TP 不計）
+SLIPPAGE_PCT     = 0.001     # 0.1% per side
+
 # ─── 系統版號 ────────────────────────────────────────
-SYSTEM_VERSION  = 'v1.6'
+SYSTEM_VERSION  = 'v1.8'
 
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'

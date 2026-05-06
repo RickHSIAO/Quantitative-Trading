@@ -76,7 +76,7 @@ TRADE_COLS = [
     '進場價格', '止損點位', '止盈點位', '出場價格',
     '出場原因',
     '風險金額(USD)', 'R倍數',
-    'P&L (USD)', '報酬率(%)',
+    'P&L (USD)', '手續費(USD)', '報酬率(%)',
     'MAE(%)', 'MFE(%)',
 ]
 
@@ -114,6 +114,7 @@ def trades_to_df(trades: list[Trade]) -> pd.DataFrame:
             '風險金額(USD)': round(t.risk_usd, 2) if t.risk_usd else None,
             'R倍數':       round(t.r_multiple, 2) if t.r_multiple is not None else None,
             'P&L (USD)':  round(t.pnl, 2) if t.pnl is not None else None,
+            '手續費(USD)': round((getattr(t, 'entry_fee', 0) or 0) + (getattr(t, 'exit_fee', 0) or 0), 4),
             '報酬率(%)':   round(t.return_pct, 2) if t.return_pct is not None else None,
             'MAE(%)':      t.mae,
             'MFE(%)':      t.mfe,
@@ -740,6 +741,76 @@ def _write_symbol_stats(wb: Workbook, df: pd.DataFrame):
     return ws
 
 
+# ─── Silo Summary ────────────────────────────────────────────────────────────
+def _write_silo_summary(wb: Workbook, silo_results: dict, silo_capital: float):
+    """各艙位績效並排比較（艙位回測模式啟用時才呼叫）。"""
+    ws = wb.create_sheet(title='🏦 Silo Summary', index=1)
+    ws.cell(1, 1, f'艙位回測摘要（各艙位初始資金 ${silo_capital:,.0f}）').font = TITLE_FONT
+    ws.cell(2, 1, '三家交易所各自獨立運作，資金完全隔離，P&L 不互通').font = Font(italic=True, color='595959')
+    ws.append([])
+
+    header = ['艙位', '資產類型', '初始資金', '最終資金', '總損益(USD)',
+              '年化報酬率(%)', '勝率(%)', '交易次數', '盈虧比',
+              '夏普比率', '最大回撤(%)', '最大回撤(USD)', '平均期望值(USD)']
+    ws.append(header)
+    _style_row(ws, ws.max_row, fill=HDR_FILL, font=HDR_FONT)
+
+    order = ['Crypto', 'Stock', 'Commodity']
+    keys  = order + [k for k in silo_results if k not in order]
+    totals = {'pnl': 0.0, 'initial': 0.0, 'final': 0.0}
+
+    for sname in keys:
+        if sname not in silo_results:
+            continue
+        m   = silo_results[sname]
+        if not m:
+            continue
+        pnl = m.get('total_pnl', 0)
+        totals['pnl']     += pnl
+        totals['initial'] += m.get('initial_capital', silo_capital)
+        totals['final']   += m.get('final_capital',   silo_capital)
+
+        # 艙位包含的資產類型文字
+        silo_cfg = getattr(config, 'SILO_CLASSES', {})
+        atype_label = ' / '.join(silo_cfg.get(sname, [sname]))
+
+        row = [
+            sname,
+            atype_label,
+            f"${m.get('initial_capital', silo_capital):>,.0f}",
+            f"${m.get('final_capital', silo_capital):>,.2f}",
+            f"${pnl:>+,.2f}",
+            f"{m.get('annual_return_pct', 0):>+.2f}%",
+            f"{m.get('win_rate', 0)*100:>.1f}%",
+            m.get('total_trades', 0),
+            f"{m.get('profit_factor', 0):.3f}",
+            f"{m.get('sharpe_ratio', 0):.3f}",
+            f"{m.get('max_drawdown_pct', 0):.2f}%",
+            f"${m.get('max_drawdown_usd', 0):>,.2f}",
+            f"${m.get('expectancy', 0):>+,.2f}",
+        ]
+        ws.append(row)
+        cur  = ws.max_row
+        fill = WIN_FILL if pnl >= 0 else LOSS_FILL
+        for c in range(1, len(header) + 1):
+            ws.cell(cur, c).fill      = fill
+            ws.cell(cur, c).alignment = CENTER
+            ws.cell(cur, c).border    = THIN
+
+    # 合計列
+    ws.append([
+        '合計', '—',
+        f"${totals['initial']:>,.0f}",
+        f"${totals['final']:>,.2f}",
+        f"${totals['pnl']:>+,.2f}",
+        '—', '—', '—', '—', '—', '—', '—', '—',
+    ])
+    _style_row(ws, ws.max_row, fill=SECT_FILL, font=BOLD)
+
+    _auto_width(ws)
+    return ws
+
+
 # ─── 主入口 ───────────────────────────────────────────────────────────────────
 def generate_excel_report(trades: list[Trade],
                           metrics: dict,
@@ -756,6 +827,12 @@ def generate_excel_report(trades: list[Trade],
 
     # 1. Summary
     _write_summary(wb, metrics, equity_curve)
+
+    # 1b. Silo summary（艙位回測模式）
+    silo_results = metrics.get('silo_results')
+    if silo_results:
+        silo_capital = getattr(config, 'SILO_CAPITAL', 10_000.0)
+        _write_silo_summary(wb, silo_results, silo_capital)
 
     # 2. Monthly P&L matrix
     _write_monthly_pnl(wb, df)

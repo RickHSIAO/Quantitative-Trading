@@ -164,20 +164,63 @@ def cmd_backtest(args):
                 del data[sym]
                 del signals[sym]
 
-    bt     = Backtester(initial_capital=args.capital)
-    trades = bt.run(data, signals, type_map)
-    metrics = bt.get_metrics()
+    silo_mode = getattr(config, 'ENABLE_SILO_MODE', False)
 
-    # 紀錄護城河啟用狀態，避免之後忘記哪些濾網因資料缺失而失效
+    if silo_mode:
+        from src.backtester import run_silo_backtest, _combine_silo_equity_curves
+        silo_classes = getattr(config, 'SILO_CLASSES', {})
+        silo_capital = getattr(config, 'SILO_CAPITAL', 10_000.0)
+
+        trades, silo_results = run_silo_backtest(
+            data, signals, type_map, silo_classes, silo_capital
+        )
+
+        total_initial = silo_capital * len(silo_results)
+        total_final   = sum(sr['bt'].capital for sr in silo_results.values())
+        equity_curve  = _combine_silo_equity_curves(
+            {k: sr['equity_curve'] for k, sr in silo_results.items()},
+            total_initial,
+            silo_capital=silo_capital,
+        )
+
+        # 組合整體指標（利用虛擬 Backtester 計算 Sharpe / DD 等）
+        combined_bt = Backtester(initial_capital=total_initial)
+        combined_bt.trades       = trades
+        combined_bt.capital      = total_final
+        combined_bt.equity_curve = equity_curve
+        metrics = combined_bt.get_metrics()
+        metrics['silo_results'] = {k: sr['metrics'] for k, sr in silo_results.items()}
+
+        # 印出各艙位摘要
+        print('\n' + '='*56)
+        print('  艙位回測摘要（各艙位初始資金 ${:,.0f}）'.format(silo_capital))
+        print('='*56)
+        for sname, sr in silo_results.items():
+            m = sr['metrics']
+            if m:
+                print(f"  {sname:<12}  "
+                      f"損益 ${m.get('total_pnl', 0):>+8,.2f}  "
+                      f"年化 {m.get('annual_return_pct', 0):>+6.2f}%  "
+                      f"勝率 {m.get('win_rate', 0)*100:>5.1f}%  "
+                      f"交易 {m.get('total_trades', 0):>3} 筆  "
+                      f"最大回撤 {m.get('max_drawdown_pct', 0):>6.2f}%")
+        print('='*56)
+    else:
+        bt     = Backtester(initial_capital=args.capital)
+        trades = bt.run(data, signals, type_map)
+        metrics = bt.get_metrics()
+        equity_curve = bt.equity_curve
+
+    # 護城河狀態
     metrics['moat_status'] = {
         'TW': 'enabled' if tw_benchmark is not None else 'disabled (^TWII 載入失敗)',
         'US': 'enabled' if us_benchmark is not None else 'disabled (^GSPC 載入失敗)',
         'moat_tf_only': bool(getattr(args, 'moat_tf_only', True)),
     }
 
-    # ── 印出績效摘要 ──────────────────────────────────────────────────────
+    # ── 印出整體績效摘要 ──────────────────────────────────────────────────
     print('\n' + '='*48)
-    print('  回測績效摘要')
+    print('  整體回測績效摘要')
     print('='*48)
     labels = {
         'total_return_pct': '總報酬率 (%)',
@@ -198,7 +241,7 @@ def cmd_backtest(args):
     print('='*48)
 
     output_path = args.output or None
-    generate_excel_report(trades, metrics, bt.equity_curve, output_path)
+    generate_excel_report(trades, metrics, equity_curve, output_path)
 
     # ── 儲存回測結果到 SQLite ─────────────────────────────────────────────
     from src.database import save_backtest_run
