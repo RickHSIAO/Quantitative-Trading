@@ -155,7 +155,8 @@ class BybitExecutor(BaseExecutor):
             for item in items:
                 for coin in item.get('coin', []):
                     if coin.get('coin') == 'USDT':
-                        return float(coin.get('availableToWithdraw', 0))
+                        val = coin.get('walletBalance') or coin.get('availableToWithdraw') or '0'
+                        return float(val) if val else 0.0
             return 0.0
         except Exception as e:
             print(f'[ERROR] get_balance: {e}')
