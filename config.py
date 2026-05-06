@@ -245,6 +245,7 @@ BYBIT_API_SECRET = os.environ.get('BYBIT_API_SECRET', '')
 # 此為模擬帳號
 BYBIT_DEMO       = True   # 模擬帳號（Demo Trading）設 True
 BYBIT_TESTNET    = False  # 測試網（testnet.bybit.com）才設 True；一般模擬帳號設 False
+BYBIT_LEVERAGE   = 1      # Force linear contract leverage before placing orders.
 
 # ─── A/B 測試開關（Stock_01_share 借鑑，預設全停用以保留 v1.5 行為）──
 # 把任一項從預設值改掉，會直接影響 PnL；目的是逐項測試效果。

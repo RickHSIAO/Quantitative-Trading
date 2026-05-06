@@ -50,6 +50,7 @@ class BybitExecutor(BaseExecutor):
             api_secret=config.BYBIT_API_SECRET,
         )
         self._instr_cache: dict[str, dict] = {}
+        self._leverage_cache: set[str] = set()
 
     # ── Instrument Info（精度查詢，含 cache）──────────────────────────────
     def _get_instrument(self, bybit_sym: str) -> dict:
@@ -93,6 +94,29 @@ class BybitExecutor(BaseExecutor):
         decimals = max(0, -int(math.floor(math.log10(tick)))) if tick < 1 else 0
         return f'{aligned:.{decimals}f}'
 
+    def set_leverage(self, symbol: str, leverage: int | float | None = None) -> dict:
+        bybit_sym = _yf_to_bybit(symbol)
+        lev = leverage if leverage is not None else getattr(config, 'BYBIT_LEVERAGE', 1)
+        lev_str = str(int(lev)) if float(lev).is_integer() else str(lev)
+        try:
+            res = self.session.set_leverage(
+                category='linear',
+                symbol=bybit_sym,
+                buyLeverage=lev_str,
+                sellLeverage=lev_str,
+            )
+            # 110043 means the requested leverage is already set.
+            if res.get('retCode') in (0, 110043):
+                self._leverage_cache.add(bybit_sym)
+            return res
+        except Exception as e:
+            return {'retCode': -1, 'retMsg': str(e)}
+
+    def _ensure_leverage(self, bybit_sym: str) -> dict:
+        if bybit_sym in self._leverage_cache:
+            return {'retCode': 0, 'retMsg': 'cached'}
+        return self.set_leverage(bybit_sym, getattr(config, 'BYBIT_LEVERAGE', 1))
+
     def place_order(self, symbol, direction, qty, stop_loss, take_profit,
                     order_type: str = 'Market') -> dict:
         side = 'Buy' if direction == 1 else 'Sell'
@@ -106,6 +130,10 @@ class BybitExecutor(BaseExecutor):
             return {'retCode': -1, 'retMsg': f'qty {qty} 低於 minOrderQty'}
 
         try:
+            lev_res = self._ensure_leverage(bybit_sym)
+            if lev_res.get('retCode') not in (0, 110043):
+                return lev_res
+
             res = self.session.place_order(
                 category='linear',
                 symbol=bybit_sym,
