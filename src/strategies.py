@@ -324,3 +324,45 @@ def generate_all_signals(df: pd.DataFrame,
         'ema_bull': bull_ema,
         'ema_bear': bear_ema,
     }
+
+
+def apply_cross_asset_filters(data: dict[str, pd.DataFrame],
+                              signals: dict[str, dict[str, pd.Series]],
+                              asset_types: dict[str, str]) -> None:
+    """Apply filters that need more than one symbol's data.
+
+    The current filter uses BTC as the crypto market proxy.  It mutates the
+    supplied signal dictionaries in place so callers can build all symbols
+    normally, then apply the market regime gate once BTC indicators exist.
+    """
+    if not getattr(config, 'ENABLE_CRYPTO_BTC_MOAT', False):
+        return
+
+    market_symbol = getattr(config, 'CRYPTO_MARKET_SYMBOL', 'BYBIT:BTCUSDT.P')
+    btc_df = data.get(market_symbol)
+    if btc_df is None or 'ema200' not in btc_df.columns:
+        return
+
+    slope_lb = getattr(config, 'CRYPTO_SHORT_EMA_SLOPE_LOOKBACK', 100)
+    btc_long_ok = btc_df['Close'] >= btc_df['ema200']
+    mode = getattr(config, 'CRYPTO_BTC_MOAT_MODE', 'long_only')
+    btc_short_ok = (btc_df['Close'] < btc_df['ema200']) & (btc_df['ema200'].diff(slope_lb) < 0)
+
+    for sym, sigs in signals.items():
+        if asset_types.get(sym) != 'Crypto' or 'combined' not in sigs:
+            continue
+
+        idx = sigs['combined'].index
+        long_ok = btc_long_ok.reindex(idx, method='ffill').fillna(False)
+        short_ok = btc_short_ok.reindex(idx, method='ffill').fillna(False)
+
+        combined = sigs['combined'].copy()
+        combined[(combined == LONG) & ~long_ok] = FLAT
+        if mode == 'full':
+            combined[(combined == SHORT) & ~short_ok] = FLAT
+        sigs['combined'] = combined
+
+        if 'score' in sigs:
+            score = sigs['score'].copy()
+            score[combined == FLAT] = 0
+            sigs['score'] = score

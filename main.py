@@ -78,7 +78,7 @@ def cmd_backtest(args):
     from config import get_selected_assets
     from src.database import load_prices, get_all_symbols
     from src.indicators import compute_all_indicators
-    from src.strategies import generate_all_signals
+    from src.strategies import apply_cross_asset_filters, generate_all_signals
     from src.backtester import Backtester
     from src.reporter import generate_excel_report
     from src.benchmarks import load_or_update_benchmark
@@ -163,6 +163,8 @@ def cmd_backtest(args):
             if data[sym].empty:
                 del data[sym]
                 del signals[sym]
+
+    apply_cross_asset_filters(data, signals, type_map)
 
     silo_mode = getattr(config, 'ENABLE_SILO_MODE', False)
 

@@ -1,5 +1,38 @@
 # 量化交易系統
 
+## Latest Local Update: BTC Long-Only Crypto Moat
+
+This local version keeps the existing v1.8 silo architecture and adds one
+cross-asset filter for crypto entries:
+
+- `ENABLE_CRYPTO_BTC_MOAT = True`
+- `CRYPTO_BTC_MOAT_MODE = 'long_only'`
+- Crypto long entries are allowed only when `BYBIT:BTCUSDT.P` is above EMA200.
+- Crypto short entries remain controlled by each symbol's own signals.
+- TW Stock default risk remains `0.020`.
+
+Yearly sweep versus the clean baseline, using 2021 through 2026 YTD:
+
+| Year | Baseline PnL | New PnL | Delta |
+|---|---:|---:|---:|
+| 2021 | +$2,852.98 | +$1,832.47 | -$1,020.51 |
+| 2022 | -$1,205.90 | +$1,339.00 | +$2,544.90 |
+| 2023 | +$2,829.48 | +$2,364.36 | -$465.12 |
+| 2024 | +$582.00 | +$582.00 | $0.00 |
+| 2025 | +$3,151.09 | +$3,151.09 | $0.00 |
+| 2026YTD | +$349.34 | +$741.60 | +$392.26 |
+
+Total PnL improved from `+$8,558.99` to `+$10,010.52`, a net gain of
+`+$1,451.53`. Annual Excel reports were regenerated as
+`output/Backtest_2021.xlsx` through `output/Backtest_2026YTD.xlsx`.
+
+Verification:
+
+```powershell
+python -m py_compile config.py src\strategies.py main.py compare.py
+python main.py backtest --start-date 2022-01-01 --end-date 2022-12-31 --output output\Backtest_2022.xlsx
+```
+
 多資產量化交易系統，支援回測、績效報告與即時下單（Bybit 已接通；IBKR / 新光 骨架待完成）。涵蓋美股、台股、加密貨幣與商品，內建 3 種獨立策略訊號、EMA 多空環境濾網、大盤護城河機制、智能熔斷與幾何 R:R 檢查。
 
 ---
