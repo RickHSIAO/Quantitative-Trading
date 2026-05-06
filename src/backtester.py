@@ -40,6 +40,12 @@ def _slip(asset_type: str, is_limit: bool = False) -> float:
     return getattr(config, 'SLIPPAGE_PCT', 0.001)
 
 
+def _cls_get(name: str, asset_type: str, default):
+    """讀取類別特化參數；未設定時回 fallback。"""
+    d = getattr(config, name, None) or {}
+    return d.get(asset_type, default) if isinstance(d, dict) else default
+
+
 # ─── Trade 資料結構 ────────────────────────────────────────────────────────────
 @dataclass
 class Trade:
@@ -342,15 +348,18 @@ class Backtester:
                     atr_v   = a_atr[sym][i]
                     atr_now = float(atr_v) if not np.isnan(atr_v) else price * 0.02
                     # B2b：浮盈 ≥ TSL_TIGHT_AFTER_R 時用較緊的 ATR 倍數
-                    if (config.TSL_TIGHT_AFTER_R > 0
-                            and profit_r >= config.TSL_TIGHT_AFTER_R):
+                    tight_r_class = _cls_get('TSL_TIGHT_AFTER_R_BY_CLASS',
+                                              pos.asset_type, config.TSL_TIGHT_AFTER_R)
+                    if tight_r_class > 0 and profit_r >= tight_r_class:
                         eff_mult = config.TSL_TIGHT_ATR_MULT
                     else:
                         eff_mult = config.ATR_STOP_MULTIPLIER
                     trail_dist = atr_now * eff_mult
                     # B2a：peak 改用收盤價（取代日內 High/Low），減少上影線拉高
-                    track_long  = price if config.TSL_USE_CLOSE else hi
-                    track_short = price if config.TSL_USE_CLOSE else lo
+                    use_close_class = _cls_get('TSL_USE_CLOSE_BY_CLASS',
+                                                pos.asset_type, config.TSL_USE_CLOSE)
+                    track_long  = price if use_close_class else hi
+                    track_short = price if use_close_class else lo
                     if pos.direction == 1:   # 多頭：追蹤最高
                         peak = max(self._trail_peak.get(sym, pos.entry_price), track_long)
                         self._trail_peak[sym] = peak
@@ -446,7 +455,9 @@ class Backtester:
                         continue
 
                 # 最長持倉強制出場（不問盈虧，釋放卡死資金）
-                if config.MAX_HOLD_DAYS > 0 and hold_days >= config.MAX_HOLD_DAYS:
+                max_hold_class = _cls_get('MAX_HOLD_DAYS_BY_CLASS',
+                                           pos.asset_type, config.MAX_HOLD_DAYS)
+                if max_hold_class > 0 and hold_days >= max_hold_class:
                     self._close_trade(pos, date_str, price, 'max_hold')
                     history_by_sym[sym].append(pos)
                     del open_positions[sym]
@@ -491,7 +502,10 @@ class Backtester:
                     if sig_val == 0:
                         continue
                     score_val = int(s_score[sym][si])
-                    if score_val < config.MIN_ENTRY_SCORE:
+                    atype_for_score = asset_types.get(sym, '')
+                    min_score_class = _cls_get('MIN_ENTRY_SCORE_BY_CLASS',
+                                                atype_for_score, config.MIN_ENTRY_SCORE)
+                    if score_val < min_score_class:
                         continue
                     # 個股勝率過濾：近 SYM_WR_WINDOW 筆勝率低於門檻則跳過
                     if config.SYM_MIN_WINRATE > 0:

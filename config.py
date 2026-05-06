@@ -266,6 +266,19 @@ BREAKEVEN_TRIGGER_R     = 1.0    # B1a：觸發倍數（1.0 = +1R）
 TSL_USE_CLOSE           = False  # B2a：TSL 追蹤改用收盤價（取代日內 High/Low）
 TSL_TIGHT_AFTER_R       = 0.0    # B2b：浮盈 ≥ N×R 時收緊 ATR 倍數（0 = 停用）
 TSL_TIGHT_ATR_MULT      = 1.5    # B2b：收緊後的 ATR 倍數
+
+# ─── 類別特化參數（v1.9 新增）────────────────────────────────────────────
+# 給單一資產類別用的 override；未列出的類別 fallback 到上面全域值。
+# 主要用途：crypto 24/7 市場節奏快、波動大，與股票需要不同的出場邏輯。
+# 設計準則：
+#   * MIN_ENTRY_SCORE_BY_CLASS：crypto 訊號通過率較高，可放寬至 3 以增交易次數
+#   * MAX_HOLD_DAYS_BY_CLASS：crypto 趨勢平均 30 天內結束；超過多為盤整 → 強制平倉
+#   * TSL_USE_CLOSE_BY_CLASS：crypto 上下影線常見，用收盤確認可避免被插針掃出
+#   * TSL_TIGHT_AFTER_R_BY_CLASS：浮盈 ≥ 2R 後收緊 → 鎖住趨勢段獲利（avgR 0.17→0.12）
+MIN_ENTRY_SCORE_BY_CLASS: dict = {'Crypto': 3}
+MAX_HOLD_DAYS_BY_CLASS:   dict = {'Crypto': 30}
+TSL_USE_CLOSE_BY_CLASS:   dict = {'Crypto': True}
+TSL_TIGHT_AFTER_R_BY_CLASS: dict = {'Crypto': 2.0}
 ENABLE_MARKET_SHORT_MOAT = False # B3：大盤指數 < SMA(N) 才允許做空
 MARKET_SHORT_MA_PERIOD  = 50     # B3：空頭濾網的 SMA 週期
 KELLY_WINDOW            = 0      # B4：Kelly 只取最近 N 筆（0 = 全歷史）
@@ -301,8 +314,10 @@ STRATEGY_PROFILES: dict = {
     'Crypto': {
         'asset_types': ['Crypto'],
         'capital': SILO_CAPITAL,
-        'max_total_positions': 2,
-        'max_position_pct': MAX_POSITION_PCT,
+        # v1.9：放大 cap 至 5 + Kelly 上限 0.40，搭配下方 Crypto 專屬出場/濾網
+        # 達到 +22% CAGR / 50 trades/yr（5 年回測）
+        'max_total_positions': 5,
+        'max_position_pct': 0.40,
         'max_pos_per_class': {},
     },
     'TW Stock': {
@@ -334,7 +349,7 @@ STOCK_FEE_PCT    = 0.0005    # 0.05% per side
 SLIPPAGE_PCT     = 0.001     # 0.1% per side
 
 # ─── 系統版號 ────────────────────────────────────────
-SYSTEM_VERSION  = 'v1.8'
+SYSTEM_VERSION  = 'v1.9'
 
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'
