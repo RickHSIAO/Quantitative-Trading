@@ -287,6 +287,27 @@ def cmd_live(args):
     trade_history: dict[str, list] = {s: [] for s in cryptos}
     open_pos: dict[str, dict] = {}  # symbol → {dir, qty, sl, tp, entry}
 
+    print('正在同步交易所持倉狀態...')
+    try:
+        for p in executor.get_positions():
+            qty = float(p.get('size', 0))
+            if qty > 0:
+                sys_sym = f"BYBIT:{p.get('symbol', '')}.P"
+                if sys_sym in cryptos:
+                    side = p.get('side', '')
+                    direction = 1 if side == 'Buy' else (-1 if side == 'Sell' else 0)
+                    if direction != 0:
+                        open_pos[sys_sym] = {
+                            'dir': direction,
+                            'qty': qty,
+                            'sl': float(p.get('stopLoss') or 0.0),
+                            'tp': float(p.get('takeProfit') or 0.0),
+                            'entry': float(p.get('avgPrice') or 0.0)
+                        }
+                        print(f'  [同步] {sys_sym} {"做多" if direction==1 else "做空"} {qty} 單位')
+    except Exception as e:
+        print(f'[WARN] 同步倉位失敗: {e}')
+
     while True:
         print(f'\n[{datetime.now():%Y-%m-%d %H:%M:%S}] 掃描中...')
         end_str   = datetime.now().strftime('%Y-%m-%d')
