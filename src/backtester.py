@@ -499,9 +499,13 @@ class Backtester:
                                 and atr > med * config.ATR_KELLY_MULT):
                             kf = kf * 0.5
 
-                    available_cash = self.capital - sum(
-                        pos.entry_price * pos.quantity for pos in open_positions.values()
+                    # 槓桿類別（crypto Bybit 永續）的「資金佔用」是保證金而非全額名目
+                    lev_map = getattr(config, 'LEVERAGE_BY_CLASS', {})
+                    allocated_margin = sum(
+                        (p.entry_price * p.quantity) / lev_map.get(p.asset_type, 1.0)
+                        for p in open_positions.values()
                     )
+                    available_cash = self.capital - allocated_margin
                     if available_cash <= 0:
                         break
 
@@ -512,8 +516,10 @@ class Backtester:
                     else:
                         budget = available_cash
 
-                    qty = position_size(budget, kf, price, sl)
-                    if qty <= 0 or qty * price > available_cash:
+                    qty = position_size(budget, kf, price, sl, asset_type=atype)
+                    lev = lev_map.get(atype, 1.0)
+                    margin = (qty * price) / lev   # 實際佔用保證金
+                    if qty <= 0 or margin > available_cash:
                         continue
 
                     self._cb_daily_trades[date_str] = self._cb_daily_trades.get(date_str, 0) + 1
@@ -541,6 +547,7 @@ class Backtester:
             # ── Step 3: 記錄淨值 ──────────────────────────────────────────
             unrealised = 0.0
             allocated  = 0.0
+            lev_map_eq = getattr(config, 'LEVERAGE_BY_CLASS', {})
             for sym, pos in open_positions.items():
                 im = idx_map.get(sym)
                 if im is None:
@@ -550,7 +557,8 @@ class Backtester:
                     continue
                 close_v = float(a_close[sym][i])
                 unrealised += (close_v - pos.entry_price) * pos.quantity * pos.direction
-                allocated  += pos.entry_price * pos.quantity
+                lev_pos = lev_map_eq.get(pos.asset_type, 1.0)
+                allocated  += (pos.entry_price * pos.quantity) / lev_pos   # 保證金口徑
 
             total_equity = round(self.capital + unrealised, 2)
             if total_equity > self._equity_peak:

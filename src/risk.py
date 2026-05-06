@@ -59,19 +59,25 @@ def estimate_kelly_from_history(closed_trades: list, window: int = 0) -> float:
 def position_size(capital: float,
                   kelly_frac: float,
                   entry_price: float,
-                  stop_loss_price: float) -> float:
+                  stop_loss_price: float,
+                  asset_type: str = '') -> float:
     """
-    風險金額 = 資金 × Kelly 比例
+    風險金額 = 資金 × Kelly 比例 × 類別槓桿
     倉位數量 = 風險金額 / 每單位風險（entry - stop）
-    同時不超過 MAX_POSITION_PCT 的資金
+    同時不超過 MAX_POSITION_PCT × 類別槓桿 的資金
+
+    asset_type：用於套用 LEVERAGE_BY_CLASS（例：crypto Bybit 永續支援槓桿；
+    現金型基準的回測對 crypto 過於保守）。
     """
     price_risk = abs(entry_price - stop_loss_price)
     if price_risk == 0 or entry_price == 0:
         return 0.0
 
-    risk_amount = capital * min(kelly_frac, config.MAX_RISK_PCT)
+    lev = getattr(config, 'LEVERAGE_BY_CLASS', {}).get(asset_type, 1.0)
+
+    risk_amount = capital * min(kelly_frac, config.MAX_RISK_PCT) * lev
     qty = risk_amount / price_risk
-    max_qty = (capital * config.MAX_POSITION_PCT) / entry_price
+    max_qty = (capital * config.MAX_POSITION_PCT * lev) / entry_price
     return max(0.0, min(qty, max_qty))
 
 

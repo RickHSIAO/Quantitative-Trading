@@ -175,6 +175,18 @@ MAX_POS_PER_STRATEGY: dict = {'trend': 12, 'vp': 8, 'bb': 4}
 MAX_RISK_PCT           = 0.050  # 單筆最大虧損佔總資金 5%（v1.6：原 2%；提升至此再上去 DD 增加大於回報邊際）
 MAX_POSITION_PCT       = 0.20   # 單筆持倉市值上限 20%（v1.6：原 10%）
 DEFAULT_RISK_PCT       = 0.040  # 樣本不足時的預設風險 %（v1.6 新增；原硬編 0.02）
+
+# ─── 類別槓桿（v1.6 新增）──────────────────────────────────────────
+# Bybit 永續合約以保證金交易；現金型回測對 crypto 過於保守。
+# 設為 2.0 表示 crypto 倉位用一半保證金，等同 2x 槓桿。
+# Bybit 預設可至 10x，這裡保守設 2.0，DD 影響仍可控。
+# 股票/商品保持 1.0（無槓桿）。
+LEVERAGE_BY_CLASS: dict = {
+    'Crypto':    2.0,
+    'US Stock':  1.0,
+    'TW Stock':  1.0,
+    'Commodity': 1.0,
+}
 MAX_TOTAL_POSITIONS    = 15     # 同時持倉上限
 KELLY_MIN_TRADES       = 10     # 觸發 Kelly 所需最少交易紀錄
 

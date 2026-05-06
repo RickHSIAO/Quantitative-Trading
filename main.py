@@ -370,14 +370,21 @@ def cmd_live(args):
                 if sym not in open_pos and latest_sig != 0:
                     kf  = estimate_kelly_from_history(trade_history[sym])
                     sl, tp = calculate_stops(price, latest_sig, atr)
-                    allocated = sum(p['entry'] * p['qty'] for p in open_pos.values())
-                    available = max(0.0, balance - allocated)
-                    qty = position_size(balance, kf, price, sl)   # 基數用帳戶總餘額
+                    atype = 'Crypto'   # live 模式只跑加密，套用 LEVERAGE_BY_CLASS['Crypto']
+                    lev_map = getattr(config, 'LEVERAGE_BY_CLASS', {})
+                    lev     = lev_map.get(atype, 1.0)
+                    # 用保證金口徑計算可用資金（Bybit 永續以保證金抵押）
+                    allocated_margin = sum(
+                        (p['entry'] * p['qty']) / lev for p in open_pos.values()
+                    )
+                    available = max(0.0, balance - allocated_margin)
+                    qty = position_size(balance, kf, price, sl, asset_type=atype)
                     # 用 executor 提供的精度修正再下單
                     qty_str = executor.format_qty(sym, qty)
                     sl_str  = executor.format_price(sym, sl)
                     tp_str  = executor.format_price(sym, tp)
-                    if qty > 0 and qty * price <= available:       # 買得起才下單
+                    margin_need = (qty * price) / lev
+                    if qty > 0 and margin_need <= available:        # 保證金夠才下單
                         res = executor.place_order(sym, latest_sig, qty_str, sl_str, tp_str)
                         if res.get('retCode') == 0:
                             open_pos[sym] = {'dir': latest_sig, 'qty': qty,
