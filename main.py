@@ -173,6 +173,13 @@ def cmd_backtest(args):
         silo_classes = getattr(config, 'SILO_CLASSES', {})
         silo_capital = getattr(config, 'SILO_CAPITAL', 10_000.0)
         strategy_profiles = getattr(config, 'STRATEGY_PROFILES', {})
+        profile_name = getattr(args, 'profile', None)
+        if profile_name:
+            if profile_name not in strategy_profiles:
+                valid = ', '.join(strategy_profiles.keys())
+                print(f'[ERROR] Unknown profile: {profile_name}. Valid profiles: {valid}')
+                return
+            strategy_profiles = {profile_name: strategy_profiles[profile_name]}
 
         trades, silo_results = run_silo_backtest(
             data, signals, type_map, silo_classes, silo_capital,
@@ -504,6 +511,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument('--moat-tf-only', action=argparse.BooleanOptionalAction, default=True,
                       help='護城河只封鎖 Supertrend，VP/BB 豁免（預設啟用；用 --no-moat-tf-only 關閉）')
     p_bt.add_argument('--rs-pct',        type=float, default=None,   help='RS 豁免門檻（預設 0.03）')
+    p_bt.add_argument('--profile',       type=str,   default=None,
+                      help='只回測指定 strategy profile，例如 Crypto、TW Stock、US+Commodity')
 
     # history
     p_hist = sub.add_parser('history', help='查詢歷史回測記錄')

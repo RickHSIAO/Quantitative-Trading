@@ -34,6 +34,14 @@ Current profile limits:
 | TW Stock | Taiwan broker | TW Stock | 6 | none |
 | US+Commodity | US broker | US Stock, Commodity | 8 | US Stock 6, Commodity 2 |
 
+Run a single profile backtest:
+
+```powershell
+python main.py backtest --profile Crypto --output output\Backtest_Crypto.xlsx --note profile_crypto
+python main.py backtest --profile "TW Stock" --output output\Backtest_TW.xlsx --note profile_tw
+python main.py backtest --profile US+Commodity --output output\Backtest_US_Commodity.xlsx --note profile_us_commodity
+```
+
 Current tradable profile backtest:
 
 | Scope | Annual Return | Profit Factor | Max Drawdown | Trades |
