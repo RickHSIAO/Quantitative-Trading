@@ -172,9 +172,24 @@ TREND_EMA50_SLOPE_LOOKBACK = 5
 # ─── Plan B：每策略並行倉位上限（dict 為空時不啟用）────────────────────
 # 例：{'trend': 8, 'vp': 4, 'bb': 3}；'combined' 不限額
 MAX_POS_PER_STRATEGY: dict = {'trend': 12, 'vp': 8, 'bb': 4}
-MAX_RISK_PCT           = 0.050  # 單筆最大虧損佔總資金 5%（v1.6：原 2%；提升至此再上去 DD 增加大於回報邊際）
-MAX_POSITION_PCT       = 0.20   # 單筆持倉市值上限 20%（v1.6：原 10%）
-DEFAULT_RISK_PCT       = 0.040  # 樣本不足時的預設風險 %（v1.6 新增；原硬編 0.02）
+MAX_RISK_PCT           = 0.070  # 單筆最大虧損上限 7%（v1.7：放寬以容納 crypto 真實 1/4 Kelly = 6.6%）
+MAX_POSITION_PCT       = 0.20   # 單筆持倉市值上限 20%（實測 0.30 在虧損年放大傷害，留 0.20 當煞車）
+DEFAULT_RISK_PCT       = 0.040  # 樣本不足時全域 fallback；類別有特化值時優先用下方 dict
+
+# ─── 類別特化 1/4 Kelly（v1.7 新增）────────────────────────────────
+# 從 v1.6 main 回測 928 筆統計反推每類別真實 1/4 Kelly：
+#   Crypto:    WR 56.9%, R 1.41 → full Kelly 26.4% → 1/4 Kelly 6.6%
+#   US Stock:  WR 45.9%, R 1.57 → full Kelly 11.4% → 1/4 Kelly 2.85%
+#   TW Stock:  WR 41.0%, R 1.73 → full Kelly  7.0% → 1/4 Kelly 1.74%
+#   Commodity: WR 54.8%, R 1.03 → full Kelly 11.1% → 1/4 Kelly 2.78%
+# 樣本 < KELLY_MIN_TRADES 時 fallback 到此 dict（取代統一 4% 預設值）。
+# 樣本足夠後，計算的 Kelly 仍受 MAX_RISK_PCT 上限保護。
+DEFAULT_RISK_PCT_BY_CLASS: dict = {
+    'Crypto':    0.060,   # 1/4 Kelly = 6.6%，給足以發揮 crypto 真實邊緣
+    'US Stock':  0.030,   # 1/4 Kelly = 2.85%
+    'TW Stock':  0.020,   # 1/4 Kelly = 1.74%（勝率最低，給最少）
+    'Commodity': 0.030,   # 1/4 Kelly = 2.78%
+}
 
 # ─── 類別槓桿（v1.6 新增）──────────────────────────────────────────
 # Bybit 永續合約以保證金交易；現金型回測對 crypto 過於保守。

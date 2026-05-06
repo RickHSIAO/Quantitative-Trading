@@ -368,9 +368,9 @@ def cmd_live(args):
 
                 # 開新倉
                 if sym not in open_pos and latest_sig != 0:
-                    kf  = estimate_kelly_from_history(trade_history[sym])
+                    atype = 'Crypto'   # live 模式只跑加密
+                    kf  = estimate_kelly_from_history(trade_history[sym], asset_type=atype)
                     sl, tp = calculate_stops(price, latest_sig, atr)
-                    atype = 'Crypto'   # live 模式只跑加密，套用 LEVERAGE_BY_CLASS['Crypto']
                     lev_map = getattr(config, 'LEVERAGE_BY_CLASS', {})
                     lev     = lev_map.get(atype, 1.0)
                     # 用保證金口徑計算可用資金（Bybit 永續以保證金抵押）

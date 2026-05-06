@@ -27,15 +27,23 @@ def quarter_kelly(win_rate: float, avg_win: float, avg_loss: float) -> float:
     return kelly_criterion(win_rate, avg_win, avg_loss) * config.KELLY_FRACTION
 
 
-def estimate_kelly_from_history(closed_trades: list, window: int = 0) -> float:
+def estimate_kelly_from_history(closed_trades: list, window: int = 0,
+                                  asset_type: str = '') -> float:
     """
     從已平倉交易估算 1/4 Kelly。
-    若樣本不足 KELLY_MIN_TRADES 則使用 config.DEFAULT_RISK_PCT 作為預設值。
+    若樣本不足 KELLY_MIN_TRADES 則使用：
+      1. config.DEFAULT_RISK_PCT_BY_CLASS[asset_type]（v1.7 類別特化）
+      2. fallback 到 config.DEFAULT_RISK_PCT
+      3. 再 fallback 到 0.02
     window > 0 時只取最近 N 筆（避免遠期 regime 干擾當下倉位）。
     """
     if window > 0 and len(closed_trades) > window:
         closed_trades = closed_trades[-window:]
-    default_risk = getattr(config, 'DEFAULT_RISK_PCT', 0.02)
+
+    class_default = getattr(config, 'DEFAULT_RISK_PCT_BY_CLASS', {}).get(asset_type)
+    default_risk  = class_default if class_default is not None \
+                    else getattr(config, 'DEFAULT_RISK_PCT', 0.02)
+
     if len(closed_trades) < config.KELLY_MIN_TRADES:
         return default_risk
 

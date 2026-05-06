@@ -486,7 +486,8 @@ class Backtester:
                         continue
 
                     kf = estimate_kelly_from_history(history_by_sym[sym],
-                                                     window=config.KELLY_WINDOW)
+                                                     window=config.KELLY_WINDOW,
+                                                     asset_type=atype)
 
                     if config.ENABLE_SCORE_TIER_SIZING:
                         tier_mult = config.SCORE_TIER_MULT.get(score_val, 1.0)
