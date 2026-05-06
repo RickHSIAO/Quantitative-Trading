@@ -182,7 +182,7 @@ DEFAULT_RISK_PCT       = 0.040  # 樣本不足時的預設風險 %（v1.6 新增
 # Bybit 預設可至 10x，這裡保守設 2.0，DD 影響仍可控。
 # 股票/商品保持 1.0（無槓桿）。
 LEVERAGE_BY_CLASS: dict = {
-    'Crypto':    2.0,
+    'Crypto':    1.0,
     'US Stock':  1.0,
     'TW Stock':  1.0,
     'Commodity': 1.0,
@@ -254,7 +254,7 @@ KELLY_WINDOW            = 0      # B4：Kelly 只取最近 N 筆（0 = 全歷史
 CLOSE_BASED_SL_TREND    = False  # B5：trend/combined 改成「收盤跌破才停損」
 
 # ─── 系統版號 ────────────────────────────────────────
-SYSTEM_VERSION  = 'v1.5'
+SYSTEM_VERSION  = 'v1.6'
 
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'
