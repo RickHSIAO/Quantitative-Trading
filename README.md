@@ -409,13 +409,28 @@ python main.py live --interval 60
 
 ---
 
-## TradingView 驗證
+## TradingView 策略腳本與驗證
+
+本專案提供完整的 TradingView Pine Script 策略，方便您在圖表上直接視覺化與執行：
+
+```bash
+TradingView_Strategy.pine
+```
+
+此腳本已與 Python 端的最新邏輯 (v1.5+) 完全同步，包含：
+- **大盤環境濾網 (Market Moat)**：大盤 MA 濾網與相對強弱 (RS) 豁免
+- **MACD 過濾**：可選的 Supertrend MACD 假突破過濾
+- **早期趨勢反轉偵測**：EMA200 斜率變化提前封鎖反向單
+- **共識分數計算**：完全對齊 Python 的 1~7 分計算與 EMA 比例分數
+
+您可以直接將 `TradingView_Strategy.pine` 複製貼上至 TradingView 的 Pine Editor 中使用。
+
+若要確保 Python 端回測與 Pine Script 輸出一致，可執行驗證腳本：
 
 ```bash
 python compare_tv.py
 ```
-
-對照 Pine Script 輸出，逐根 K 棒驗證 Python 回測結果，確保指標計算（Wilder's RMA、Supertrend、Volume Profile）與 TradingView 一致。
+對照 Pine Script 輸出，逐根 K 棒驗證 Python 回測結果，確保指標計算（Wilder's RMA、Supertrend、Volume Profile）與 TradingView 完全一致。
 
 ---
 

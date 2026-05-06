@@ -6,3 +6,4 @@ src/__pycache__/
 data/trading.db
 output/
 compare.py
+

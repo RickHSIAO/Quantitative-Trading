@@ -1,5 +1,5 @@
 //@version=6
-strategy("三策略量化系統 | Supertrend + VP + Bollinger",
+strategy("三策略量化系統 | Supertrend + VP + Bollinger (Sync with Python)",
          overlay            = true,
          initial_capital    = 100000,
          default_qty_type   = strategy.percent_of_equity,
@@ -16,10 +16,12 @@ strategy("三策略量化系統 | Supertrend + VP + Bollinger",
 const string G1 = "策略1：Supertrend 趨勢動能"
 const string G2 = "策略2：Volume Profile POC"
 const string G3 = "策略3：Bollinger 均值回歸"
+const string GM = "大盤環境濾網 (Market Moat)"
 const string GC = "共用 / 風控"
 
 st_period   = input.int  (10,    "ATR 期間",                  group=G1)
 st_mult     = input.float(3.0,   "乘數",                       group=G1, step=0.1)
+macd_filter = input.bool (false, "啟用 MACD 過濾 (多頭)",      group=G1)
 
 vp_lookback = input.int  (252,   "回顧 K 棒數（建議 ≤252）",   group=G2, minval=20, maxval=300)
 vp_bins     = input.int  (80,    "分箱數",                     group=G2, minval=10, maxval=100)
@@ -30,18 +32,26 @@ bb_std_mult = input.float(2.0,   "標準差倍數",                 group=G3, st
 bb_bw_mult  = input.float(1.5,   "帶寬過濾乘數",               group=G3, step=0.1)
 rsi_os      = input.int  (30,    "RSI 超賣門檻",               group=G3)
 rsi_ob      = input.int  (70,    "RSI 超買門檻",               group=G3)
+bb_bypass   = input.bool (false, "BB 繞過嚴格 EMA 濾網",       group=G3)
+bb_loose_sc = input.int  (1,     "BB 寬鬆 EMA 最低分數",       group=G3, minval=0)
 
-// EMA 環境濾網：固定使用 EMA20/50/100/200（對應 Python EMA_FAST_PERIODS + EMA_PERIOD）
-// ema_min_score：多頭/空頭各需達到幾根 EMA 門檻才開放進場（預設 2/4）
-ema_min_score = input.int  (2,    "EMA 環境最低分數（1–4）",   group=GC, minval=1, maxval=4)
+bench_ticker= input.symbol("SPY", "市場大盤 (Benchmark)",       group=GM)
+bench_ma_len= input.int  (200,   "大盤多頭 MA 期間",           group=GM)
+rs_lookback = input.int  (10,    "RS 比較天數",                 group=GM)
+rs_pct      = input.float(3.0,   "RS 勝出百分比(%)",            group=GM, step=0.1)
+en_sh_moat  = input.bool (false, "啟用空頭大盤濾網",           group=GM)
+sh_moat_ma  = input.int  (50,    "大盤空頭 MA 期間",           group=GM)
+
+ema_min_score = input.int(2,     "EMA 環境最低分數（1–4）",    group=GC, minval=1, maxval=4)
+ema_slope_len = input.int(10,    "EMA200 趨勢判定期間",        group=GC)
 rsi_len     = input.int  (14,    "RSI 期間",                   group=GC)
 atr_len     = input.int  (14,    "ATR 止損期間",               group=GC)
-atr_sl_mult = input.float(2.0,   "ATR 止損乘數",               group=GC, step=0.1)
+atr_sl_mult = input.float(3.0,   "ATR 止損乘數",               group=GC, step=0.1)
 rr_ratio    = input.float(3.0,   "風報比 1:N",                 group=GC, step=0.5)
 use_short   = input.bool (true,  "允許做空",                   group=GC)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 基礎指標
+// 基礎指標 & 大盤資料
 // ══════════════════════════════════════════════════════════════════════════════
 [st_line, st_dir]          = ta.supertrend(st_mult, st_period)
 ema20                      = ta.ema(close, 20)
@@ -53,11 +63,22 @@ bb_bw                      = (bb_upper - bb_low) / bb_mid * 100
 bw_avg50                   = ta.sma(bb_bw, 50)
 rsi                        = ta.rsi(close, rsi_len)
 atr                        = ta.atr(atr_len)
+[macd_line, macd_sig, macd_hist] = ta.macd(close, 12, 26, 9)
+
+[bm_close, bm_ma, bm_short_ma] = request.security(bench_ticker, timeframe.period, [close, ta.sma(close, bench_ma_len), ta.sma(close, sh_moat_ma)])
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 大盤濾網 (Market Moat Filter)
+// ══════════════════════════════════════════════════════════════════════════════
+bm_above = bm_close >= bm_ma
+stock_ret = (close - close[rs_lookback]) / close[rs_lookback] * 100
+bm_ret = (bm_close - bm_close[rs_lookback]) / bm_close[rs_lookback] * 100
+rs_strong = (stock_ret - bm_ret) > rs_pct
+bool market_long_ok = bm_above or rs_strong
+bool market_short_ok = not en_sh_moat or (bm_close < bm_short_ma)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 策略2：滾動 Volume Profile → POC
-// 邏輯等同 Python compute_volume_profile()：將每根 K 棒的成交量
-// 依 high/low 均分至對應的價格分箱，找出成交量最大的分箱中心
 // ══════════════════════════════════════════════════════════════════════════════
 f_rolling_poc(int lb, int bins) =>
     float plo   = ta.lowest (low,  lb)
@@ -92,11 +113,15 @@ poc = f_rolling_poc(vp_lookback, vp_bins)
 // ══════════════════════════════════════════════════════════════════════════════
 float vp_tol = vp_tol_pct / 100.0
 
-// 策略1：Supertrend 只在方向反轉那根 K 棒才觸發訊號
-int sig_tf = st_dir == 1 and st_dir[1] == -1 ? 1 :
-             st_dir == -1 and st_dir[1] == 1  ? -1 : 0
+// 策略1：Supertrend
+int sig_tf = 0
+if st_dir == 1 and st_dir[1] == -1
+    if not macd_filter or macd_hist > 0
+        sig_tf := 1
+else if st_dir == -1 and st_dir[1] == 1
+    sig_tf := -1
 
-// 策略2：前一根 Close 在 POC 上/下 → 今日觸碰 POC（支撐/壓力）
+// 策略2：VP POC
 bool near_poc = not na(poc) and close >= poc * (1 - vp_tol) and close <= poc * (1 + vp_tol)
 bool prev_abv = not na(poc) and close[1] > poc
 bool prev_blw = not na(poc) and close[1] < poc
@@ -106,9 +131,9 @@ if near_poc and prev_abv and rsi < 60
 else if near_poc and prev_blw and rsi > 40
     sig_vp := -1
 
-// 策略3：Bollinger 均值回歸 + ATR 帶寬過濾
+// 策略3：Bollinger 均值回歸
 bool normal_vol     = bb_bw < bw_avg50 * bb_bw_mult
-bool has_bw_history = bar_index >= 50   // 前 BB_PERIOD+50 棒暖身完成
+bool has_bw_history = bar_index >= 50
 int sig_bb = 0
 if close <= bb_low and rsi < rsi_os and normal_vol and has_bw_history
     sig_bb := 1
@@ -116,42 +141,57 @@ else if close >= bb_upper and rsi > rsi_ob and normal_vol and has_bw_history
     sig_bb := -1
 
 // ══════════════════════════════════════════════════════════════════════════════
-// EMA 比例分數環境濾網（對應 Python _ema_scores + combine_signals）
-// 多頭/空頭分數：收盤高/低於幾根 EMA（20/50/100/200），各 0–4 分
+// EMA 比例分數環境濾網
 // ══════════════════════════════════════════════════════════════════════════════
 int bull_score = (close > ema20 ? 1 : 0) + (close > ema50 ? 1 : 0) + (close > ema100 ? 1 : 0) + (close > ema200 ? 1 : 0)
 int bear_score = (close < ema20 ? 1 : 0) + (close < ema50 ? 1 : 0) + (close < ema100 ? 1 : 0) + (close < ema200 ? 1 : 0)
 
-bool bull_env  = bull_score >= ema_min_score
-bool bear_env  = bear_score >= ema_min_score
-bool any_long  = sig_tf == 1  or sig_vp == 1  or sig_bb == 1
-bool any_short = sig_tf == -1 or sig_vp == -1 or sig_bb == -1
+float ema200_slope = ema200 - ema200[ema_slope_len]
+bool early_bear = (close < ema50) and (ema200_slope < 0)
+bool early_bull = (close > ema50) and (ema200_slope > 0)
 
-// 合併訊號（對應 Python combine_signals Bug 2 修正）
-// 優先設 LONG，SHORT 再覆蓋；衝突時以 EMA 分數決勝，完全相同則 FLAT
+bool bull_env = (bull_score >= ema_min_score) and not early_bear
+bool bear_env = (bear_score >= ema_min_score) and not early_bull
+
+bool bb_bull_env = bull_env
+bool bb_bear_env = bear_env
+
+if bb_bypass
+    bb_bull_env := (close > ema200) and (bull_score >= bb_loose_sc) and not early_bear
+    bb_bear_env := (close < ema200) and (bear_score >= bb_loose_sc) and not early_bull
+
+bool tf_long_eff = (sig_tf == 1) and market_long_ok and bull_env
+bool vp_long_eff = (sig_vp == 1) and market_long_ok and bull_env
+bool bb_long_eff = (sig_bb == 1) and market_long_ok and bb_bull_env
+
+bool tf_short_eff = (sig_tf == -1) and market_short_ok and bear_env
+bool vp_short_eff = (sig_vp == -1) and market_short_ok and bear_env
+bool bb_short_eff = (sig_bb == -1) and market_short_ok and bb_bear_env
+
+bool any_long  = tf_long_eff or vp_long_eff or bb_long_eff
+bool any_short = tf_short_eff or vp_short_eff or bb_short_eff
+
 int sig = 0
-if bull_env and any_long
+if any_long
     sig := 1
-if bear_env and any_short and use_short
+if any_short and use_short
     sig := -1
 
-// 衝突解消：兩方向 EMA 門檻同時達標且子策略訊號方向相反
-bool conflict = bull_env and any_long and bear_env and any_short and use_short
+bool conflict = any_long and any_short and use_short
 if conflict
     if bull_score > bear_score
         sig := 1
-    else if bull_score == bear_score
+    else if bull_score < bear_score
+        sig := -1
+    else
         sig := 0
-    // bear_score > bull_score → sig 維持 -1
 
-// 共識分數（1–3 分，越高優先度越高）
-int score_l = (sig_tf == 1  ? 1 : 0) + (sig_vp == 1  ? 1 : 0) + (sig_bb == 1  ? 1 : 0)
-int score_s = (sig_tf == -1 ? 1 : 0) + (sig_vp == -1 ? 1 : 0) + (sig_bb == -1 ? 1 : 0)
-int score = sig == 1 ? score_l : sig == -1 ? score_s : 0
+int strat_score_l = (sig_tf == 1 ? 1 : 0) + (sig_vp == 1 ? 1 : 0) + (sig_bb == 1 ? 1 : 0)
+int strat_score_s = (sig_tf == -1 ? 1 : 0) + (sig_vp == -1 ? 1 : 0) + (sig_bb == -1 ? 1 : 0)
+int score = sig == 1 ? (strat_score_l + bull_score) : sig == -1 ? (strat_score_s + bear_score) : 0
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 動態 ATR 移動停利管理
-// 等同 Python backtester：多頭追蹤最高價，空頭追蹤最低價
 // ══════════════════════════════════════════════════════════════════════════════
 var float trail_peak    = na
 var float entry_sl_dist = na
@@ -223,7 +263,7 @@ if score >= 2 and sig != 0 and sig != sig[1]
               style     = sig == 1 ? label.style_label_up : label.style_label_down,
               size      = size.tiny)
 
-// 環境背景：依 EMA 分數強弱顯示深淺（≥3 較深，=2 較淡）
+// 環境背景
 color env_bg = color(na)
 if bull_score >= 3
     env_bg := color.new(color.green, 93)
@@ -235,7 +275,7 @@ else if bear_score == 2
     env_bg := color.new(color.red, 96)
 bgcolor(env_bg, title="環境背景")
 
-// ── 右上角子策略狀態表（新增 EMA 分數列）
+// 狀態表
 var table tbl = table.new(position.top_right, 3, 5,
                           bgcolor=color.new(color.black, 55), border_width=1)
 if barstate.islast
