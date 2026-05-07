@@ -14,6 +14,39 @@
 
 ---
 
+## 研究紀錄與最新判決（EXP-001 ~ EXP-003）
+
+研究文件已集中到 `docs/research/`：
+
+- [`TEST_PLAN.md`](docs/research/TEST_PLAN.md)：接下來要做的實驗、通過標準、失敗判斷。
+- [`EXPERIMENT_LOG.md`](docs/research/EXPERIMENT_LOG.md)：每次測試的完整紀錄與結論。
+- [`experiment_results.csv`](docs/research/experiment_results.csv)：可排序、統計、畫圖的結構化結果。
+
+固定研究規則：
+
+1. 每次實驗必須寫清楚「沒改什麼」。
+2. 每次實驗必須先定義通過標準。
+3. 結論只能寫：`保留` / `淘汰` / `需要更多測試`。
+
+### 已完成實驗
+
+| 實驗 | 主題 | 結論 | 關鍵發現 |
+|---|---|---|---|
+| EXP-001 | 成本壓力測試 | 需要更多測試 | TP taker 影響不大；funding 會讓平均 R 轉負，策略邊際偏薄。 |
+| EXP-002 | TP-first / SL-first / Conservative K棒路徑 | 需要更多測試 | SL-first 仍 PF > 1.15，但 MDD 惡化到 -53.72%，日 K 路徑假設會影響風險評估。 |
+| EXP-003 | 策略 ablation 訊號拆解 | 需要更多測試 | 單一 raw 訊號多數 OOS 失效；baseline 主要靠多模組與風險濾網共同作用。 |
+
+### Ablation 初步判斷
+
+- `Symbol rolling winrate`：**保留**。關閉後交易數暴增，OOS PF / Sharpe / Calmar / MDD 全部變差。
+- `Geometric RR`：**保留**。關閉後 OOS MDD 破 -50%，平均 R 轉負。
+- `Supertrend raw`、`VP POC raw`、`VP + BB`、`Supertrend + EMA score`：**淘汰作為獨立 edge**。
+- `Bollinger raw`、`BTC moat`、`baseline 組合`：**需要更多測試**。
+
+下一步根據紀錄決定：先做 baseline 歸因（by strategy / by exit reason / by year / by symbol），不要急著調參。
+
+---
+
 ## Latest Local Update: v1.13 — Walk-forward 驗證與 OOS 基準確立
 
 針對 v1.12 candidate 的 +627% 連續回測，做了完整 walk-forward 驗證。

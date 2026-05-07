@@ -374,6 +374,13 @@ STOCK_FEE_PCT    = 0.0005    # 0.05% per side
 # 市價成交滑點（進場 + 市價出場各一次；limit TP 不計）
 SLIPPAGE_PCT     = 0.001     # 0.1% per side
 
+# Backtest cost stress toggles. Defaults preserve the current cost model.
+BACKTEST_TP_AS_TAKER = False
+BACKTEST_SLIPPAGE_ON_TP = False
+BACKTEST_FUNDING_DAILY_PCT_BY_CLASS: dict = {}
+BACKTEST_EXTRA_SLIPPAGE_PCT_BY_CLASS: dict = {}
+BACKTEST_INTRABAR_CONFLICT_MODE = 'tp_first'  # tp_first / sl_first / conservative
+
 # ─── 系統版號 ────────────────────────────────────────
 SYSTEM_VERSION  = 'v1.9'
 

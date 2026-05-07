@@ -27,7 +27,7 @@ def _entry_fee_rate(asset_type: str) -> float:
 def _exit_fee_rate(asset_type: str, reason_code: str) -> float:
     """出場手續費比率（TP limit → Maker；其餘市價 → Taker）。"""
     if asset_type == 'Crypto':
-        if reason_code == 'take_profit':
+        if reason_code == 'take_profit' and not getattr(config, 'BACKTEST_TP_AS_TAKER', False):
             return getattr(config, 'BYBIT_MAKER_FEE', 0.0002)
         return getattr(config, 'BYBIT_TAKER_FEE', 0.00055)
     return getattr(config, 'STOCK_FEE_PCT', 0.0005)
@@ -35,9 +35,43 @@ def _exit_fee_rate(asset_type: str, reason_code: str) -> float:
 
 def _slip(asset_type: str, is_limit: bool = False) -> float:
     """滑點比率：limit 出場不計滑點；進場及市價出場均計。"""
-    if is_limit:
+    if is_limit and not getattr(config, 'BACKTEST_SLIPPAGE_ON_TP', False):
         return 0.0
     return getattr(config, 'SLIPPAGE_PCT', 0.001)
+
+
+def _funding_cost(asset_type: str, notional: float, holding_days: int) -> float:
+    """Conservative funding stress cost charged on notional per calendar day."""
+    daily_by_class = getattr(config, 'BACKTEST_FUNDING_DAILY_PCT_BY_CLASS', {}) or {}
+    if isinstance(daily_by_class, dict):
+        daily_rate = float(daily_by_class.get(asset_type, 0.0) or 0.0)
+    else:
+        daily_rate = 0.0
+    return max(0.0, notional) * max(0, holding_days) * max(0.0, daily_rate)
+
+
+def _extra_slippage_cost(asset_type: str, notional: float, is_limit: bool = False) -> float:
+    """Extra cost-only slippage used for stress tests without moving strategy levels."""
+    if is_limit and not getattr(config, 'BACKTEST_SLIPPAGE_ON_TP', False):
+        return 0.0
+    extra_by_class = getattr(config, 'BACKTEST_EXTRA_SLIPPAGE_PCT_BY_CLASS', {}) or {}
+    if isinstance(extra_by_class, dict):
+        extra_rate = float(extra_by_class.get(asset_type, 0.0) or 0.0)
+    else:
+        extra_rate = 0.0
+    return max(0.0, notional) * max(0.0, extra_rate)
+
+
+def _resolve_intrabar_hits(tp_hit: bool, sl_hit: bool) -> tuple[bool, bool]:
+    """Resolve same-bar TP/SL conflicts without changing strategy levels."""
+    if not (tp_hit and sl_hit):
+        return tp_hit, sl_hit
+    mode = getattr(config, 'BACKTEST_INTRABAR_CONFLICT_MODE', 'tp_first')
+    if mode == 'tp_first':
+        return True, False
+    if mode in ('sl_first', 'conservative'):
+        return False, True
+    return True, False
 
 
 def _cls_get(name: str, asset_type: str, default):
@@ -177,11 +211,22 @@ class Backtester:
         # Long 賣出：實際成交稍低；Short 回補：實際成交稍高
         actual_exit = exit_price * (1.0 - trade.direction * slip_rate)
 
+        hold_days = max(0, (pd.Timestamp(exit_date) - pd.Timestamp(trade.entry_date)).days)
         gross_pnl  = (actual_exit - trade.entry_price) * trade.quantity * trade.direction
         ef_rate    = _exit_fee_rate(trade.asset_type, reason_code)
         exit_fee   = actual_exit * trade.quantity * ef_rate
+        extra_exit_slip = _extra_slippage_cost(
+            trade.asset_type,
+            actual_exit * trade.quantity,
+            is_limit=is_limit,
+        )
+        funding_fee = _funding_cost(
+            trade.asset_type,
+            trade.entry_price * trade.quantity,
+            hold_days,
+        )
         # net pnl = 毛利 - 出場手續費 - 進場手續費（已儲存在 trade.entry_fee）
-        pnl = gross_pnl - exit_fee - trade.entry_fee
+        pnl = gross_pnl - exit_fee - extra_exit_slip - trade.entry_fee - funding_fee
 
         ret = (actual_exit / trade.entry_price - 1.0) * trade.direction * 100 if trade.entry_price else 0.0
         orig_sl = self._orig_stop.get(trade.symbol, trade.stop_loss)
@@ -190,12 +235,13 @@ class Backtester:
 
         trade.exit_date    = exit_date
         trade.exit_price   = round(actual_exit, 8)
-        trade.exit_fee     = round(exit_fee, 4)
+        trade.exit_fee     = round(exit_fee + extra_exit_slip, 4)
+        trade.funding_fee  = round(funding_fee, 4)
         trade.pnl          = pnl
         trade.return_pct   = ret
         trade.r_multiple   = round(r_mult, 2)
         trade.exit_reason  = _exit_reason(reason_code, r_mult)
-        trade.holding_days = max(0, (pd.Timestamp(exit_date) - pd.Timestamp(trade.entry_date)).days)
+        trade.holding_days = hold_days
 
         # MAE / MFE
         excursions = self._excursion.pop(trade.symbol, [])
@@ -392,18 +438,18 @@ class Backtester:
                 close_based = (config.CLOSE_BASED_SL_TREND
                                and pos.strategy in ('trend', 'combined'))
                 if close_based:
-                    hit_tp = ((pos.direction ==  1 and price >= pos.take_profit) or
+                    tp_raw = ((pos.direction ==  1 and price >= pos.take_profit) or
                               (pos.direction == -1 and price <= pos.take_profit))
-                    hit_sl = (not hit_tp) and (
-                             (pos.direction ==  1 and price <= pos.stop_loss) or
-                             (pos.direction == -1 and price >= pos.stop_loss))
+                    sl_raw = ((pos.direction ==  1 and price <= pos.stop_loss) or
+                              (pos.direction == -1 and price >= pos.stop_loss))
+                    hit_tp, hit_sl = _resolve_intrabar_hits(tp_raw, sl_raw)
                     sl_exit_price = price                # 收盤確認 → 出場價就是收盤
                 else:
-                    hit_tp = ((pos.direction ==  1 and hi  >= pos.take_profit) or
+                    tp_raw = ((pos.direction ==  1 and hi  >= pos.take_profit) or
                               (pos.direction == -1 and lo  <= pos.take_profit))
-                    hit_sl = (not hit_tp) and (
-                             (pos.direction ==  1 and lo  <= pos.stop_loss) or
-                             (pos.direction == -1 and hi  >= pos.stop_loss))
+                    sl_raw = ((pos.direction ==  1 and lo  <= pos.stop_loss) or
+                              (pos.direction == -1 and hi  >= pos.stop_loss))
+                    hit_tp, hit_sl = _resolve_intrabar_hits(tp_raw, sl_raw)
                     sl_exit_price = pos.stop_loss
 
                 if hit_sl or hit_tp:
@@ -652,7 +698,10 @@ class Backtester:
                         continue
 
                     # 進場手續費（記錄在 Trade，平倉時一起結算）
-                    ef_entry = actual_entry * qty * _entry_fee_rate(atype)
+                    ef_entry = (
+                        actual_entry * qty * _entry_fee_rate(atype)
+                        + _extra_slippage_cost(atype, actual_entry * qty, is_limit=False)
+                    )
 
                     self._cb_daily_trades[date_str] = self._cb_daily_trades.get(date_str, 0) + 1
 
