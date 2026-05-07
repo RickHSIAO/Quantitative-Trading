@@ -1,7 +1,7 @@
 import yfinance as yf
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from tqdm import tqdm
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -46,8 +46,9 @@ def _download_bybit(symbol: str, start: str, end: str) -> pd.DataFrame | None:
         return None
 
     bybit_sym = symbol[6:-2]  # BYBIT:BTCUSDT.P → BTCUSDT
-    start_ts  = int(datetime.strptime(start, '%Y-%m-%d').timestamp() * 1000)
-    end_ts    = int(datetime.strptime(end,   '%Y-%m-%d').timestamp() * 1000)
+    # Bybit kline 用 UTC 毫秒；本地時區轉換會差 N 小時、邊界日少/多一根。
+    start_ts  = int(datetime.strptime(start, '%Y-%m-%d').replace(tzinfo=timezone.utc).timestamp() * 1000)
+    end_ts    = int(datetime.strptime(end,   '%Y-%m-%d').replace(tzinfo=timezone.utc).timestamp() * 1000)
 
     session  = BybitHTTP()  # K線為公開端點，無需 API Key
     all_rows = []

@@ -273,8 +273,9 @@ def load_backtest_history(limit: int = 20) -> pd.DataFrame:
     init_db()
     with get_connection() as conn:
         return pd.read_sql_query(
-            f'SELECT * FROM backtest_runs ORDER BY run_id DESC LIMIT {limit}',
+            'SELECT * FROM backtest_runs ORDER BY run_id DESC LIMIT ?',
             conn,
+            params=(int(limit),),
         )
 
 

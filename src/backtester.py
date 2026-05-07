@@ -280,10 +280,17 @@ class Backtester:
         s_bb:        dict[str, np.ndarray] = {}
 
         def _sig_arr(sigs: dict, key: str, n: int) -> np.ndarray:
+            # Shift by 1 bar: signal computed at end of bar t-1 acts on bar t.
+            # Without this, supertrend/EMA-slope signals leak today's close into
+            # today's entry — a classic look-ahead bias inflating CAGR/Sharpe.
             ser = sigs.get(key)
             if ser is None:
                 return np.zeros(n, dtype=np.int64)
-            return ser.fillna(0).to_numpy(dtype=np.int64)
+            arr = ser.fillna(0).to_numpy(dtype=np.int64)
+            shifted = np.zeros_like(arr)
+            if n > 1:
+                shifted[1:] = arr[:-1]
+            return shifted
 
         for sym, sigs in signals.items():
             ref = sigs.get('combined')
@@ -720,7 +727,14 @@ class Backtester:
 
         equity_s      = pd.Series([e['capital'] for e in self.equity_curve])
         daily_ret     = equity_s.pct_change().dropna()
-        sharpe        = (daily_ret.mean() / daily_ret.std() * np.sqrt(252)
+        eq_dates_tmp  = [e['date'] for e in self.equity_curve]
+        if len(eq_dates_tmp) > 1:
+            span_days = (pd.Timestamp(eq_dates_tmp[-1]) - pd.Timestamp(eq_dates_tmp[0])).days
+            years_span = span_days / 365.25 if span_days > 0 else 1.0
+            annual_factor = (len(eq_dates_tmp) / years_span) if years_span > 0 else 252.0
+        else:
+            annual_factor = 252.0
+        sharpe        = (daily_ret.mean() / daily_ret.std() * np.sqrt(annual_factor)
                          if daily_ret.std() > 0 else 0.0)
 
         equity    = pd.Series([e['capital'] for e in self.equity_curve])
@@ -731,7 +745,9 @@ class Backtester:
         total_ret  = (self.capital - self.initial_capital) / self.initial_capital * 100
         eq_dates   = [e['date'] for e in self.equity_curve]
         years      = (pd.Timestamp(eq_dates[-1]) - pd.Timestamp(eq_dates[0])).days / 365.25 if len(eq_dates) > 1 else 1.0
-        annual_ret = ((self.capital / self.initial_capital) ** (1.0 / max(years, 1)) - 1.0) * 100
+        # 不再 max(years, 1)：短週期回測應如實反映年化（會放大也會縮小）。
+        # 若 years <= 0（單日回測等退化情況）退回 1.0 避免 div0。
+        annual_ret = ((self.capital / self.initial_capital) ** (1.0 / max(years, 1e-6)) - 1.0) * 100 if years > 0 else 0.0
         calmar     = annual_ret / abs(max_dd) if max_dd != 0 else 0.0
         recovery   = (self.capital - self.initial_capital) / abs(dd_usd) if dd_usd != 0 else 0.0
         expectancy = wr * avg_w - (1 - wr) * avg_l  # USD per trade

@@ -8,6 +8,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 import config
 from src.executors.base import BaseExecutor
 
+
+class OrderRejected(Exception):
+    """Broker 明確拒絕下單；上游必須處理，不可靜默忽略。"""
+
 try:
     from pybit.unified_trading import HTTP as BybitHTTP
     PYBIT_AVAILABLE = True
@@ -61,18 +65,21 @@ class BybitExecutor(BaseExecutor):
             lst = res.get('result', {}).get('list', [])
             if lst:
                 info       = lst[0]
-                price_filt = info.get('priceFilter',  {})
+                price_filt = info.get('priceFilter',   {})
                 lot_filt   = info.get('lotSizeFilter', {})
+                lev_filt   = info.get('leverageFilter', {})
                 meta = {
                     'tick':     float(price_filt.get('tickSize',  '0.0001')),
                     'qty_step': float(lot_filt.get('qtyStep',     '0.001')),
                     'min_qty':  float(lot_filt.get('minOrderQty', '0.001')),
+                    # Bybit 每幣對的最大槓桿（可能 50x / 75x / 100x），用於 clamp。
+                    'max_lev':  float(lev_filt.get('maxLeverage', '100')),
                 }
                 self._instr_cache[bybit_sym] = meta
                 return meta
         except Exception as e:
             print(f'[WARN] get_instruments_info {bybit_sym}: {e}')
-        meta = {'tick': 0.0001, 'qty_step': 0.001, 'min_qty': 0.001}
+        meta = {'tick': 0.0001, 'qty_step': 0.001, 'min_qty': 0.001, 'max_lev': 100.0}
         self._instr_cache[bybit_sym] = meta
         return meta
 
@@ -82,6 +89,9 @@ class BybitExecutor(BaseExecutor):
         step = meta['qty_step']
         floored = _floor_to_step(qty, step)
         if floored < meta['min_qty']:
+            # 截斷會吃掉一半以上原始數量時提醒，避免靜默縮水
+            if qty > 0 and floored / qty < 0.5:
+                print(f'[WARN] {bybit_sym}: 請求 {qty} 被截斷至 0（min_qty={meta["min_qty"]}）')
             floored = 0.0
         decimals = max(0, -int(math.floor(math.log10(step)))) if step < 1 else 0
         return f'{floored:.{decimals}f}'
@@ -97,6 +107,12 @@ class BybitExecutor(BaseExecutor):
     def set_leverage(self, symbol: str, leverage: int | float | None = None) -> dict:
         bybit_sym = _yf_to_bybit(symbol)
         lev = leverage if leverage is not None else getattr(config, 'BYBIT_LEVERAGE', 1)
+        # Clamp 到該幣種交易所最大槓桿，避免 Bybit 以 retCode 拒絕（且原本只回 dict、上游不易察覺）
+        meta = self._get_instrument(bybit_sym)
+        max_lev = meta.get('max_lev', 100.0)
+        if float(lev) > max_lev:
+            print(f'[WARN] {bybit_sym}: 槓桿 {lev} 超過上限 {max_lev}，已 clamp')
+            lev = max_lev
         lev_str = str(int(lev)) if float(lev).is_integer() else str(lev)
         try:
             res = self.session.set_leverage(
@@ -127,12 +143,12 @@ class BybitExecutor(BaseExecutor):
         tp_str  = take_profit if isinstance(take_profit, str) else self.format_price(symbol, float(take_profit))
 
         if float(qty_str) <= 0:
-            return {'retCode': -1, 'retMsg': f'qty {qty} 低於 minOrderQty'}
+            raise OrderRejected(f'{symbol}: qty {qty} 低於 minOrderQty / step；訂單不送出')
 
         try:
             lev_res = self._ensure_leverage(bybit_sym)
             if lev_res.get('retCode') not in (0, 110043):
-                return lev_res
+                raise OrderRejected(f'{symbol}: set_leverage 失敗 {lev_res}')
 
             res = self.session.place_order(
                 category='linear',
@@ -146,9 +162,13 @@ class BybitExecutor(BaseExecutor):
                 slTriggerBy='LastPrice',
                 tpTriggerBy='LastPrice',
             )
+            if res.get('retCode') != 0:
+                raise OrderRejected(f'{symbol}: place_order 失敗 {res}')
             return res
+        except OrderRejected:
+            raise
         except Exception as e:
-            return {'retCode': -1, 'retMsg': str(e)}
+            raise OrderRejected(f'{symbol}: place_order 例外 {e}') from e
 
     def close_position(self, symbol: str, qty: float, direction: int) -> dict:
         close_side = 'Sell' if direction == 1 else 'Buy'

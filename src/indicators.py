@@ -70,10 +70,11 @@ def compute_supertrend(df: pd.DataFrame,
 
     final_upper = basic_upper.copy()
     final_lower = basic_lower.copy()
-    direction   = np.ones(n, dtype=int)
+    direction   = np.zeros(n, dtype=int)
 
     for i in range(1, n):
         if np.isnan(atr[i]) or np.isnan(atr[i - 1]):
+            direction[i] = direction[i-1]
             continue
         final_upper[i] = (basic_upper[i]
                           if basic_upper[i] < final_upper[i-1] or c[i-1] > final_upper[i-1]

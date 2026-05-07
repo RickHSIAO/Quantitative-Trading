@@ -57,7 +57,7 @@ def _auto_width(ws, min_w=8, max_w=40):
         w = min_w
         for cell in col:
             try: w = max(w, len(str(cell.value or '')))
-            except: pass
+            except (TypeError, ValueError): pass
         ws.column_dimensions[col[0].column_letter].width = min(w + 2, max_w)
 
 

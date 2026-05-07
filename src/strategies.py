@@ -74,8 +74,11 @@ def trend_following_signals(df: pd.DataFrame, asset_type: str = '') -> pd.Series
         return sig
 
     dir_chg = df['supertrend_dir'].diff()
-    sig[dir_chg > 0] = LONG   # -1 → +1
-    sig[dir_chg < 0] = SHORT  # +1 → -1
+    prev_dir = df['supertrend_dir'].shift(1)
+    # 只在 -1 → +1 / +1 → -1 真翻向時觸發；
+    # 排除暖機期 0 → ±1 假觸發（direction 在 ATR NaN 期沿用前值 0）
+    sig[(dir_chg > 0) & (prev_dir == -1)] = LONG
+    sig[(dir_chg < 0) & (prev_dir == 1)]  = SHORT
 
     # ADX 趨勢強度濾網（保留參數但預設停用；ADX 滯後砍掉早期入場）
     if getattr(config, 'TREND_ADX_MIN', 0) > 0 and 'adx' in df.columns:

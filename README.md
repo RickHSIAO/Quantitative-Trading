@@ -1,6 +1,58 @@
 # 量化交易系統
 
-## Latest Local Update: v1.9 Crypto-Specific Tuning
+## Latest Local Update: v1.10 — Look-ahead Bias 修正與引擎硬化
+
+v1.10 是純 bug-fix release，**沒有改任何策略邏輯或參數**，但回測結果會大幅變動，
+因為先前的數字含有 look-ahead bias。修正後的數字才是可實盤複製的真實表現。
+
+### 修正項目
+
+| # | 嚴重度 | 檔案 | 修正內容 |
+|---|---|---|---|
+| 1 | HIGH | [src/backtester.py](src/backtester.py) | 訊號陣列統一 `shift(1)`：t-1 收盤確認的訊號於 t 進場，消除「同根 K 棒收盤同時偵測 + 進場」的 look-ahead |
+| 2 | HIGH | [src/backtester.py](src/backtester.py) | Sharpe 年化因子改由 equity curve 自動推導（crypto 7d/週 → 365；股票 5d/週 → 252），不再寫死 252 |
+| 3 | HIGH | [src/fetcher.py](src/fetcher.py) | Bybit kline 起訖時戳改用 UTC（原本用本地時區，台北時區會差 8 小時、邊界日少/多一根） |
+| 4 | HIGH | [src/executors/bybit.py](src/executors/bybit.py) | `place_order` 失敗改 `raise OrderRejected`，不再回 `{retCode:-1}` 讓上游靜默忽略 |
+| 5 | MED | [src/strategies.py](src/strategies.py) | Supertrend 訊號加入 `prev_dir` 守門，避免暖機期 0 → ±1 假觸發 |
+| 6 | MED | [src/indicators.py](src/indicators.py) | Supertrend `direction` 初值改 0 + NaN 期沿用前值，不再預設 +1 |
+| 7 | MED | [src/executors/bybit.py](src/executors/bybit.py) | 槓桿自動 clamp 到 instrument `maxLeverage`、qty 大幅截斷時 warn |
+| 8 | LOW | [src/database.py](src/database.py) | `load_backtest_history` 的 LIMIT 改參數化 |
+| 9 | LOW | [src/backtester.py](src/backtester.py) | CAGR 移除 `max(years, 1)` cap（短週期回測會更如實） |
+| 10 | LOW | [src/reporter.py](src/reporter.py) | `_auto_width` 收窄 except 範圍 |
+
+### 修正前 vs 修正後 — 同份資料、同套參數
+
+| 指標 | Pre-fix (run 52) | **Post-fix (run 53)** | Δ |
+|---|---:|---:|---:|
+| 總報酬 | +148.86% | **+63.42%** | **−85.44 pp** |
+| 年化 (CAGR) | +19.27% | **+9.96%** | **−9.31 pp** |
+| Sharpe | 0.569 | **0.450** | −0.119 |
+| Profit Factor | 1.332 | **1.148** | −0.184 |
+| 最大回撤 | −47.11% | **−50.94%** | −3.83 pp |
+| 勝率 | 50.68% | 50.51% | −0.17 pp |
+| 總交易數 | 296 | 293 | −3 |
+| 最佳單筆 | $2,693 | $1,791 | −33.5% |
+
+**為什麼勝率幾乎沒變但報酬腰斬？**
+交易方向判斷其實是對的（勝率不動），但舊版用「同根 K 棒收盤」同時偵測訊號 + 進場，
+等同偷看當天收盤的價格進場。修正後改成 t-1 訊號 → t 進場：
+- 贏單利潤被砍 33.5%（原本人為加大）
+- 輸單金額幾乎不變（方向錯時，t vs t+1 的價差有限）
+- 結果：PF 1.332 → 1.148
+
+### 重現指令
+
+```powershell
+python main.py backtest --output output\post_fix.xlsx --note "post bug fixes"
+```
+
+### 提醒
+- 之前 `scripts/crypto_sweep*.py` 找出的「最佳參數」是基於 biased 回測，**需重跑調參**
+- v1.9 README 內 22.35% / Sharpe 等數字是 pre-fix 結果，請以 v1.10 post-fix 為準
+
+---
+
+## v1.9 Crypto-Specific Tuning
 
 v1.9 在保留 v1.8 silo 架構的前提下，針對 **Crypto silo** 做專屬參數最佳化，
 其他 silo（TW Stock / US+Commodity）的參數與績效完全不變。
