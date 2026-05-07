@@ -54,7 +54,7 @@ def _load_benchmark(symbol: str, years: int = 6) -> 'pd.DataFrame | None':
     """下載基準指數日線（^TWII, ^GSPC），用於大盤護城河濾網。"""
     import yfinance as yf
     import pandas as pd
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     end   = datetime.now()
     start = (end - timedelta(days=years * 365 + 60)).strftime('%Y-%m-%d')
     end   = end.strftime('%Y-%m-%d')
@@ -335,7 +335,7 @@ def cmd_live(args):
     print(f'監控 {len(cryptos)} 個加密貨幣 | 每 {args.interval} 分鐘掃描一次')
     print('[注意] 測試網模式：', config.BYBIT_TESTNET)
 
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from src.database import upsert_prices, load_prices, get_last_date, init_db
     from src.fetcher import asset_type_of
 
@@ -363,7 +363,7 @@ def cmd_live(args):
         """Drop the still-forming current UTC daily candle for live parity."""
         if df is None or df.empty:
             return df
-        utc_today = pd.Timestamp(datetime.utcnow().date())
+        utc_today = pd.Timestamp(datetime.now(timezone.utc).date())
         if df.index[-1] >= utc_today:
             return df.loc[df.index < utc_today]
         return df

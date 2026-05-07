@@ -9,6 +9,33 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 
 
+def _coerce_ohlcv_value(value):
+    """Coerce legacy SQLite BLOB/bytes numeric values back to float-safe scalars."""
+    if isinstance(value, memoryview):
+        value = value.tobytes()
+    if isinstance(value, (bytes, bytearray)):
+        raw = bytes(value)
+        try:
+            return float(raw.decode('utf-8'))
+        except Exception:
+            pass
+        if len(raw) == 8:
+            return float(int.from_bytes(raw, byteorder='little', signed=False))
+        return np.nan
+    return value
+
+
+def _coerce_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for col in ('Open', 'High', 'Low', 'Close', 'Volume'):
+        if col in out.columns:
+            out[col] = pd.to_numeric(
+                out[col].map(_coerce_ohlcv_value),
+                errors='coerce',
+            )
+    return out
+
+
 # ─── Wilder's RMA（對齊 TradingView ta.rma）────────────────────────────────
 def _rma(values: np.ndarray, period: int) -> np.ndarray:
     """
@@ -253,6 +280,7 @@ def compute_volume_profile(df: pd.DataFrame,
 
 # ─── Compute All ─────────────────────────────────────────────────────────────
 def compute_all_indicators(df: pd.DataFrame, include_vp: bool = True) -> pd.DataFrame:
+    df = _coerce_ohlcv(df)
     df = compute_supertrend(df)
     for p in config.EMA_FAST_PERIODS:
         df[f'ema{p}'] = compute_ema(df['Close'], p)
