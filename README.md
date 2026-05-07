@@ -1,6 +1,90 @@
 # 量化交易系統
 
-## Latest Local Update: v1.11 — Post-fix Re-tuning + 資料修復
+## ⚠️ 績效解讀規範（v1.13 後）
+
+任何績效數字都要附上「**範圍 + 期間**」才有意義。本專案用 silo 切資金池，
+不同 `--profile` 跑法的數字尺度完全不同，跨範圍對比沒意義。
+
+| 範圍 | 起始資金 | OOS 2y 真實基準 |
+|---|---|---|
+| `--profile Crypto`（單 silo） | $10k | **+87.17% / 年化 36% / Sharpe 0.93 / PF 1.35** |
+| 預設多 silo（Crypto+TW+US+Comm） | $30k | +30.82% / PF 1.25（被 TW/US 拖累） |
+
+**任何新策略改動，必須以 walk-forward OOS 績效是否提升為準**，不能只看連續回測或 IS 數字。
+
+---
+
+## Latest Local Update: v1.13 — Walk-forward 驗證與 OOS 基準確立
+
+針對 v1.12 candidate 的 +627% 連續回測，做了完整 walk-forward 驗證。
+
+### 1. 先確認沒有 BUG
+
+- ✅ v1.10 的 look-ahead 修正仍在（signal `shift(1)` 在 backtester:282-293）
+- ✅ Sharpe 年化因子自動推導仍在（backtester:741-744）
+- ✅ `SYM_MIN_WINRATE` 用的 `history_by_sym[sym]` 只含已平倉、point-in-time 正確
+- 結論：**+627% 不是 look-ahead 幻覺**，而是 path-dependent 加持下的真實 in-sample 數字
+
+### 2. Crypto-silo Walk-forward（`--profile Crypto`，$10k 起始）
+
+切點 2024-05-01：IS = 2021-03 ~ 2024-04（3 年）/ OOS = 2024-05 ~ 2026-05（2 年）。
+
+| 指標 | IS 3y | **OOS 2y（真實基準）** | 5y full | IS+OOS 複利 |
+|---|---:|---:|---:|---:|
+| 總報酬 | +229.88% | **+87.17%** | +627.44% | +517.50% |
+| 年化 | 45.90% | **36.49%** | 46.71% | — |
+| 勝率 | 53.95% | 43.81% | 51.49% | — |
+| Profit Factor | 1.533 | **1.346** | 1.546 | — |
+| Sharpe | 1.103 | **0.930** | 1.139 | — |
+| 最大回撤 | −42.13% | −43.01% | −42.13% | — |
+| 交易數 | 291 | 226 (~113/yr) | 470 | — |
+
+**Path-dep gap = +627.44% − +517.50% = +110 pp**。確實存在但不致命；初步以為的 +497 pp 是把多 silo IS/OOS 跟 Crypto-only 5y 混比導致的錯誤。
+
+### 3. 真實可期望基準
+
+- **Crypto silo（1x 槓桿、永續）：年化 ~36% / Sharpe ~0.93 / PF ~1.35 / MDD ~−43%**
+- 多 silo 整體：被 TW Stock +2.63% 與 US+Comm −2.54% 拖累，OOS 年化 ~14%
+- **WR 從 IS 54% → OOS 44% 退化 10 pp** 是最明顯的 in-sample 過擬合徵兆
+- PF 從 1.53 → 1.35 退化 0.19，仍在「可交易」門檻 > 1.3 之上
+
+### 4. 三組 SYM filter 對照（多 silo OOS）
+
+| 設定 | OOS 2y 多 silo | 5y 連續多 silo | Path-dep |
+|---|---:|---:|---:|
+| **aggressive (3/20)** ✅ | **+30.82%** | ~+209% | 中-大 |
+| conservative (30/50) | +23.80% | +346.17% | 中 |
+| no filter | +25.17% | +217.07% | ~0 |
+
+OOS 最佳是 aggressive，因此最終保留 (3/20)。conservative (30/50) 雖然 path-dep 較小但 OOS 反而最差 — 過保守把該砍的幣留太久。
+
+### 5. 重現指令
+
+```powershell
+# 真實基準（Crypto-only OOS，必跑）
+python main.py backtest --profile Crypto `
+  --start-date 2024-05-01 --end-date 2026-05-07 `
+  --output output\v113_crypto_OOS.xlsx --note v1.13_crypto_OOS
+
+# IS 對照
+python main.py backtest --profile Crypto `
+  --start-date 2021-03-01 --end-date 2024-04-30 `
+  --output output\v113_crypto_IS.xlsx --note v1.13_crypto_IS
+
+# 多 silo 整體
+python main.py backtest --start-date 2024-05-01 --end-date 2026-05-07 `
+  --output output\v113_multi_OOS.xlsx --note v1.13_multi_OOS
+```
+
+### 6. 後續觀察點
+- 5y 連續回測 +627% 不是 BUG 但**不可作為宣傳數字**，引用時必須註明「同樣參數 OOS = +87%」
+- Sweep 腳本找出的「最佳參數」都是 in-sample，**必須再跑 OOS 驗證**才能採用
+- 新流程：propose → IS 跑 → OOS 跑 → OOS ≥ 基準 → 才入 main
+- US+Commodity silo 在 OOS 仍是負報酬，是結構性議題
+
+---
+
+## v1.11 — Post-fix Re-tuning + 資料修復
 
 承接 v1.10 的 look-ahead 修正，本版做兩件事：
 1. 修復 SQLite Volume 欄位 BLOB 汙染（救回 102 個資產）

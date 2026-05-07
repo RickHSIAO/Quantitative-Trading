@@ -298,9 +298,14 @@ MIN_ENTRY_SCORE_BY_CLASS: dict = {'Crypto': 3}
 MAX_HOLD_DAYS_BY_CLASS:   dict = {'Crypto': 30}
 TSL_USE_CLOSE_BY_CLASS:   dict = {'Crypto': True}
 TSL_TIGHT_AFTER_R_BY_CLASS: dict = {'Crypto': 2.0}
-SYM_MIN_WINRATE_BY_CLASS: dict = {'Crypto': 0.45}
+# SYM filter 設定（v1.13 walk-forward 後拍板：保留 aggressive）
+# 三組 OOS 實測：3/20 +30.82%、30/50 +23.80%、no filter +25.17%
+# → aggressive (3/20) OOS 最佳，雖然 5y 連跑會產生 +627% path-dep 幻覺，
+#   但實盤只能往前走、不會經歷「整段歷史回頭篩選」，OOS 才是真實基準。
+# README 必須以 OOS 數字為準，連續回測數字僅供 in-sample 參考。
+SYM_MIN_WINRATE_BY_CLASS:   dict = {'Crypto': 0.45}
 SYM_WR_MIN_TRADES_BY_CLASS: dict = {'Crypto': 3}
-SYM_WR_WINDOW_BY_CLASS: dict = {'Crypto': 20}
+SYM_WR_WINDOW_BY_CLASS:     dict = {'Crypto': 20}
 ENABLE_MARKET_SHORT_MOAT = False # B3：大盤指數 < SMA(N) 才允許做空
 MARKET_SHORT_MA_PERIOD  = 50     # B3：空頭濾網的 SMA 週期
 KELLY_WINDOW            = 0      # B4：Kelly 只取最近 N 筆（0 = 全歷史）
