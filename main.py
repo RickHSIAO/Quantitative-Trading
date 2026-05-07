@@ -479,7 +479,9 @@ def cmd_live(args):
                     pos.setdefault('trail_anchor', pos.get('entry', price))
                     orig_sl = pos.get('orig_sl') or pos.get('sl') or 0.0
                     if orig_sl <= 0:
-                        fallback_sl, fallback_tp = calculate_stops(pos['entry'], pos['dir'], atr)
+                        fallback_sl, fallback_tp = calculate_stops(
+                            pos['entry'], pos['dir'], atr, asset_type='Crypto'
+                        )
                         orig_sl = fallback_sl
                         pos['orig_sl'] = fallback_sl
                         if pos.get('sl', 0.0) <= 0:
@@ -543,7 +545,7 @@ def cmd_live(args):
                         and len(open_pos) < crypto_max_positions):
                     atype = 'Crypto'   # live 模式只跑加密
                     kf  = estimate_kelly_from_history(trade_history[sym], asset_type=atype)
-                    sl, tp = calculate_stops(price, latest_sig, atr)
+                    sl, tp = calculate_stops(price, latest_sig, atr, asset_type=atype)
                     lev_map = getattr(config, 'LEVERAGE_BY_CLASS', {})
                     lev     = lev_map.get(atype, 1.0)
                     # 用保證金口徑計算可用資金（Bybit 永續以保證金抵押）

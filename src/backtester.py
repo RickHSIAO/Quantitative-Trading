@@ -515,11 +515,17 @@ class Backtester:
                     if score_val < min_score_class:
                         continue
                     # 個股勝率過濾：近 SYM_WR_WINDOW 筆勝率低於門檻則跳過
-                    if config.SYM_MIN_WINRATE > 0:
-                        hist = history_by_sym[sym][-config.SYM_WR_WINDOW:]
-                        if len(hist) >= config.SYM_WR_MIN_TRADES:
+                    sym_min_wr = _cls_get('SYM_MIN_WINRATE_BY_CLASS',
+                                          atype_for_score, config.SYM_MIN_WINRATE)
+                    sym_wr_window = _cls_get('SYM_WR_WINDOW_BY_CLASS',
+                                             atype_for_score, config.SYM_WR_WINDOW)
+                    sym_wr_min_trades = _cls_get('SYM_WR_MIN_TRADES_BY_CLASS',
+                                                 atype_for_score, config.SYM_WR_MIN_TRADES)
+                    if sym_min_wr > 0:
+                        hist = history_by_sym[sym][-sym_wr_window:]
+                        if len(hist) >= sym_wr_min_trades:
                             wins = sum(1 for t in hist if t.pnl is not None and t.pnl > 0)
-                            if wins / len(hist) < config.SYM_MIN_WINRATE:
+                            if wins / len(hist) < sym_min_wr:
                                 continue
                     # Dominant strategy via cached arrays
                     matched = []
@@ -586,7 +592,8 @@ class Backtester:
                     entry_slip = _slip(atype, is_limit=False)
                     actual_entry = price * (1.0 + sig_val * entry_slip)
 
-                    sl, tp = calculate_stops(actual_entry, sig_val, atr, strategy=strat)
+                    sl, tp = calculate_stops(actual_entry, sig_val, atr,
+                                             strategy=strat, asset_type=atype)
 
                     if config.ENABLE_GEOMETRIC_RR and not _geometric_rr_ok_arr(
                             a_high[sym], a_low[sym], i, sig_val, tp, atr,

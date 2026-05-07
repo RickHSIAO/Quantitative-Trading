@@ -105,6 +105,7 @@ def calculate_stops(entry_price: float,
                     direction: int,
                     atr: float,
                     strategy: str = 'trend',
+                    asset_type: str = '',
                     rr: float | None = None,
                     atr_mult: float | None = None) -> tuple[float, float]:
     """
@@ -118,6 +119,11 @@ def calculate_stops(entry_price: float,
     default_mult, default_rr = _STRAT_PARAMS.get(
         strategy, (config.ATR_STOP_MULTIPLIER, config.RISK_REWARD_RATIO)
     )
+    by_class = getattr(config, 'STRAT_PARAMS_BY_CLASS', {}) or {}
+    if asset_type and isinstance(by_class, dict):
+        class_params = by_class.get(asset_type, {}) or {}
+        if strategy in class_params:
+            default_mult, default_rr = class_params[strategy]
     if atr_mult is None:
         atr_mult = default_mult
     if rr is None:

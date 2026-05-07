@@ -79,7 +79,7 @@ CRYPTO_HIGH_VOLUME = [
     'BYBIT:SUIUSDT.P','BYBIT:PIPPINUSDT.P','BYBIT:TAOUSDT.P','BYBIT:WIFUSDT.P',
     'BYBIT:ENAUSDT.P','BYBIT:ASTERUSDT.P','BYBIT:PUMPFUNUSDT.P','BYBIT:XPLUSDT.P',
 ]
-CRYPTO_EXTRA_COUNT = 15
+CRYPTO_EXTRA_COUNT = len(CRYPTO_POOL)  # v1.12: expand Crypto universe for 70-100 trades/year
 
 # ─── 大宗商品 ────────────────────────────────────────
 COMMODITIES = ['XAUUSD', 'XAGUSD']  # 黃金, 白銀
@@ -91,9 +91,12 @@ def get_selected_assets(seed: int = RANDOM_SEED) -> dict:
     rng = random.Random(seed)
     us = rng.sample(US_STOCKS_POOL, min(50, len(US_STOCKS_POOL)))
     tw = rng.sample(TW_STOCKS_POOL, min(50, len(TW_STOCKS_POOL)))
-    crypto_extra = rng.sample(CRYPTO_POOL, min(CRYPTO_EXTRA_COUNT, len(CRYPTO_POOL)))
-    cryptos = CRYPTO_FIXED + CRYPTO_HIGH_VOLUME + crypto_extra  # 3 + 12 + 15 = 30
-    all_assets = us + tw + cryptos + COMMODITIES  # 50+50+30+2 = 132
+    if CRYPTO_EXTRA_COUNT >= len(CRYPTO_POOL):
+        crypto_extra = list(CRYPTO_POOL)
+    else:
+        crypto_extra = rng.sample(CRYPTO_POOL, min(CRYPTO_EXTRA_COUNT, len(CRYPTO_POOL)))
+    cryptos = CRYPTO_FIXED + CRYPTO_HIGH_VOLUME + crypto_extra
+    all_assets = us + tw + cryptos + COMMODITIES
     return {
         'us_stocks': us,
         'tw_stocks': tw,
@@ -162,6 +165,14 @@ STRAT_BB_DISABLE_TSL   = True   # BB 單關閉 ATR 移動停利（避免抄底�
 # True 時 BB 用「Close vs EMA200 + 至少 BB_LOOSE_MIN_EMA_SCORE 根 EMA 對齊」做環境檢查
 # False 時 BB 仍受主守門員 EMA_MIN_SCORE 限制（與 v1.3 一致）
 # v1.6：開啟讓 BB 抄底單能在盤整/反轉市況補位（2022 type chop 環境特別有用）
+STRAT_PARAMS_BY_CLASS: dict = {
+    'Crypto': {
+        'trend':    (2.0, 2.0),
+        'combined': (2.0, 2.0),
+        'vp':       (1.5, 1.5),
+    },
+}
+
 BB_BYPASS_EMA_GATE     = True
 BB_LOOSE_MIN_EMA_SCORE = 1
 
@@ -287,6 +298,9 @@ MIN_ENTRY_SCORE_BY_CLASS: dict = {'Crypto': 3}
 MAX_HOLD_DAYS_BY_CLASS:   dict = {'Crypto': 30}
 TSL_USE_CLOSE_BY_CLASS:   dict = {'Crypto': True}
 TSL_TIGHT_AFTER_R_BY_CLASS: dict = {'Crypto': 2.0}
+SYM_MIN_WINRATE_BY_CLASS: dict = {'Crypto': 0.45}
+SYM_WR_MIN_TRADES_BY_CLASS: dict = {'Crypto': 3}
+SYM_WR_WINDOW_BY_CLASS: dict = {'Crypto': 20}
 ENABLE_MARKET_SHORT_MOAT = False # B3：大盤指數 < SMA(N) 才允許做空
 MARKET_SHORT_MA_PERIOD  = 50     # B3：空頭濾網的 SMA 週期
 KELLY_WINDOW            = 0      # B4：Kelly 只取最近 N 筆（0 = 全歷史）
@@ -322,10 +336,8 @@ STRATEGY_PROFILES: dict = {
     'Crypto': {
         'asset_types': ['Crypto'],
         'capital': SILO_CAPITAL,
-        # v1.11：post-fix sweep 顯示 cap=4 為最佳（CAGR +17.4% vs cap=5 +9.96%）。
-        # 與 EMA50 slope filter 為非線性互動：cap=4 + slope ON 才是最佳組合，
-        # 兩項各自最佳值（cap=5 + slope OFF / cap=4 + slope OFF）效果反而較差。
-        'max_total_positions': 4,
+        # v1.12 target: 70-100 Crypto trades/year with Sharpe/Calmar > 1.
+        'max_total_positions': 10,
         'max_position_pct': 0.40,
         'max_pos_per_class': {},
     },
