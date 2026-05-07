@@ -133,15 +133,24 @@ def upsert_prices(df: pd.DataFrame, symbol: str, asset_type: str):
     def _col(name):
         return df[cols_lower[name]] if name in cols_lower else pd.Series([None] * len(df), index=df.index)
 
-    o = _col('open').to_numpy()
-    h = _col('high').to_numpy()
-    lo = _col('low').to_numpy()
-    c = _col('close').to_numpy()
-    v = _col('volume').to_numpy()
+    # 強制轉 float：yfinance 偶爾把 Volume 回成 numpy bytes，
+    # SQLite 動態型別會照存成 BLOB，回讀時整列變 object dtype
+    # → 之後算 indicators 會炸 'float + bytes'。
+    o  = pd.to_numeric(_col('open'),   errors='coerce').to_numpy(dtype=float)
+    h  = pd.to_numeric(_col('high'),   errors='coerce').to_numpy(dtype=float)
+    lo = pd.to_numeric(_col('low'),    errors='coerce').to_numpy(dtype=float)
+    c  = pd.to_numeric(_col('close'),  errors='coerce').to_numpy(dtype=float)
+    v  = pd.to_numeric(_col('volume'), errors='coerce').to_numpy(dtype=float)
     dates = list(date_iter)
 
     rows = [
-        (symbol, dates[i], o[i], h[i], lo[i], c[i], v[i], asset_type)
+        (symbol, dates[i],
+         None if pd.isna(o[i])  else float(o[i]),
+         None if pd.isna(h[i])  else float(h[i]),
+         None if pd.isna(lo[i]) else float(lo[i]),
+         float(c[i]),
+         None if pd.isna(v[i])  else float(v[i]),
+         asset_type)
         for i in range(len(df))
         if pd.notna(c[i])
     ]

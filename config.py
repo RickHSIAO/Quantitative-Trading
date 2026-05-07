@@ -322,9 +322,10 @@ STRATEGY_PROFILES: dict = {
     'Crypto': {
         'asset_types': ['Crypto'],
         'capital': SILO_CAPITAL,
-        # v1.9：放大 cap 至 5 + Kelly 上限 0.40，搭配下方 Crypto 專屬出場/濾網
-        # 達到 +22% CAGR / 50 trades/yr（5 年回測）
-        'max_total_positions': 5,
+        # v1.11：post-fix sweep 顯示 cap=4 為最佳（CAGR +17.4% vs cap=5 +9.96%）。
+        # 與 EMA50 slope filter 為非線性互動：cap=4 + slope ON 才是最佳組合，
+        # 兩項各自最佳值（cap=5 + slope OFF / cap=4 + slope OFF）效果反而較差。
+        'max_total_positions': 4,
         'max_position_pct': 0.40,
         'max_pos_per_class': {},
     },

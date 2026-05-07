@@ -1,6 +1,72 @@
 # 量化交易系統
 
-## Latest Local Update: v1.10 — Look-ahead Bias 修正與引擎硬化
+## Latest Local Update: v1.11 — Post-fix Re-tuning + 資料修復
+
+承接 v1.10 的 look-ahead 修正，本版做兩件事：
+1. 修復 SQLite Volume 欄位 BLOB 汙染（救回 102 個資產）
+2. 在 de-biased 引擎上重跑 Crypto sweep，找到新的最佳並行倉位數
+
+### 1. BLOB Volume 資料修復
+
+之前每次回測都看到 `[WARN] XXX: unsupported operand type(s) for +: 'float' and 'bytes'`。
+根因：yfinance 偶爾把 Volume 回傳成 numpy bytes，SQLite 動態型別照存為 BLOB；
+回讀時整列轉成 object dtype，後續 indicators 加法直接炸。
+
+修復：
+- `src/database.py upsert_prices` 寫入前統一 `pd.to_numeric(errors='coerce')`，並逐欄 `float()`
+- 對既有 DB 跑 in-place migration：3,352 列 BLOB（8-byte little-endian int64）無損還原為 REAL
+- 影響資產：`^GSPC`、`^TWII`、102 檔個股（COIN/HOOD/GE/XAUUSD/...）
+
+修復前回測只跑 30 個資產，修復後跑滿 132 個。
+
+### 2. Crypto sweep 重調 — cap=5 → **cap=4**
+
+v1.9 的 cap=5 是基於 pre-fix biased 回測找的最佳值，post-fix 下不再最佳：
+
+| cap (max_total_positions) | CAGR | 勝率 | PF | MDD |
+|---:|---:|---:|---:|---:|
+| 3 | +14.97% | 54.1% | 1.26 | −46.6% |
+| **4** ✨ | **+17.40%** | **52.3%** | **1.28** | **−44.16%** |
+| 5 (v1.9) | +9.96% | 50.5% | 1.15 | −50.94% |
+
+### 3. 與 EMA50 slope filter 的非線性互動
+
+跑 2×2 才發現 cap 與 EMA50 slope 不能各自最佳化疊加：
+
+| 整體總報酬 | slope ON | slope OFF |
+|---|---:|---:|
+| **cap=5** (v1.9) | +21.78% | +30.52% |
+| **cap=4** (v1.11) | **+43.75%** ✨ | +26.27% |
+
+各自最佳的疊加（cap=4 + slope OFF）反而負效，最佳是 **cap=4 + slope ON**：cap 緊讓資金集中在最強訊號，slope filter 補上品質檢查 → 雙重增強。
+
+### 修正後完整對比
+
+| 指標 | v1.9 (pre-fix biased) | v1.10 (post-fix, cap=5) | **v1.11 (cap=4)** |
+|---|---:|---:|---:|
+| 總報酬 | +148.86%* | +21.78% | **+43.75%** |
+| Profit Factor | 1.332* | 1.095 | **1.184** |
+| 最大回撤 | −47.11%* | −25.56% | **−23.22%** |
+| 勝率 | 50.68%* | 43.81% | **44.0%** |
+| 總交易 | 296* | 1081 | 1052 |
+| Crypto CAGR | +22.35%* | +9.96% | **+17.40%** |
+| Crypto MDD | −47.11%* | −50.94% | **−44.16%** |
+
+\* v1.9 數字未含 102 個 BLOB-failed 資產，僅 Crypto silo 30 檔；其餘為 132 檔全集。
+
+### 已知問題（待後續處理）
+- **US+Commodity silo 仍是 −2.54%**（cap/slope 在四種組合下均無顯著改善）— 結構性議題，需單獨檢視該 silo 的訊號 / 出場邏輯
+- TW Stock +2.63% 偏低，但有正報酬
+
+### 重現指令
+
+```powershell
+python main.py backtest --output output\v111_baseline.xlsx --note v1.11_baseline --ver v1.11
+```
+
+---
+
+## v1.10 — Look-ahead Bias 修正與引擎硬化
 
 v1.10 是純 bug-fix release，**沒有改任何策略邏輯或參數**，但回測結果會大幅變動，
 因為先前的數字含有 look-ahead bias。修正後的數字才是可實盤複製的真實表現。
