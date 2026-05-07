@@ -133,6 +133,53 @@ class BybitExecutor(BaseExecutor):
             return {'retCode': 0, 'retMsg': 'cached'}
         return self.set_leverage(bybit_sym, getattr(config, 'BYBIT_LEVERAGE', 1))
 
+    def set_trading_stop(self, symbol: str,
+                         stop_loss=None,
+                         take_profit=None,
+                         trailing_stop=None,
+                         active_price=None,
+                         position_idx: int = 0) -> dict:
+        """Update Bybit full-position TP/SL/TS for an existing linear position."""
+        bybit_sym = _yf_to_bybit(symbol)
+        payload = {
+            'category': 'linear',
+            'symbol': bybit_sym,
+            'tpslMode': 'Full',
+            'positionIdx': position_idx,
+        }
+        if stop_loss is not None:
+            payload['stopLoss'] = (
+                stop_loss if isinstance(stop_loss, str)
+                else self.format_price(symbol, float(stop_loss))
+            )
+            payload['slTriggerBy'] = 'LastPrice'
+        if take_profit is not None:
+            payload['takeProfit'] = (
+                take_profit if isinstance(take_profit, str)
+                else self.format_price(symbol, float(take_profit))
+            )
+            payload['tpTriggerBy'] = 'LastPrice'
+        if trailing_stop is not None:
+            payload['trailingStop'] = (
+                trailing_stop if isinstance(trailing_stop, str)
+                else self.format_price(symbol, float(trailing_stop))
+            )
+        if active_price is not None:
+            payload['activePrice'] = (
+                active_price if isinstance(active_price, str)
+                else self.format_price(symbol, float(active_price))
+            )
+
+        try:
+            res = self.session.set_trading_stop(**payload)
+            if res.get('retCode') != 0:
+                raise OrderRejected(f'{symbol}: set_trading_stop failed {res}')
+            return res
+        except OrderRejected:
+            raise
+        except Exception as e:
+            raise OrderRejected(f'{symbol}: set_trading_stop exception {e}') from e
+
     def place_order(self, symbol, direction, qty, stop_loss, take_profit,
                     order_type: str = 'Market') -> dict:
         side = 'Buy' if direction == 1 else 'Sell'
@@ -158,6 +205,10 @@ class BybitExecutor(BaseExecutor):
                 qty=qty_str,
                 stopLoss=sl_str,
                 takeProfit=tp_str,
+                tpslMode='Full',
+                positionIdx=0,
+                tpOrderType='Market',
+                slOrderType='Market',
                 timeInForce='GTC',
                 slTriggerBy='LastPrice',
                 tpTriggerBy='LastPrice',

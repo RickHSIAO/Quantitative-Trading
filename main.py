@@ -353,6 +353,52 @@ def cmd_live(args):
         def __init__(self, pnl): self.pnl = pnl
 
     trade_history: dict[str, list] = {s: [] for s in cryptos}
+    # open_pos stores local state for exchange-protected positions.
+
+    def _normalise_remote_position(p: dict) -> tuple[str, dict] | None:
+        qty = float(p.get('size', 0) or 0)
+        if qty <= 0:
+            return None
+        sys_sym = f"BYBIT:{p.get('symbol', '')}.P"
+        if sys_sym not in cryptos:
+            return None
+        side = p.get('side', '')
+        direction = 1 if side == 'Buy' else (-1 if side == 'Sell' else 0)
+        if direction == 0:
+            return None
+        entry = float(p.get('avgPrice') or 0.0)
+        sl = float(p.get('stopLoss') or 0.0)
+        tp = float(p.get('takeProfit') or 0.0)
+        return sys_sym, {
+            'dir': direction,
+            'qty': qty,
+            'sl': sl,
+            'tp': tp,
+            'entry': entry,
+            'orig_sl': sl,
+            'trail_anchor': entry,
+        }
+
+    def _sync_remote_positions() -> None:
+        remote = {}
+        for p in executor.get_positions():
+            item = _normalise_remote_position(p)
+            if item is not None:
+                remote[item[0]] = item[1]
+        for sym in list(open_pos):
+            if sym not in remote:
+                del open_pos[sym]
+        for sym, pos in remote.items():
+            if sym in open_pos:
+                open_pos[sym].update({
+                    'qty': pos['qty'],
+                    'tp': pos['tp'],
+                    'entry': pos['entry'] or open_pos[sym].get('entry', 0.0),
+                })
+                if pos['sl'] > 0:
+                    open_pos[sym]['sl'] = pos['sl']
+            else:
+                open_pos[sym] = pos
     open_pos: dict[str, dict] = {}  # symbol → {dir, qty, sl, tp, entry}
 
     print('正在同步交易所持倉狀態...')
@@ -376,7 +422,15 @@ def cmd_live(args):
     except Exception as e:
         print(f'[WARN] 同步倉位失敗: {e}')
 
+    for pos in open_pos.values():
+        pos.setdefault('orig_sl', pos.get('sl', 0.0))
+        pos.setdefault('trail_anchor', pos.get('entry', 0.0))
+
     while True:
+        try:
+            _sync_remote_positions()
+        except Exception as e:
+            print(f'[WARN] sync Bybit positions failed: {e}')
         print(f'\n[{datetime.now():%Y-%m-%d %H:%M:%S}] 掃描中...')
         end_str   = datetime.now().strftime('%Y-%m-%d')
 
@@ -421,6 +475,56 @@ def cmd_live(args):
                 # 管理現有倉位
                 if sym in open_pos:
                     pos   = open_pos[sym]
+                    pos.setdefault('orig_sl', pos.get('sl', 0.0))
+                    pos.setdefault('trail_anchor', pos.get('entry', price))
+                    orig_sl = pos.get('orig_sl') or pos.get('sl') or 0.0
+                    if orig_sl <= 0:
+                        fallback_sl, fallback_tp = calculate_stops(pos['entry'], pos['dir'], atr)
+                        orig_sl = fallback_sl
+                        pos['orig_sl'] = fallback_sl
+                        if pos.get('sl', 0.0) <= 0:
+                            pos['sl'] = fallback_sl
+                        if pos.get('tp', 0.0) <= 0:
+                            pos['tp'] = fallback_tp
+                        executor.set_trading_stop(
+                            sym,
+                            stop_loss=executor.format_price(sym, pos['sl']),
+                            take_profit=executor.format_price(sym, pos['tp']),
+                        )
+                    r_dist = abs(pos['entry'] - orig_sl)
+                    profit_r = 0.0
+                    if r_dist > 0:
+                        profit_r = ((price - pos['entry']) / r_dist
+                                    if pos['dir'] == 1
+                                    else (pos['entry'] - price) / r_dist)
+                    tight_after = getattr(config, 'TSL_TIGHT_AFTER_R_BY_CLASS', {}).get(
+                        'Crypto', config.TSL_TIGHT_AFTER_R
+                    )
+                    trail_mult = (config.TSL_TIGHT_ATR_MULT
+                                  if tight_after > 0 and profit_r >= tight_after
+                                  else config.ATR_STOP_MULTIPLIER)
+                    trail_dist = atr * trail_mult
+                    new_sl = None
+                    if pos['dir'] == 1:
+                        anchor = max(pos.get('trail_anchor', pos['entry']), price)
+                        pos['trail_anchor'] = anchor
+                        candidate = anchor - trail_dist
+                        if candidate > pos.get('sl', 0.0) and candidate > pos['entry']:
+                            new_sl = candidate
+                    else:
+                        anchor = min(pos.get('trail_anchor', pos['entry']), price)
+                        pos['trail_anchor'] = anchor
+                        candidate = anchor + trail_dist
+                        cur_sl = pos.get('sl', 0.0)
+                        if candidate < cur_sl and candidate < pos['entry']:
+                            new_sl = candidate
+                    if new_sl is not None:
+                        sl_str = executor.format_price(sym, new_sl)
+                        tp_val = pos.get('tp') or None
+                        tp_str = executor.format_price(sym, tp_val) if tp_val else None
+                        executor.set_trading_stop(sym, stop_loss=sl_str, take_profit=tp_str)
+                        pos['sl'] = float(sl_str)
+                        print(f'  [TSL] {sym} stopLoss -> {sl_str}')
                     hit_sl = (pos['dir'] ==  1 and price <= pos['sl']) or \
                              (pos['dir'] == -1 and price >= pos['sl'])
                     hit_tp = (pos['dir'] ==  1 and price >= pos['tp']) or \
@@ -461,7 +565,8 @@ def cmd_live(args):
                         res = executor.place_order(sym, latest_sig, qty_str, sl_str, tp_str)
                         if res.get('retCode') == 0:
                             open_pos[sym] = {'dir': latest_sig, 'qty': qty,
-                                             'sl': sl, 'tp': tp, 'entry': price}
+                                             'sl': sl, 'tp': tp, 'entry': price,
+                                             'orig_sl': sl, 'trail_anchor': price}
                             print(f'  {"做多" if latest_sig==1 else "做空"} {sym} '
                                   f'qty={qty_str} @ {price:.4f}  SL={sl_str}  TP={tp_str}')
                         else:

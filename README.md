@@ -66,6 +66,28 @@ python main.py backtest --output output\v111_baseline.xlsx --note v1.11_baseline
 
 ---
 
+## Latest Local Update: Bybit Demo Live Protection
+
+Live mode now mirrors the backtest exit model more closely on Bybit Demo:
+
+- Bybit is still configured as demo trading: `BYBIT_DEMO = True`, `BYBIT_TESTNET = False`
+- Bybit leverage is explicitly forced to `1x`: `BYBIT_LEVERAGE = 1`
+- New entries submit full-position exchange-side TP/SL with `tpslMode='Full'`
+- The bot syncs existing Bybit positions on every scan and removes local state when a position is already closed
+- If an existing Demo position has no SL/TP, live mode backfills SL/TP from the current ATR stop formula
+- Crypto trailing stop is updated through Bybit `set_trading_stop()`:
+  - before +2R: stop trails by `ATR x 3.0`
+  - after +2R: stop tightens to `ATR x 1.5`
+- Strategy exits that Bybit cannot express natively, such as signal flip and indicator-based exits, still require `python main.py live` to keep running
+
+Run:
+
+```powershell
+python main.py live --interval 60
+```
+
+---
+
 ## v1.10 — Look-ahead Bias 修正與引擎硬化
 
 v1.10 是純 bug-fix release，**沒有改任何策略邏輯或參數**，但回測結果會大幅變動，
