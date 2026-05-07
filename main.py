@@ -14,6 +14,7 @@
 import argparse
 import sys
 import os
+import json
 
 # 確保根目錄在 path 上
 sys.path.insert(0, os.path.dirname(__file__))
@@ -312,8 +313,9 @@ def cmd_live(args):
     from config import get_selected_assets
     from src.fetcher import _download_single
     from src.indicators import compute_all_indicators
-    from src.strategies import generate_all_signals
+    from src.strategies import apply_cross_asset_filters, generate_all_signals
     from src.risk import estimate_kelly_from_history, position_size, calculate_stops
+    from src.backtester import _geometric_rr_ok
     from src.executor import BybitExecutor
 
     try:
@@ -324,6 +326,7 @@ def cmd_live(args):
 
     assets   = get_selected_assets(args.seed)
     cryptos  = assets['cryptos']
+    type_map = {s: 'Crypto' for s in cryptos}
     balance  = executor.get_balance()
     crypto_profile = getattr(config, 'STRATEGY_PROFILES', {}).get('Crypto', {})
     crypto_max_positions = int(crypto_profile.get('max_total_positions', config.MAX_TOTAL_POSITIONS))
@@ -352,7 +355,150 @@ def cmd_live(args):
         __slots__ = ('pnl',)
         def __init__(self, pnl): self.pnl = pnl
 
+    def _cls_get(name: str, asset_type: str, default):
+        d = getattr(config, name, None) or {}
+        return d.get(asset_type, default) if isinstance(d, dict) else default
+
+    def _closed_daily_df(df: pd.DataFrame) -> pd.DataFrame:
+        """Drop the still-forming current UTC daily candle for live parity."""
+        if df is None or df.empty:
+            return df
+        utc_today = pd.Timestamp(datetime.utcnow().date())
+        if df.index[-1] >= utc_today:
+            return df.loc[df.index < utc_today]
+        return df
+
+    def _dominant_live_strategy(sigs: dict, direction: int) -> str:
+        matched = [
+            name for name in ('trend', 'vp', 'bb')
+            if name in sigs and len(sigs[name]) and int(sigs[name].iloc[-1]) == direction
+        ]
+        return matched[0] if len(matched) == 1 else 'combined'
+
+    def _dominant_strategy_at(sigs: dict, dt: pd.Timestamp, direction: int) -> str:
+        matched = []
+        for name in ('trend', 'vp', 'bb'):
+            ser = sigs.get(name)
+            if ser is not None and dt in ser.index and int(ser.loc[dt]) == direction:
+                matched.append(name)
+        return matched[0] if len(matched) == 1 else 'combined'
+
+    def _signal_dt_at_or_before(sigs: dict, dt: pd.Timestamp) -> pd.Timestamp | None:
+        ref = sigs.get('combined')
+        if ref is None or ref.empty:
+            return None
+        idx = ref.index[ref.index <= dt]
+        return idx[-1] if len(idx) else None
+
     trade_history: dict[str, list] = {s: [] for s in cryptos}
+
+    def _sym_wr_ok(sym: str) -> bool:
+        min_wr = _cls_get('SYM_MIN_WINRATE_BY_CLASS', 'Crypto', config.SYM_MIN_WINRATE)
+        if min_wr <= 0:
+            return True
+        window = _cls_get('SYM_WR_WINDOW_BY_CLASS', 'Crypto', config.SYM_WR_WINDOW)
+        min_trades = _cls_get('SYM_WR_MIN_TRADES_BY_CLASS', 'Crypto',
+                              config.SYM_WR_MIN_TRADES)
+        hist = trade_history.get(sym, [])[-window:]
+        if len(hist) < min_trades:
+            return True
+        wins = sum(1 for t in hist if getattr(t, 'pnl', None) is not None and t.pnl > 0)
+        return wins / len(hist) >= min_wr
+
+    live_meta_path = os.path.join(getattr(config, 'DB_PATH', 'data/trading.db'))
+    live_meta_path = os.path.join(os.path.dirname(live_meta_path), 'live_positions.json')
+
+    def _load_live_meta() -> dict:
+        try:
+            if os.path.exists(live_meta_path):
+                with open(live_meta_path, 'r', encoding='utf-8') as fh:
+                    return json.load(fh)
+        except Exception as exc:
+            print(f'[WARN] load live metadata failed: {exc}')
+        return {}
+
+    def _save_live_meta(meta: dict) -> None:
+        try:
+            os.makedirs(os.path.dirname(live_meta_path), exist_ok=True)
+            with open(live_meta_path, 'w', encoding='utf-8') as fh:
+                json.dump(meta, fh, ensure_ascii=False, indent=2, sort_keys=True)
+        except Exception as exc:
+            print(f'[WARN] save live metadata failed: {exc}')
+
+    live_meta = _load_live_meta()
+
+    def _position_meta(sym: str) -> dict:
+        item = live_meta.get(sym, {})
+        return item if isinstance(item, dict) else {}
+
+    def _remember_position(sym: str, pos: dict) -> None:
+        live_meta[sym] = {
+            'symbol': sym,
+            'direction': pos.get('dir'),
+            'qty': pos.get('qty'),
+            'entry': pos.get('entry'),
+            'entry_dt': pos.get('entry_dt', ''),
+            'strategy': pos.get('strategy', 'unknown'),
+            'score': pos.get('score', 0),
+            'entry_reason': pos.get('entry_reason', ''),
+            'orig_sl': pos.get('orig_sl', pos.get('sl', 0.0)),
+            'sl': pos.get('sl', 0.0),
+            'tp': pos.get('tp', 0.0),
+            'trail_anchor': pos.get('trail_anchor', pos.get('entry', 0.0)),
+            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+        _save_live_meta(live_meta)
+
+    def _forget_position(sym: str) -> None:
+        if sym in live_meta:
+            del live_meta[sym]
+            _save_live_meta(live_meta)
+
+    def _recover_entry_from_executions(sym: str, qty: float, direction: int) -> dict:
+        side = 'Buy' if direction == 1 else 'Sell'
+        executions = executor.get_executions(sym, limit=100)
+        rows = []
+        for e in executions:
+            if e.get('side') != side:
+                continue
+            try:
+                exec_qty = float(e.get('execQty') or 0.0)
+                exec_price = float(e.get('execPrice') or 0.0)
+                exec_time = int(e.get('execTime') or e.get('execTimeNs') or 0)
+            except Exception:
+                continue
+            if exec_qty <= 0 or exec_price <= 0:
+                continue
+            rows.append((exec_time, exec_qty, exec_price))
+        rows.sort(reverse=True)
+
+        accum_qty = 0.0
+        notional = 0.0
+        oldest_time = 0
+        for exec_time, exec_qty, exec_price in rows:
+            take_qty = min(exec_qty, max(qty - accum_qty, 0.0))
+            if take_qty <= 0:
+                continue
+            accum_qty += take_qty
+            notional += take_qty * exec_price
+            oldest_time = exec_time
+            if accum_qty >= qty * 0.999:
+                break
+        if accum_qty <= 0:
+            return {}
+
+        entry_dt = ''
+        if oldest_time > 0:
+            try:
+                unit = 'ns' if oldest_time > 10**15 else 'ms'
+                entry_dt = pd.to_datetime(oldest_time, unit=unit).strftime('%Y-%m-%d')
+            except Exception:
+                entry_dt = ''
+        return {
+            'entry': notional / accum_qty,
+            'entry_dt': entry_dt,
+            'recovered_from': 'bybit_executions',
+        }
     # open_pos stores local state for exchange-protected positions.
 
     def _normalise_remote_position(p: dict) -> tuple[str, dict] | None:
@@ -369,14 +515,30 @@ def cmd_live(args):
         entry = float(p.get('avgPrice') or 0.0)
         sl = float(p.get('stopLoss') or 0.0)
         tp = float(p.get('takeProfit') or 0.0)
+        meta = _position_meta(sys_sym)
+        recovered = {}
+        if not meta:
+            recovered = _recover_entry_from_executions(sys_sym, qty, direction)
+        entry_dt = meta.get('entry_dt') or recovered.get('entry_dt', '')
+        strategy = meta.get('strategy', 'unknown')
+        score = int(meta.get('score', 0) or 0)
+        entry_reason = meta.get('entry_reason', '')
+        orig_sl = float(meta.get('orig_sl') or sl or 0.0)
+        trail_anchor = float(meta.get('trail_anchor') or entry or 0.0)
+        if recovered.get('entry') and not meta.get('entry'):
+            entry = float(recovered['entry'])
         return sys_sym, {
             'dir': direction,
             'qty': qty,
             'sl': sl,
             'tp': tp,
             'entry': entry,
-            'orig_sl': sl,
-            'trail_anchor': entry,
+            'orig_sl': orig_sl,
+            'trail_anchor': trail_anchor,
+            'strategy': strategy,
+            'entry_dt': entry_dt,
+            'score': score,
+            'entry_reason': entry_reason,
         }
 
     def _sync_remote_positions() -> None:
@@ -388,6 +550,7 @@ def cmd_live(args):
         for sym in list(open_pos):
             if sym not in remote:
                 del open_pos[sym]
+                _forget_position(sym)
         for sym, pos in remote.items():
             if sym in open_pos:
                 open_pos[sym].update({
@@ -397,8 +560,14 @@ def cmd_live(args):
                 })
                 if pos['sl'] > 0:
                     open_pos[sym]['sl'] = pos['sl']
+                for key in ('strategy', 'entry_dt', 'score', 'entry_reason',
+                            'orig_sl', 'trail_anchor'):
+                    if pos.get(key) and not open_pos[sym].get(key):
+                        open_pos[sym][key] = pos[key]
+                _remember_position(sym, open_pos[sym])
             else:
                 open_pos[sym] = pos
+                _remember_position(sym, pos)
     open_pos: dict[str, dict] = {}  # symbol → {dir, qty, sl, tp, entry}
 
     print('正在同步交易所持倉狀態...')
@@ -416,8 +585,30 @@ def cmd_live(args):
                             'qty': qty,
                             'sl': float(p.get('stopLoss') or 0.0),
                             'tp': float(p.get('takeProfit') or 0.0),
-                            'entry': float(p.get('avgPrice') or 0.0)
+                            'entry': float(p.get('avgPrice') or 0.0),
+                            'strategy': 'unknown',
+                            'entry_dt': '',
                         }
+                        meta = _position_meta(sys_sym)
+                        if meta:
+                            open_pos[sys_sym].update({
+                                'strategy': meta.get('strategy', 'unknown'),
+                                'entry_dt': meta.get('entry_dt', ''),
+                                'score': meta.get('score', 0),
+                                'entry_reason': meta.get('entry_reason', ''),
+                                'orig_sl': meta.get('orig_sl', open_pos[sys_sym]['sl']),
+                                'trail_anchor': meta.get('trail_anchor',
+                                                         open_pos[sys_sym]['entry']),
+                            })
+                        else:
+                            recovered = _recover_entry_from_executions(
+                                sys_sym, qty, direction
+                            )
+                            if recovered.get('entry'):
+                                open_pos[sys_sym]['entry'] = recovered['entry']
+                            if recovered.get('entry_dt'):
+                                open_pos[sys_sym]['entry_dt'] = recovered['entry_dt']
+                        _remember_position(sys_sym, open_pos[sys_sym])
                         print(f'  [同步] {sys_sym} {"做多" if direction==1 else "做空"} {qty} 單位')
     except Exception as e:
         print(f'[WARN] 同步倉位失敗: {e}')
@@ -425,6 +616,8 @@ def cmd_live(args):
     for pos in open_pos.values():
         pos.setdefault('orig_sl', pos.get('sl', 0.0))
         pos.setdefault('trail_anchor', pos.get('entry', 0.0))
+        pos.setdefault('strategy', 'unknown')
+        pos.setdefault('entry_dt', '')
 
     while True:
         try:
@@ -434,7 +627,269 @@ def cmd_live(args):
         print(f'\n[{datetime.now():%Y-%m-%d %H:%M:%S}] 掃描中...')
         end_str   = datetime.now().strftime('%Y-%m-%d')
 
+        data: dict[str, pd.DataFrame] = {}
+        signals: dict[str, dict[str, pd.Series]] = {}
+
         for sym in cryptos:
+            try:
+                last = get_last_date(sym)
+                if last is None:
+                    start_inc = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+                else:
+                    last_dt = datetime.strptime(last, '%Y-%m-%d')
+                    start_inc = (last_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+
+                if datetime.strptime(start_inc, '%Y-%m-%d').date() <= datetime.now().date():
+                    df_new = _download_single(sym, start_inc, end_str)
+                    if df_new is not None and not df_new.empty:
+                        upsert_prices(df_new, sym, asset_type_of(sym))
+
+                df = load_prices(sym)
+                if df is None or len(df) < config.EMA_PERIOD + 10:
+                    continue
+                df = _closed_daily_df(df)
+                if df is None or len(df) < config.EMA_PERIOD + 10:
+                    continue
+
+                df = compute_all_indicators(df, include_vp=True)
+                sigs = generate_all_signals(
+                    df,
+                    asset_type='Crypto',
+                    benchmark_df=None,
+                    moat_tf_only=True,
+                )
+                data[sym] = df
+                signals[sym] = sigs
+            except Exception as exc:
+                print(f'  [ERROR] {sym}: {exc}')
+
+        apply_cross_asset_filters(data, signals, type_map)
+        candidates: list[tuple[str, int, int, str]] = []
+
+        for sym, df in data.items():
+            try:
+                sigs = signals[sym]
+                sig = sigs['combined']
+                if len(sig) == 0:
+                    continue
+
+                latest_sig = int(sig.iloc[-1])
+                score_val = int(sigs.get('score', pd.Series([0])).iloc[-1])
+                price = float(df['Close'].iloc[-1])
+                dt_latest = df.index[-1]
+                atr_raw = df['atr'].iloc[-1]
+                atr = (float(atr_raw) if atr_raw is not None
+                       and not pd.isna(atr_raw) else price * 0.02)
+
+                if sym in open_pos:
+                    pos = open_pos[sym]
+                    pos.setdefault('orig_sl', pos.get('sl', 0.0))
+                    pos.setdefault('trail_anchor', pos.get('entry', price))
+                    pos.setdefault('strategy', 'unknown')
+                    pos.setdefault('entry_dt', '')
+                    if pos.get('strategy') == 'unknown' and pos.get('entry_dt'):
+                        signal_dt = _signal_dt_at_or_before(sigs, pd.Timestamp(pos['entry_dt']))
+                        if signal_dt is not None:
+                            sig_at_entry = int(sigs['combined'].loc[signal_dt])
+                            if sig_at_entry == pos['dir']:
+                                entry_score = int(sigs.get('score', pd.Series([0])).loc[signal_dt])
+                                inferred = _dominant_strategy_at(sigs, signal_dt, pos['dir'])
+                                pos['strategy'] = inferred
+                                pos['score'] = entry_score
+                                pos['entry_reason'] = (
+                                    f'inferred:{inferred} score={entry_score} '
+                                    f'signal_dt={signal_dt:%Y-%m-%d}'
+                                )
+                                print(f'  [META] {sym} inferred {pos["entry_reason"]}')
+                                _remember_position(sym, pos)
+                    orig_sl = pos.get('orig_sl') or pos.get('sl') or 0.0
+                    if orig_sl <= 0:
+                        fallback_sl, fallback_tp = calculate_stops(
+                            pos['entry'], pos['dir'], atr,
+                            strategy=pos.get('strategy', 'trend'),
+                            asset_type='Crypto',
+                        )
+                        orig_sl = fallback_sl
+                        pos['orig_sl'] = fallback_sl
+                        if pos.get('sl', 0.0) <= 0:
+                            pos['sl'] = fallback_sl
+                        if pos.get('tp', 0.0) <= 0:
+                            pos['tp'] = fallback_tp
+                        executor.set_trading_stop(
+                            sym,
+                            stop_loss=executor.format_price(sym, pos['sl']),
+                            take_profit=executor.format_price(sym, pos['tp']),
+                        )
+
+                    r_dist = abs(pos['entry'] - orig_sl)
+                    profit_r = 0.0
+                    if r_dist > 0:
+                        profit_r = ((price - pos['entry']) / r_dist
+                                    if pos['dir'] == 1
+                                    else (pos['entry'] - price) / r_dist)
+
+                    new_sl = None
+                    if not (config.STRAT_BB_DISABLE_TSL and pos.get('strategy') == 'bb'):
+                        tight_after = _cls_get('TSL_TIGHT_AFTER_R_BY_CLASS',
+                                               'Crypto', config.TSL_TIGHT_AFTER_R)
+                        trail_mult = (config.TSL_TIGHT_ATR_MULT
+                                      if tight_after > 0 and profit_r >= tight_after
+                                      else config.ATR_STOP_MULTIPLIER)
+                        trail_dist = atr * trail_mult
+                        if pos['dir'] == 1:
+                            anchor = max(pos.get('trail_anchor', pos['entry']), price)
+                            pos['trail_anchor'] = anchor
+                            candidate_sl = anchor - trail_dist
+                            if candidate_sl > pos.get('sl', 0.0) and candidate_sl > pos['entry']:
+                                new_sl = candidate_sl
+                        else:
+                            anchor = min(pos.get('trail_anchor', pos['entry']), price)
+                            pos['trail_anchor'] = anchor
+                            candidate_sl = anchor + trail_dist
+                            cur_sl = pos.get('sl', 0.0)
+                            if candidate_sl < cur_sl and candidate_sl < pos['entry']:
+                                new_sl = candidate_sl
+
+                    if new_sl is not None:
+                        sl_str = executor.format_price(sym, new_sl)
+                        tp_val = pos.get('tp') or None
+                        tp_str = executor.format_price(sym, tp_val) if tp_val else None
+                        executor.set_trading_stop(sym, stop_loss=sl_str, take_profit=tp_str)
+                        pos['sl'] = float(sl_str)
+                        _remember_position(sym, pos)
+                        print(f'  [TSL] {sym} stopLoss -> {sl_str}')
+
+                    hit_sl = (pos['dir'] == 1 and price <= pos['sl']) or \
+                             (pos['dir'] == -1 and price >= pos['sl'])
+                    hit_tp = (pos['dir'] == 1 and price >= pos['tp']) or \
+                             (pos['dir'] == -1 and price <= pos['tp'])
+
+                    hold_days = 0
+                    if pos.get('entry_dt'):
+                        try:
+                            hold_days = (dt_latest - pd.Timestamp(pos['entry_dt'])).days
+                        except Exception:
+                            hold_days = 0
+                    min_hold_ok = hold_days >= config.MIN_HOLD_DAYS
+
+                    early_exit = None
+                    if pos.get('strategy') == 'bb' and min_hold_ok:
+                        bb_mid = float(df['bb_mid'].iloc[-1]) if 'bb_mid' in df.columns else None
+                        rsi_now = float(df['rsi'].iloc[-1]) if 'rsi' in df.columns else None
+                        profit_pct = (price / pos['entry'] - 1.0) * pos['dir']
+                        if profit_pct >= config.STRAT_BB_PROFIT_PCT:
+                            early_exit = 'BB-TGT'
+                        elif bb_mid is not None and (
+                                (pos['dir'] == 1 and price >= bb_mid) or
+                                (pos['dir'] == -1 and price <= bb_mid)):
+                            early_exit = 'BB-MID'
+                        elif rsi_now is not None and (
+                                (pos['dir'] == 1 and rsi_now >= config.STRAT_BB_RSI_EXIT) or
+                                (pos['dir'] == -1 and rsi_now <= config.STRAT_BB_RSI_EXIT)):
+                            early_exit = 'BB-RSI'
+
+                    if config.SOFT_STOP_PCT > 0 and min_hold_ok:
+                        unrealised_pct = (price / pos['entry'] - 1.0) * pos['dir']
+                        if unrealised_pct <= -config.SOFT_STOP_PCT:
+                            early_exit = 'SOFT'
+
+                    max_hold_class = _cls_get('MAX_HOLD_DAYS_BY_CLASS',
+                                              'Crypto', config.MAX_HOLD_DAYS)
+                    if max_hold_class > 0 and hold_days >= max_hold_class:
+                        early_exit = 'MAXHOLD'
+
+                    flip = min_hold_ok and latest_sig != 0 and latest_sig != pos['dir']
+                    if hit_sl or hit_tp or early_exit or flip:
+                        executor.close_position(sym, pos['qty'], pos['dir'])
+                        pnl = (price - pos['entry']) * pos['qty'] * pos['dir']
+                        trade_history[sym].append(ClosedTradeStub(pnl))
+                        reason = 'SL' if hit_sl else ('TP' if hit_tp else (early_exit or 'FLIP'))
+                        print(f'  撟喳?{sym} @ {price:.4f}  PnL={pnl:+.2f}  ({reason})')
+                        del open_pos[sym]
+                        _forget_position(sym)
+
+                min_score_class = _cls_get('MIN_ENTRY_SCORE_BY_CLASS',
+                                            'Crypto', config.MIN_ENTRY_SCORE)
+                if (sym not in open_pos and latest_sig != 0
+                        and score_val >= min_score_class
+                        and _sym_wr_ok(sym)):
+                    strat = _dominant_live_strategy(sigs, latest_sig)
+                    candidates.append((sym, latest_sig, score_val, strat))
+            except Exception as exc:
+                print(f'  [ERROR] {sym}: {exc}')
+
+        candidates.sort(key=lambda x: x[2], reverse=True)
+        strat_counts: dict[str, int] = {}
+        for pos in open_pos.values():
+            strat = pos.get('strategy', 'unknown')
+            strat_counts[strat] = strat_counts.get(strat, 0) + 1
+
+        for sym, latest_sig, score_val, strat in candidates:
+            if len(open_pos) >= crypto_max_positions:
+                break
+            if sym in open_pos:
+                continue
+            strat_limit = config.MAX_POS_PER_STRATEGY.get(strat) \
+                          if config.MAX_POS_PER_STRATEGY else None
+            if strat_limit is not None and strat_counts.get(strat, 0) >= strat_limit:
+                continue
+            try:
+                df = data[sym]
+                price = float(df['Close'].iloc[-1])
+                atr_raw = df['atr'].iloc[-1]
+                atr = (float(atr_raw) if atr_raw is not None
+                       and not pd.isna(atr_raw) else price * 0.02)
+                atype = 'Crypto'
+                sl, tp = calculate_stops(price, latest_sig, atr,
+                                         strategy=strat, asset_type=atype)
+                if config.ENABLE_GEOMETRIC_RR and not _geometric_rr_ok(
+                        df, df.index[-1], latest_sig, tp, atr,
+                        lookback=config.GEO_RR_LOOKBACK,
+                        buffer_atr=config.GEO_RR_BUFFER_ATR):
+                    continue
+
+                kf = estimate_kelly_from_history(
+                    trade_history[sym],
+                    window=config.KELLY_WINDOW,
+                    asset_type=atype,
+                )
+                lev_map = getattr(config, 'LEVERAGE_BY_CLASS', {})
+                lev = lev_map.get(atype, 1.0)
+                allocated_margin = sum(
+                    (p['entry'] * p['qty']) / lev for p in open_pos.values()
+                )
+                available = max(0.0, balance - allocated_margin)
+                qty = position_size(
+                    balance, kf, price, sl,
+                    asset_type=atype,
+                    max_position_pct=crypto_max_position_pct,
+                )
+                qty_str = executor.format_qty(sym, qty)
+                sl_str = executor.format_price(sym, sl)
+                tp_str = executor.format_price(sym, tp)
+                margin_need = (qty * price) / lev
+                if qty > 0 and margin_need <= available:
+                    res = executor.place_order(sym, latest_sig, qty_str, sl_str, tp_str)
+                    if res.get('retCode') == 0:
+                        open_pos[sym] = {
+                            'dir': latest_sig, 'qty': qty, 'sl': sl, 'tp': tp,
+                            'entry': price, 'orig_sl': sl, 'trail_anchor': price,
+                            'strategy': strat,
+                            'score': score_val,
+                            'entry_reason': f'{strat} score={score_val}',
+                            'entry_dt': df.index[-1].strftime('%Y-%m-%d'),
+                        }
+                        _remember_position(sym, open_pos[sym])
+                        strat_counts[strat] = strat_counts.get(strat, 0) + 1
+                        print(f'  {"??" if latest_sig==1 else "?征"} {sym} '
+                              f'[{strat} score={score_val}] qty={qty_str} '
+                              f'@ {price:.4f}  SL={sl_str}  TP={tp_str}')
+                    else:
+                        print(f'  [ORDER FAIL] {sym}: {res.get("retMsg")}')
+            except Exception as exc:
+                print(f'  [ORDER ERROR] {sym}: {exc}')
+
+        for sym in []:
             try:
                 # 增量更新：只抓 DB 最後日期之後的新資料
                 last = get_last_date(sym)

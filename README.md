@@ -79,8 +79,22 @@ python main.py backtest --start-date 2024-05-01 --end-date 2026-05-07 `
 ### 6. 後續觀察點
 - 5y 連續回測 +627% 不是 BUG 但**不可作為宣傳數字**，引用時必須註明「同樣參數 OOS = +87%」
 - Sweep 腳本找出的「最佳參數」都是 in-sample，**必須再跑 OOS 驗證**才能採用
-- 新流程：propose → IS 跑 → OOS 跑 → OOS ≥ 基準 → 才入 main
+- 新流程：propose → IS 跑 → OOS 跑 → rolling OOS 跑 → OOS ≥ 基準且 rolling 不崩 → 才入 main
 - US+Commodity silo 在 OOS 仍是負報酬，是結構性議題
+
+### 7. Crypto 優化工具
+
+目前優化以 Crypto OOS 為主基準，IS 只用來篩候選，full 5y 與 rolling OOS 用來擋過擬合。
+
+```powershell
+# OOS-first 候選檢查
+python scripts\crypto_oos_optimize.py --limit 18 --output output\crypto_oos_optimize_final.csv
+
+# 局部網格：trend stop/RR/score + 風險縮放
+python scripts\crypto_oos_optimize.py --local-grid --limit 25 --output output\crypto_oos_optimize_local_grid_risk.csv
+```
+
+截至目前測試，沒有新參數通過 robust gate；正式 baseline 仍維持 Crypto OOS +87.17% / CAGR 36.49% / PF 1.346 / Sharpe 0.930 / MDD -43.01%。
 
 ---
 
@@ -150,19 +164,25 @@ python main.py backtest --output output\v111_baseline.xlsx --note v1.11_baseline
 
 ---
 
-## Latest Local Update: Bybit Demo Live Protection
+## Latest Local Update: Bybit Demo Live Parity + Position Metadata
 
-Live mode now mirrors the backtest exit model more closely on Bybit Demo:
+Live mode now mirrors the Crypto OOS baseline more closely on Bybit Demo:
 
 - Bybit is still configured as demo trading: `BYBIT_DEMO = True`, `BYBIT_TESTNET = False`
 - Bybit leverage is explicitly forced to `1x`: `BYBIT_LEVERAGE = 1`
+- Live scans use `include_vp=True`, `apply_cross_asset_filters()`, Crypto score gate, SYM win-rate filter, dominant strategy detection, and geometric R:R checks
 - New entries submit full-position exchange-side TP/SL with `tpslMode='Full'`
-- The bot syncs existing Bybit positions on every scan and removes local state when a position is already closed
+- Bybit-side protection remains active if the bot is stopped: fixed SL / fixed TP
+- Strategy exits still require `python main.py live` to keep running: signal flip, BB mid/RSI/profit exits, max hold, soft stop, and trailing-stop updates
+- The bot syncs existing Bybit positions on every scan and removes local metadata when a position is already closed
+- Position metadata is persisted in `data/live_positions.json`:
+  - `entry_dt`, `entry`, `strategy`, `score`, `entry_reason`
+  - `orig_sl`, `sl`, `tp`, `trail_anchor`
+- Existing Bybit positions opened before the bot starts are recovered as far as possible from Bybit execution history; then the bot infers strategy/score from the nearest historical signal date
 - If an existing Demo position has no SL/TP, live mode backfills SL/TP from the current ATR stop formula
 - Crypto trailing stop is updated through Bybit `set_trading_stop()`:
   - before +2R: stop trails by `ATR x 3.0`
   - after +2R: stop tightens to `ATR x 1.5`
-- Strategy exits that Bybit cannot express natively, such as signal flip and indicator-based exits, still require `python main.py live` to keep running
 
 Run:
 

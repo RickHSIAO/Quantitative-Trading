@@ -85,8 +85,11 @@ Last updated: 2026-05-07
 ## Bybit Live Behavior
 
 - `BYBIT_DEMO = True`, `BYBIT_TESTNET = False` means Bybit Demo Trading, not testnet.
+- Live now uses the Crypto baseline signal path more closely: VP indicators, BTC moat cross-asset filter, Crypto score gate, SYM win-rate filter, dominant strategy detection, and geometric R:R check.
 - New live entries submit full-position exchange-side TP/SL.
 - Live bot syncs existing Bybit positions each scan.
+- Live metadata is persisted in `data/live_positions.json` with entry date, entry price, strategy, score, entry reason, original SL, current SL/TP, and trail anchor.
+- Existing Bybit positions opened before the bot starts are recovered as far as possible from Bybit execution history; strategy/score are inferred from historical signals when possible.
 - If an existing Demo position has no SL/TP, live mode backfills TP/SL from current ATR logic.
 - Crypto trailing stop is updated through Bybit `set_trading_stop()`.
 - Strategy exits that Bybit cannot express natively, such as signal flip or indicator exits, require `python main.py live` to keep running.
@@ -113,6 +116,12 @@ Crypto full check:
 
 ```powershell
 python main.py backtest --profile Crypto --output output\crypto_full_check.xlsx
+```
+
+Crypto OOS-first optimizer:
+
+```powershell
+python scripts\crypto_oos_optimize.py --local-grid --limit 25 --output output\crypto_oos_optimize_local_grid_risk.csv
 ```
 
 Live Bybit demo:

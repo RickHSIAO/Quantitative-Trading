@@ -247,6 +247,20 @@ class BybitExecutor(BaseExecutor):
             print(f'[ERROR] get_positions: {e}')
             return []
 
+    def get_executions(self, symbol: str, limit: int = 100) -> list[dict]:
+        """Return recent linear execution history for a symbol."""
+        bybit_sym = _yf_to_bybit(symbol)
+        try:
+            res = self.session.get_executions(
+                category='linear',
+                symbol=bybit_sym,
+                limit=limit,
+            )
+            return res.get('result', {}).get('list', [])
+        except Exception as e:
+            print(f'[ERROR] get_executions {bybit_sym}: {e}')
+            return []
+
     def get_balance(self) -> float:
         try:
             res = self.session.get_wallet_balance(accountType='UNIFIED', coin='USDT')
