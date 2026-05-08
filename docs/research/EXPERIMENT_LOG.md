@@ -1314,3 +1314,130 @@ python main.py live --crypto-candidate volume-top125-lb3-sym035 --interval 60
 ## 結論
 
 候選已可由 Main 顯式測試，但仍不是預設策略。正式策略是否切換，要等 forward monitor 達到 90 天或 50 筆交易後再判斷。
+
+## EXP-012 - Top125 Candidate Cost / Intrabar Stress
+
+## 日期
+
+2026-05-08
+
+## 測試目的
+
+針對凍結候選 `volume-top125-lb3-sym035` 補做兩個壓力測試：
+
+1. 成本壓力：TP taker、TP market slippage、額外滑價、funding。
+2. 日 K 同根 TP/SL 路徑壓力：TP-first、SL-first、conservative。
+
+這次測試只驗證候選策略抗不抗壓，不用結果回頭調參。
+
+## 修改範圍
+
+- `scripts/crypto_cost_stress.py` 新增 `--candidate volume-top125-lb3-sym035`。
+- `scripts/crypto_intrabar_path_stress.py` 新增 `--candidate volume-top125-lb3-sym035`。
+- 輸出候選專用 stress CSV。
+
+## 沒改什麼
+
+- 沒有修改正式 live 預設策略。
+- 沒有修改候選策略參數。
+- 沒有用 stress 結果重新挑 universe / TopN / threshold。
+- 沒有把候選升級成正式策略。
+
+## 執行指令
+
+```powershell
+python scripts\crypto_top100_forward_monitor.py
+python scripts\crypto_cost_stress.py --candidate volume-top125-lb3-sym035 --output output\crypto_cost_stress_top125_candidate.csv
+python scripts\crypto_intrabar_path_stress.py --candidate volume-top125-lb3-sym035 --output output\crypto_intrabar_path_stress_top125_candidate.csv
+```
+
+## Forward Monitor
+
+| Candidate | Period | eligible symbols | status | reason | trades |
+|---|---|---:|---|---|---:|
+| forward_volume_top125_lb3_sym_0p35 | 2026-05-08 → 2026-05-08 | 93 | pending | days=1/90, trades=0/50 | 0 |
+
+Forward 仍然沒有足夠樣本，不能做績效判斷。
+
+## Cost Stress 結果
+
+| Scenario | 說明 | 總報酬 | 年化 | MDD | PF | Sharpe | Calmar | 交易數 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| A | current cost model | +99.43% | +40.86% | -36.57% | 1.291 | 1.012 | 1.117 | 407 |
+| B | TP taker fee + TP market slippage | +96.83% | +39.94% | -36.64% | 1.286 | 0.997 | 1.090 | 407 |
+| C | 0.2% total market slippage | +88.12% | +36.83% | -37.41% | 1.260 | 0.943 | 0.985 | 407 |
+| D | 0.3% total market slippage | +79.19% | +33.57% | -38.24% | 1.244 | 0.886 | 0.878 | 404 |
+| E | funding cost 0.03% per day | +72.88% | +31.22% | -38.03% | 1.223 | 0.846 | 0.821 | 407 |
+| F | TP taker + 0.3% slippage + funding 0.03% per day | +48.22% | +21.57% | -39.84% | 1.159 | 0.669 | 0.541 | 404 |
+
+## Intrabar Path Stress 結果
+
+| Variant | 總報酬 | 年化 | MDD | PF | Sharpe | Calmar | 交易數 | 同根衝突交易 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| TP-first | +99.43% | +40.86% | -36.57% | 1.291 | 1.012 | 1.117 | 407 | 17 |
+| SL-first | +84.47% | +35.51% | -36.96% | 1.257 | 0.924 | 0.961 | 407 | 17 |
+| Conservative | +84.47% | +35.51% | -36.96% | 1.257 | 0.924 | 0.961 | 407 | 17 |
+
+## 判讀
+
+- 候選策略對一般成本上調仍有韌性：B/C/D/E 都維持 PF >= 1.22、Sharpe >= 0.84。
+- 最嚴格成本組合 F 仍有 +48.22% 總報酬與 PF 1.159，但 Sharpe 0.669 低於 0.70、Calmar 0.541 偏弱，因此只能算黃燈。
+- 同根 TP/SL 路徑壓力比 baseline 風險小。SL-first / conservative 下仍有 +84.47%、PF 1.257、Sharpe 0.924。
+- 同根衝突交易 17 筆，會影響報酬，但不會讓候選失效。
+
+## 結論
+
+需要 forward 驗證。
+
+這次 stress test 支持 `volume-top125-lb3-sym035` 比 raw Top100 / mcap candidate 更合理，但不能取代真正 forward。候選目前通過「成本與日 K 路徑」的基本壓力測試；唯一保留點是極端成本組合下 Sharpe 低於 0.70，所以正式升級前仍要看 live/demo 的真實成交品質與 funding。
+
+## EXP-013 - Default Crypto Strategy Swap
+
+## 日期
+
+2026-05-08
+
+## 目的
+
+依使用者決策，將 `volume-top125-lb3-sym035` 與舊 config baseline 的角色互換：
+
+- `python main.py live` 預設改跑 `volume-top125-lb3-sym035`。
+- 舊 config baseline 保留為顯式對照模式：`--crypto-candidate config-baseline`。
+
+## 修改範圍
+
+- `main.py` 新增 `DEFAULT_CRYPTO_CANDIDATE = "volume-top125-lb3-sym035"`。
+- `main.py` 新增 `LEGACY_CRYPTO_BASELINE = "config-baseline"`。
+- `backtest` 與 `live` 的 `--crypto-candidate` 預設值改成 `volume-top125-lb3-sym035`。
+- `_apply_crypto_candidate()` 遇到 `config-baseline` 時不套用候選 universe / WR override，回到舊 config universe。
+- README 更新目前正式/舊 baseline 指令。
+
+## 使用方式
+
+正式預設 live：
+
+```powershell
+python main.py live --interval 60
+```
+
+顯式指定新預設：
+
+```powershell
+python main.py live --crypto-candidate volume-top125-lb3-sym035 --interval 60
+```
+
+切回舊 baseline 對照：
+
+```powershell
+python main.py live --crypto-candidate config-baseline --interval 60
+```
+
+## 風險註記
+
+這是策略角色切換，不代表 forward 已通過。`volume-top125-lb3-sym035` 已通過目前歷史 OOS、過擬合檢查、成本壓力、同根 TP/SL 路徑壓力，但 forward monitor 仍只有 1 天 / 0 筆交易。之後若 forward 未達標，需切回 `config-baseline` 或開新候選。
+
+## 結論
+
+forward live。
+
+新策略已成為 `main.py live` 的預設 Crypto 策略；舊 baseline 不刪除，保留為 rollback / 對照模式。

@@ -249,13 +249,18 @@ CRYPTO_CANDIDATES: dict[str, dict] = {
     },
 }
 
+DEFAULT_CRYPTO_CANDIDATE = 'volume-top125-lb3-sym035'
+LEGACY_CRYPTO_BASELINE = 'config-baseline'
+
 
 def _apply_crypto_candidate(args, config) -> dict | None:
     candidate_name = getattr(args, 'crypto_candidate', '') or ''
-    if not candidate_name:
+    if not candidate_name or candidate_name == LEGACY_CRYPTO_BASELINE:
+        if candidate_name == LEGACY_CRYPTO_BASELINE:
+            print('[INFO] Crypto candidate disabled: using legacy config baseline')
         return None
     if candidate_name not in CRYPTO_CANDIDATES:
-        valid = ', '.join(CRYPTO_CANDIDATES)
+        valid = ', '.join([LEGACY_CRYPTO_BASELINE] + sorted(CRYPTO_CANDIDATES))
         raise ValueError(f'Unknown crypto candidate: {candidate_name}. Valid: {valid}')
 
     cand = CRYPTO_CANDIDATES[candidate_name]
@@ -1395,9 +1400,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument('--profile',       type=str,   default=None,
                       help='只回測指定 strategy profile，例如 Crypto、TW Stock、US+Commodity')
 
-    p_bt.add_argument('--crypto-candidate', type=str, default='',
-                      choices=[''] + sorted(CRYPTO_CANDIDATES.keys()),
-                      help='啟用凍結的 Crypto 研究候選，不改 config 預設值')
+    p_bt.add_argument('--crypto-candidate', type=str, default=DEFAULT_CRYPTO_CANDIDATE,
+                      choices=[LEGACY_CRYPTO_BASELINE] + sorted(CRYPTO_CANDIDATES.keys()),
+                      help='Crypto strategy mode. Default is volume-top125-lb3-sym035; use config-baseline for the legacy config universe.')
     p_bt.add_argument('--crypto-universe', type=str, default='config',
                       choices=['config', 'prev3y-mcap-top100', 'prev3y-volume-top100'],
                       help='Crypto backtest universe mode')
@@ -1415,9 +1420,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_live = sub.add_parser('live', help='即時交易（Bybit 加密貨幣）')
     p_live.add_argument('--seed',     type=int, default=42, help='隨機種子')
     p_live.add_argument('--interval', type=int, default=60, help='掃描間隔（分鐘，default=60）')
-    p_live.add_argument('--crypto-candidate', type=str, default='',
-                        choices=[''] + sorted(CRYPTO_CANDIDATES.keys()),
-                        help='用凍結的 Crypto 研究候選跑 live/demo，不改 config 預設值')
+    p_live.add_argument('--crypto-candidate', type=str, default=DEFAULT_CRYPTO_CANDIDATE,
+                        choices=[LEGACY_CRYPTO_BASELINE] + sorted(CRYPTO_CANDIDATES.keys()),
+                        help='Crypto strategy mode. Default is volume-top125-lb3-sym035; use config-baseline for the legacy config universe.')
 
     return parser
 

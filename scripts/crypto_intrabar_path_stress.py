@@ -20,6 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config
 from config import get_selected_assets
+from scripts import crypto_prev3y_top100_optimize as opt
+from scripts import crypto_top100_overfit_checks as checks
 from src.backtester import run_silo_backtest
 from src.database import get_all_symbols, load_prices
 from src.indicators import compute_all_indicators
@@ -127,6 +129,44 @@ def _run_crypto(base: tuple[dict, dict, dict],
     )
 
 
+def _candidate_cache(start: str,
+                     end: str,
+                     top_n: int,
+                     lookback_years: int) -> dict[str, Any]:
+    universe = checks.UniverseKey(
+        "volume_24h",
+        int(top_n),
+        lookback_years=int(lookback_years),
+        min_history_days=180,
+    )
+    return checks._prepare_universe_cache(start, end, universe)
+
+
+def _run_candidate(cache: dict[str, Any],
+                   start: str,
+                   end: str) -> tuple[list, dict[str, Any], dict[str, pd.DataFrame]]:
+    data, signals, type_map = opt._slice_inputs(
+        cache["base"],
+        start,
+        end,
+        cache["allowed_by_year"],
+    )
+    profile = copy.deepcopy(config.STRATEGY_PROFILES["Crypto"])
+    trades, results = run_silo_backtest(
+        data,
+        signals,
+        type_map,
+        {"Crypto": ["Crypto"]},
+        config.SILO_CAPITAL,
+        {"Crypto": profile},
+    )
+    return (
+        list(trades),
+        dict(results["Crypto"]["metrics"]),
+        data,
+    )
+
+
 def _conflict_stats(trades: list, data: dict[str, pd.DataFrame]) -> dict[str, Any]:
     conflicts = 0
     conflict_pnl = 0.0
@@ -209,21 +249,48 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Crypto same-bar TP/SL path stress test.")
     parser.add_argument("--start-date", default=DEFAULT_START)
     parser.add_argument("--end-date", default=DEFAULT_END)
+    parser.add_argument("--candidate", default="",
+                        choices=["", "volume-top125-lb3-sym035"],
+                        help="Run the frozen Top125 volume candidate instead of config baseline.")
+    parser.add_argument("--top-n", type=int, default=125)
+    parser.add_argument("--lookback-years", type=int, default=3)
+    parser.add_argument("--sym-wr-threshold", type=float, default=0.35)
     parser.add_argument("--output", default="output/crypto_intrabar_path_stress.csv")
     args = parser.parse_args()
 
-    base = _build_inputs(use_vp=True)
+    if args.candidate:
+        base = _candidate_cache(
+            args.start_date,
+            args.end_date,
+            args.top_n,
+            args.lookback_years,
+        )
+        candidate_overrides = {
+            "SYM_MIN_WINRATE_BY_CLASS": opt._crypto_dict(
+                "SYM_MIN_WINRATE_BY_CLASS",
+                float(args.sym_wr_threshold),
+            ),
+        }
+    else:
+        base = _build_inputs(use_vp=True)
+        candidate_overrides = {}
+
     rows: list[dict[str, Any]] = []
     for variant in _variants():
-        saved = _apply_overrides({
+        overrides = copy.deepcopy(candidate_overrides)
+        overrides.update({
             "BACKTEST_INTRABAR_CONFLICT_MODE": variant.mode,
             "BACKTEST_TP_AS_TAKER": False,
             "BACKTEST_SLIPPAGE_ON_TP": False,
             "BACKTEST_FUNDING_DAILY_PCT_BY_CLASS": {"Crypto": 0.0},
             "BACKTEST_EXTRA_SLIPPAGE_PCT_BY_CLASS": {"Crypto": 0.0},
         })
+        saved = _apply_overrides(overrides)
         try:
-            trades, metrics, data = _run_crypto(base, args.start_date, args.end_date)
+            if args.candidate:
+                trades, metrics, data = _run_candidate(base, args.start_date, args.end_date)
+            else:
+                trades, metrics, data = _run_crypto(base, args.start_date, args.end_date)
             rows.append(_row(variant, metrics, _conflict_stats(trades, data)))
         finally:
             _restore_overrides(saved)

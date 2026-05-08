@@ -130,3 +130,11 @@ EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,lookback_volume_
 EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,lookback_volume_top125_lb2_sym035_oos,47.65,21.34,-48.98,1.151,0.659,0.436,44.80,0.046,404,Top125 兩年成交量 lookback 最佳鄰近；Sharpe 未過 0.70；結論=窗口敏感
 EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,lookback_volume_top125_lb3_sym035_oos,99.43,40.86,-36.57,1.291,1.012,1.117,48.40,0.118,407,Top125 三年成交量 lookback 最佳；相對最穩但仍需 next-period forward 驗證；結論=候選
 EXP-011,2026-05-08,Top125 Volume Forward Monitor,forward_volume_top125_lb3_sym035,,,,,,,,,0,凍結候選：前三年平均 volume_24h Top125 + symbol WR 0.35；forward=2026-05-08 起；目前 days=1/90 trades=0/50；結論=pending
+EXP-012,2026-05-08,Top125 Candidate Cost Stress,cost_A_current,99.43,40.86,-36.57,1.291,1.012,1.117,48.40,0.118,407,候選 current cost model；結論=通過壓力測試但仍需 forward
+EXP-012,2026-05-08,Top125 Candidate Cost Stress,cost_D_0p3_slippage,79.19,33.57,-38.24,1.244,0.886,0.878,48.51,0.095,404,候選 0.3% total market slippage；PF/Sharpe/MDD 仍過關；結論=通過壓力測試
+EXP-012,2026-05-08,Top125 Candidate Cost Stress,cost_E_funding_0p03_daily,72.88,31.22,-38.03,1.223,0.846,0.821,48.16,0.089,407,候選 funding 0.03%/day；仍過 PF/Sharpe/MDD；結論=通過壓力測試
+EXP-012,2026-05-08,Top125 Candidate Cost Stress,cost_F_taker_slip_funding,48.22,21.57,-39.84,1.159,0.669,0.541,48.02,0.058,404,候選最嚴格成本組合；PF/MDD 尚可但 Sharpe 低於 0.70；結論=黃燈需 forward
+EXP-012,2026-05-08,Top125 Candidate Intrabar Path Stress,path_tp_first,99.43,40.86,-36.57,1.291,1.012,1.117,48.40,0.118,407,候選同根 TP-first；conflicts=17；結論=baseline path
+EXP-012,2026-05-08,Top125 Candidate Intrabar Path Stress,path_sl_first,84.47,35.51,-36.96,1.257,0.924,0.961,48.40,0.104,407,候選同根 SL-first；conflicts=17；仍過 PF/Sharpe/MDD；結論=通過路徑壓力
+EXP-012,2026-05-08,Top125 Candidate Intrabar Path Stress,path_conservative,84.47,35.51,-36.96,1.257,0.924,0.961,48.40,0.104,407,候選同根 conservative；conflicts=17；仍過 PF/Sharpe/MDD；結論=通過路徑壓力
+EXP-013,2026-05-08,Default Crypto Strategy Swap,main_default_volume_top125_lb3_sym035,99.43,40.86,-36.57,1.291,1.012,1.117,48.40,0.118,407,main.py live/backtest 預設改用 volume-top125-lb3-sym035；舊 baseline 改用 --crypto-candidate config-baseline；結論=forward live
