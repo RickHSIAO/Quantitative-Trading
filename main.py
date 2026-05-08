@@ -72,6 +72,205 @@ def _load_benchmark(symbol: str, years: int = 6) -> 'pd.DataFrame | None':
         return None
 
 
+def _crypto_to_bybit_symbol(symbol: str) -> str:
+    s = str(symbol).strip().upper()
+    if s.startswith('BYBIT:') and s.endswith('.P'):
+        return s
+    if s.endswith('USDT'):
+        return f'BYBIT:{s}.P'
+    return f'BYBIT:{s}USDT.P'
+
+
+def _has_crypto_rankings_table() -> bool:
+    import sqlite3
+    import config
+
+    conn = sqlite3.connect(config.DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='crypto_market_cap_rankings'"
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def _prev3y_crypto_top_by_year(year: int, top_n: int,
+                               rank_by: str = 'market_cap') -> 'pd.DataFrame':
+    import sqlite3
+    import pandas as pd
+    import config
+
+    if not _has_crypto_rankings_table():
+        return pd.DataFrame()
+    rank_cols = {
+        'market_cap': 'market_cap',
+        'volume_24h': 'volume_24h',
+    }
+    if rank_by not in rank_cols:
+        raise ValueError(f'Unsupported crypto rank_by: {rank_by}')
+    rank_col = rank_cols[rank_by]
+
+    lookback_start = f'{year - 3}-01-01'
+    lookback_end = f'{year - 1}-12-31'
+    conn = sqlite3.connect(config.DB_PATH)
+    try:
+        df = pd.read_sql_query(
+            f"""
+            SELECT
+                symbol,
+                MAX(name) AS name,
+                AVG({rank_col}) AS avg_rank_value,
+                AVG(market_cap) AS avg_market_cap,
+                AVG(volume_24h) AS avg_volume_24h,
+                AVG(rank) AS avg_cmc_rank,
+                COUNT(*) AS snapshots
+            FROM crypto_market_cap_rankings
+            WHERE snapshot_date BETWEEN ? AND ?
+              AND {rank_col} IS NOT NULL
+              AND COALESCE(is_stablecoin, 0) = 0
+              AND COALESCE(is_wrapped, 0) = 0
+              AND COALESCE(is_leveraged, 0) = 0
+            GROUP BY symbol
+            ORDER BY avg_rank_value DESC
+            LIMIT ?
+            """,
+            conn,
+            params=(lookback_start, lookback_end, int(top_n)),
+        )
+    finally:
+        conn.close()
+
+    if df.empty:
+        return df
+    df['bybit_symbol'] = df['symbol'].map(_crypto_to_bybit_symbol)
+    return df
+
+
+def _build_prev3y_crypto_universe(start_date: str,
+                                  end_date: str,
+                                  available: set[str],
+                                  top_n: int,
+                                  min_history_days: int,
+                                  rank_by: str = 'market_cap',
+                                  ) -> tuple[dict[int, set[str]], set[str], list[dict]]:
+    import pandas as pd
+    from src.database import load_prices
+
+    start_ts = pd.Timestamp(start_date)
+    end_ts = pd.Timestamp(end_date)
+    years = range(int(start_ts.year), int(end_ts.year) + 1)
+
+    allowed_by_year: dict[int, set[str]] = {}
+    all_symbols: set[str] = set()
+    summary: list[dict] = []
+    history_cache: dict[str, pd.DataFrame] = {}
+
+    for year in years:
+        year_start = pd.Timestamp(f'{year}-01-01')
+        ranked = _prev3y_crypto_top_by_year(year, top_n, rank_by)
+        eligible: set[str] = set()
+        if ranked.empty:
+            allowed_by_year[year] = eligible
+            summary.append({
+                'year': year,
+                'ranked': 0,
+                'bybit_available': 0,
+                'eligible': 0,
+            })
+            continue
+
+        bybit_symbols = ranked['bybit_symbol'].dropna().astype(str).tolist()
+        bybit_available = [s for s in bybit_symbols if s in available]
+        for sym in bybit_available:
+            if sym not in history_cache:
+                try:
+                    history_cache[sym] = load_prices(sym)
+                except Exception:
+                    history_cache[sym] = pd.DataFrame()
+            df = history_cache[sym]
+            if df is None or df.empty:
+                continue
+            if len(df.loc[df.index < year_start]) < min_history_days:
+                continue
+            eligible.add(sym)
+
+        allowed_by_year[year] = eligible
+        all_symbols.update(eligible)
+        summary.append({
+            'year': year,
+            'ranked': int(len(ranked)),
+            'bybit_available': int(len(set(bybit_available))),
+            'eligible': int(len(eligible)),
+        })
+
+    return allowed_by_year, all_symbols, summary
+
+
+def _mask_crypto_signals_by_year(signals: dict,
+                                 type_map: dict[str, str],
+                                 allowed_by_year: dict[int, set[str]]) -> None:
+    import pandas as pd
+
+    if not allowed_by_year:
+        return
+    years = set(allowed_by_year)
+    for sym, sigs in signals.items():
+        if type_map.get(sym) != 'Crypto' or not isinstance(sigs, dict):
+            continue
+        ref = sigs.get('combined')
+        if not isinstance(ref, pd.Series):
+            ref = next((v for v in sigs.values() if isinstance(v, pd.Series)), None)
+        if ref is None:
+            continue
+
+        disallowed = pd.Series(False, index=ref.index)
+        for year in years:
+            year_mask = ref.index.year == year
+            if sym not in allowed_by_year.get(year, set()):
+                disallowed.loc[year_mask] = True
+        if not disallowed.any():
+            continue
+
+        for ser in sigs.values():
+            if isinstance(ser, pd.Series):
+                ser.loc[disallowed] = 0
+
+
+CRYPTO_CANDIDATES: dict[str, dict] = {
+    'volume-top125-lb3-sym035': {
+        'universe': 'prev3y-volume-top100',
+        'rank_by': 'volume_24h',
+        'top_n': 125,
+        'min_history_days': 180,
+        'sym_wr_threshold': 0.35,
+        'description': 'EXP-010 frozen forward candidate: prev3y volume Top125 + symbol WR 0.35',
+    },
+}
+
+
+def _apply_crypto_candidate(args, config) -> dict | None:
+    candidate_name = getattr(args, 'crypto_candidate', '') or ''
+    if not candidate_name:
+        return None
+    if candidate_name not in CRYPTO_CANDIDATES:
+        valid = ', '.join(CRYPTO_CANDIDATES)
+        raise ValueError(f'Unknown crypto candidate: {candidate_name}. Valid: {valid}')
+
+    cand = CRYPTO_CANDIDATES[candidate_name]
+    args.crypto_universe = cand['universe']
+    args.crypto_top_n = int(cand['top_n'])
+    args.crypto_min_history_days = int(cand['min_history_days'])
+
+    wr_map = dict(getattr(config, 'SYM_MIN_WINRATE_BY_CLASS', {}) or {})
+    wr_map['Crypto'] = float(cand['sym_wr_threshold'])
+    config.SYM_MIN_WINRATE_BY_CLASS = wr_map
+    print(f"[INFO] Crypto candidate enabled: {candidate_name}")
+    print(f"       {cand['description']}")
+    return cand
+
+
 def cmd_backtest(args):
     import pandas as pd
     from tqdm import tqdm
@@ -90,6 +289,62 @@ def cmd_backtest(args):
     if not available:
         print('資料庫為空，請先執行: python main.py fetch')
         return
+
+    try:
+        crypto_candidate = _apply_crypto_candidate(args, config)
+    except ValueError as exc:
+        print(f'[ERROR] {exc}')
+        return
+
+    crypto_universe_mode = getattr(args, 'crypto_universe', 'config')
+    crypto_allowed_by_year: dict[int, set[str]] = {}
+    prev3y_modes = {'prev3y-mcap-top100', 'prev3y-volume-top100'}
+    if crypto_universe_mode in prev3y_modes:
+        from datetime import date
+
+        if not getattr(args, 'start_date', None):
+            args.start_date = '2021-01-01'
+        if not getattr(args, 'end_date', None):
+            args.end_date = date.today().isoformat()
+
+        crypto_rank_by = (
+            'volume_24h' if crypto_universe_mode == 'prev3y-volume-top100'
+            else 'market_cap'
+        )
+        crypto_allowed_by_year, crypto_symbols, crypto_uni_summary = _build_prev3y_crypto_universe(
+            args.start_date,
+            args.end_date,
+            available,
+            int(getattr(args, 'crypto_top_n', 100)),
+            int(getattr(args, 'crypto_min_history_days', 180)),
+            crypto_rank_by,
+        )
+        if not crypto_symbols:
+            print(f'[ERROR] {crypto_universe_mode} 找不到任何符合條件的 Crypto 標的。')
+            print('        請先確認 crypto_market_cap_rankings 與 Bybit OHLCV 已寫入 SQLite。')
+            return
+
+        market_symbol = getattr(config, 'CRYPTO_MARKET_SYMBOL', 'BYBIT:BTCUSDT.P')
+        crypto_context_symbols = set(crypto_symbols)
+        if market_symbol in available:
+            crypto_context_symbols.add(market_symbol)
+        assets['cryptos'] = sorted(crypto_context_symbols)
+        assets['all'] = (
+            list(assets['us_stocks']) +
+            list(assets['tw_stocks']) +
+            list(assets['cryptos']) +
+            list(assets['commodities'])
+        )
+
+        rank_label = 'volume_24h' if crypto_rank_by == 'volume_24h' else 'market-cap'
+        print(f'\n[INFO] Crypto universe = prev3y average {rank_label} Top{int(getattr(args, "crypto_top_n", 100))}')
+        print(f'       backtest: {args.start_date} ~ {args.end_date}')
+        print(f'       tradable union: {len(crypto_symbols)} symbols; context: {len(crypto_context_symbols)} symbols')
+        for item in crypto_uni_summary:
+            print(
+                f"       {item['year']}: ranked={item['ranked']} "
+                f"bybit_available={item['bybit_available']} eligible={item['eligible']}"
+            )
 
     type_map: dict[str, str] = {}
     for sym in assets['us_stocks']:  type_map[sym] = 'US Stock'
@@ -180,6 +435,9 @@ def cmd_backtest(args):
                 del data[sym]
                 del signals[sym]
 
+    if crypto_universe_mode in prev3y_modes:
+        _mask_crypto_signals_by_year(signals, type_map, crypto_allowed_by_year)
+
     apply_cross_asset_filters(data, signals, type_map)
 
     silo_mode = getattr(config, 'ENABLE_SILO_MODE', False)
@@ -242,6 +500,20 @@ def cmd_backtest(args):
     }
 
     # ── 印出整體績效摘要 ──────────────────────────────────────────────────
+    if crypto_universe_mode in prev3y_modes:
+        metrics['crypto_universe'] = {
+            'mode': crypto_universe_mode,
+            'rank_by': (
+                'volume_24h' if crypto_universe_mode == 'prev3y-volume-top100'
+                else 'market_cap'
+            ),
+            'top_n': int(getattr(args, 'crypto_top_n', 100)),
+            'min_history_days': int(getattr(args, 'crypto_min_history_days', 180)),
+            'start_date': getattr(args, 'start_date', None),
+            'end_date': getattr(args, 'end_date', None),
+            'candidate': getattr(args, 'crypto_candidate', '') or '',
+        }
+
     print('\n' + '='*48)
     print('  整體回測績效摘要')
     print('='*48)
@@ -317,6 +589,7 @@ def cmd_live(args):
     from src.risk import estimate_kelly_from_history, position_size, calculate_stops
     from src.backtester import _geometric_rr_ok
     from src.executor import BybitExecutor
+    from src.database import get_all_symbols, init_db
 
     try:
         executor = BybitExecutor()
@@ -324,7 +597,45 @@ def cmd_live(args):
         print(f'[ERROR] {e}')
         return
 
+    init_db()
+    try:
+        crypto_candidate = _apply_crypto_candidate(args, config)
+    except ValueError as exc:
+        print(f'[ERROR] {exc}')
+        return
+
     assets   = get_selected_assets(args.seed)
+    crypto_tradable_symbols = set(assets['cryptos'])
+    if crypto_candidate is not None:
+        from datetime import date
+
+        available = set(get_all_symbols())
+        live_date = date.today().isoformat()
+        _, crypto_symbols, crypto_uni_summary = _build_prev3y_crypto_universe(
+            live_date,
+            live_date,
+            available,
+            int(getattr(args, 'crypto_top_n', crypto_candidate['top_n'])),
+            int(getattr(args, 'crypto_min_history_days', crypto_candidate['min_history_days'])),
+            crypto_candidate['rank_by'],
+        )
+        if not crypto_symbols:
+            print('[ERROR] Crypto candidate 找不到任何符合條件的 live universe 標的。')
+            print('        請先確認 crypto_market_cap_rankings 與 Bybit OHLCV 已寫入 SQLite。')
+            return
+        crypto_tradable_symbols = set(crypto_symbols)
+        crypto_context_symbols = set(crypto_symbols)
+        market_symbol = getattr(config, 'CRYPTO_MARKET_SYMBOL', 'BYBIT:BTCUSDT.P')
+        if market_symbol in available:
+            crypto_context_symbols.add(market_symbol)
+        assets['cryptos'] = sorted(crypto_context_symbols)
+        print('[INFO] Live Crypto candidate universe')
+        for item in crypto_uni_summary:
+            print(
+                f"       {item['year']}: ranked={item['ranked']} "
+                f"bybit_available={item['bybit_available']} eligible={item['eligible']}"
+            )
+
     cryptos  = assets['cryptos']
     type_map = {s: 'Crypto' for s in cryptos}
     balance  = executor.get_balance()
@@ -336,10 +647,8 @@ def cmd_live(args):
     print('[注意] 測試網模式：', config.BYBIT_TESTNET)
 
     from datetime import datetime, timedelta, timezone
-    from src.database import upsert_prices, load_prices, get_last_date, init_db
+    from src.database import upsert_prices, load_prices, get_last_date
     from src.fetcher import asset_type_of
-
-    init_db()
 
     # 啟動時若 DB 沒有歷史，先做一次完整下載
     for sym in cryptos:
@@ -810,7 +1119,8 @@ def cmd_live(args):
 
                 min_score_class = _cls_get('MIN_ENTRY_SCORE_BY_CLASS',
                                             'Crypto', config.MIN_ENTRY_SCORE)
-                if (sym not in open_pos and latest_sig != 0
+                if (sym in crypto_tradable_symbols
+                        and sym not in open_pos and latest_sig != 0
                         and score_val >= min_score_class
                         and _sym_wr_ok(sym)):
                     strat = _dominant_live_strategy(sigs, latest_sig)
@@ -1085,6 +1395,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument('--profile',       type=str,   default=None,
                       help='只回測指定 strategy profile，例如 Crypto、TW Stock、US+Commodity')
 
+    p_bt.add_argument('--crypto-candidate', type=str, default='',
+                      choices=[''] + sorted(CRYPTO_CANDIDATES.keys()),
+                      help='啟用凍結的 Crypto 研究候選，不改 config 預設值')
+    p_bt.add_argument('--crypto-universe', type=str, default='config',
+                      choices=['config', 'prev3y-mcap-top100', 'prev3y-volume-top100'],
+                      help='Crypto backtest universe mode')
+    p_bt.add_argument('--crypto-top-n', type=int, default=100,
+                      help='Top N symbols for prev3y Top100 universe modes')
+    p_bt.add_argument('--crypto-min-history-days', type=int, default=180,
+                      help='Required pre-year OHLCV days for prev3y Top100 universe modes')
+
     # history
     p_hist = sub.add_parser('history', help='查詢歷史回測記錄')
     p_hist.add_argument('--limit',  type=int, default=20,   help='顯示最近幾筆（default=20）')
@@ -1094,6 +1415,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_live = sub.add_parser('live', help='即時交易（Bybit 加密貨幣）')
     p_live.add_argument('--seed',     type=int, default=42, help='隨機種子')
     p_live.add_argument('--interval', type=int, default=60, help='掃描間隔（分鐘，default=60）')
+    p_live.add_argument('--crypto-candidate', type=str, default='',
+                        choices=[''] + sorted(CRYPTO_CANDIDATES.keys()),
+                        help='用凍結的 Crypto 研究候選跑 live/demo，不改 config 預設值')
 
     return parser
 

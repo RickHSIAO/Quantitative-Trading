@@ -14,7 +14,46 @@
 
 ---
 
-## 研究紀錄與最新判決（EXP-001 ~ EXP-003）
+## Current Crypto Status（2026-05-08）
+
+目前有兩套需要分清楚：
+
+| 指令 / 策略 | 狀態 | 用途 |
+|---|---|---|
+| `python main.py live` | **現有 baseline** | 對應曾跑出 5y full `+627%` 的 config 邏輯；目前仍是預設 Bybit Demo live 策略 |
+| `python main.py live --crypto-candidate volume-top125-lb3-sym035` | **forward 候選** | EXP-010 後凍結的候選，只用於 forward / demo 驗證，不是預設正式策略 |
+
+重要判斷：
+
+- `+627.44%` 5 年連續回測不是 look-ahead bug，但很可能包含 current-universe selection bias 與 path-dependency；**不可作為未來預期報酬**。
+- 現有 baseline 較可信的參考仍是 Crypto-only OOS：`+87.17% / CAGR 36.49% / PF 1.346 / Sharpe 0.930 / MDD -43.01%`。
+- Point-in-time-like universe 測試顯示市值 Top100 raw OOS 只剩 `+7.25% / PF 1.030 / Sharpe 0.289`，確認原 config universe 有高估疑慮。
+- 目前最合理的 forward 候選是 `volume-top125-lb3-sym035`：
+  - Universe：previous 3-year average `volume_24h` Top125
+  - Symbol rolling winrate threshold：`0.35`
+  - OOS backtest：`+99.43% / CAGR 40.86% / PF 1.291 / Sharpe 1.012 / MDD -36.57%`
+  - 但 lookback 視窗仍敏感，因此**只能 forward 驗證，不可直接升級預設策略**。
+
+Forward monitor:
+
+```powershell
+# 純監控，不下單
+python scripts\crypto_top100_forward_monitor.py
+
+# 透過 Main 跑候選回測
+python main.py backtest --profile Crypto --crypto-candidate volume-top125-lb3-sym035 `
+  --start-date 2026-05-08 --end-date YYYY-MM-DD `
+  --output output\crypto_candidate_forward.xlsx --note crypto_candidate_forward
+
+# 透過 Main 跑 Bybit Demo 候選
+python main.py live --crypto-candidate volume-top125-lb3-sym035 --interval 60
+```
+
+Promotion gate：至少 `90` 天或 `50` 筆 forward trades，且 PF >= `1.15`、Sharpe >= `0.70`、MDD 不差於 `-40%`，才重新討論是否升級。
+
+---
+
+## 研究紀錄與最新判決（EXP-001 ~ EXP-011）
 
 研究文件已集中到 `docs/research/`：
 
@@ -35,6 +74,14 @@
 | EXP-001 | 成本壓力測試 | 需要更多測試 | TP taker 影響不大；funding 會讓平均 R 轉負，策略邊際偏薄。 |
 | EXP-002 | TP-first / SL-first / Conservative K棒路徑 | 需要更多測試 | SL-first 仍 PF > 1.15，但 MDD 惡化到 -53.72%，日 K 路徑假設會影響風險評估。 |
 | EXP-003 | 策略 ablation 訊號拆解 | 需要更多測試 | 單一 raw 訊號多數 OOS 失效；baseline 主要靠多模組與風險濾網共同作用。 |
+| EXP-004 | Baseline attribution | 需要更多測試 | baseline 正貢獻集中於 Supertrend、TP、15-30 天持倉、BTC above EMA200；短持倉與 SL 拖累明顯。 |
+| EXP-005 | Point-in-time Top100 universe | 需要更多測試 | current-biased benchmark 明顯高估；Bybit 補資料後 static PIT 只剩 +52.03%，rolling PIT +37.49%。 |
+| EXP-006 | PIT liquidity throttle | 需要更多測試 | 流動性門檻能改善 PIT 結果，但部分結果集中、需分段驗證。 |
+| EXP-007 | Prev3Y 市值 Top100 主回測 | 淘汰 | raw Prev3Y market-cap Top100 OOS 只有 +7.25%，PF 1.030，Sharpe 0.289。 |
+| EXP-008 | Prev3Y 成交量 Top100 raw | 淘汰 | raw Prev3Y volume Top100 OOS 為 -24.26%，PF 0.907，MDD -57.05%。 |
+| EXP-009 | Top100 策略優化 | 需要 forward | volume Top100 + symbol WR off 改善，但 Top100 單點敏感。 |
+| EXP-010 | Nested WF + stability overfit check | 需要 forward | `mcap_cap8` 顯示過擬合警訊；`volume_top125_lb3_sym_0.35` 是最佳穩定候選但仍需 forward。 |
+| EXP-011 | Top125 volume forward monitor | pending | 候選已接進 `main.py --crypto-candidate`，forward 起點 2026-05-08，等待 90 天或 50 筆交易。 |
 
 ### Ablation 初步判斷
 
@@ -43,7 +90,7 @@
 - `Supertrend raw`、`VP POC raw`、`VP + BB`、`Supertrend + EMA score`：**淘汰作為獨立 edge**。
 - `Bollinger raw`、`BTC moat`、`baseline 組合`：**需要更多測試**。
 
-下一步根據紀錄決定：先做 baseline 歸因（by strategy / by exit reason / by year / by symbol），不要急著調參。
+下一步：只對 `volume-top125-lb3-sym035` 做 forward / demo 驗證，不再用 2024-2026 歷史資料回頭調參。
 
 ---
 

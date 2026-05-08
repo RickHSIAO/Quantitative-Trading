@@ -56,3 +56,77 @@ EXP-003,2026-05-07,?? ablation ??????,vp_bb|OOS,-44.23,-25.15,-56.58,0.847,-0.67
 EXP-003,2026-05-07,?? ablation ??????,vp_bb|WF_2023,0.75,0.75,-26.84,1.004,0.165,0.028,46.44,-0.055,351,period=WF_2023; ?????????/??????????????????????description=VP POC + Bollinger raw signals; ??=??????
 EXP-003,2026-05-07,?? ablation ??????,vp_bb|WF_2024,-18.48,-18.49,-42.0,0.896,-0.421,-0.44,47.18,-0.101,337,period=WF_2024; ?????????/??????????????????????description=VP POC + Bollinger raw signals; ??=??????
 EXP-003,2026-05-07,?? ablation ??????,vp_bb|WF_2025_26,-20.14,-15.41,-33.66,0.909,-0.313,-0.458,50.47,-0.042,428,period=WF_2025_26; ?????????/??????????????????????description=VP POC + Bollinger raw signals; ??=??????
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,baseline_overall,87.17,36.49,-43.01,1.346,0.930,0.848,43.81,0.035,226,只新增分析腳本與輸出報表；不改策略訊號/參數/成本/倉位；結論=需要更多測試
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,strategy:Supertrend,58.28787,,,1.472985,,,44.6281,0.054711,121,total_R=6.62；baseline 內最大正貢獻訊號標籤
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,strategy:VP POC,27.50268,,,1.219753,,,41.4141,0.002727,99,total_R=0.27；報酬正但 R edge 幾乎打平
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,strategy:combined/overlap,1.831573,,,inf,,,100.00,1.990,1,total_R=1.99；樣本數不足
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,strategy:Bollinger,-0.456293,,,0.882136,,,60.00,-0.214,5,total_R=-1.07；樣本少且負貢獻
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,strategy:unknown,0.0,,,0.000,,,0.00,0.000,0,total_R=0.00；無法分類者固定列示
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,exit:TP,268.458585,,,inf,,,100.00,1.6935,60,total_R=101.61；主要正貢獻出場
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,exit:max_hold,57.732917,,,24.120427,,,91.1765,0.658529,34,total_R=22.39；持到 max_hold 仍有正貢獻
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,exit:trailing_stop,0.0,,,0.000,,,0.00,0.000,0,total_R=0.00；本次無 trailing stop 交易
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,exit:reverse_signal,0.50681,,,1.074385,,,35.7143,-0.150,14,total_R=-2.10；R 為負但 PnL 略正
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,exit:end_of_backtest,-2.234945,,,0.000,,,0.00,-0.340,3,total_R=-1.02
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,exit:SL,-240.712587,,,0.000,,,0.00,-1.018214,112,total_R=-114.04；主要虧損來源
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,exit:other,3.41505,,,inf,,,100.00,0.323333,3,total_R=0.97；BB/其他提早出場
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,year:2024,-0.207369,,,0.997794,,,33.9623,-0.130189,106,total_R=-13.80；OOS 初期 R 為負
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,year:2025,47.363621,,,1.400403,,,51.0204,0.111939,98,total_R=10.97
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,year:2026,40.009577,,,2.000776,,,59.0909,0.483636,22,total_R=10.64；樣本較少
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,holding:0-3_days,-52.250871,,,0.350148,,,27.2727,-0.413182,44,total_R=-18.18；短持倉拖累
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,holding:4-7_days,-6.047482,,,0.895289,,,34.0909,-0.124773,44,total_R=-5.49
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,holding:8-14_days,-6.36956,,,0.904760,,,29.6296,-0.207222,54,total_R=-11.19
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,holding:15-30_days,151.833744,,,4.215386,,,66.6667,0.507976,84,total_R=42.67；主要持倉週期
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,btc_regime:above_EMA200,85.940402,,,1.614180,,,46.7836,0.105614,171,total_R=18.06；主要有效 regime
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,btc_regime:below_EMA200,1.225428,,,1.010909,,,34.5455,-0.186364,55,total_R=-10.25；R edge 不足
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,intrabar_conflict:true,34.497733,,,inf,,,100.00,1.7425,8,total_R=13.94；同根 TP/SL 衝突交易貢獻偏高
+EXP-004,2026-05-07,Baseline Attribution 歸因分析,intrabar_conflict:false,52.668097,,,1.208787,,,41.7431,-0.028119,218,total_R=-6.13；非衝突交易 R 為負
+EXP-005,2026-05-07,Point-in-time Crypto Top 100 Universe 測試,current_top100_bias_check,168.09,63.13,-52.14,1.637,1.414,1.211,46.72,0.089,229,biased benchmark；只新增 universe 建構與測試腳本；不可當真實績效；結論=需要更多測試
+EXP-005,2026-05-07,Point-in-time Crypto Top 100 Universe 測試,static_pit_top100,,,,,,,,,0,missing_market_cap_history；缺 data/crypto_market_cap_rankings.csv；不產生假 PIT 績效；結論=需要更多測試
+EXP-005,2026-05-07,Point-in-time Crypto Top 100 Universe 測試,rolling_pit_top100_quarterly,,,,,,,,,0,missing_market_cap_history；缺 data/crypto_market_cap_rankings.csv；不產生假 PIT 績效；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2021,,,,,,,,,0,lookback=2018-2020；CMC monthly Top200 已存 SQLite；eligible_local_ohlcv=0；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2022,15.34,15.39,-22.77,1.218,0.574,0.676,52.08,0.211,48,lookback=2019-2021；eligible_local_ohlcv=10；不改策略/成本/倉位；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2023,45.80,45.99,-22.44,1.689,1.376,2.049,46.92,0.134,130,lookback=2020-2022；eligible_local_ohlcv=36；不改策略/成本/倉位；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2024,3.20,3.20,-48.72,1.023,0.278,0.066,43.48,0.047,138,lookback=2021-2023；eligible_local_ohlcv=38；edge 未通過；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2025,-0.45,-0.45,-45.18,0.995,0.219,-0.010,47.24,-0.015,127,lookback=2022-2024；eligible_local_ohlcv=36；edge 失效；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2026,22.64,80.70,-16.10,1.586,1.650,5.012,48.21,0.168,56,lookback=2023-2025；eligible_local_ohlcv=36；YTD 樣本較短；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,static_pit_top100_sqlite,47.83,21.41,-51.47,1.285,0.708,0.416,41.40,0.006,186,CMC SQLite ranking；OOS=2024-05-01~2026-05-07；MDD 超標；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,rolling_pit_top100_quarterly_sqlite,48.78,21.79,-53.34,1.269,0.693,0.409,43.06,0.013,209,CMC SQLite ranking；rolling quarterly 未比 static 更穩；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,static_pit_top100_bybit_coverage,52.03,23.11,-42.86,1.167,0.693,0.539,49.64,0.151,415,Bybit-only；OHLCV 補強後 traded_symbols=100；PF 弱且 Sharpe 未達標；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,rolling_pit_top100_quarterly_bybit_coverage,37.49,17.12,-50.87,1.115,0.583,0.336,47.16,0.088,405,Bybit-only；OHLCV 補強後 distinct_traded_symbols=141；未比 static 更穩；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2022_bybit_coverage,7.60,7.62,-28.62,1.110,0.384,0.266,52.08,0.222,48,Bybit-only；eligible_local_ohlcv=11；edge 弱；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2023_bybit_coverage,41.66,41.83,-22.77,1.453,1.275,1.837,49.21,0.189,191,Bybit-only；eligible_local_ohlcv=61；年度有效；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2024_bybit_coverage,6.51,6.52,-42.70,1.039,0.367,0.153,45.56,0.041,180,Bybit-only；eligible_local_ohlcv=61；edge 未通過；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2025_bybit_coverage,-9.89,-9.92,-47.42,0.922,-0.035,-0.209,48.89,0.055,180,Bybit-only；eligible_local_ohlcv=67；edge 失效；結論=需要更多測試
+EXP-005,2026-05-08,Point-in-time Crypto Top 100 Universe 測試,prev3y_avg_mcap_top100_2026_bybit_coverage,20.27,70.73,-13.33,1.519,1.530,5.308,53.33,0.129,75,Bybit-only；eligible_local_ohlcv=69；YTD 樣本較短；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,static_pit_top100|liq_0,52.03,23.11,-42.86,1.167,0.693,0.539,49.64,0.151,415,traded_symbols=100；只改 universe liquidity filter；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,rolling_pit_top100_quarterly|liq_0,37.49,17.12,-50.87,1.115,0.583,0.336,47.16,0.088,405,traded_symbols=141；只改 universe liquidity filter；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,static_pit_top100|liq_1000000,52.03,23.11,-42.86,1.167,0.693,0.539,49.64,0.151,415,traded_symbols=100；1M 門檻對 static 無影響；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,rolling_pit_top100_quarterly|liq_1000000,74.88,31.97,-35.76,1.219,0.868,0.894,49.38,0.136,401,traded_symbols=137；rolling 均衡改善；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,static_pit_top100|liq_5000000,105.21,42.87,-42.38,1.357,1.038,1.012,48.19,0.132,386,traded_symbols=85；static 明顯改善；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,rolling_pit_top100_quarterly|liq_5000000,42.40,19.17,-55.02,1.128,0.609,0.349,49.18,0.165,368,traded_symbols=123；MDD 惡化；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,static_pit_top100|liq_10000000,112.54,45.38,-32.25,1.380,1.090,1.407,46.88,0.083,288,traded_symbols=60；static 最佳候選但需年度拆解；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,rolling_pit_top100_quarterly|liq_10000000,86.52,36.25,-50.68,1.259,0.905,0.715,49.70,0.152,330,traded_symbols=100；MDD 略超標；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,static_pit_top100|liq_25000000,29.48,13.68,-47.46,1.168,0.547,0.288,42.51,-0.066,167,traded_symbols=34；樣本萎縮且 Sharpe 弱；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,rolling_pit_top100_quarterly|liq_25000000,13.88,6.66,-54.10,1.073,0.362,0.123,44.06,-0.012,202,traded_symbols=59；未通過；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,static_pit_top100|liq_50000000,13.98,6.71,-51.03,1.101,0.368,0.132,42.48,0.017,113,traded_symbols=23；樣本過度萎縮；結論=需要更多測試
+EXP-006,2026-05-08,Bybit PIT Universe Liquidity Throttle 測試,rolling_pit_top100_quarterly|liq_50000000,107.59,43.69,-45.88,1.585,1.090,0.952,46.84,0.076,158,traded_symbols=43；高報酬但集中風險；結論=需要更多測試
+EXP-007,2026-05-08,Prev3Y Top100 Universe OOS 主回測,config_oos_benchmark,87.17,36.49,-43.01,1.346,0.930,0.848,43.81,0.035,226,原 config universe；只能作 biased benchmark；結論=需要更多測試
+EXP-007,2026-05-08,Prev3Y Top100 Universe OOS 主回測,prev3y_top100_oos_raw,7.25,3.54,-49.74,1.030,0.289,0.071,43.61,0.026,321,Bybit-only 前三年平均市值 Top100；未通過 PF/Sharpe/Calmar；結論=淘汰
+EXP-008,2026-05-08,Prev3Y Top100 Volume Universe 測試,prev3y_volume_top100_oos_raw,-24.26,-12.88,-57.05,0.907,-0.148,-0.226,42.78,-0.039,367,Bybit-only 前三年平均 24h 成交量 Top100；連續 OOS 失敗且 MDD 超標；結論=淘汰
+EXP-008,2026-05-08,Prev3Y Top100 Volume Universe 測試,prev3y_volume_top100_2022,7.60,7.62,-28.62,1.110,0.384,0.266,52.08,0.222,48,lookback=2019-2021；eligible_local_ohlcv=11；樣本不足；結論=需要更多測試
+EXP-008,2026-05-08,Prev3Y Top100 Volume Universe 測試,prev3y_volume_top100_2023,7.51,7.53,-34.30,1.081,0.382,0.220,46.81,0.101,188,lookback=2020-2022；eligible_local_ohlcv=67；edge 弱；結論=需要更多測試
+EXP-008,2026-05-08,Prev3Y Top100 Volume Universe 測試,prev3y_volume_top100_2024,52.65,52.69,-43.84,1.278,1.178,1.202,47.00,0.156,200,lookback=2021-2023；年度有效但包含 2024 年初非 OOS 區段；結論=需要更多測試
+EXP-008,2026-05-08,Prev3Y Top100 Volume Universe 測試,prev3y_volume_top100_2025,18.20,18.27,-36.16,1.135,0.625,0.505,45.90,0.017,183,lookback=2022-2024；未達 PF/Sharpe 目標；結論=需要更多測試
+EXP-008,2026-05-08,Prev3Y Top100 Volume Universe 測試,prev3y_volume_top100_2026,21.64,76.44,-14.72,1.460,1.485,5.194,47.22,0.085,72,lookback=2023-2025；YTD 樣本較短；結論=需要更多測試
+EXP-009,2026-05-08,Prev3Y Top100 Strategy Optimization,mcap_top100_cap8_oos,58.06,25.51,-41.25,1.183,0.742,0.618,46.25,0.087,320,前三年平均市值 Top100；只改 Crypto max_total_positions=8；總 OOS 過最低門檻但 2024H2 與 2025 分段偏弱；結論=不可升級
+EXP-009,2026-05-08,Prev3Y Top100 Strategy Optimization,volume_top100_sym_filter_off_oos,80.95,34.22,-35.59,1.241,0.872,0.961,44.42,0.042,394,前三年平均成交量 Top100；只關閉 symbol rolling winrate filter；總 OOS 最佳但 2024H2 PF 僅 1.071；結論=候選需 forward 驗證
+EXP-009,2026-05-08,Prev3Y Top100 Strategy Optimization,volume_top100_stops_t1.75_rr2_oos,64.58,28.05,-44.99,1.203,0.803,0.624,44.71,0.063,378,前三年平均成交量 Top100；trend/combined ATR 1.75 RR 2.0；總 OOS 過關但 2024H2 仍虧損；結論=候選需 forward 驗證
+EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,nested_mcap_cap8_test_2024H2,-10.84,-15.78,-40.42,0.905,-0.159,-0.390,41.53,0.024,118,train=2022-2023 選中 mcap_cap8；train PF 1.572 但 TEST 失敗；overfit_flag=True；結論=過擬合警訊
+EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,nested_mcap_cap8_test_2025,6.86,6.88,-30.83,1.059,0.365,0.223,49.68,0.108,155,train=2022-2024 再次選中 mcap_cap8；TEST 未過 PF/Sharpe/年化門檻；overfit_flag=True；結論=過擬合警訊
+EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,nested_volume_baseline_test_2026YTD,14.81,49.25,-14.89,1.286,1.112,3.308,45.95,0.036,74,train=2022-2025 選中 volume_baseline；2026YTD 過關但樣本期短；結論=不能單獨升級
+EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,stability_volume_top100_sym_off_oos,80.95,34.22,-35.59,1.241,0.872,0.961,44.42,0.042,394,volume Top100 + symbol WR off；總 OOS 過關但鄰近 WR 0.35/0.40/0.45 在 Top100 崩潰；結論=參數敏感
+EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,stability_volume_top125_sym035_oos,99.43,40.86,-36.57,1.291,1.012,1.117,48.40,0.118,407,volume Top125 + symbol WR 0.35；Top125 鄰近 0/0.35/0.45 都過關；結論=最佳穩定候選但需 forward
+EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,lookback_volume_top125_lb1_sym_off_oos,53.95,23.88,-46.53,1.166,0.703,0.513,45.13,0.021,452,Top125 一年成交量 lookback 最佳鄰近；可過最低門檻但弱於三年 lookback；結論=窗口敏感
+EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,lookback_volume_top125_lb2_sym035_oos,47.65,21.34,-48.98,1.151,0.659,0.436,44.80,0.046,404,Top125 兩年成交量 lookback 最佳鄰近；Sharpe 未過 0.70；結論=窗口敏感
+EXP-010,2026-05-08,Top100 Overfit Check：Nested WF + Stability,lookback_volume_top125_lb3_sym035_oos,99.43,40.86,-36.57,1.291,1.012,1.117,48.40,0.118,407,Top125 三年成交量 lookback 最佳；相對最穩但仍需 next-period forward 驗證；結論=候選
+EXP-011,2026-05-08,Top125 Volume Forward Monitor,forward_volume_top125_lb3_sym035,,,,,,,,,0,凍結候選：前三年平均 volume_24h Top125 + symbol WR 0.35；forward=2026-05-08 起；目前 days=1/90 trades=0/50；結論=pending
