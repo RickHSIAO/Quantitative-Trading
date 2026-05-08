@@ -1114,11 +1114,14 @@ def cmd_live(args):
 
                     flip = min_hold_ok and latest_sig != 0 and latest_sig != pos['dir']
                     if hit_sl or hit_tp or early_exit or flip:
-                        executor.close_position(sym, pos['qty'], pos['dir'])
+                        close_res = executor.close_position(sym, pos['qty'], pos['dir']) or {}
+                        if close_res.get('retCode') != 0:
+                            print(f'  [CLOSE FAIL] {sym}: {close_res.get("retMsg", close_res)}')
+                            continue
                         pnl = (price - pos['entry']) * pos['qty'] * pos['dir']
                         trade_history[sym].append(ClosedTradeStub(pnl))
                         reason = 'SL' if hit_sl else ('TP' if hit_tp else (early_exit or 'FLIP'))
-                        print(f'  撟喳?{sym} @ {price:.4f}  PnL={pnl:+.2f}  ({reason})')
+                        print(f'  平倉 {sym} @ {price:.4f}  PnL={pnl:+.2f}  ({reason})')
                         del open_pos[sym]
                         _forget_position(sym)
 
@@ -1175,7 +1178,7 @@ def cmd_live(args):
                 )
                 available = max(0.0, balance - allocated_margin)
                 qty = position_size(
-                    balance, kf, price, sl,
+                    available, kf, price, sl,
                     asset_type=atype,
                     max_position_pct=crypto_max_position_pct,
                 )
@@ -1302,13 +1305,17 @@ def cmd_live(args):
                     hit_tp = (pos['dir'] ==  1 and price >= pos['tp']) or \
                              (pos['dir'] == -1 and price <= pos['tp'])
                     if hit_sl or hit_tp or (latest_sig != 0 and latest_sig != pos['dir']):
-                        executor.close_position(sym, pos['qty'], pos['dir'])
+                        close_res = executor.close_position(sym, pos['qty'], pos['dir']) or {}
+                        if close_res.get('retCode') != 0:
+                            print(f'  [CLOSE FAIL] {sym}: {close_res.get("retMsg", close_res)}')
+                            continue
                         # 估算本筆損益並寫入 Kelly 樣本
                         pnl = (price - pos['entry']) * pos['qty'] * pos['dir']
                         trade_history[sym].append(ClosedTradeStub(pnl))
                         reason = 'SL' if hit_sl else ('TP' if hit_tp else 'FLIP')
                         print(f'  平倉 {sym} @ {price:.4f}  PnL={pnl:+.2f}  ({reason})')
                         del open_pos[sym]
+                        _forget_position(sym)
 
                 # 開新倉
                 if (sym not in open_pos and latest_sig != 0
@@ -1324,7 +1331,7 @@ def cmd_live(args):
                     )
                     available = max(0.0, balance - allocated_margin)
                     qty = position_size(
-                        balance, kf, price, sl,
+                        available, kf, price, sl,
                         asset_type=atype,
                         max_position_pct=crypto_max_position_pct,
                     )

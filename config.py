@@ -382,7 +382,7 @@ BACKTEST_EXTRA_SLIPPAGE_PCT_BY_CLASS: dict = {}
 BACKTEST_INTRABAR_CONFLICT_MODE = 'tp_first'  # tp_first / sl_first / conservative
 
 # ─── 系統版號 ────────────────────────────────────────
-SYSTEM_VERSION  = 'v1.9'
+SYSTEM_VERSION  = 'v1.13'
 
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'
