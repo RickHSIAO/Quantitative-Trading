@@ -1471,7 +1471,7 @@ def build_parser() -> argparse.ArgumentParser:
     # live
     p_live = sub.add_parser('live', help='即時交易（Bybit 加密貨幣）')
     p_live.add_argument('--seed',     type=int, default=42, help='隨機種子')
-    p_live.add_argument('--interval', type=int, default=60, help='掃描間隔（分鐘，default=60）')
+    p_live.add_argument('--interval', type=int, default=15, help='掃描間隔（分鐘，default=15）')
     p_live.add_argument('--crypto-candidate', type=str, default=DEFAULT_CRYPTO_CANDIDATE,
                         choices=[LEGACY_CRYPTO_BASELINE] + sorted(CRYPTO_CANDIDATES.keys()),
                         help='Crypto strategy mode. Default is volume-top125-lb3-sym035; use config-baseline for the legacy config universe.')

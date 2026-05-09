@@ -47,10 +47,10 @@ python main.py backtest --profile Crypto --crypto-candidate volume-top125-lb3-sy
   --output output\crypto_candidate_forward.xlsx --note crypto_candidate_forward
 
 # 透過 Main 跑 Bybit Demo 正式預設策略
-python main.py live --interval 60
+python main.py live --interval 15
 
 # 若要切回舊 config baseline 對照
-python main.py live --crypto-candidate config-baseline --interval 60
+python main.py live --crypto-candidate config-baseline --interval 15
 ```
 
 Forward gate：至少 `90` 天或 `50` 筆 forward trades，且 PF >= `1.15`、Sharpe >= `0.70`、MDD 不差於 `-40%` 才保留為正式預設；若未通過就切回舊 baseline 或進入新一輪研究。
@@ -283,7 +283,7 @@ Live mode now mirrors the Crypto OOS baseline more closely on Bybit Demo:
 Run:
 
 ```powershell
-python main.py live --interval 60
+python main.py live --interval 15
 ```
 
 ---
@@ -602,9 +602,9 @@ python main.py history [--limit 20] [--run-id N]
 查詢歷史回測紀錄；加上 `--run-id N` 可看該次回測的所有逐筆交易。
 
 ```bash
-python main.py live [--seed 42] [--interval 60]
+python main.py live [--seed 42] [--interval 15]
 ```
-即時交易循環，每 60 秒掃描一次訊號並透過 ExecutorRouter 分派下單（目前 Bybit 已啟用）。
+即時交易循環，每 15 分鐘掃描一次訊號並透過 ExecutorRouter 分派下單（目前 Bybit 已啟用）。
 
 ---
 
@@ -848,10 +848,10 @@ Excel 工作簿包含以下頁籤：
 目前僅 Bybit 加密貨幣永續合約（USDT 保證金）已實際接通。
 
 ```bash
-python main.py live --interval 60
+python main.py live --interval 15
 ```
 
-- 每 60 秒掃描一次加密貨幣訊號
+- 每 15 分鐘掃描一次加密貨幣訊號
 - 自動計算 Kelly 倉位（從歷史回測紀錄讀取）
 - 使用市價單建倉，會先以 Bybit 即時價重算倉位與 SL/TP，並在送單前檢查 TP/SL 是否位於正確方向
 - 可在 `config.py` 設定 `BYBIT_DEMO = True` 使用模擬帳號測試

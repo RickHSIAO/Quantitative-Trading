@@ -127,7 +127,7 @@ python scripts\crypto_oos_optimize.py --local-grid --limit 25 --output output\cr
 Live Bybit demo:
 
 ```powershell
-python main.py live --interval 60
+python main.py live --interval 15
 ```
 
 ## Known Cautions
