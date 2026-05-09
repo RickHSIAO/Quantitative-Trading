@@ -260,6 +260,8 @@ Live mode now mirrors the Crypto OOS baseline more closely on Bybit Demo:
 - Bybit `set_leverage` treats `ErrCode: 110043 / leverage not modified` as success, including the pybit-wrapped `retCode: -1` form
 - Live scans use `include_vp=True`, `apply_cross_asset_filters()`, Crypto score gate, SYM win-rate filter, dominant strategy detection, and geometric R:R checks
 - Market entries refresh the Bybit ticker price before sizing and SL/TP calculation; when live price differs from the signal close by 2% or more, the bot logs `[PRICE] ... using live`
+- Open-position management also refreshes the Bybit ticker price before SL/TP, trailing-stop, BB target-profit, and PnL checks, so stale daily signal closes cannot trigger false live exits
+- After a live non-flip exit (`SL`, `TP`, `BB-*`, `SOFT`, `MAXHOLD`, or exchange-side closed position), the bot skips re-entry on the same daily signal candle and waits for the next daily signal
 - Before sending a market order, BybitExecutor validates TP/SL against the current ticker price:
   - long: `SL < live price < TP`
   - short: `TP < live price < SL`

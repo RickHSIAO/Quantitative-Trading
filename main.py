@@ -682,7 +682,7 @@ def cmd_live(args):
             return df.loc[df.index < utc_today]
         return df
 
-    def _live_entry_price(sym: str, signal_price: float) -> float:
+    def _live_price(sym: str, signal_price: float) -> float:
         getter = getattr(executor, 'get_last_price', None)
         live_price = getter(sym) if getter is not None else None
         if live_price is None or live_price <= 0:
@@ -719,6 +719,27 @@ def cmd_live(args):
         return idx[-1] if len(idx) else None
 
     trade_history: dict[str, list] = {s: [] for s in cryptos}
+    reentry_block_signal_dt: dict[str, pd.Timestamp] = {}
+    remote_closed_symbols: set[str] = set()
+
+    def _block_reentry(sym: str, signal_dt: pd.Timestamp, reason: str) -> None:
+        signal_ts = pd.Timestamp(signal_dt)
+        if reentry_block_signal_dt.get(sym) != signal_ts:
+            print(
+                f'  [COOLDOWN] {sym}: {reason}; '
+                f'skip re-entry until next daily signal'
+            )
+        reentry_block_signal_dt[sym] = signal_ts
+
+    def _reentry_blocked(sym: str, signal_dt: pd.Timestamp) -> bool:
+        blocked_dt = reentry_block_signal_dt.get(sym)
+        if blocked_dt is None:
+            return False
+        signal_ts = pd.Timestamp(signal_dt)
+        if signal_ts <= blocked_dt:
+            return True
+        del reentry_block_signal_dt[sym]
+        return False
 
     def _sym_wr_ok(sym: str) -> bool:
         min_wr = _cls_get('SYM_MIN_WINRATE_BY_CLASS', 'Crypto', config.SYM_MIN_WINRATE)
@@ -877,6 +898,7 @@ def cmd_live(args):
                 remote[item[0]] = item[1]
         for sym in list(open_pos):
             if sym not in remote:
+                remote_closed_symbols.add(sym)
                 del open_pos[sym]
                 _forget_position(sym)
         for sym, pos in remote.items():
@@ -1003,13 +1025,15 @@ def cmd_live(args):
 
                 latest_sig = int(sig.iloc[-1])
                 score_val = int(sigs.get('score', pd.Series([0])).iloc[-1])
-                price = float(df['Close'].iloc[-1])
+                signal_price = float(df['Close'].iloc[-1])
+                price = signal_price
                 dt_latest = df.index[-1]
                 atr_raw = df['atr'].iloc[-1]
                 atr = (float(atr_raw) if atr_raw is not None
-                       and not pd.isna(atr_raw) else price * 0.02)
+                       and not pd.isna(atr_raw) else signal_price * 0.02)
 
                 if sym in open_pos:
+                    price = _live_price(sym, signal_price)
                     pos = open_pos[sym]
                     pos.setdefault('orig_sl', pos.get('sl', 0.0))
                     pos.setdefault('trail_anchor', pos.get('entry', price))
@@ -1138,12 +1162,18 @@ def cmd_live(args):
                         print(f'  平倉 {sym} @ {price:.4f}  PnL={pnl:+.2f}  ({reason})')
                         del open_pos[sym]
                         _forget_position(sym)
+                        if reason != 'FLIP':
+                            _block_reentry(sym, dt_latest, reason)
 
                 min_score_class = _cls_get('MIN_ENTRY_SCORE_BY_CLASS',
                                             'Crypto', config.MIN_ENTRY_SCORE)
+                if sym in remote_closed_symbols:
+                    remote_closed_symbols.discard(sym)
+                    _block_reentry(sym, dt_latest, 'remote position closed')
                 if (sym in crypto_tradable_symbols
                         and sym not in open_pos and latest_sig != 0
                         and score_val >= min_score_class
+                        and not _reentry_blocked(sym, dt_latest)
                         and _sym_wr_ok(sym)):
                     strat = _dominant_live_strategy(sigs, latest_sig)
                     candidates.append((sym, latest_sig, score_val, strat))
@@ -1168,7 +1198,7 @@ def cmd_live(args):
             try:
                 df = data[sym]
                 signal_price = float(df['Close'].iloc[-1])
-                price = _live_entry_price(sym, signal_price)
+                price = _live_price(sym, signal_price)
                 atr_raw = df['atr'].iloc[-1]
                 atr = (float(atr_raw) if atr_raw is not None
                        and not pd.isna(atr_raw) else signal_price * 0.02)
