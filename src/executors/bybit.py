@@ -36,6 +36,16 @@ def _floor_to_step(value: float, step: float) -> float:
     return float(n * d_step)
 
 
+def _is_leverage_not_modified(response_or_msg) -> bool:
+    """Bybit may return 110043 directly or wrap it inside a pybit exception."""
+    if isinstance(response_or_msg, dict):
+        if response_or_msg.get('retCode') == 110043:
+            return True
+        response_or_msg = response_or_msg.get('retMsg', '')
+    msg = str(response_or_msg).lower()
+    return '110043' in msg or 'leverage not modified' in msg
+
+
 class BybitExecutor(BaseExecutor):
     asset_class = 'Crypto'
 
@@ -104,6 +114,27 @@ class BybitExecutor(BaseExecutor):
         decimals = max(0, -int(math.floor(math.log10(tick)))) if tick < 1 else 0
         return f'{aligned:.{decimals}f}'
 
+    def get_last_price(self, symbol: str) -> float | None:
+        bybit_sym = _yf_to_bybit(symbol)
+        try:
+            res = self.session.get_tickers(category='linear', symbol=bybit_sym)
+            if res.get('retCode') not in (0, '0', None):
+                print(f'[WARN] get_tickers {bybit_sym}: {res}')
+                return None
+            items = res.get('result', {}).get('list', [])
+            if not items:
+                return None
+            ticker = items[0]
+            for key in ('lastPrice', 'markPrice', 'indexPrice'):
+                raw = ticker.get(key)
+                if raw not in (None, ''):
+                    price = float(raw)
+                    if price > 0:
+                        return price
+        except Exception as e:
+            print(f'[WARN] get_tickers {bybit_sym}: {e}')
+        return None
+
     def set_leverage(self, symbol: str, leverage: int | float | None = None) -> dict:
         bybit_sym = _yf_to_bybit(symbol)
         lev = leverage if leverage is not None else getattr(config, 'BYBIT_LEVERAGE', 1)
@@ -122,10 +153,15 @@ class BybitExecutor(BaseExecutor):
                 sellLeverage=lev_str,
             )
             # 110043 means the requested leverage is already set.
-            if res.get('retCode') in (0, 110043):
+            if res.get('retCode') in (0, 110043) or _is_leverage_not_modified(res):
                 self._leverage_cache.add(bybit_sym)
+                if res.get('retCode') not in (0, 110043):
+                    res = {**res, 'retCode': 110043}
             return res
         except Exception as e:
+            if _is_leverage_not_modified(e):
+                self._leverage_cache.add(bybit_sym)
+                return {'retCode': 110043, 'retMsg': str(e)}
             return {'retCode': -1, 'retMsg': str(e)}
 
     def _ensure_leverage(self, bybit_sym: str) -> dict:
@@ -191,6 +227,21 @@ class BybitExecutor(BaseExecutor):
 
         if float(qty_str) <= 0:
             raise OrderRejected(f'{symbol}: qty {qty} 低於 minOrderQty / step；訂單不送出')
+
+        base_price = self.get_last_price(symbol) if order_type == 'Market' else None
+        if base_price is not None:
+            sl_val = float(sl_str)
+            tp_val = float(tp_str)
+            if direction == 1 and not (sl_val < base_price < tp_val):
+                raise OrderRejected(
+                    f'{symbol}: invalid TP/SL for Buy base={base_price} '
+                    f'SL={sl_str} TP={tp_str}'
+                )
+            if direction == -1 and not (tp_val < base_price < sl_val):
+                raise OrderRejected(
+                    f'{symbol}: invalid TP/SL for Sell base={base_price} '
+                    f'SL={sl_str} TP={tp_str}'
+                )
 
         try:
             lev_res = self._ensure_leverage(bybit_sym)

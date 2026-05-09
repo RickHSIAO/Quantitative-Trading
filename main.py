@@ -649,7 +649,7 @@ def cmd_live(args):
     crypto_max_position_pct = float(crypto_profile.get('max_position_pct', config.MAX_POSITION_PCT))
     print(f'Bybit 餘額：{balance:.2f} USDT')
     print(f'監控 {len(cryptos)} 個加密貨幣 | 每 {args.interval} 分鐘掃描一次')
-    print('[注意] 測試網模式：', config.BYBIT_TESTNET)
+    print('[注意] Demo Trading：', config.BYBIT_DEMO, '| 測試網模式：', config.BYBIT_TESTNET)
 
     from datetime import datetime, timedelta, timezone
     from src.database import upsert_prices, load_prices, get_last_date
@@ -681,6 +681,20 @@ def cmd_live(args):
         if df.index[-1] >= utc_today:
             return df.loc[df.index < utc_today]
         return df
+
+    def _live_entry_price(sym: str, signal_price: float) -> float:
+        getter = getattr(executor, 'get_last_price', None)
+        live_price = getter(sym) if getter is not None else None
+        if live_price is None or live_price <= 0:
+            return signal_price
+        if signal_price > 0:
+            drift = abs(live_price / signal_price - 1.0)
+            if drift >= 0.02:
+                print(
+                    f'  [PRICE] {sym}: live={live_price:.6f}, '
+                    f'signal_close={signal_price:.6f}; using live'
+                )
+        return live_price
 
     def _dominant_live_strategy(sigs: dict, direction: int) -> str:
         matched = [
@@ -1153,10 +1167,11 @@ def cmd_live(args):
                 continue
             try:
                 df = data[sym]
-                price = float(df['Close'].iloc[-1])
+                signal_price = float(df['Close'].iloc[-1])
+                price = _live_entry_price(sym, signal_price)
                 atr_raw = df['atr'].iloc[-1]
                 atr = (float(atr_raw) if atr_raw is not None
-                       and not pd.isna(atr_raw) else price * 0.02)
+                       and not pd.isna(atr_raw) else signal_price * 0.02)
                 atype = 'Crypto'
                 sl, tp = calculate_stops(price, latest_sig, atr,
                                          strategy=strat, asset_type=atype)
@@ -1199,7 +1214,7 @@ def cmd_live(args):
                         }
                         _remember_position(sym, open_pos[sym])
                         strat_counts[strat] = strat_counts.get(strat, 0) + 1
-                        print(f'  {"??" if latest_sig==1 else "?征"} {sym} '
+                        print(f'  {"做多" if latest_sig==1 else "做空"} {sym} '
                               f'[{strat} score={score_val}] qty={qty_str} '
                               f'@ {price:.4f}  SL={sl_str}  TP={tp_str}')
                     else:
@@ -1449,7 +1464,11 @@ def main():
     elif args.command == 'history':
         cmd_history(args)
     elif args.command == 'live':
-        cmd_live(args)
+        try:
+            cmd_live(args)
+        except KeyboardInterrupt:
+            print('\n[INFO] 已收到 Ctrl+C，live 模式已停止。')
+            sys.exit(130)
     else:
         parser.print_help()
 

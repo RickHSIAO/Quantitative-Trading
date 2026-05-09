@@ -250,16 +250,24 @@ python main.py backtest --output output\v111_baseline.xlsx --note v1.11_baseline
 
 ---
 
-## Latest Local Update: Bybit Demo Live Parity + Position Metadata
+## Latest Local Update: Bybit Demo Live Hardening (2026-05-09)
 
 Live mode now mirrors the Crypto OOS baseline more closely on Bybit Demo:
 
 - Bybit is still configured as demo trading: `BYBIT_DEMO = True`, `BYBIT_TESTNET = False`
 - Bybit leverage is explicitly forced to `1x`: `BYBIT_LEVERAGE = 1`
+- Startup logs now print Demo Trading and Testnet separately, so `api-demo.bybit.com` is not confused with Bybit Testnet
+- Bybit `set_leverage` treats `ErrCode: 110043 / leverage not modified` as success, including the pybit-wrapped `retCode: -1` form
 - Live scans use `include_vp=True`, `apply_cross_asset_filters()`, Crypto score gate, SYM win-rate filter, dominant strategy detection, and geometric R:R checks
+- Market entries refresh the Bybit ticker price before sizing and SL/TP calculation; when live price differs from the signal close by 2% or more, the bot logs `[PRICE] ... using live`
+- Before sending a market order, BybitExecutor validates TP/SL against the current ticker price:
+  - long: `SL < live price < TP`
+  - short: `TP < live price < SL`
 - New entries submit full-position exchange-side TP/SL with `tpslMode='Full'`
 - Bybit-side protection remains active if the bot is stopped: fixed SL / fixed TP
 - Strategy exits still require `python main.py live` to keep running: signal flip, BB mid/RSI/profit exits, max hold, soft stop, and trailing-stop updates
+- `Ctrl+C` during `python main.py live` exits cleanly without a traceback
+- Live order logs now print `做多` / `做空` instead of corrupted legacy side labels
 - The bot syncs existing Bybit positions on every scan and removes local metadata when a position is already closed
 - Position metadata is persisted in `data/live_positions.json`:
   - `entry_dt`, `entry`, `strategy`, `score`, `entry_reason`
@@ -843,8 +851,9 @@ python main.py live --interval 60
 
 - 每 60 秒掃描一次加密貨幣訊號
 - 自動計算 Kelly 倉位（從歷史回測紀錄讀取）
-- 使用市價單建倉，附帶 SL/TP 設定
+- 使用市價單建倉，會先以 Bybit 即時價重算倉位與 SL/TP，並在送單前檢查 TP/SL 是否位於正確方向
 - 可在 `config.py` 設定 `BYBIT_DEMO = True` 使用模擬帳號測試
+- 按 `Ctrl+C` 可正常停止 live loop，不會輸出 traceback
 
 ---
 
