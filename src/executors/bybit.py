@@ -65,6 +65,7 @@ class BybitExecutor(BaseExecutor):
         )
         self._instr_cache: dict[str, dict] = {}
         self._leverage_cache: set[str] = set()
+        self._last_positions_error = ''
 
     # ── Instrument Info（精度查詢，含 cache）──────────────────────────────
     def _get_instrument(self, bybit_sym: str) -> dict:
@@ -293,10 +294,15 @@ class BybitExecutor(BaseExecutor):
     def get_positions(self) -> list[dict]:
         try:
             res = self.session.get_positions(category='linear', settleCoin='USDT')
+            self._last_positions_error = ''
             return res.get('result', {}).get('list', [])
         except Exception as e:
+            self._last_positions_error = str(e)
             print(f'[ERROR] get_positions: {e}')
             return []
+
+    def last_positions_error(self) -> str:
+        return self._last_positions_error
 
     def get_executions(self, symbol: str, limit: int = 100) -> list[dict]:
         """Return recent linear execution history for a symbol."""
@@ -310,6 +316,28 @@ class BybitExecutor(BaseExecutor):
             return res.get('result', {}).get('list', [])
         except Exception as e:
             print(f'[ERROR] get_executions {bybit_sym}: {e}')
+            return []
+
+    def get_closed_pnl(self, symbol: str | None = None, limit: int = 20) -> list[dict]:
+        """Return recent closed PnL records for one symbol or the linear account."""
+        bybit_sym = _yf_to_bybit(symbol) if symbol else ''
+        payload = {
+            'category': 'linear',
+            'limit': limit,
+        }
+        if bybit_sym:
+            payload['symbol'] = bybit_sym
+        try:
+            res = self.session.get_closed_pnl(**payload)
+            if res.get('retCode') not in (0, '0', None):
+                target = bybit_sym or 'account'
+                print(f'[WARN] get_closed_pnl {target}: {res}')
+                return []
+            rows = res.get('result', {}).get('list', [])
+            return rows if isinstance(rows, list) else []
+        except Exception as e:
+            target = bybit_sym or 'account'
+            print(f'[ERROR] get_closed_pnl {target}: {e}')
             return []
 
     def get_balance(self) -> float:

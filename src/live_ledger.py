@@ -43,6 +43,82 @@ EXCEL_COLUMNS = [
     "ret_msg",
 ]
 
+EXCEL_COLUMN_NAMES = {
+    "id": "ID",
+    "recorded_at": "記錄時間",
+    "environment": "環境",
+    "action": "動作",
+    "symbol": "交易標的",
+    "bybit_symbol": "Bybit代號",
+    "side": "買賣",
+    "direction": "方向",
+    "quantity": "數量",
+    "price": "成交價",
+    "stop_loss": "停損價",
+    "take_profit": "停利價",
+    "strategy": "策略",
+    "score": "分數",
+    "signal_date": "訊號日期",
+    "reason": "原因",
+    "pnl": "損益(USDT)",
+    "fee": "手續費(USDT)",
+    "balance_usdt": "帳戶餘額(USDT)",
+    "order_id": "Bybit訂單ID",
+    "order_link_id": "自訂訂單ID",
+    "ret_code": "回傳碼",
+    "ret_msg": "回傳訊息",
+}
+
+ACTION_LABELS = {
+    "ENTRY": "進場",
+    "EXIT": "出場",
+}
+
+SIDE_LABELS = {
+    "Buy": "買入",
+    "Sell": "賣出",
+}
+
+DIRECTION_LABELS = {
+    1: "做多",
+    -1: "做空",
+}
+
+ENVIRONMENT_LABELS = {
+    "demo": "Demo模擬",
+    "testnet": "測試網",
+    "live": "正式實盤",
+}
+
+STRATEGY_LABELS = {
+    "bb": "布林均值回歸",
+    "vp": "成交量剖面",
+    "trend": "趨勢策略",
+    "combined": "綜合策略",
+    "unknown": "未知",
+}
+
+REASON_LABELS = {
+    "SL": "停損",
+    "TP": "停利",
+    "FLIP": "訊號反轉",
+    "SOFT": "軟停損",
+    "MAXHOLD": "最長持倉",
+    "BB-TGT": "布林獲利目標",
+    "BB-MID": "布林中線出場",
+    "BB-RSI": "RSI出場",
+    "REMOTE_CLOSED": "交易所端已平倉",
+    "REMOTE_CLOSED_SL": "交易所端止損平倉",
+}
+
+RET_MSG_LABELS = {
+    "OK": "成功",
+    "success": "成功",
+    "remote position closed": "交易所端已平倉",
+    "backfilled from Bybit execution": "由Bybit成交紀錄補登",
+    "backfilled from Bybit execution and closed PnL": "由Bybit成交與已實現損益補登",
+}
+
 
 def _now_local() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -122,6 +198,58 @@ def _excel_path(path: str | None = None) -> Path:
     return Path(getattr(config, "OUTPUT_DIR", "output")) / "Bybit_Live_Orders.xlsx"
 
 
+def _map_direction(value: Any) -> str:
+    try:
+        return DIRECTION_LABELS.get(int(value), str(value or ""))
+    except (TypeError, ValueError):
+        return str(value or "")
+
+
+def _map_reason(value: Any) -> str:
+    text = str(value or "")
+    return REASON_LABELS.get(text, text)
+
+
+def _map_strategy(value: Any) -> str:
+    text = str(value or "")
+    return STRATEGY_LABELS.get(text, text)
+
+
+def _map_ret_msg(value: Any) -> str:
+    text = str(value or "")
+    return RET_MSG_LABELS.get(text, text)
+
+
+def _prepare_excel_display(df: pd.DataFrame) -> pd.DataFrame:
+    display_cols = [c for c in EXCEL_COLUMNS if c in df.columns]
+    display = df[display_cols].copy()
+    if display.empty:
+        return display.rename(columns=EXCEL_COLUMN_NAMES)
+
+    if "environment" in display:
+        display["environment"] = display["environment"].map(
+            lambda v: ENVIRONMENT_LABELS.get(str(v or ""), str(v or ""))
+        )
+    if "action" in display:
+        display["action"] = display["action"].map(
+            lambda v: ACTION_LABELS.get(str(v or "").upper(), str(v or ""))
+        )
+    if "side" in display:
+        display["side"] = display["side"].map(
+            lambda v: SIDE_LABELS.get(str(v or ""), str(v or ""))
+        )
+    if "direction" in display:
+        display["direction"] = display["direction"].map(_map_direction)
+    if "strategy" in display:
+        display["strategy"] = display["strategy"].map(_map_strategy)
+    if "reason" in display:
+        display["reason"] = display["reason"].map(_map_reason)
+    if "ret_msg" in display:
+        display["ret_msg"] = display["ret_msg"].map(_map_ret_msg)
+
+    return display.rename(columns=EXCEL_COLUMN_NAMES)
+
+
 def ensure_bybit_live_order_ledger() -> None:
     conn = get_connection()
     with _WRITE_LOCK, conn:
@@ -165,10 +293,10 @@ def ensure_bybit_live_order_ledger() -> None:
 
 def load_bybit_live_orders(limit: int | None = None) -> pd.DataFrame:
     ensure_bybit_live_order_ledger()
-    sql = f"SELECT * FROM {TABLE_NAME} ORDER BY id ASC"
+    sql = f"SELECT * FROM {TABLE_NAME} ORDER BY recorded_at ASC, id ASC"
     params: tuple[Any, ...] = ()
     if limit is not None:
-        sql = f"SELECT * FROM {TABLE_NAME} ORDER BY id DESC LIMIT ?"
+        sql = f"SELECT * FROM {TABLE_NAME} ORDER BY recorded_at DESC, id DESC LIMIT ?"
         params = (int(limit),)
     with get_connection() as conn:
         df = pd.read_sql_query(sql, conn, params=params)
@@ -186,14 +314,15 @@ def export_bybit_live_orders_to_excel(path: str | None = None) -> str:
     if df.empty:
         df = pd.DataFrame(columns=EXCEL_COLUMNS)
 
-    display_cols = [c for c in EXCEL_COLUMNS if c in df.columns]
-    display = df[display_cols].copy()
+    display = _prepare_excel_display(df)
 
     try:
         with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-            display.to_excel(writer, sheet_name="Bybit Orders", index=False)
+            orders_sheet = "Bybit進出場"
+            summary_sheet = "彙總"
+            display.to_excel(writer, sheet_name=orders_sheet, index=False)
             wb = writer.book
-            ws = writer.sheets["Bybit Orders"]
+            ws = writer.sheets[orders_sheet]
             header_fill = PatternFill("solid", fgColor="1F3864")
             header_font = Font(color="FFFFFF", bold=True)
             for cell in ws[1]:
@@ -210,21 +339,33 @@ def export_bybit_live_orders_to_excel(path: str | None = None) -> str:
 
             if not display.empty:
                 summary = (
-                    display.groupby(["symbol", "action"], dropna=False)
-                    .agg(
-                        orders=("id", "count"),
-                        quantity=("quantity", "sum"),
-                        pnl=("pnl", "sum"),
-                        fees=("fee", "sum"),
-                    )
+                    display.groupby(["交易標的", "動作"], dropna=False)
+                    .agg({
+                        "ID": "count",
+                        "數量": "sum",
+                        "損益(USDT)": "sum",
+                        "手續費(USDT)": "sum",
+                    })
                     .reset_index()
+                    .rename(columns={
+                        "ID": "筆數",
+                        "損益(USDT)": "損益合計(USDT)",
+                        "手續費(USDT)": "手續費合計(USDT)",
+                    })
                 )
             else:
                 summary = pd.DataFrame(
-                    columns=["symbol", "action", "orders", "quantity", "pnl", "fees"]
+                    columns=[
+                        "交易標的",
+                        "動作",
+                        "筆數",
+                        "數量",
+                        "損益合計(USDT)",
+                        "手續費合計(USDT)",
+                    ]
                 )
-            summary.to_excel(writer, sheet_name="Summary", index=False)
-            ws_sum = writer.sheets["Summary"]
+            summary.to_excel(writer, sheet_name=summary_sheet, index=False)
+            ws_sum = writer.sheets[summary_sheet]
             for cell in ws_sum[1]:
                 cell.fill = header_fill
                 cell.font = header_font
@@ -256,6 +397,7 @@ def record_bybit_order(
     fee: Any = None,
     balance_usdt: Any = None,
     environment: str | None = None,
+    recorded_at: str | None = None,
     export_excel: bool = True,
 ) -> int:
     ensure_bybit_live_order_ledger()
@@ -263,7 +405,7 @@ def record_bybit_order(
     direction_i = _to_int(direction)
     response = response or {}
     row = {
-        "recorded_at": _now_local(),
+        "recorded_at": recorded_at or _now_local(),
         "environment": environment or _environment_label(),
         "action": str(action or "").upper(),
         "symbol": str(symbol or ""),

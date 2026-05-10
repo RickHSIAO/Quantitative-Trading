@@ -594,7 +594,7 @@ def cmd_live(args):
     from src.risk import estimate_kelly_from_history, position_size, calculate_stops
     from src.backtester import _geometric_rr_ok
     from src.executor import BybitExecutor
-    from src.database import get_all_symbols, init_db
+    from src.database import get_all_symbols, get_connection, init_db
     from src.live_ledger import (
         ensure_bybit_live_order_ledger,
         export_bybit_live_orders_to_excel,
@@ -750,7 +750,8 @@ def cmd_live(args):
     def _record_live_order(action: str, sym: str, direction: int, qty, price,
                            *, response=None, reason: str = '', stop_loss=None,
                            take_profit=None, strategy: str = '', score=None,
-                           signal_date: str = '', pnl=None, fee=None) -> None:
+                           signal_date: str = '', pnl=None, fee=None,
+                           recorded_at: str = '') -> int | None:
         try:
             row_id = record_bybit_order(
                 action=action,
@@ -768,10 +769,13 @@ def cmd_live(args):
                 pnl=pnl,
                 fee=fee,
                 balance_usdt=balance,
+                recorded_at=recorded_at or None,
             )
             print(f'  [LEDGER] {action.upper()} {sym} row_id={row_id}')
+            return row_id
         except Exception as exc:
             print(f'  [LEDGER WARN] {sym}: {exc}')
+            return None
 
     def _print_open_positions(balance_value: float) -> None:
         total_invested = sum(_position_invested_margin(pos) for pos in open_pos.values())
@@ -827,6 +831,16 @@ def cmd_live(args):
     reentry_block_signal_dt: dict[str, pd.Timestamp] = {}
     remote_closed_symbols: set[str] = set()
 
+    def _ensure_live_context_symbol(sym: str, source: str) -> None:
+        if not sym.startswith('BYBIT:') or not sym.endswith('.P'):
+            return
+        if sym not in type_map:
+            type_map[sym] = 'Crypto'
+        trade_history.setdefault(sym, [])
+        if sym not in cryptos:
+            cryptos.append(sym)
+            print(f'  [SYNC] {sym}: monitoring existing Bybit position from {source}')
+
     def _block_reentry(sym: str, signal_dt: pd.Timestamp, reason: str) -> None:
         signal_ts = pd.Timestamp(signal_dt)
         if reentry_block_signal_dt.get(sym) != signal_ts:
@@ -880,6 +894,8 @@ def cmd_live(args):
             print(f'[WARN] save live metadata failed: {exc}')
 
     live_meta = _load_live_meta()
+    for _meta_sym in sorted(live_meta):
+        _ensure_live_context_symbol(str(_meta_sym), 'live metadata')
 
     def _position_meta(sym: str) -> dict:
         item = live_meta.get(sym, {})
@@ -956,6 +972,568 @@ def cmd_live(args):
             'entry_dt': entry_dt,
             'recovered_from': 'bybit_executions',
         }
+
+    def _float_or_none(value) -> float | None:
+        if value in (None, ''):
+            return None
+        try:
+            val = float(value)
+        except Exception:
+            return None
+        return val if val == val else None
+
+    def _row_float(row: dict, *keys: str) -> float | None:
+        for key in keys:
+            val = _float_or_none(row.get(key))
+            if val is not None:
+                return val
+        return None
+
+    def _row_time_ms(row: dict) -> int:
+        for key in ('updatedTime', 'createdTime', 'execTime', 'execTimeNs'):
+            raw = row.get(key)
+            if raw in (None, ''):
+                continue
+            try:
+                val = int(float(raw))
+            except Exception:
+                continue
+            if val > 10**15:
+                return val // 1_000_000
+            return val
+        return 0
+
+    def _entry_floor_ms(entry_dt: str) -> int:
+        if not entry_dt:
+            return 0
+        try:
+            ts = pd.Timestamp(entry_dt)
+            if ts.tzinfo is None:
+                ts = ts.tz_localize('UTC')
+            return int((ts - pd.Timedelta(days=1)).timestamp() * 1000)
+        except Exception:
+            return 0
+
+    def _meta_to_position(sym: str, meta: dict) -> dict | None:
+        try:
+            direction = int(meta.get('direction') or meta.get('dir') or 0)
+            qty = float(meta.get('qty') or 0.0)
+            entry = float(meta.get('entry') or 0.0)
+        except Exception:
+            return None
+        if direction not in (1, -1) or qty <= 0 or entry <= 0:
+            return None
+        return {
+            'dir': direction,
+            'qty': qty,
+            'entry': entry,
+            'sl': float(meta.get('sl') or meta.get('orig_sl') or 0.0),
+            'tp': float(meta.get('tp') or 0.0),
+            'orig_sl': float(meta.get('orig_sl') or meta.get('sl') or 0.0),
+            'strategy': meta.get('strategy', 'unknown'),
+            'entry_dt': meta.get('entry_dt', ''),
+            'score': meta.get('score', 0),
+            'entry_reason': meta.get('entry_reason', ''),
+            'entry_order_id': meta.get('entry_order_id', ''),
+        }
+
+    def _ledger_exit_recorded(sym: str, order_id: str = '') -> bool:
+        if not order_id:
+            return False
+        try:
+            with get_connection() as conn:
+                row = conn.execute(
+                    """
+                    SELECT id FROM bybit_live_orders
+                    WHERE action = 'EXIT' AND symbol = ? AND order_id = ?
+                    LIMIT 1
+                    """,
+                    (sym, str(order_id)),
+                ).fetchone()
+            return row is not None
+        except Exception as exc:
+            print(f'  [LEDGER WARN] {sym}: duplicate check failed: {exc}')
+            return False
+
+    def _ledger_entry_recorded(sym: str, pos: dict, order_id: str = '') -> bool:
+        try:
+            with get_connection() as conn:
+                if order_id:
+                    row = conn.execute(
+                        """
+                        SELECT id FROM bybit_live_orders
+                        WHERE action = 'ENTRY' AND symbol = ? AND order_id = ?
+                        LIMIT 1
+                        """,
+                        (sym, str(order_id)),
+                    ).fetchone()
+                    if row is not None:
+                        return True
+                qty = abs(float(pos.get('qty') or 0.0))
+                price = float(pos.get('entry') or 0.0)
+                direction = int(pos.get('dir') or 0)
+                qty_tol = max(qty * 0.001, 1e-12)
+                price_tol = max(abs(price) * 0.001, 1e-12)
+                row = conn.execute(
+                    """
+                    SELECT id FROM bybit_live_orders
+                    WHERE action = 'ENTRY'
+                      AND symbol = ?
+                      AND direction = ?
+                      AND ABS(COALESCE(quantity, 0) - ?) <= ?
+                      AND ABS(COALESCE(price, 0) - ?) <= ?
+                    LIMIT 1
+                    """,
+                    (sym, direction, qty, qty_tol, price, price_tol),
+                ).fetchone()
+            return row is not None
+        except Exception as exc:
+            print(f'  [LEDGER WARN] {sym}: entry duplicate check failed: {exc}')
+            return False
+
+    def _local_iso_from_ms(value_ms: int) -> str:
+        if value_ms <= 0:
+            return ''
+        try:
+            dt = pd.to_datetime(value_ms, unit='ms', utc=True)
+            tz = datetime.now().astimezone().tzinfo
+            return dt.tz_convert(tz).to_pydatetime().isoformat(timespec='seconds')
+        except Exception:
+            return ''
+
+    def _closed_pnl_close(sym: str, pos: dict) -> dict | None:
+        getter = getattr(executor, 'get_closed_pnl', None)
+        if getter is None:
+            return None
+        rows = getter(sym, limit=20)
+        if not rows:
+            return None
+        floor_ms = _entry_floor_ms(pos.get('entry_dt', ''))
+        pos_qty = abs(float(pos.get('qty') or 0.0))
+        candidates = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            closed_at = _row_time_ms(row)
+            if floor_ms and closed_at and closed_at < floor_ms:
+                continue
+            qty = _row_float(row, 'qty', 'closedSize') or pos_qty
+            exit_price = _row_float(row, 'avgExitPrice', 'execPrice')
+            if exit_price is None or exit_price <= 0:
+                continue
+            pnl = _row_float(row, 'closedPnl')
+            close_fee = _row_float(row, 'closeFee', 'execFee')
+            if close_fee is None:
+                close_fee = _taker_fee(qty, exit_price)
+            order_id = str(row.get('orderId') or '')
+            qty_penalty = abs(qty - pos_qty) / pos_qty if pos_qty > 0 else 0.0
+            candidates.append((closed_at, -qty_penalty, {
+                'qty': qty,
+                'price': exit_price,
+                'pnl': pnl,
+                'fee': abs(close_fee),
+                'order_id': order_id,
+                'closed_at': closed_at,
+                'ret_msg': 'backfilled from Bybit execution and closed PnL',
+                'raw': row,
+            }))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return candidates[0][2]
+
+    def _execution_close(sym: str, pos: dict) -> dict | None:
+        direction = int(pos.get('dir') or 0)
+        close_side = 'Sell' if direction == 1 else 'Buy'
+        executions = executor.get_executions(sym, limit=100)
+        floor_ms = _entry_floor_ms(pos.get('entry_dt', ''))
+        rows = []
+        for row in executions:
+            if not isinstance(row, dict) or row.get('side') != close_side:
+                continue
+            exec_time = _row_time_ms(row)
+            if floor_ms and exec_time and exec_time < floor_ms:
+                continue
+            qty = _row_float(row, 'execQty')
+            price = _row_float(row, 'execPrice')
+            if qty is None or price is None or qty <= 0 or price <= 0:
+                continue
+            fee = _row_float(row, 'execFee') or _taker_fee(qty, price)
+            rows.append((exec_time, qty, price, abs(fee), str(row.get('orderId') or ''), row))
+        if not rows:
+            return None
+        rows.sort(reverse=True)
+        target_qty = abs(float(pos.get('qty') or 0.0))
+        accum_qty = 0.0
+        notional = 0.0
+        fee_total = 0.0
+        order_id = ''
+        raw_rows = []
+        for exec_time, qty, price, fee, row_order_id, raw in rows:
+            take_qty = min(qty, max(target_qty - accum_qty, 0.0)) if target_qty > 0 else qty
+            if take_qty <= 0:
+                continue
+            accum_qty += take_qty
+            notional += take_qty * price
+            fee_total += fee * (take_qty / qty)
+            order_id = order_id or row_order_id
+            raw_rows.append(raw)
+            if target_qty > 0 and accum_qty >= target_qty * 0.999:
+                break
+        if accum_qty <= 0:
+            return None
+        exit_price = notional / accum_qty
+        pnl = (
+            (exit_price - float(pos.get('entry') or 0.0))
+            * accum_qty
+            * direction
+        )
+        return {
+            'qty': accum_qty,
+            'price': exit_price,
+            'pnl': pnl,
+            'fee': fee_total,
+            'order_id': order_id,
+            'closed_at': rows[0][0],
+            'ret_msg': 'backfilled from Bybit execution',
+            'raw': {'executions': raw_rows},
+        }
+
+    def _find_remote_close(sym: str, pos: dict) -> dict | None:
+        return _closed_pnl_close(sym, pos) or _execution_close(sym, pos)
+
+    def _entry_fill(sym: str, pos: dict) -> dict:
+        direction = int(pos.get('dir') or 0)
+        entry_side = 'Buy' if direction == 1 else 'Sell'
+        target_qty = abs(float(pos.get('qty') or 0.0))
+        rows = []
+        for row in executor.get_executions(sym, limit=100):
+            if not isinstance(row, dict) or row.get('side') != entry_side:
+                continue
+            if str(row.get('execType') or '').lower() == 'funding':
+                continue
+            if str(row.get('orderType') or '').upper() == 'UNKNOWN':
+                continue
+            qty = _row_float(row, 'execQty')
+            price = _row_float(row, 'execPrice')
+            if qty is None or price is None or qty <= 0 or price <= 0:
+                continue
+            fee = _row_float(row, 'execFee') or _taker_fee(qty, price)
+            rows.append((
+                _row_time_ms(row),
+                qty,
+                price,
+                abs(fee),
+                str(row.get('orderId') or ''),
+                row,
+            ))
+        rows.sort(reverse=True)
+
+        accum_qty = 0.0
+        notional = 0.0
+        fee_total = 0.0
+        order_id = str(pos.get('entry_order_id') or '')
+        raw_rows = []
+        first_ms = 0
+        for exec_time, qty, price, fee, row_order_id, raw in rows:
+            take_qty = min(qty, max(target_qty - accum_qty, 0.0)) if target_qty > 0 else qty
+            if take_qty <= 0:
+                continue
+            accum_qty += take_qty
+            notional += take_qty * price
+            fee_total += fee * (take_qty / qty)
+            order_id = order_id or row_order_id
+            raw_rows.append(raw)
+            first_ms = exec_time
+            if target_qty > 0 and accum_qty >= target_qty * 0.999:
+                break
+
+        if accum_qty > 0:
+            return {
+                'qty': accum_qty,
+                'price': notional / accum_qty,
+                'fee': fee_total,
+                'order_id': order_id,
+                'entry_ms': first_ms,
+                'ret_msg': 'backfilled from Bybit execution',
+                'raw': {'executions': raw_rows},
+            }
+
+        return {
+            'qty': target_qty,
+            'price': float(pos.get('entry') or 0.0),
+            'fee': _taker_fee(target_qty, pos.get('entry')),
+            'order_id': order_id,
+            'entry_ms': _entry_floor_ms(pos.get('entry_dt', '')),
+            'ret_msg': 'backfilled from remote Bybit position',
+            'raw': {},
+        }
+
+    def _record_missing_entry(sym: str, pos: dict) -> None:
+        fill = _entry_fill(sym, pos)
+        if not fill.get('qty') or not fill.get('price'):
+            return
+        order_id = str(fill.get('order_id') or '')
+        ledger_pos = dict(pos)
+        ledger_pos['qty'] = fill.get('qty')
+        ledger_pos['entry'] = fill.get('price')
+        if _ledger_entry_recorded(sym, ledger_pos, order_id):
+            return
+        entry_ms = int(fill.get('entry_ms') or 0)
+        response = {
+            'retCode': 0,
+            'retMsg': fill.get('ret_msg') or 'backfilled from Bybit execution',
+            'result': {'orderId': order_id},
+            'raw': fill.get('raw') or {},
+        }
+        row_id = _record_live_order(
+            'ENTRY',
+            sym,
+            int(pos.get('dir') or 0),
+            fill.get('qty'),
+            fill.get('price'),
+            response=response,
+            reason=pos.get('entry_reason') or 'backfilled from Bybit execution',
+            stop_loss=pos.get('sl'),
+            take_profit=pos.get('tp'),
+            strategy=pos.get('strategy', ''),
+            score=pos.get('score'),
+            signal_date=pos.get('entry_dt') or _date_from_ms(entry_ms),
+            fee=fill.get('fee'),
+            recorded_at=_local_iso_from_ms(entry_ms),
+        )
+        if row_id is None:
+            return
+        if order_id:
+            pos['entry_order_id'] = order_id
+            if sym in open_pos:
+                open_pos[sym]['entry_order_id'] = order_id
+            if sym in live_meta:
+                live_meta[sym]['entry_order_id'] = order_id
+                _save_live_meta(live_meta)
+        print(f'  [LEDGER] backfilled missing entry for {sym}')
+
+    def _remote_close_reason(pos: dict, close: dict) -> str:
+        sl = float(pos.get('sl') or pos.get('orig_sl') or 0.0)
+        price = float(close.get('price') or 0.0)
+        direction = int(pos.get('dir') or 0)
+        if sl <= 0 or price <= 0 or direction not in (1, -1):
+            return 'REMOTE_CLOSED'
+        tolerance = max(abs(sl) * 0.005, 1e-12)
+        if direction == 1 and price <= sl + tolerance:
+            return 'REMOTE_CLOSED_SL'
+        if direction == -1 and price >= sl - tolerance:
+            return 'REMOTE_CLOSED_SL'
+        return 'REMOTE_CLOSED'
+
+    def _record_remote_close(sym: str, pos: dict, close: dict) -> bool:
+        order_id = str(close.get('order_id') or '')
+        if _ledger_exit_recorded(sym, order_id):
+            print(f'  [LEDGER] EXIT {sym} already recorded order_id={order_id}')
+            return True
+        qty = close.get('qty') or pos.get('qty')
+        price = close.get('price') or pos.get('last_price') or pos.get('entry')
+        pnl = close.get('pnl')
+        if pnl is None:
+            try:
+                pnl = (
+                    (float(price) - float(pos.get('entry') or 0.0))
+                    * float(qty or 0.0)
+                    * int(pos.get('dir') or 0)
+                )
+            except Exception:
+                pnl = None
+        reason = _remote_close_reason(pos, close)
+        response = {
+            'retCode': 0,
+            'retMsg': close.get('ret_msg') or 'remote position closed',
+            'result': {'orderId': order_id},
+            'raw': close.get('raw') or {},
+        }
+        row_id = _record_live_order(
+            'EXIT',
+            sym,
+            int(pos.get('dir') or 0),
+            qty,
+            price,
+            response=response,
+            reason=reason,
+            stop_loss=pos.get('sl'),
+            take_profit=pos.get('tp'),
+            strategy=pos.get('strategy', ''),
+            score=pos.get('score'),
+            signal_date=pos.get('entry_dt', ''),
+            pnl=pnl,
+            fee=close.get('fee') or _taker_fee(qty, price),
+        )
+        if row_id is None:
+            return False
+        if pnl is not None:
+            trade_history.setdefault(sym, []).append(ClosedTradeStub(pnl))
+        remote_closed_symbols.add(sym)
+        return True
+
+    def _latest_ledger_recorded_ms() -> int:
+        try:
+            with get_connection() as conn:
+                row = conn.execute(
+                    "SELECT MAX(recorded_at) FROM bybit_live_orders"
+                ).fetchone()
+            raw = row[0] if row else None
+            if raw:
+                ts = pd.Timestamp(raw)
+                if ts.tzinfo is None:
+                    ts = ts.tz_localize(datetime.now().astimezone().tzinfo)
+                return int(ts.timestamp() * 1000)
+        except Exception as exc:
+            print(f'  [LEDGER WARN] latest ledger timestamp check failed: {exc}')
+        return int((pd.Timestamp.now(tz='UTC') - pd.Timedelta(hours=24)).timestamp() * 1000)
+
+    def _date_from_ms(value_ms: int) -> str:
+        if value_ms <= 0:
+            return ''
+        try:
+            return pd.to_datetime(value_ms, unit='ms', utc=True).strftime('%Y-%m-%d')
+        except Exception:
+            return ''
+
+    def _backfill_recent_closed_pnl(remote_symbols: set[str]) -> None:
+        getter = getattr(executor, 'get_closed_pnl', None)
+        if getter is None:
+            return
+        cutoff_ms = _latest_ledger_recorded_ms()
+        rows = getter(None, limit=50)
+        if not rows:
+            return
+        for row in sorted(rows, key=_row_time_ms):
+            if not isinstance(row, dict):
+                continue
+            closed_at = _row_time_ms(row)
+            if closed_at and closed_at <= cutoff_ms:
+                continue
+            bybit_sym = str(row.get('symbol') or '').strip()
+            if not bybit_sym:
+                continue
+            sym = f'BYBIT:{bybit_sym}.P'
+            order_id = str(row.get('orderId') or '')
+            if _ledger_exit_recorded(sym, order_id):
+                continue
+            close_side = str(row.get('side') or '')
+            direction = -1 if close_side == 'Buy' else (1 if close_side == 'Sell' else 0)
+            qty = _row_float(row, 'qty', 'closedSize')
+            entry_price = _row_float(row, 'avgEntryPrice')
+            exit_price = _row_float(row, 'avgExitPrice')
+            if direction == 0 or qty is None or exit_price is None:
+                continue
+            pnl = _row_float(row, 'closedPnl')
+            fee = _row_float(row, 'closeFee', 'execFee') or _taker_fee(qty, exit_price)
+            meta = _position_meta(sym)
+            reason = 'REMOTE_CLOSED_SL' if pnl is not None and pnl < 0 else 'REMOTE_CLOSED'
+            response = {
+                'retCode': 0,
+                'retMsg': 'backfilled from Bybit execution and closed PnL',
+                'result': {'orderId': order_id},
+                'raw': row,
+            }
+            row_id = _record_live_order(
+                'EXIT',
+                sym,
+                direction,
+                qty,
+                exit_price,
+                response=response,
+                reason=reason,
+                stop_loss=meta.get('sl') or (exit_price if reason == 'REMOTE_CLOSED_SL' else None),
+                take_profit=meta.get('tp'),
+                strategy=meta.get('strategy', 'unknown'),
+                score=meta.get('score'),
+                signal_date=meta.get('entry_dt') or _date_from_ms(
+                    _row_time_ms({'updatedTime': row.get('createdTime')})
+                ),
+                pnl=pnl,
+                fee=abs(fee),
+            )
+            if row_id is None:
+                continue
+            if pnl is not None:
+                trade_history.setdefault(sym, []).append(ClosedTradeStub(pnl))
+            remote_closed_symbols.add(sym)
+            if sym not in remote_symbols:
+                _forget_position(sym)
+            entry_txt = f' entry={entry_price}' if entry_price is not None else ''
+            print(
+                f'  [LEDGER] backfilled recent closed PnL for {sym}'
+                f'{entry_txt} exit={exit_price} pnl={pnl}'
+            )
+
+    def _backfill_entries_for_unpaired_exits() -> None:
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT symbol, direction, quantity, price, stop_loss,
+                           take_profit, strategy, score, signal_date, order_id
+                    FROM bybit_live_orders
+                    WHERE action = 'EXIT'
+                    ORDER BY recorded_at DESC, id DESC
+                    LIMIT 50
+                    """
+                ).fetchall()
+        except Exception as exc:
+            print(f'  [LEDGER WARN] exit entry-pair scan failed: {exc}')
+            return
+
+        for row in rows:
+            sym = str(row[0] or '')
+            direction = int(row[1] or 0)
+            qty = float(row[2] or 0.0)
+            exit_price = float(row[3] or 0.0)
+            if not sym or direction not in (1, -1) or qty <= 0:
+                continue
+            pos = {
+                'dir': direction,
+                'qty': qty,
+                'entry': exit_price,
+                'sl': row[4],
+                'tp': row[5],
+                'strategy': row[6] or 'unknown',
+                'score': row[7],
+                'entry_dt': row[8] or '',
+                'entry_reason': 'backfilled from paired exit',
+                'entry_order_id': '',
+            }
+            if _ledger_entry_recorded(sym, pos):
+                continue
+            exit_order_id = str(row[9] or '')
+            closed_rows = executor.get_closed_pnl(sym, limit=20)
+            matched = None
+            for closed in closed_rows:
+                if str(closed.get('orderId') or '') == exit_order_id:
+                    matched = closed
+                    break
+            if matched is not None:
+                entry_price = _row_float(matched, 'avgEntryPrice')
+                if entry_price is not None and entry_price > 0:
+                    pos['entry'] = entry_price
+            _record_missing_entry(sym, pos)
+
+    def _backfill_missing_meta_closures(remote_symbols: set[str]) -> None:
+        for sym, meta in list(live_meta.items()):
+            if sym in open_pos or sym in remote_symbols:
+                continue
+            if not isinstance(meta, dict):
+                continue
+            pos = _meta_to_position(sym, meta)
+            if pos is None:
+                print(f'  [LEDGER WARN] {sym}: stale metadata is incomplete; keeping it')
+                continue
+            close = _find_remote_close(sym, pos)
+            if close is None:
+                print(f'  [LEDGER WARN] {sym}: no Bybit close record found; keeping metadata')
+                continue
+            if _record_remote_close(sym, pos, close):
+                print(f'  [LEDGER] backfilled missing remote close for {sym}')
+                _forget_position(sym)
     # open_pos stores local state for exchange-protected positions.
 
     def _normalise_remote_position(p: dict) -> tuple[str, dict] | None:
@@ -1004,48 +1582,53 @@ def cmd_live(args):
 
     def _sync_remote_positions() -> None:
         remote = {}
-        for p in executor.get_positions():
+        remote_symbols = set()
+        raw_positions = executor.get_positions()
+        positions_error = ''
+        err_getter = getattr(executor, 'last_positions_error', None)
+        if err_getter is not None:
+            positions_error = err_getter() or ''
+        for p in raw_positions:
+            try:
+                qty = float(p.get('size', 0) or 0)
+            except Exception:
+                qty = 0.0
+            if qty > 0:
+                remote_sym = f"BYBIT:{p.get('symbol', '')}.P"
+                remote_symbols.add(remote_sym)
+                _ensure_live_context_symbol(remote_sym, 'remote positions')
             item = _normalise_remote_position(p)
             if item is not None:
                 remote[item[0]] = item[1]
         for sym in list(open_pos):
-            if sym not in remote:
+            if sym not in remote_symbols:
                 pos = open_pos[sym]
-                exit_price = (
-                    executor.get_last_price(sym)
-                    or pos.get('last_price')
-                    or pos.get('entry')
-                    or 0.0
-                )
-                try:
-                    pnl = (
-                        (float(exit_price) - float(pos.get('entry') or 0.0))
-                        * float(pos.get('qty') or 0.0)
-                        * int(pos.get('dir') or 0)
+                close = _find_remote_close(sym, pos)
+                if close is None:
+                    exit_price = (
+                        executor.get_last_price(sym)
+                        or pos.get('last_price')
+                        or pos.get('entry')
+                        or 0.0
                     )
-                except Exception:
-                    pnl = None
-                if pnl is not None:
-                    trade_history.setdefault(sym, []).append(ClosedTradeStub(pnl))
-                _record_live_order(
-                    'EXIT',
-                    sym,
-                    int(pos.get('dir') or 0),
-                    pos.get('qty'),
-                    exit_price,
-                    response={'retCode': 0, 'retMsg': 'remote position closed'},
-                    reason='REMOTE_CLOSED',
-                    stop_loss=pos.get('sl'),
-                    take_profit=pos.get('tp'),
-                    strategy=pos.get('strategy', ''),
-                    score=pos.get('score'),
-                    signal_date=pos.get('entry_dt', ''),
-                    pnl=pnl,
-                    fee=_taker_fee(pos.get('qty'), exit_price),
-                )
-                remote_closed_symbols.add(sym)
-                del open_pos[sym]
-                _forget_position(sym)
+                    try:
+                        pnl = (
+                            (float(exit_price) - float(pos.get('entry') or 0.0))
+                            * float(pos.get('qty') or 0.0)
+                            * int(pos.get('dir') or 0)
+                        )
+                    except Exception:
+                        pnl = None
+                    close = {
+                        'qty': pos.get('qty'),
+                        'price': exit_price,
+                        'pnl': pnl,
+                        'fee': _taker_fee(pos.get('qty'), exit_price),
+                        'ret_msg': 'remote position closed',
+                    }
+                if _record_remote_close(sym, pos, close):
+                    del open_pos[sym]
+                    _forget_position(sym)
         for sym, pos in remote.items():
             if sym in open_pos:
                 open_pos[sym].update({
@@ -1065,6 +1648,13 @@ def cmd_live(args):
             else:
                 open_pos[sym] = pos
                 _remember_position(sym, pos)
+            _record_missing_entry(sym, open_pos[sym])
+        if positions_error:
+            print('  [LEDGER WARN] skip missing-position backfill; Bybit position sync failed')
+        else:
+            _backfill_missing_meta_closures(remote_symbols)
+            _backfill_recent_closed_pnl(remote_symbols)
+            _backfill_entries_for_unpaired_exits()
     open_pos: dict[str, dict] = {}  # symbol → {dir, qty, sl, tp, entry}
 
     print('正在同步交易所持倉狀態...')
@@ -1122,6 +1712,17 @@ def cmd_live(args):
         pos.setdefault('strategy', 'unknown')
         pos.setdefault('entry_dt', '')
         pos.setdefault('entry_order_id', '')
+
+    if getattr(args, 'sync_only', False):
+        try:
+            _sync_remote_positions()
+        except Exception as e:
+            print(f'[WARN] sync Bybit positions failed: {e}')
+        export_bybit_live_orders_to_excel()
+        balance = executor.get_balance()
+        _print_open_positions(balance)
+        print('[INFO] sync-only complete; no new orders were placed.')
+        return
 
     while True:
         try:
@@ -1667,6 +2268,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_live = sub.add_parser('live', help='即時交易（Bybit 加密貨幣）')
     p_live.add_argument('--seed',     type=int, default=42, help='隨機種子')
     p_live.add_argument('--interval', type=int, default=15, help='掃描間隔（分鐘，default=15）')
+    p_live.add_argument('--sync-only', action='store_true',
+                        help='只同步 Bybit 倉位與 live Excel ledger，不掃描新訊號或下新單')
     p_live.add_argument('--crypto-candidate', type=str, default=DEFAULT_CRYPTO_CANDIDATE,
                         choices=[LEGACY_CRYPTO_BASELINE] + sorted(CRYPTO_CANDIDATES.keys()),
                         help='Crypto strategy mode. Default is volume-top125-lb3-sym035; use config-baseline for the legacy config universe.')
