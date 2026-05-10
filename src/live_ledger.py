@@ -1,0 +1,304 @@
+from __future__ import annotations
+
+import json
+import threading
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
+
+import config
+from src.database import get_connection
+
+
+_WRITE_LOCK = threading.Lock()
+TABLE_NAME = "bybit_live_orders"
+
+EXCEL_COLUMNS = [
+    "id",
+    "recorded_at",
+    "environment",
+    "action",
+    "symbol",
+    "bybit_symbol",
+    "side",
+    "direction",
+    "quantity",
+    "price",
+    "stop_loss",
+    "take_profit",
+    "strategy",
+    "score",
+    "signal_date",
+    "reason",
+    "pnl",
+    "fee",
+    "balance_usdt",
+    "order_id",
+    "order_link_id",
+    "ret_code",
+    "ret_msg",
+]
+
+
+def _now_local() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _to_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _json_dumps(value: Any) -> str:
+    try:
+        return json.dumps(value or {}, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return json.dumps({"repr": repr(value)}, ensure_ascii=False, sort_keys=True)
+
+
+def _symbol_to_bybit(symbol: str) -> str:
+    symbol = str(symbol or "").strip()
+    if symbol.startswith("BYBIT:") and symbol.endswith(".P"):
+        return symbol[6:-2]
+    return symbol.replace("-USD", "USDT")
+
+
+def _environment_label() -> str:
+    if getattr(config, "BYBIT_TESTNET", False):
+        return "testnet"
+    if getattr(config, "BYBIT_DEMO", False):
+        return "demo"
+    return "live"
+
+
+def _response_result(response: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {}
+    result = response.get("result") or {}
+    return result if isinstance(result, dict) else {}
+
+
+def _response_value(response: dict[str, Any] | None, key: str) -> Any:
+    if not isinstance(response, dict):
+        return None
+    result = _response_result(response)
+    return result.get(key) or response.get(key)
+
+
+def _side_for(action: str, direction: int | None) -> str:
+    if direction not in (1, -1):
+        return ""
+    normalized = str(action or "").upper()
+    if normalized == "ENTRY":
+        return "Buy" if direction == 1 else "Sell"
+    if normalized == "EXIT":
+        return "Sell" if direction == 1 else "Buy"
+    return ""
+
+
+def _excel_path(path: str | None = None) -> Path:
+    if path:
+        return Path(path)
+    configured = getattr(config, "BYBIT_LIVE_ORDER_XLSX", None)
+    if configured:
+        return Path(configured)
+    return Path(getattr(config, "OUTPUT_DIR", "output")) / "Bybit_Live_Orders.xlsx"
+
+
+def ensure_bybit_live_order_ledger() -> None:
+    conn = get_connection()
+    with _WRITE_LOCK, conn:
+        conn.executescript(
+            f"""
+            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                recorded_at   TEXT NOT NULL,
+                environment   TEXT,
+                action        TEXT NOT NULL,
+                symbol        TEXT NOT NULL,
+                bybit_symbol  TEXT,
+                side          TEXT,
+                direction     INTEGER,
+                quantity      REAL,
+                price         REAL,
+                stop_loss     REAL,
+                take_profit   REAL,
+                strategy      TEXT,
+                score         INTEGER,
+                signal_date   TEXT,
+                reason        TEXT,
+                pnl           REAL,
+                fee           REAL,
+                balance_usdt  REAL,
+                order_id      TEXT,
+                order_link_id TEXT,
+                ret_code      INTEGER,
+                ret_msg       TEXT,
+                raw_response  TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_bybit_live_orders_recorded_at
+                ON {TABLE_NAME}(recorded_at);
+            CREATE INDEX IF NOT EXISTS idx_bybit_live_orders_symbol
+                ON {TABLE_NAME}(symbol);
+            CREATE INDEX IF NOT EXISTS idx_bybit_live_orders_order_id
+                ON {TABLE_NAME}(order_id);
+            """
+        )
+
+
+def load_bybit_live_orders(limit: int | None = None) -> pd.DataFrame:
+    ensure_bybit_live_order_ledger()
+    sql = f"SELECT * FROM {TABLE_NAME} ORDER BY id ASC"
+    params: tuple[Any, ...] = ()
+    if limit is not None:
+        sql = f"SELECT * FROM {TABLE_NAME} ORDER BY id DESC LIMIT ?"
+        params = (int(limit),)
+    with get_connection() as conn:
+        df = pd.read_sql_query(sql, conn, params=params)
+    if limit is not None and not df.empty:
+        df = df.sort_values("id").reset_index(drop=True)
+    return df
+
+
+def export_bybit_live_orders_to_excel(path: str | None = None) -> str:
+    ensure_bybit_live_order_ledger()
+    output_path = _excel_path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    df = load_bybit_live_orders()
+    if df.empty:
+        df = pd.DataFrame(columns=EXCEL_COLUMNS)
+
+    display_cols = [c for c in EXCEL_COLUMNS if c in df.columns]
+    display = df[display_cols].copy()
+
+    try:
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            display.to_excel(writer, sheet_name="Bybit Orders", index=False)
+            wb = writer.book
+            ws = writer.sheets["Bybit Orders"]
+            header_fill = PatternFill("solid", fgColor="1F3864")
+            header_font = Font(color="FFFFFF", bold=True)
+            for cell in ws[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+            ws.freeze_panes = "A2"
+            if ws.max_column and ws.max_row:
+                ws.auto_filter.ref = (
+                    f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
+                )
+            for col in ws.columns:
+                width = max(len(str(cell.value or "")) for cell in col) + 2
+                ws.column_dimensions[col[0].column_letter].width = min(max(width, 10), 42)
+
+            if not display.empty:
+                summary = (
+                    display.groupby(["symbol", "action"], dropna=False)
+                    .agg(
+                        orders=("id", "count"),
+                        quantity=("quantity", "sum"),
+                        pnl=("pnl", "sum"),
+                        fees=("fee", "sum"),
+                    )
+                    .reset_index()
+                )
+            else:
+                summary = pd.DataFrame(
+                    columns=["symbol", "action", "orders", "quantity", "pnl", "fees"]
+                )
+            summary.to_excel(writer, sheet_name="Summary", index=False)
+            ws_sum = writer.sheets["Summary"]
+            for cell in ws_sum[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+            ws_sum.freeze_panes = "A2"
+            for col in ws_sum.columns:
+                width = max(len(str(cell.value or "")) for cell in col) + 2
+                ws_sum.column_dimensions[col[0].column_letter].width = min(max(width, 10), 32)
+    except PermissionError:
+        print(f"[WARN] Cannot update live order Excel; close it first: {output_path}")
+
+    return str(output_path)
+
+
+def record_bybit_order(
+    *,
+    action: str,
+    symbol: str,
+    direction: int | None = None,
+    quantity: Any = None,
+    price: Any = None,
+    stop_loss: Any = None,
+    take_profit: Any = None,
+    strategy: str = "",
+    score: int | None = None,
+    signal_date: str = "",
+    reason: str = "",
+    response: dict[str, Any] | None = None,
+    pnl: Any = None,
+    fee: Any = None,
+    balance_usdt: Any = None,
+    environment: str | None = None,
+    export_excel: bool = True,
+) -> int:
+    ensure_bybit_live_order_ledger()
+
+    direction_i = _to_int(direction)
+    response = response or {}
+    row = {
+        "recorded_at": _now_local(),
+        "environment": environment or _environment_label(),
+        "action": str(action or "").upper(),
+        "symbol": str(symbol or ""),
+        "bybit_symbol": _symbol_to_bybit(symbol),
+        "side": _side_for(action, direction_i),
+        "direction": direction_i,
+        "quantity": _to_float(quantity),
+        "price": _to_float(price),
+        "stop_loss": _to_float(stop_loss),
+        "take_profit": _to_float(take_profit),
+        "strategy": strategy or "",
+        "score": _to_int(score),
+        "signal_date": signal_date or "",
+        "reason": reason or "",
+        "pnl": _to_float(pnl),
+        "fee": _to_float(fee),
+        "balance_usdt": _to_float(balance_usdt),
+        "order_id": _response_value(response, "orderId") or "",
+        "order_link_id": _response_value(response, "orderLinkId") or "",
+        "ret_code": _to_int(response.get("retCode")) if isinstance(response, dict) else None,
+        "ret_msg": str(response.get("retMsg", "")) if isinstance(response, dict) else "",
+        "raw_response": _json_dumps(response),
+    }
+
+    cols = list(row.keys())
+    placeholders = ",".join("?" for _ in cols)
+    sql = (
+        f"INSERT INTO {TABLE_NAME} ({','.join(cols)}) "
+        f"VALUES ({placeholders})"
+    )
+    conn = get_connection()
+    with _WRITE_LOCK, conn:
+        cur = conn.execute(sql, tuple(row[c] for c in cols))
+        row_id = int(cur.lastrowid)
+
+    if export_excel:
+        export_bybit_live_orders_to_excel()
+    return row_id

@@ -250,6 +250,27 @@ python main.py backtest --output output\v111_baseline.xlsx --note v1.11_baseline
 
 ---
 
+## Latest Local Update: Bybit Live Order Ledger (2026-05-10)
+
+Bybit live mode now records successful live order events to both SQLite and Excel:
+
+- SQLite table: `bybit_live_orders` in `data/trading.db`
+- Excel ledger: `output/Bybit_Live_Orders.xlsx` (`config.BYBIT_LIVE_ORDER_XLSX`)
+- `ENTRY` rows are written after successful Bybit market entries
+- `EXIT` rows are written after successful strategy-managed exits
+- `REMOTE_CLOSED` exit rows are written when the bot syncs a position that was already closed on Bybit
+- Recorded fields include symbol, side, direction, quantity, price, SL/TP, strategy, score, signal date, reason, PnL estimate, fee estimate, balance, Bybit order id, retCode/retMsg, and raw response
+
+Operational notes:
+
+```powershell
+python main.py live --interval 15
+```
+
+`data/trading.db`, `data/*-wal`, `data/*-shm`, and `output/Bybit_Live_Orders.xlsx` are runtime artifacts. The code creates or refreshes them automatically; Git tracks the recorder code, not the generated ledger data.
+
+---
+
 ## Latest Local Update: Bybit Demo Live Hardening (2026-05-09)
 
 Live mode now mirrors the Crypto OOS baseline more closely on Bybit Demo:

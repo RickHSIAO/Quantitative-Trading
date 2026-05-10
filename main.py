@@ -595,6 +595,11 @@ def cmd_live(args):
     from src.backtester import _geometric_rr_ok
     from src.executor import BybitExecutor
     from src.database import get_all_symbols, init_db
+    from src.live_ledger import (
+        ensure_bybit_live_order_ledger,
+        export_bybit_live_orders_to_excel,
+        record_bybit_order,
+    )
 
     try:
         executor = BybitExecutor()
@@ -603,6 +608,9 @@ def cmd_live(args):
         return
 
     init_db()
+    ensure_bybit_live_order_ledger()
+    ledger_path = export_bybit_live_orders_to_excel()
+    print(f'[INFO] Bybit live order ledger: SQLite={config.DB_PATH} Excel={ledger_path}')
     try:
         crypto_candidate = _apply_crypto_candidate(args, config)
     except ValueError as exc:
@@ -696,6 +704,103 @@ def cmd_live(args):
                 )
         return live_price
 
+    def _crypto_leverage() -> float:
+        lev_map = getattr(config, 'LEVERAGE_BY_CLASS', {})
+        try:
+            lev = float(lev_map.get('Crypto', 1.0))
+        except Exception:
+            lev = 1.0
+        return lev if lev > 0 else 1.0
+
+    def _position_invested_margin(pos: dict) -> float:
+        try:
+            notional = abs(
+                float(pos.get('entry') or 0.0) * float(pos.get('qty') or 0.0)
+            )
+            return notional / _crypto_leverage()
+        except Exception:
+            return 0.0
+
+    def _fmt_live_price(value) -> str:
+        try:
+            val = float(value)
+        except Exception:
+            return '-'
+        if val <= 0:
+            return '-'
+        if val >= 100:
+            return f'{val:.2f}'
+        if val >= 1:
+            return f'{val:.4f}'
+        return f'{val:.6f}'
+
+    def _fmt_live_qty(value) -> str:
+        try:
+            val = float(value)
+        except Exception:
+            return '-'
+        return f'{val:.8f}'.rstrip('0').rstrip('.')
+
+    def _taker_fee(qty, price) -> float:
+        try:
+            return abs(float(qty or 0.0) * float(price or 0.0)) * float(config.BYBIT_TAKER_FEE)
+        except Exception:
+            return 0.0
+
+    def _record_live_order(action: str, sym: str, direction: int, qty, price,
+                           *, response=None, reason: str = '', stop_loss=None,
+                           take_profit=None, strategy: str = '', score=None,
+                           signal_date: str = '', pnl=None, fee=None) -> None:
+        try:
+            row_id = record_bybit_order(
+                action=action,
+                symbol=sym,
+                direction=direction,
+                quantity=qty,
+                price=price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                strategy=strategy,
+                score=score,
+                signal_date=signal_date,
+                reason=reason,
+                response=response or {},
+                pnl=pnl,
+                fee=fee,
+                balance_usdt=balance,
+            )
+            print(f'  [LEDGER] {action.upper()} {sym} row_id={row_id}')
+        except Exception as exc:
+            print(f'  [LEDGER WARN] {sym}: {exc}')
+
+    def _print_open_positions(balance_value: float) -> None:
+        total_invested = sum(_position_invested_margin(pos) for pos in open_pos.values())
+        remaining = max(0.0, balance_value - total_invested)
+        if open_pos:
+            print(f'  持倉明細（{len(open_pos)} 個）：')
+            total = len(open_pos)
+            for idx, (sym, pos) in enumerate(sorted(open_pos.items()), start=1):
+                direction = '做多' if int(pos.get('dir', 0) or 0) == 1 else '做空'
+                strategy = pos.get('strategy', 'unknown')
+                score = pos.get('score', 0)
+                last_price = pos.get('last_price') or pos.get('mark_price') or pos.get('entry')
+                print(
+                    f'    {idx:02d}/{total} {sym} {direction} '
+                    f'[{strategy} score={score}] '
+                    f'qty={_fmt_live_qty(pos.get("qty"))} '
+                    f'entry={_fmt_live_price(pos.get("entry"))} '
+                    f'current={_fmt_live_price(last_price)} '
+                    f'投入資金={_position_invested_margin(pos):.2f} USDT '
+                    f'SL={_fmt_live_price(pos.get("sl"))} '
+                    f'TP={_fmt_live_price(pos.get("tp"))}'
+                )
+        print(
+            f'  帳戶餘額：{balance_value:.2f} USDT | '
+            f'已投入資金：{total_invested:.2f} USDT | '
+            f'最後剩餘資金：{remaining:.2f} USDT | '
+            f'持倉：{len(open_pos)} 個'
+        )
+
     def _dominant_live_strategy(sigs: dict, direction: int) -> str:
         matched = [
             name for name in ('trend', 'vp', 'bb')
@@ -786,10 +891,13 @@ def cmd_live(args):
             'direction': pos.get('dir'),
             'qty': pos.get('qty'),
             'entry': pos.get('entry'),
+            'invested_margin': _position_invested_margin(pos),
             'entry_dt': pos.get('entry_dt', ''),
             'strategy': pos.get('strategy', 'unknown'),
             'score': pos.get('score', 0),
             'entry_reason': pos.get('entry_reason', ''),
+            'entry_order_id': pos.get('entry_order_id', ''),
+            'exit_order_id': pos.get('exit_order_id', ''),
             'orig_sl': pos.get('orig_sl', pos.get('sl', 0.0)),
             'sl': pos.get('sl', 0.0),
             'tp': pos.get('tp', 0.0),
@@ -864,6 +972,7 @@ def cmd_live(args):
         entry = float(p.get('avgPrice') or 0.0)
         sl = float(p.get('stopLoss') or 0.0)
         tp = float(p.get('takeProfit') or 0.0)
+        mark_price = float(p.get('markPrice') or 0.0)
         meta = _position_meta(sys_sym)
         recovered = {}
         if not meta:
@@ -888,6 +997,9 @@ def cmd_live(args):
             'entry_dt': entry_dt,
             'score': score,
             'entry_reason': entry_reason,
+            'entry_order_id': meta.get('entry_order_id', ''),
+            'exit_order_id': meta.get('exit_order_id', ''),
+            'last_price': mark_price or entry,
         }
 
     def _sync_remote_positions() -> None:
@@ -898,6 +1010,39 @@ def cmd_live(args):
                 remote[item[0]] = item[1]
         for sym in list(open_pos):
             if sym not in remote:
+                pos = open_pos[sym]
+                exit_price = (
+                    executor.get_last_price(sym)
+                    or pos.get('last_price')
+                    or pos.get('entry')
+                    or 0.0
+                )
+                try:
+                    pnl = (
+                        (float(exit_price) - float(pos.get('entry') or 0.0))
+                        * float(pos.get('qty') or 0.0)
+                        * int(pos.get('dir') or 0)
+                    )
+                except Exception:
+                    pnl = None
+                if pnl is not None:
+                    trade_history.setdefault(sym, []).append(ClosedTradeStub(pnl))
+                _record_live_order(
+                    'EXIT',
+                    sym,
+                    int(pos.get('dir') or 0),
+                    pos.get('qty'),
+                    exit_price,
+                    response={'retCode': 0, 'retMsg': 'remote position closed'},
+                    reason='REMOTE_CLOSED',
+                    stop_loss=pos.get('sl'),
+                    take_profit=pos.get('tp'),
+                    strategy=pos.get('strategy', ''),
+                    score=pos.get('score'),
+                    signal_date=pos.get('entry_dt', ''),
+                    pnl=pnl,
+                    fee=_taker_fee(pos.get('qty'), exit_price),
+                )
                 remote_closed_symbols.add(sym)
                 del open_pos[sym]
                 _forget_position(sym)
@@ -910,8 +1055,10 @@ def cmd_live(args):
                 })
                 if pos['sl'] > 0:
                     open_pos[sym]['sl'] = pos['sl']
+                if pos.get('last_price'):
+                    open_pos[sym]['last_price'] = pos['last_price']
                 for key in ('strategy', 'entry_dt', 'score', 'entry_reason',
-                            'orig_sl', 'trail_anchor'):
+                            'entry_order_id', 'orig_sl', 'trail_anchor'):
                     if pos.get(key) and not open_pos[sym].get(key):
                         open_pos[sym][key] = pos[key]
                 _remember_position(sym, open_pos[sym])
@@ -936,6 +1083,7 @@ def cmd_live(args):
                             'sl': float(p.get('stopLoss') or 0.0),
                             'tp': float(p.get('takeProfit') or 0.0),
                             'entry': float(p.get('avgPrice') or 0.0),
+                            'last_price': float(p.get('markPrice') or 0.0),
                             'strategy': 'unknown',
                             'entry_dt': '',
                         }
@@ -946,6 +1094,7 @@ def cmd_live(args):
                                 'entry_dt': meta.get('entry_dt', ''),
                                 'score': meta.get('score', 0),
                                 'entry_reason': meta.get('entry_reason', ''),
+                                'entry_order_id': meta.get('entry_order_id', ''),
                                 'orig_sl': meta.get('orig_sl', open_pos[sys_sym]['sl']),
                                 'trail_anchor': meta.get('trail_anchor',
                                                          open_pos[sys_sym]['entry']),
@@ -959,7 +1108,11 @@ def cmd_live(args):
                             if recovered.get('entry_dt'):
                                 open_pos[sys_sym]['entry_dt'] = recovered['entry_dt']
                         _remember_position(sys_sym, open_pos[sys_sym])
-                        print(f'  [同步] {sys_sym} {"做多" if direction==1 else "做空"} {qty} 單位')
+                        print(
+                            f'  [同步] {sys_sym} {"做多" if direction==1 else "做空"} '
+                            f'{_fmt_live_qty(qty)} 單位 '
+                            f'投入資金={_position_invested_margin(open_pos[sys_sym]):.2f} USDT'
+                        )
     except Exception as e:
         print(f'[WARN] 同步倉位失敗: {e}')
 
@@ -968,6 +1121,7 @@ def cmd_live(args):
         pos.setdefault('trail_anchor', pos.get('entry', 0.0))
         pos.setdefault('strategy', 'unknown')
         pos.setdefault('entry_dt', '')
+        pos.setdefault('entry_order_id', '')
 
     while True:
         try:
@@ -1035,10 +1189,12 @@ def cmd_live(args):
                 if sym in open_pos:
                     price = _live_price(sym, signal_price)
                     pos = open_pos[sym]
+                    pos['last_price'] = price
                     pos.setdefault('orig_sl', pos.get('sl', 0.0))
                     pos.setdefault('trail_anchor', pos.get('entry', price))
                     pos.setdefault('strategy', 'unknown')
                     pos.setdefault('entry_dt', '')
+                    pos.setdefault('entry_order_id', '')
                     if pos.get('strategy') == 'unknown' and pos.get('entry_dt'):
                         signal_dt = _signal_dt_at_or_before(sigs, pd.Timestamp(pos['entry_dt']))
                         if signal_dt is not None:
@@ -1159,6 +1315,22 @@ def cmd_live(args):
                         pnl = (price - pos['entry']) * pos['qty'] * pos['dir']
                         trade_history[sym].append(ClosedTradeStub(pnl))
                         reason = 'SL' if hit_sl else ('TP' if hit_tp else (early_exit or 'FLIP'))
+                        _record_live_order(
+                            'EXIT',
+                            sym,
+                            pos['dir'],
+                            pos['qty'],
+                            price,
+                            response=close_res,
+                            reason=reason,
+                            stop_loss=pos.get('sl'),
+                            take_profit=pos.get('tp'),
+                            strategy=pos.get('strategy', ''),
+                            score=pos.get('score'),
+                            signal_date=dt_latest.strftime('%Y-%m-%d'),
+                            pnl=pnl,
+                            fee=_taker_fee(pos.get('qty'), price),
+                        )
                         print(f'  平倉 {sym} @ {price:.4f}  PnL={pnl:+.2f}  ({reason})')
                         del open_pos[sym]
                         _forget_position(sym)
@@ -1216,10 +1388,9 @@ def cmd_live(args):
                     window=config.KELLY_WINDOW,
                     asset_type=atype,
                 )
-                lev_map = getattr(config, 'LEVERAGE_BY_CLASS', {})
-                lev = lev_map.get(atype, 1.0)
+                lev = _crypto_leverage()
                 allocated_margin = sum(
-                    (p['entry'] * p['qty']) / lev for p in open_pos.values()
+                    _position_invested_margin(p) for p in open_pos.values()
                 )
                 available = max(0.0, balance - allocated_margin)
                 qty = position_size(
@@ -1228,25 +1399,49 @@ def cmd_live(args):
                     max_position_pct=crypto_max_position_pct,
                 )
                 qty_str = executor.format_qty(sym, qty)
+                order_qty = float(qty_str)
                 sl_str = executor.format_price(sym, sl)
                 tp_str = executor.format_price(sym, tp)
-                margin_need = (qty * price) / lev
-                if qty > 0 and margin_need <= available:
+                margin_need = (order_qty * price) / lev
+                if order_qty > 0 and margin_need <= available:
                     res = executor.place_order(sym, latest_sig, qty_str, sl_str, tp_str)
                     if res.get('retCode') == 0:
+                        order_result = res.get('result') if isinstance(res, dict) else {}
+                        entry_order_id = (
+                            order_result.get('orderId', '')
+                            if isinstance(order_result, dict) else ''
+                        )
                         open_pos[sym] = {
-                            'dir': latest_sig, 'qty': qty, 'sl': sl, 'tp': tp,
+                            'dir': latest_sig, 'qty': order_qty, 'sl': sl, 'tp': tp,
                             'entry': price, 'orig_sl': sl, 'trail_anchor': price,
+                            'last_price': price,
                             'strategy': strat,
                             'score': score_val,
                             'entry_reason': f'{strat} score={score_val}',
                             'entry_dt': df.index[-1].strftime('%Y-%m-%d'),
+                            'entry_order_id': entry_order_id,
                         }
                         _remember_position(sym, open_pos[sym])
+                        _record_live_order(
+                            'ENTRY',
+                            sym,
+                            latest_sig,
+                            order_qty,
+                            price,
+                            response=res,
+                            reason=f'{strat} score={score_val}',
+                            stop_loss=sl_str,
+                            take_profit=tp_str,
+                            strategy=strat,
+                            score=score_val,
+                            signal_date=df.index[-1].strftime('%Y-%m-%d'),
+                            fee=_taker_fee(order_qty, price),
+                        )
                         strat_counts[strat] = strat_counts.get(strat, 0) + 1
                         print(f'  {"做多" if latest_sig==1 else "做空"} {sym} '
                               f'[{strat} score={score_val}] qty={qty_str} '
-                              f'@ {price:.4f}  SL={sl_str}  TP={tp_str}')
+                              f'@ {price:.4f}  投入資金={margin_need:.2f} USDT '
+                              f'SL={sl_str}  TP={tp_str}')
                     else:
                         print(f'  [ORDER FAIL] {sym}: {res.get("retMsg")}')
             except Exception as exc:
@@ -1400,7 +1595,7 @@ def cmd_live(args):
                 print(f'  [ERROR] {sym}: {exc}')
 
         balance = executor.get_balance()
-        print(f'  帳戶餘額：{balance:.2f} USDT | 持倉：{len(open_pos)} 個')
+        _print_open_positions(balance)
         time.sleep(args.interval * 60)
 
 

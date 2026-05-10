@@ -387,3 +387,4 @@ SYSTEM_VERSION  = 'v1.13'
 # ─── 輸出 ────────────────────────────────────────
 OUTPUT_DIR      = 'output'
 OUTPUT_FILENAME = 'Output.xlsx'
+BYBIT_LIVE_ORDER_XLSX = 'output/Bybit_Live_Orders.xlsx'
