@@ -119,6 +119,11 @@ RET_MSG_LABELS = {
     "backfilled from Bybit execution and closed PnL": "由Bybit成交與已實現損益補登",
 }
 
+DAY_ROW_FILLS = (
+    PatternFill("solid", fgColor="EAF4FF"),
+    PatternFill("solid", fgColor="FFF4D6"),
+)
+
 
 def _now_local() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -250,6 +255,34 @@ def _prepare_excel_display(df: pd.DataFrame) -> pd.DataFrame:
     return display.rename(columns=EXCEL_COLUMN_NAMES)
 
 
+def _recorded_date_key(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    try:
+        return pd.Timestamp(value).date().isoformat()
+    except Exception:
+        text = str(value)
+        return text[:10] if len(text) >= 10 else text
+
+
+def _recorded_date_keys(df: pd.DataFrame) -> list[str]:
+    if "recorded_at" not in df.columns or df.empty:
+        return []
+    return [_recorded_date_key(value) for value in df["recorded_at"].tolist()]
+
+
+def _apply_daily_row_fills(ws, date_keys: list[str]) -> None:
+    date_to_fill_idx: dict[str, int] = {}
+    for row_idx, date_key in enumerate(date_keys, start=2):
+        if row_idx > ws.max_row:
+            break
+        if date_key not in date_to_fill_idx:
+            date_to_fill_idx[date_key] = len(date_to_fill_idx) % len(DAY_ROW_FILLS)
+        fill = DAY_ROW_FILLS[date_to_fill_idx[date_key]]
+        for cell in ws[row_idx]:
+            cell.fill = fill
+
+
 def ensure_bybit_live_order_ledger() -> None:
     conn = get_connection()
     with _WRITE_LOCK, conn:
@@ -314,6 +347,7 @@ def export_bybit_live_orders_to_excel(path: str | None = None) -> str:
     if df.empty:
         df = pd.DataFrame(columns=EXCEL_COLUMNS)
 
+    date_keys = _recorded_date_keys(df)
     display = _prepare_excel_display(df)
 
     try:
@@ -328,6 +362,7 @@ def export_bybit_live_orders_to_excel(path: str | None = None) -> str:
             for cell in ws[1]:
                 cell.fill = header_fill
                 cell.font = header_font
+            _apply_daily_row_fills(ws, date_keys)
             ws.freeze_panes = "A2"
             if ws.max_column and ws.max_row:
                 ws.auto_filter.ref = (

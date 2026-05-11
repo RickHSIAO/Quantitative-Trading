@@ -256,9 +256,11 @@ Bybit Demo live ledger reconciliation was hardened after exchange-side SL fills 
 
 - `python main.py live --sync-only` now performs a no-order sync of Bybit positions, closed PnL, SQLite, and `output/Bybit_Live_Orders.xlsx`
 - Exchange-side TP/SL closes between scan cycles are backfilled from Bybit closed PnL / execution history and recorded as `REMOTE_CLOSED` or `REMOTE_CLOSED_SL`
+- Closed-PnL reconciliation is keyed by Bybit exit order id and matched to known ledger `ENTRY` rows, so older exits are not skipped after newer entry backfills
 - Open Bybit positions that are outside the current candidate universe are still added to the live monitoring context, so legacy positions are not silently ignored
 - Missing `ENTRY` rows for existing remote positions are backfilled from Bybit execution history, keyed by Bybit order id where available
-- The live Excel ledger uses Chinese display labels and is ordered by recorded execution time rather than insertion id
+- The live Excel ledger uses Chinese display labels, is ordered by recorded execution time rather than insertion id, and alternates row colors by trading day
+- Live mode re-exports `output/Bybit_Live_Orders.xlsx` at the end of each scan, so closing a locked workbook lets the next scan refresh it automatically
 
 Operational sync command:
 

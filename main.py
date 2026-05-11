@@ -1091,6 +1091,69 @@ def cmd_live(args):
             print(f'  [LEDGER WARN] {sym}: entry duplicate check failed: {exc}')
             return False
 
+    def _ledger_matching_entry(sym: str, pos: dict, order_id: str = '') -> dict:
+        try:
+            with get_connection() as conn:
+                if order_id:
+                    row = conn.execute(
+                        """
+                        SELECT stop_loss, take_profit, strategy, score,
+                               signal_date, recorded_at, reason, order_id
+                        FROM bybit_live_orders
+                        WHERE action = 'ENTRY' AND symbol = ? AND order_id = ?
+                        ORDER BY recorded_at DESC, id DESC
+                        LIMIT 1
+                        """,
+                        (sym, str(order_id)),
+                    ).fetchone()
+                    if row is not None:
+                        return {
+                            'sl': row[0],
+                            'tp': row[1],
+                            'strategy': row[2] or 'unknown',
+                            'score': row[3],
+                            'entry_dt': row[4] or '',
+                            'recorded_at': row[5] or '',
+                            'entry_reason': row[6] or '',
+                            'entry_order_id': row[7] or '',
+                        }
+
+                qty = abs(float(pos.get('qty') or 0.0))
+                price = float(pos.get('entry') or 0.0)
+                direction = int(pos.get('dir') or 0)
+                qty_tol = max(qty * 0.001, 1e-12)
+                price_tol = max(abs(price) * 0.002, 1e-12)
+                row = conn.execute(
+                    """
+                    SELECT stop_loss, take_profit, strategy, score,
+                           signal_date, recorded_at, reason, order_id
+                    FROM bybit_live_orders
+                    WHERE action = 'ENTRY'
+                      AND symbol = ?
+                      AND direction = ?
+                      AND ABS(COALESCE(quantity, 0) - ?) <= ?
+                      AND ABS(COALESCE(price, 0) - ?) <= ?
+                    ORDER BY recorded_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (sym, direction, qty, qty_tol, price, price_tol),
+                ).fetchone()
+            if row is None:
+                return {}
+            return {
+                'sl': row[0],
+                'tp': row[1],
+                'strategy': row[2] or 'unknown',
+                'score': row[3],
+                'entry_dt': row[4] or '',
+                'recorded_at': row[5] or '',
+                'entry_reason': row[6] or '',
+                'entry_order_id': row[7] or '',
+            }
+        except Exception as exc:
+            print(f'  [LEDGER WARN] {sym}: entry context lookup failed: {exc}')
+            return {}
+
     def _local_iso_from_ms(value_ms: int) -> str:
         if value_ms <= 0:
             return ''
@@ -1365,6 +1428,7 @@ def cmd_live(args):
             signal_date=pos.get('entry_dt', ''),
             pnl=pnl,
             fee=close.get('fee') or _taker_fee(qty, price),
+            recorded_at=_local_iso_from_ms(int(close.get('closed_at') or 0)),
         )
         if row_id is None:
             return False
@@ -1372,22 +1436,6 @@ def cmd_live(args):
             trade_history.setdefault(sym, []).append(ClosedTradeStub(pnl))
         remote_closed_symbols.add(sym)
         return True
-
-    def _latest_ledger_recorded_ms() -> int:
-        try:
-            with get_connection() as conn:
-                row = conn.execute(
-                    "SELECT MAX(recorded_at) FROM bybit_live_orders"
-                ).fetchone()
-            raw = row[0] if row else None
-            if raw:
-                ts = pd.Timestamp(raw)
-                if ts.tzinfo is None:
-                    ts = ts.tz_localize(datetime.now().astimezone().tzinfo)
-                return int(ts.timestamp() * 1000)
-        except Exception as exc:
-            print(f'  [LEDGER WARN] latest ledger timestamp check failed: {exc}')
-        return int((pd.Timestamp.now(tz='UTC') - pd.Timedelta(hours=24)).timestamp() * 1000)
 
     def _date_from_ms(value_ms: int) -> str:
         if value_ms <= 0:
@@ -1401,7 +1449,6 @@ def cmd_live(args):
         getter = getattr(executor, 'get_closed_pnl', None)
         if getter is None:
             return
-        cutoff_ms = _latest_ledger_recorded_ms()
         rows = getter(None, limit=50)
         if not rows:
             return
@@ -1409,8 +1456,6 @@ def cmd_live(args):
             if not isinstance(row, dict):
                 continue
             closed_at = _row_time_ms(row)
-            if closed_at and closed_at <= cutoff_ms:
-                continue
             bybit_sym = str(row.get('symbol') or '').strip()
             if not bybit_sym:
                 continue
@@ -1427,7 +1472,15 @@ def cmd_live(args):
                 continue
             pnl = _row_float(row, 'closedPnl')
             fee = _row_float(row, 'closeFee', 'execFee') or _taker_fee(qty, exit_price)
-            meta = _position_meta(sym)
+            entry_pos = {
+                'dir': direction,
+                'qty': qty,
+                'entry': entry_price or exit_price,
+            }
+            entry_ctx = _ledger_matching_entry(sym, entry_pos)
+            if not entry_ctx:
+                continue
+            meta = {**entry_ctx, **_position_meta(sym)}
             reason = 'REMOTE_CLOSED_SL' if pnl is not None and pnl < 0 else 'REMOTE_CLOSED'
             response = {
                 'retCode': 0,
@@ -1452,6 +1505,7 @@ def cmd_live(args):
                 ),
                 pnl=pnl,
                 fee=abs(fee),
+                recorded_at=_local_iso_from_ms(closed_at),
             )
             if row_id is None:
                 continue
@@ -2197,6 +2251,7 @@ def cmd_live(args):
 
         balance = executor.get_balance()
         _print_open_positions(balance)
+        export_bybit_live_orders_to_excel()
         time.sleep(args.interval * 60)
 
 
