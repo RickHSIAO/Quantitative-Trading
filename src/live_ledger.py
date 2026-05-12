@@ -350,8 +350,9 @@ def export_bybit_live_orders_to_excel(path: str | None = None) -> str:
     date_keys = _recorded_date_keys(df)
     display = _prepare_excel_display(df)
 
+    tmp_path = output_path.with_suffix(".tmp.xlsx")
     try:
-        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        with pd.ExcelWriter(tmp_path, engine="openpyxl") as writer:
             orders_sheet = "Bybit進出場"
             summary_sheet = "彙總"
             display.to_excel(writer, sheet_name=orders_sheet, index=False)
@@ -408,8 +409,20 @@ def export_bybit_live_orders_to_excel(path: str | None = None) -> str:
             for col in ws_sum.columns:
                 width = max(len(str(cell.value or "")) for cell in col) + 2
                 ws_sum.column_dimensions[col[0].column_letter].width = min(max(width, 10), 32)
-    except PermissionError:
-        print(f"[WARN] Cannot update live order Excel; close it first: {output_path}")
+
+        try:
+            import os
+            os.replace(tmp_path, output_path)
+        except PermissionError:
+            print(
+                f"[WARN] Excel 檔案被開啟中，無法覆寫：{output_path}\n"
+                f"       最新資料已暫存至：{tmp_path}\n"
+                f"       請關閉 Excel 後手動將 .tmp.xlsx 改名，或等下次掃描時自動重試。"
+            )
+    except Exception as exc:
+        print(f"[WARN] 匯出 Excel 失敗：{exc}")
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
 
     return str(output_path)
 

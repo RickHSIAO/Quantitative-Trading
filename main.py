@@ -651,11 +651,13 @@ def cmd_live(args):
 
     cryptos  = assets['cryptos']
     type_map = {s: 'Crypto' for s in cryptos}
-    balance  = executor.get_balance()
+    _init_acct = getattr(executor, 'get_account_info', None)
+    _init_acct = _init_acct() if _init_acct else {}
+    balance  = _init_acct.get('wallet_balance') or executor.get_balance()
     crypto_profile = getattr(config, 'STRATEGY_PROFILES', {}).get('Crypto', {})
     crypto_max_positions = int(crypto_profile.get('max_total_positions', config.MAX_TOTAL_POSITIONS))
     crypto_max_position_pct = float(crypto_profile.get('max_position_pct', config.MAX_POSITION_PCT))
-    print(f'Bybit 餘額：{balance:.2f} USDT')
+    print(f'Bybit 帳戶餘額：{balance:.2f} USDT')
     print(f'監控 {len(cryptos)} 個加密貨幣 | 每 {args.interval} 分鐘掃描一次')
     print('[注意] Demo Trading：', config.BYBIT_DEMO, '| 測試網模式：', config.BYBIT_TESTNET)
 
@@ -777,9 +779,15 @@ def cmd_live(args):
             print(f'  [LEDGER WARN] {sym}: {exc}')
             return None
 
-    def _print_open_positions(balance_value: float) -> None:
-        total_invested = sum(_position_invested_margin(pos) for pos in open_pos.values())
-        remaining = max(0.0, balance_value - total_invested)
+    def _print_open_positions(acct: dict | None = None) -> None:
+        if acct is None:
+            acct = {}
+        wallet   = acct.get('wallet_balance', 0.0)
+        equity   = acct.get('equity', wallet)
+        pos_im   = acct.get('position_im', 0.0)
+        avail    = acct.get('available', 0.0)
+        upl      = acct.get('unrealised_pnl', 0.0)
+        cum_pnl  = acct.get('cum_realised_pnl', 0.0)
         if open_pos:
             print(f'  持倉明細（{len(open_pos)} 個）：')
             total = len(open_pos)
@@ -794,14 +802,21 @@ def cmd_live(args):
                     f'qty={_fmt_live_qty(pos.get("qty"))} '
                     f'entry={_fmt_live_price(pos.get("entry"))} '
                     f'current={_fmt_live_price(last_price)} '
-                    f'投入資金={_position_invested_margin(pos):.2f} USDT '
                     f'SL={_fmt_live_price(pos.get("sl"))} '
                     f'TP={_fmt_live_price(pos.get("tp"))}'
                 )
+        sign = '+' if upl >= 0 else ''
+        cum_sign = '+' if cum_pnl >= 0 else ''
+        print()
         print(
-            f'  帳戶餘額：{balance_value:.2f} USDT | '
-            f'已投入資金：{total_invested:.2f} USDT | '
-            f'最後剩餘資金：{remaining:.2f} USDT | '
+            f'  帳戶餘額：{wallet:.2f} USDT | '
+            f'已投入保證金：{pos_im:.2f} USDT | '
+            f'閒置資金：{avail:.2f} USDT'
+        )
+        print(
+            f'  帳戶淨值：{equity:.2f} USDT | '
+            f'未實現損益：{sign}{upl:.2f} USDT | '
+            f'已實現損益：{cum_sign}{cum_pnl:.2f} USDT | '
             f'持倉：{len(open_pos)} 個'
         )
 
@@ -1773,8 +1788,10 @@ def cmd_live(args):
         except Exception as e:
             print(f'[WARN] sync Bybit positions failed: {e}')
         export_bybit_live_orders_to_excel()
-        balance = executor.get_balance()
-        _print_open_positions(balance)
+        _acct = getattr(executor, 'get_account_info', None)
+        _acct = _acct() if _acct else {}
+        balance = _acct.get('wallet_balance') or executor.get_balance()
+        _print_open_positions(_acct)
         print('[INFO] sync-only complete; no new orders were placed.')
         return
 
@@ -2013,6 +2030,10 @@ def cmd_live(args):
             strat = pos.get('strategy', 'unknown')
             strat_counts[strat] = strat_counts.get(strat, 0) + 1
 
+        # Use Bybit's availableToWithdraw so margin sizing reflects actual reserved margin.
+        # Decrement locally as orders are placed within this cycle.
+        cycle_available = getattr(executor, 'get_available_balance', executor.get_balance)()
+
         for sym, latest_sig, score_val, strat in candidates:
             if len(open_pos) >= crypto_max_positions:
                 break
@@ -2044,10 +2065,7 @@ def cmd_live(args):
                     asset_type=atype,
                 )
                 lev = _crypto_leverage()
-                allocated_margin = sum(
-                    _position_invested_margin(p) for p in open_pos.values()
-                )
-                available = max(0.0, balance - allocated_margin)
+                available = max(0.0, cycle_available)
                 qty = position_size(
                     available, kf, price, sl,
                     asset_type=atype,
@@ -2093,6 +2111,7 @@ def cmd_live(args):
                             fee=_taker_fee(order_qty, price),
                         )
                         strat_counts[strat] = strat_counts.get(strat, 0) + 1
+                        cycle_available = max(0.0, cycle_available - margin_need)
                         print(f'  {"做多" if latest_sig==1 else "做空"} {sym} '
                               f'[{strat} score={score_val}] qty={qty_str} '
                               f'@ {price:.4f}  投入資金={margin_need:.2f} USDT '
@@ -2249,8 +2268,10 @@ def cmd_live(args):
             except Exception as exc:
                 print(f'  [ERROR] {sym}: {exc}')
 
-        balance = executor.get_balance()
-        _print_open_positions(balance)
+        _acct = getattr(executor, 'get_account_info', None)
+        _acct = _acct() if _acct else {}
+        balance = _acct.get('wallet_balance') or executor.get_balance()
+        _print_open_positions(_acct)
         export_bybit_live_orders_to_excel()
         time.sleep(args.interval * 60)
 

@@ -340,19 +340,58 @@ class BybitExecutor(BaseExecutor):
             print(f'[ERROR] get_closed_pnl {target}: {e}')
             return []
 
-    def get_balance(self) -> float:
+    def get_account_info(self) -> dict:
+        """
+        Return a dict with account-level balance breakdown from Bybit UNIFIED account.
+        Keys: wallet_balance, equity, position_im, available, unrealised_pnl, cum_realised_pnl
+        """
+        result = {
+            'wallet_balance': 0.0,
+            'equity': 0.0,
+            'position_im': 0.0,
+            'available': 0.0,
+            'unrealised_pnl': 0.0,
+            'cum_realised_pnl': 0.0,
+        }
         try:
             res = self.session.get_wallet_balance(accountType='UNIFIED', coin='USDT')
             items = res.get('result', {}).get('list', [{}])
             for item in items:
+                def _f(key: str) -> float:
+                    v = item.get(key) or '0'
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return 0.0
+                result['available'] = _f('totalAvailableBalance')
+                result['position_im'] = _f('totalInitialMargin')
+                result['equity'] = _f('totalEquity')
+                result['wallet_balance'] = _f('totalWalletBalance')
                 for coin in item.get('coin', []):
                     if coin.get('coin') == 'USDT':
-                        val = coin.get('walletBalance') or coin.get('availableToWithdraw') or '0'
-                        return float(val) if val else 0.0
-            return 0.0
+                        def _fc(key: str) -> float:
+                            v = coin.get(key) or '0'
+                            try:
+                                return float(v)
+                            except (TypeError, ValueError):
+                                return 0.0
+                        result['wallet_balance'] = _fc('walletBalance') or result['wallet_balance']
+                        result['equity'] = _fc('equity') or result['equity']
+                        result['position_im'] = _fc('totalPositionIM') or result['position_im']
+                        result['unrealised_pnl'] = _fc('unrealisedPnl')
+                        result['cum_realised_pnl'] = _fc('cumRealisedPnl')
+                break
         except Exception as e:
-            print(f'[ERROR] get_balance: {e}')
-            return 0.0
+            print(f'[ERROR] get_account_info: {e}')
+        return result
+
+    def get_balance(self) -> float:
+        """Return wallet balance (deposited capital + realized PnL)."""
+        return self.get_account_info()['wallet_balance']
+
+    def get_available_balance(self) -> float:
+        """Return totalAvailableBalance: free capital after Bybit reserves position margin."""
+        return self.get_account_info()['available']
 
     def is_market_open(self) -> bool:
         return True   # crypto 24/7
