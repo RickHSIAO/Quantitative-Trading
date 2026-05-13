@@ -791,19 +791,34 @@ def cmd_live(args):
         if open_pos:
             print(f'  持倉明細（{len(open_pos)} 個）：')
             total = len(open_pos)
+            rows = []
             for idx, (sym, pos) in enumerate(sorted(open_pos.items()), start=1):
                 direction = '做多' if int(pos.get('dir', 0) or 0) == 1 else '做空'
                 strategy = pos.get('strategy', 'unknown')
                 score = pos.get('score', 0)
                 last_price = pos.get('last_price') or pos.get('mark_price') or pos.get('entry')
+                rows.append({
+                    'idx':  f'{idx:02d}/{total}',
+                    'sym':  sym,
+                    'dir':  direction,
+                    'tag':  f'[{strategy} s={score}]',
+                    'qty':  _fmt_live_qty(pos.get('qty')),
+                    'ent':  _fmt_live_price(pos.get('entry')),
+                    'cur':  _fmt_live_price(last_price),
+                    'sl':   _fmt_live_price(pos.get('sl')),
+                    'tp':   _fmt_live_price(pos.get('tp')),
+                })
+            w = {k: max(len(r[k]) for r in rows)
+                 for k in ('sym', 'tag', 'qty', 'ent', 'cur', 'sl', 'tp')}
+            for r in rows:
                 print(
-                    f'    {idx:02d}/{total} {sym} {direction} '
-                    f'[{strategy} score={score}] '
-                    f'qty={_fmt_live_qty(pos.get("qty"))} '
-                    f'entry={_fmt_live_price(pos.get("entry"))} '
-                    f'current={_fmt_live_price(last_price)} '
-                    f'SL={_fmt_live_price(pos.get("sl"))} '
-                    f'TP={_fmt_live_price(pos.get("tp"))}'
+                    f'    {r["idx"]} {r["sym"]:<{w["sym"]}} {r["dir"]} '
+                    f'{r["tag"]:<{w["tag"]}}  '
+                    f'qty={r["qty"]:>{w["qty"]}}  '
+                    f'entry={r["ent"]:>{w["ent"]}}  '
+                    f'cur={r["cur"]:>{w["cur"]}}  '
+                    f'SL={r["sl"]:>{w["sl"]}}  '
+                    f'TP={r["tp"]:>{w["tp"]}}'
                 )
         sign = '+' if upl >= 0 else ''
         cum_sign = '+' if cum_pnl >= 0 else ''
@@ -811,7 +826,7 @@ def cmd_live(args):
         print(
             f'  帳戶餘額：{wallet:.2f} USDT | '
             f'已投入保證金：{pos_im:.2f} USDT | '
-            f'閒置資金：{avail:.2f} USDT'
+            f'可開倉額度：{avail:.2f} USDT'
         )
         print(
             f'  帳戶淨值：{equity:.2f} USDT | '
