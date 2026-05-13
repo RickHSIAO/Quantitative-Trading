@@ -231,6 +231,12 @@ def _prepare_excel_display(df: pd.DataFrame) -> pd.DataFrame:
     if display.empty:
         return display.rename(columns=EXCEL_COLUMN_NAMES)
 
+    if "recorded_at" in display:
+        display["recorded_at"] = display["recorded_at"].map(
+            lambda v: pd.Timestamp(v).replace(tzinfo=None)
+            if v not in (None, "") else pd.NaT
+        )
+
     if "environment" in display:
         display["environment"] = display["environment"].map(
             lambda v: ENVIRONMENT_LABELS.get(str(v or ""), str(v or ""))
@@ -369,9 +375,18 @@ def export_bybit_live_orders_to_excel(path: str | None = None) -> str:
                 ws.auto_filter.ref = (
                     f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
                 )
+            dt_col_letter = None
             for col in ws.columns:
-                width = max(len(str(cell.value or "")) for cell in col) + 2
-                ws.column_dimensions[col[0].column_letter].width = min(max(width, 10), 42)
+                hdr = col[0].value
+                col_letter = col[0].column_letter
+                if hdr == EXCEL_COLUMN_NAMES.get("recorded_at"):
+                    dt_col_letter = col_letter
+                    for cell in col[1:]:
+                        cell.number_format = "YYYY-MM-DD HH:MM:SS"
+                    width = 20
+                else:
+                    width = max(len(str(cell.value or "")) for cell in col) + 2
+                ws.column_dimensions[col_letter].width = min(max(width, 10), 42)
 
             if not display.empty:
                 summary = (
