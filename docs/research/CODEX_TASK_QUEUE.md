@@ -40,6 +40,12 @@
 - 缺資料時只建立 validator / 錯誤訊息 / `docs/research/DATA_REQUIREMENTS_PREV3Y.md`，並將狀態標記為 `BLOCKED_BY_DATA`。
 - 2026-05-13 local check：三個 required inputs 皆存在且 schema pass；目前缺資料：none。
 
+| 資料檢查狀態 | 意思 |
+|---|---|
+| `READY_TO_IMPLEMENT` | 資料存在，可以實作 TASK-001 |
+| `BLOCKED_BY_DATA` | 缺資料，先不能回測 |
+| `NEED_CLARIFICATION` | 有資料但 schema / 日期 / universe 規則不清楚 |
+
 ### 輸出檔案
 - `outputs/backtests/prev3y_crypto/<YYYYMMDD>_baseline.csv`
   欄位：`date, portfolio_return, benchmark_return, gross_exposure, net_exposure, turnover, n_longs, n_shorts`
@@ -67,10 +73,11 @@
 - 你有沒有遇到「資料缺漏 / 異常值 / universe 不一致」的地方，列出清單。
 
 ### Codex 交付摘要（2026-05-13）
-- 輸出：`outputs/backtests/prev3y_crypto/20260513_baseline.csv`、`20260513_positions.parquet`、`20260513_stats.json`、`outputs/logs/prev3y_crypto/20260513.log`。
-- 關鍵數字：IR `-0.052954`、Sharpe `0.517207`、max DD `-19.4996%`、annual turnover `1.228343x`。
+- 輸出：`outputs/backtests/prev3y_crypto/20260513_run002_baseline.csv`、`20260513_run002_positions.parquet`、`20260513_run002_stats.json`、`outputs/logs/prev3y_crypto/20260513_run002.log`。
+- 關鍵數字：IR `-0.061757`、Sharpe `0.493574`、max DD `-19.4996%`、annual turnover `1.228343x`。
 - 樣本：baseline CSV 覆蓋 `2019-01-01` 至 `2026-04-30`，warm-up `2018-01-01`；本地 Bybit price coverage 從 `2020-10-21` 開始，第一個有效持倉日為 `2024-04-01`。
-- 可重現性：同一 config/data snapshot 內部重跑兩次，`stats.json` hash 皆為 `02bfeffd2b7f84f456566d2c605e2683a65d3fc316f8410a456e9714fdcbf87c`。
+- 可重現性：同一 config/data snapshot 內部重跑兩次，`stats.json` hash 皆為 `6dc6f39c5f5ed4c7d6ca2908c9cd0fa2fcb0c63cec8a6236003187495e59db60`。
+- Benchmark：config 未指定 benchmark；本次使用同日 PIT universe 等權 long-only，缺 return 的 symbol 當日剔除。
 - NOTE: data source = `data/trading.db` 的 `prices`、`crypto_market_cap_rankings`、`crypto_bybit_linear_instruments`；`quote_volume` 由 `close * volume` 衍生。
 - NOTE: supplemental data gate 已落地；baseline runner 現在只驗證並讀取既有 parquet/config，缺資料時輸出 `BLOCKED_BY_DATA` 並停止。
 

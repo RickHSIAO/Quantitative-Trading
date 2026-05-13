@@ -24,19 +24,23 @@
 - `outputs/backtests/prev3y_crypto/20260513_positions.parquet`
 - `outputs/backtests/prev3y_crypto/20260513_stats.json`
 - `outputs/logs/prev3y_crypto/20260513.log`
+- Final non-overwriting rerun: `outputs/backtests/prev3y_crypto/20260513_run002_baseline.csv`,
+  `20260513_run002_positions.parquet`, `20260513_run002_stats.json`,
+  `outputs/logs/prev3y_crypto/20260513_run002.log`
 
 關鍵結果：
 
 | IR | Sharpe | max DD | annual turnover |
 |---:|---:|---:|---:|
-| -0.052954 | 0.517207 | -19.4996% | 1.228343x |
+| -0.061757 | 0.493574 | -19.4996% | 1.228343x |
 
 樣本與資料：
 
 - Baseline CSV 覆蓋 `2019-01-01` 至 `2026-04-30`；warm-up 起點 `2018-01-01`。
 - 本地 Bybit OHLCV coverage 從 `2020-10-21` 開始；3 年 lookback 後，第一個有效持倉日為 `2024-04-01`。
 - PIT universe 來源是本機 `data/trading.db`：`prices`、`crypto_market_cap_rankings`、`crypto_bybit_linear_instruments`。
-- 平均 universe size：全樣本 76.79；有效持倉日 144.12。
+- 平均 universe size：全樣本 76.79；rebalance eligible tradable symbols 平均 15.22。
+- Benchmark：config 未指定 benchmark，因此使用「同日 PIT universe 等權 long-only」，缺 return 的 symbol 在當日 benchmark 中剔除。
 - `stats.json` 可由 `baseline.csv` 重算重現，誤差小於 `1e-12`；同一 config/data snapshot 內部雙跑 stats hash 相同。
 
 重現指令：
@@ -46,7 +50,7 @@ python scripts\validate_prev3y_crypto_inputs.py
 python scripts\run_prev3y_crypto_baseline.py
 ```
 
-注意：baseline runner 只接受已存在且 schema 正確的 parquet/config；缺資料時會以 `BLOCKED_BY_DATA` 停止，不會產生隨機或模擬資料。同日正式輸出檔已存在時，腳本也會拒絕覆寫；需要新正式輸出時請使用新的 UTC 日期。
+注意：baseline runner 只接受已存在且 schema 正確的 parquet/config；缺資料時會以 `BLOCKED_BY_DATA` 停止，不會產生隨機或模擬資料。同日正式輸出檔已存在時，腳本會使用 `YYYYMMDD_run001`、`run002` 這類 stem，不會覆寫既有結果。
 
 ---
 

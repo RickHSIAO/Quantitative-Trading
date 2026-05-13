@@ -67,13 +67,13 @@ def main() -> None:
 
     BACKTEST_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    baseline_path = BACKTEST_DIR / f"{args.run_date}_baseline.csv"
-    positions_path = BACKTEST_DIR / f"{args.run_date}_positions.parquet"
-    stats_path = BACKTEST_DIR / f"{args.run_date}_stats.json"
-    log_path = LOG_DIR / f"{args.run_date}.log"
-    for path in [baseline_path, positions_path, stats_path, log_path]:
-        if path.exists():
-            raise FileExistsError(f"Refusing to overwrite existing output: {path}")
+    output_stem, output_note = resolve_output_stem(args.run_date)
+    baseline_path = BACKTEST_DIR / f"{output_stem}_baseline.csv"
+    positions_path = BACKTEST_DIR / f"{output_stem}_positions.parquet"
+    stats_path = BACKTEST_DIR / f"{output_stem}_stats.json"
+    log_path = LOG_DIR / f"{output_stem}.log"
+    if output_note:
+        print(output_note, file=sys.stderr)
 
     result["baseline"].to_csv(baseline_path, index=False, date_format="%Y-%m-%d")
     result["positions"].to_parquet(positions_path, index=False)
@@ -103,10 +103,12 @@ def main() -> None:
         stats_path=stats_path,
         baseline=result["baseline"],
         membership=membership,
+        metadata=result["metadata"],
         anomalies=anomalies,
         repeat_hashes=repeat_hashes,
         reproducible=reproducible,
         validation_warnings=validated.warnings,
+        output_note=output_note,
     )
 
     print(json.dumps({
@@ -117,6 +119,7 @@ def main() -> None:
         "stats_hashes": repeat_hashes,
         "reproducible": reproducible,
         "stats": result["stats"],
+        "output_note": output_note,
     }, indent=2, sort_keys=True))
 
 
@@ -141,12 +144,64 @@ def run_once(config: dict[str, Any], prices: pd.DataFrame, membership: pd.DataFr
         entry_price=str(config["entry_price"]),
     )
     stats = compute_stats(backtest.baseline)
+    metadata = build_run_metadata(config, membership, targets, backtest.baseline)
+    stats.update(metadata)
     return {
         "baseline": backtest.baseline,
         "positions": backtest.positions,
         "stats": stats,
+        "metadata": metadata,
         "return_anomalies": backtest.return_anomalies,
     }
+
+
+def resolve_output_stem(run_date: str) -> tuple[str, str]:
+    candidates = [run_date] + [f"{run_date}_run{i:03d}" for i in range(1, 1000)]
+    for idx, stem in enumerate(candidates):
+        paths = [
+            BACKTEST_DIR / f"{stem}_baseline.csv",
+            BACKTEST_DIR / f"{stem}_positions.parquet",
+            BACKTEST_DIR / f"{stem}_stats.json",
+            LOG_DIR / f"{stem}.log",
+        ]
+        if all(not path.exists() for path in paths):
+            if idx == 0:
+                return stem, ""
+            return (
+                stem,
+                f"NOTE: same-day output files for {run_date} already exist; "
+                f"using non-overwriting run stem {stem}.",
+            )
+    raise FileExistsError(f"Refusing to overwrite outputs: no available run slot for {run_date}")
+
+
+def build_run_metadata(
+    config: dict[str, Any],
+    membership: pd.DataFrame,
+    targets,
+    baseline: pd.DataFrame,
+) -> dict[str, object]:
+    sizes = daily_universe_sizes(membership, str(config["start_date"]), str(config["end_date"]))
+    tradable_counts = [int(target.eligible_count) for target in targets]
+    active = baseline[baseline["gross_exposure"].astype(float).gt(0)]
+    return {
+        "start_date": str(config["start_date"]),
+        "end_date": str(config["end_date"]),
+        "warmup_start_date": str(config["warmup_start_date"]),
+        "effective_entry_price": str(config["entry_price"]),
+        "rebalance_freq": str(config["rebalance_freq"]),
+        "lookback_days": int(config["lookback_days"]),
+        "top_n": int(config["top_n"]),
+        "bottom_n": int(config["bottom_n"]),
+        "average_universe_size": float(sizes.mean()),
+        "average_number_of_tradable_symbols": float(np.mean(tradable_counts)) if tradable_counts else 0.0,
+        "effective_trading_days": int(active["date"].nunique()),
+        "benchmark_definition": (
+            "same-day PIT universe equal-weight long-only benchmark; "
+            "daily missing symbol returns are dropped"
+        ),
+    }
+
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -183,13 +238,14 @@ def write_log(
     stats_path: Path,
     baseline: pd.DataFrame,
     membership: pd.DataFrame,
+    metadata: dict[str, object],
     anomalies: list[dict[str, object]],
     repeat_hashes: list[str],
     reproducible: bool,
     validation_warnings: list[str],
+    output_note: str,
 ) -> None:
     sizes = daily_universe_sizes(membership, str(config["start_date"]), str(config["end_date"]))
-    active = baseline[baseline["gross_exposure"].gt(0)]
     lines = [
         f"random_seed={config.get('random_seed', 42)}",
         f"config_hash={config_hash}",
@@ -204,14 +260,31 @@ def write_log(
         "NOTE: data source = validated pre-existing data/crypto parquet files; see docs/research/DATA_REQUIREMENTS_PREV3Y.md for acquisition requirements.",
         "NOTE: quote_volume is derived as close * volume because the local prices table has no stored turnover column.",
         "NOTE: universe_membership.parquet stores true membership rows only; missing date/symbol rows are false.",
-        "NOTE: benchmark_return is equal-weight daily return of the prior-day PIT universe.",
+        "NOTE: benchmark_return uses the same-day PIT universe equal-weight long-only benchmark because config has no explicit benchmark.",
         "NOTE: portfolio_return is dated by price realization date; new rebalance weights enter on t+1 and earn returns from the next price interval.",
         "NOTE: when eligible names are fewer than top_n + bottom_n, the signal layer shrinks to balanced non-overlapping long/short pairs.",
+    ]
+    if output_note:
+        lines.append(output_note)
+    lines.extend([
         "",
         "Config:",
-    ]
+    ])
     lines.extend(f"- {key}: {value}" for key, value in sorted(config.items()))
     lines.extend([
+        "",
+        "Run Metadata:",
+        f"- start_date={metadata['start_date']}",
+        f"- end_date={metadata['end_date']}",
+        f"- warmup_start_date={metadata['warmup_start_date']}",
+        f"- effective_entry_price={metadata['effective_entry_price']}",
+        f"- rebalance_freq={metadata['rebalance_freq']}",
+        f"- lookback_days={metadata['lookback_days']}",
+        f"- top_n={metadata['top_n']}",
+        f"- bottom_n={metadata['bottom_n']}",
+        f"- average_universe_size={metadata['average_universe_size']:.6f}",
+        f"- average_number_of_tradable_symbols={metadata['average_number_of_tradable_symbols']:.6f}",
+        f"- benchmark_definition={metadata['benchmark_definition']}",
         "",
         "Data Snapshot:",
         f"- prices_daily.parquet rows={price_info.row_count} symbols={price_info.symbol_count} date_range={price_info.min_date}..{price_info.max_date} created={price_info.created}",
@@ -220,7 +293,7 @@ def write_log(
         f"- warmup_start_date={config['warmup_start_date']}",
         f"- backtest_start_date={config['start_date']}",
         f"- backtest_end_date={config['end_date']}",
-        f"- effective_trading_days={int(active['date'].nunique())}",
+        f"- effective_trading_days={metadata['effective_trading_days']}",
         f"- total_calendar_rows={int(len(baseline))}",
         f"- validation_warnings={len(validation_warnings)}",
         "",

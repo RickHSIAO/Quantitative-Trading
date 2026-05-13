@@ -1,8 +1,16 @@
 # Codex 工單 — TASK-001：Prev3Y Crypto Universe Baseline
 
-> 這是一張可以**整份貼給 Codex** 的工單。Codex 看到這份檔案後，無需再去讀其他文件即可開工。
+> 這是一張可以**整份貼給 Codex** 的工單。Codex 看到這份檔案後，應先檢查資料是否存在；若資料缺失，不可開工回測，必須回報 BLOCKED_BY_DATA。
 > 對應 queue 條目：`docs/research/CODEX_TASK_QUEUE.md` → TASK-001。
 > 對應審查條目：`docs/research/CLAUDE_REVIEW_QUEUE.md` → REVIEW-001。
+
+資料檢查後只可回報以下三種狀態之一：
+
+| 狀態 | 意思 |
+|---|---|
+| `READY_TO_IMPLEMENT` | 資料存在，可以實作 TASK-001 |
+| `BLOCKED_BY_DATA` | 缺資料，先不能回測 |
+| `NEED_CLARIFICATION` | 有資料但 schema / 日期 / universe 規則不清楚 |
 
 ---
 

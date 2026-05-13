@@ -8,16 +8,16 @@
 
 ## 輸出
 
-- `outputs/backtests/prev3y_crypto/20260513_baseline.csv`
-- `outputs/backtests/prev3y_crypto/20260513_positions.parquet`
-- `outputs/backtests/prev3y_crypto/20260513_stats.json`
-- `outputs/logs/prev3y_crypto/20260513.log`
+- `outputs/backtests/prev3y_crypto/20260513_run002_baseline.csv`
+- `outputs/backtests/prev3y_crypto/20260513_run002_positions.parquet`
+- `outputs/backtests/prev3y_crypto/20260513_run002_stats.json`
+- `outputs/logs/prev3y_crypto/20260513_run002.log`
 
 ## 關鍵數字
 
 | IR | Sharpe | Sortino | max DD | Calmar | annual turnover | hit rate |
 |---:|---:|---:|---:|---:|---:|---:|
-| -0.052954 | 0.517207 | 0.305626 | -19.4996% | 0.203754 | 1.228343x | 55.5263% |
+| -0.061757 | 0.493574 | 0.291535 | -19.4996% | 0.193255 | 1.228343x | 55.5263% |
 
 ## 樣本
 
@@ -26,7 +26,8 @@
 - 本地 price coverage：`2020-10-21` 至 `2026-04-30`。
 - 第一個有效持倉日：`2024-04-01`。
 - 有效持倉日數：760。
-- 平均 universe size：全樣本 76.791184；有效持倉日 144.115132。
+- 平均 universe size：全樣本 76.791184。
+- 平均 tradable symbols（rebalance eligible ranked symbols）：15.218391。
 
 ## 資料來源與限制
 
@@ -37,6 +38,8 @@
 - `quote_volume` 因本地 prices table 沒有 turnover 欄位，使用 `close * volume` 衍生。
 - Universe membership 只存 true rows；缺少的 date/symbol 視為非 member。
 - CMC ranking snapshot 最晚到 `2025-12-28`，2026-01 至 2026-04 使用該日以前可知的最後 snapshot。
+- Benchmark：config 未指定 benchmark；使用同日 PIT universe 等權 long-only，缺 return 的 symbol 當日剔除。
+- Positions：包含 `date, decision_date, effective_date, symbol, weight, signal_rank, signal_value, is_member`；最終輸出中 `is_member=False` rows 為 0。
 
 ## Input Validation
 
@@ -50,8 +53,8 @@
 
 - `config_hash`：`3cd7ead1b912b032cf46c79fcaa0b0a49844613f733e01580a06213a2897cac5`
 - `data_snapshot_hash`：`55191c754fca722c04025716952c05548048e140851b3c738c6c409d70ac2a38`
-- stats hash run 1：`02bfeffd2b7f84f456566d2c605e2683a65d3fc316f8410a456e9714fdcbf87c`
-- stats hash run 2：`02bfeffd2b7f84f456566d2c605e2683a65d3fc316f8410a456e9714fdcbf87c`
+- stats hash run 1：`6dc6f39c5f5ed4c7d6ca2908c9cd0fa2fcb0c63cec8a6236003187495e59db60`
+- stats hash run 2：`6dc6f39c5f5ed4c7d6ca2908c9cd0fa2fcb0c63cec8a6236003187495e59db60`
 - `baseline.csv` 重算 stats 與 `stats.json` 差異小於 `1e-12`。
 
 ## 資料異常

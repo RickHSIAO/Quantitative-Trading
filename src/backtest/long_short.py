@@ -26,9 +26,13 @@ BASELINE_SCHEMA = [
 
 POSITIONS_SCHEMA = [
     {"name": "date", "type": "datetime64[ns]", "unit": "UTC calendar date"},
+    {"name": "decision_date", "type": "datetime64[ns]", "unit": "date when weights were decided"},
+    {"name": "effective_date", "type": "datetime64[ns]", "unit": "date when weights became active"},
     {"name": "symbol", "type": "string", "unit": "Bybit perpetual symbol"},
     {"name": "weight", "type": "float64", "unit": "portfolio weight"},
     {"name": "signal_rank", "type": "int64", "unit": "1 is strongest momentum"},
+    {"name": "signal_value", "type": "float64", "unit": "ranking score used for this symbol"},
+    {"name": "is_member", "type": "bool", "unit": "PIT universe membership on the position date"},
 ]
 
 
@@ -59,11 +63,24 @@ def run_daily_long_short_backtest(
 
     current_weights: dict[str, float] = {}
     current_ranks: dict[str, int] = {}
+    current_values: dict[str, float] = {}
+    current_decision_date: pd.Timestamp | None = None
+    current_effective_date: pd.Timestamp | None = None
     rows: list[dict[str, object]] = []
     position_rows: list[dict[str, object]] = []
     anomalies: list[dict[str, object]] = []
 
     for date in dates:
+        current_members = member_by_date.get(date, set())
+        membership_turnover = 0.0
+        stale_symbols = [symbol for symbol in current_weights if symbol not in current_members]
+        if stale_symbols:
+            membership_turnover = float(sum(abs(current_weights[symbol]) for symbol in stale_symbols))
+            for symbol in stale_symbols:
+                current_weights.pop(symbol, None)
+                current_ranks.pop(symbol, None)
+                current_values.pop(symbol, None)
+
         returns = daily_returns.loc[date] if date in daily_returns.index else pd.Series(dtype="float64")
         portfolio_return, missing_symbols = _weighted_return(current_weights, returns)
         if missing_symbols:
@@ -74,13 +91,21 @@ def run_daily_long_short_backtest(
                 "issue": f"missing_position_return_symbols={len(missing_symbols)}",
             })
 
-        benchmark_return = _benchmark_return(member_by_date.get(date - pd.Timedelta(days=1), set()), returns)
-        turnover = 0.0
+        benchmark_return = _benchmark_return(member_by_date.get(date, set()), returns)
+        turnover = membership_turnover
         target = targets_by_effective.get(date)
         if target is not None:
-            turnover = _turnover(current_weights, target.weights)
-            current_weights = dict(target.weights)
+            target_weights = {
+                symbol: weight
+                for symbol, weight in target.weights.items()
+                if symbol in current_members
+            }
+            turnover += _turnover(current_weights, target_weights)
+            current_weights = dict(target_weights)
             current_ranks = dict(target.signal_ranks)
+            current_values = dict(target.signal_values)
+            current_decision_date = target.decision_date
+            current_effective_date = target.effective_date
 
         gross = float(sum(abs(v) for v in current_weights.values()))
         net = float(sum(current_weights.values()))
@@ -99,15 +124,20 @@ def run_daily_long_short_backtest(
         for symbol, weight in sorted(current_weights.items()):
             position_rows.append({
                 "date": date,
+                "decision_date": current_decision_date,
+                "effective_date": current_effective_date,
                 "symbol": symbol,
                 "weight": float(weight),
                 "signal_rank": int(current_ranks.get(symbol, 0)),
+                "signal_value": float(current_values.get(symbol, np.nan)),
+                "is_member": bool(symbol in current_members),
             })
 
     baseline = pd.DataFrame(rows, columns=[col["name"] for col in BASELINE_SCHEMA])
     positions = pd.DataFrame(position_rows, columns=[col["name"] for col in POSITIONS_SCHEMA])
     if not positions.empty:
         positions["signal_rank"] = positions["signal_rank"].astype("int64")
+        positions["is_member"] = positions["is_member"].astype("bool")
     return BacktestResult(baseline=baseline, positions=positions, return_anomalies=anomalies)
 
 

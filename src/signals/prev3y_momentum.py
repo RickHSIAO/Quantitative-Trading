@@ -14,6 +14,7 @@ class TargetPortfolio:
     effective_date: pd.Timestamp
     weights: dict[str, float]
     signal_ranks: dict[str, int]
+    signal_values: dict[str, float]
     eligible_count: int
 
 
@@ -55,21 +56,22 @@ def build_prev3y_targets(
         if effective_date > end_ts:
             continue
         if signal_cutoff not in close.index or lookback_start not in close.index:
-            targets.append(TargetPortfolio(decision_date, signal_cutoff, effective_date, {}, {}, 0))
+            targets.append(TargetPortfolio(decision_date, signal_cutoff, effective_date, {}, {}, {}, 0))
             continue
 
         members = member_by_date.get(decision_date, set())
         if not members:
-            targets.append(TargetPortfolio(decision_date, signal_cutoff, effective_date, {}, {}, 0))
+            targets.append(TargetPortfolio(decision_date, signal_cutoff, effective_date, {}, {}, {}, 0))
             continue
 
         scores = _scores(close, members, lookback_start, signal_cutoff, ranking_method)
         if scores.empty:
-            targets.append(TargetPortfolio(decision_date, signal_cutoff, effective_date, {}, {}, 0))
+            targets.append(TargetPortfolio(decision_date, signal_cutoff, effective_date, {}, {}, {}, 0))
             continue
 
         scores = scores.sort_values(ascending=False)
         ranks = {symbol: rank for rank, symbol in enumerate(scores.index, start=1)}
+        values = {symbol: float(value) for symbol, value in scores.items()}
         long_count, short_count = _side_counts(len(scores), int(top_n), int(bottom_n))
         longs = list(scores.head(long_count).index)
         shorts = list(scores.tail(short_count).index)
@@ -80,7 +82,7 @@ def build_prev3y_targets(
         if shorts:
             short_weight = -0.5 / len(shorts)
             weights.update({symbol: short_weight for symbol in shorts})
-        targets.append(TargetPortfolio(decision_date, signal_cutoff, effective_date, weights, ranks, len(scores)))
+        targets.append(TargetPortfolio(decision_date, signal_cutoff, effective_date, weights, ranks, values, len(scores)))
     return targets
 
 

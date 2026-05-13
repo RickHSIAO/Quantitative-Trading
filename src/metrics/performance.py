@@ -16,6 +16,16 @@ STATS_SCHEMA = [
     {"name": "turnover_annual", "type": "float64", "unit": "sum daily turnover / elapsed years"},
     {"name": "hit_rate", "type": "float64", "unit": "share of active days with positive portfolio return"},
     {"name": "exposure_stats", "type": "object", "unit": "gross/net/position count summary"},
+    {"name": "start_date", "type": "string", "unit": "configured backtest start date"},
+    {"name": "end_date", "type": "string", "unit": "configured backtest end date"},
+    {"name": "warmup_start_date", "type": "string", "unit": "configured warm-up start date"},
+    {"name": "effective_entry_price", "type": "string", "unit": "configured effective entry price convention"},
+    {"name": "rebalance_freq", "type": "string", "unit": "configured rebalance frequency"},
+    {"name": "lookback_days", "type": "int64", "unit": "configured lookback days"},
+    {"name": "top_n", "type": "int64", "unit": "configured long leg count"},
+    {"name": "bottom_n", "type": "int64", "unit": "configured short leg count"},
+    {"name": "average_universe_size", "type": "float64", "unit": "mean daily PIT universe size"},
+    {"name": "average_number_of_tradable_symbols", "type": "float64", "unit": "mean eligible ranked symbols on rebalance dates"},
 ]
 
 
