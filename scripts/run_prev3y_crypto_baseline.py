@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -19,25 +18,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.backtest.long_short import BASELINE_SCHEMA, POSITIONS_SCHEMA, run_daily_long_short_backtest
 from src.data.crypto_daily import (
     PRICE_SCHEMA,
-    create_price_snapshot_from_sqlite,
-    load_price_snapshot,
     price_anomalies,
     sha256_file,
     sha256_files,
 )
+from src.data.prev3y_input_validator import DataRequirementError, validate_prev3y_inputs
 from src.metrics.performance import STATS_SCHEMA, compute_stats
 from src.signals.prev3y_momentum import build_prev3y_targets
 from src.universe.prev3y_crypto import (
     UNIVERSE_SCHEMA,
-    create_universe_membership_from_sqlite,
     daily_universe_sizes,
-    load_universe_membership,
     universe_anomalies,
 )
 
 
 CONFIG_PATH = Path("configs/prev3y_crypto.yaml")
-DB_PATH = Path("data/trading.db")
 PRICE_PATH = Path("data/crypto/prices_daily.parquet")
 UNIVERSE_PATH = Path("data/crypto/universe_membership.parquet")
 BACKTEST_DIR = Path("outputs/backtests/prev3y_crypto")
@@ -49,30 +44,21 @@ def main() -> None:
     parser.add_argument("--config", default=str(CONFIG_PATH))
     parser.add_argument("--run-date", default=datetime.now(timezone.utc).strftime("%Y%m%d"))
     parser.add_argument("--repeat-check", type=int, default=2)
-    parser.add_argument("--universe-max-rank", type=int, default=200)
     args = parser.parse_args()
 
     config_path = Path(args.config)
-    config = load_simple_yaml(config_path)
-    np.random.seed(int(config.get("random_seed", 42)))
+    try:
+        validated = validate_prev3y_inputs(config_path, PRICE_PATH, UNIVERSE_PATH)
+    except DataRequirementError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
 
-    price_info = create_price_snapshot_from_sqlite(
-        DB_PATH,
-        PRICE_PATH,
-        str(config["warmup_start_date"]),
-        str(config["end_date"]),
-    )
-    prices = load_price_snapshot(PRICE_PATH)
-    universe_info = create_universe_membership_from_sqlite(
-        DB_PATH,
-        prices,
-        UNIVERSE_PATH,
-        str(config["warmup_start_date"]),
-        str(config["start_date"]),
-        str(config["end_date"]),
-        max_rank=int(args.universe_max_rank),
-    )
-    membership = load_universe_membership(UNIVERSE_PATH)
+    config = validated.config
+    np.random.seed(int(config.get("random_seed", 42)))
+    prices = validated.prices
+    membership = validated.membership
+    price_info = validated.price_info
+    universe_info = validated.universe_info
 
     config_hash = sha256_file(config_path)
     data_snapshot_hash = sha256_files([PRICE_PATH, UNIVERSE_PATH])
@@ -120,6 +106,7 @@ def main() -> None:
         anomalies=anomalies,
         repeat_hashes=repeat_hashes,
         reproducible=reproducible,
+        validation_warnings=validated.warnings,
     )
 
     print(json.dumps({
@@ -161,40 +148,6 @@ def run_once(config: dict[str, Any], prices: pd.DataFrame, membership: pd.DataFr
         "return_anomalies": backtest.return_anomalies,
     }
 
-
-def load_simple_yaml(path: Path) -> dict[str, Any]:
-    config: dict[str, Any] = {}
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        if ":" not in line:
-            raise ValueError(f"Invalid config line: {raw}")
-        key, value = line.split(":", 1)
-        config[key.strip()] = parse_scalar(value.strip())
-    required = {
-        "lookback_days", "rebalance_freq", "top_n", "bottom_n", "ranking_method",
-        "entry_price", "start_date", "end_date", "warmup_start_date",
-    }
-    missing = sorted(required - set(config))
-    if missing:
-        raise ValueError(f"Missing config keys: {', '.join(missing)}")
-    return config
-
-
-def parse_scalar(value: str) -> Any:
-    if value.lower() in {"true", "false"}:
-        return value.lower() == "true"
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    try:
-        return float(value)
-    except ValueError:
-        return value
-
-
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -233,6 +186,7 @@ def write_log(
     anomalies: list[dict[str, object]],
     repeat_hashes: list[str],
     reproducible: bool,
+    validation_warnings: list[str],
 ) -> None:
     sizes = daily_universe_sizes(membership, str(config["start_date"]), str(config["end_date"]))
     active = baseline[baseline["gross_exposure"].gt(0)]
@@ -245,7 +199,9 @@ def write_log(
         "TASK-001 Prev3Y Crypto Universe Baseline",
         f"run_utc={datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}",
         f"config={CONFIG_PATH}",
-        "NOTE: data source = data/trading.db tables prices, crypto_market_cap_rankings, crypto_bybit_linear_instruments",
+        "NOTE: input gate passed before backtest; required parquet/config files existed and schema validation passed.",
+        "NOTE: baseline runner refuses missing/schema-invalid inputs and does not create random, simulated, or synthetic data.",
+        "NOTE: data source = validated pre-existing data/crypto parquet files; see docs/research/DATA_REQUIREMENTS_PREV3Y.md for acquisition requirements.",
         "NOTE: quote_volume is derived as close * volume because the local prices table has no stored turnover column.",
         "NOTE: universe_membership.parquet stores true membership rows only; missing date/symbol rows are false.",
         "NOTE: benchmark_return is equal-weight daily return of the prior-day PIT universe.",
@@ -266,6 +222,7 @@ def write_log(
         f"- backtest_end_date={config['end_date']}",
         f"- effective_trading_days={int(active['date'].nunique())}",
         f"- total_calendar_rows={int(len(baseline))}",
+        f"- validation_warnings={len(validation_warnings)}",
         "",
         "No-Trading/Missing-Day Handling:",
         "- Baseline uses a complete daily UTC calendar from start_date to end_date.",
@@ -289,9 +246,13 @@ def write_log(
         "Reproducibility:",
         f"- stats_hashes={','.join(repeat_hashes)}",
         f"- repeat_stats_hash_identical={str(reproducible).lower()}",
-        "",
-        "Data Anomalies:",
     ])
+    if validation_warnings:
+        lines.append("")
+        lines.append("Validation Warnings:")
+        lines.extend(f"- {warning}" for warning in validation_warnings)
+    lines.append("")
+    lines.append("Data Anomalies:")
     if anomalies:
         for anomaly in anomalies[:200]:
             lines.append(

@@ -42,10 +42,11 @@
 重現指令：
 
 ```powershell
+python scripts\validate_prev3y_crypto_inputs.py
 python scripts\run_prev3y_crypto_baseline.py
 ```
 
-注意：同日正式輸出檔已存在時，腳本會拒絕覆寫；需要新正式輸出時請使用新的 UTC 日期。
+注意：baseline runner 只接受已存在且 schema 正確的 parquet/config；缺資料時會以 `BLOCKED_BY_DATA` 停止，不會產生隨機或模擬資料。同日正式輸出檔已存在時，腳本也會拒絕覆寫；需要新正式輸出時請使用新的 UTC 日期。
 
 ---
 

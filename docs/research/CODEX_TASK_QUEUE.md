@@ -2,7 +2,7 @@
 
 最後更新：2026-05-12
 維護者：Claude（任務卡撰寫） / Rick（核可）
-狀態圖例：`TODO` / `IN_PROGRESS` / `REVIEW` / `BLOCKED` / `DONE`
+狀態圖例：`TODO` / `IN_PROGRESS` / `REVIEW` / `BLOCKED` / `BLOCKED_BY_DATA` / `DONE`
 
 > **給 Codex 的全域守則**
 > 1. 一次只做一個任務，做完進 `REVIEW`，**不可** 自行轉 `DONE`。
@@ -33,6 +33,12 @@
 - `data/crypto/prices_daily.parquet`：日線 OHLCV，欄位至少 `[date, symbol, open, high, low, close, volume, quote_volume]`，UTC，已調整。
 - `data/crypto/universe_membership.parquet`：每日 universe 名單（**point-in-time**，禁止用「目前還活著」的清單反推歷史）。
 - `configs/prev3y_crypto.yaml`：回測參數（lookback、rebalance freq、top-N、ranking method）。
+
+### 資料 Gate（補充要求）
+- 實作或回測前必須先執行 `python scripts\validate_prev3y_crypto_inputs.py`。
+- 若 `prices_daily.parquet` 或 `universe_membership.parquet` 不存在或 schema 不正確，不可產生假資料、不可隨機模擬、不可跑 fake baseline。
+- 缺資料時只建立 validator / 錯誤訊息 / `docs/research/DATA_REQUIREMENTS_PREV3Y.md`，並將狀態標記為 `BLOCKED_BY_DATA`。
+- 2026-05-13 local check：三個 required inputs 皆存在且 schema pass；目前缺資料：none。
 
 ### 輸出檔案
 - `outputs/backtests/prev3y_crypto/<YYYYMMDD>_baseline.csv`
@@ -66,6 +72,7 @@
 - 樣本：baseline CSV 覆蓋 `2019-01-01` 至 `2026-04-30`，warm-up `2018-01-01`；本地 Bybit price coverage 從 `2020-10-21` 開始，第一個有效持倉日為 `2024-04-01`。
 - 可重現性：同一 config/data snapshot 內部重跑兩次，`stats.json` hash 皆為 `02bfeffd2b7f84f456566d2c605e2683a65d3fc316f8410a456e9714fdcbf87c`。
 - NOTE: data source = `data/trading.db` 的 `prices`、`crypto_market_cap_rankings`、`crypto_bybit_linear_instruments`；`quote_volume` 由 `close * volume` 衍生。
+- NOTE: supplemental data gate 已落地；baseline runner 現在只驗證並讀取既有 parquet/config，缺資料時輸出 `BLOCKED_BY_DATA` 並停止。
 
 ---
 
