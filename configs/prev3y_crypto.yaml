@@ -1,0 +1,10 @@
+random_seed: 42
+lookback_days: 1095
+rebalance_freq: monthly
+top_n: 25
+bottom_n: 25
+ranking_method: return
+entry_price: t1_open
+start_date: 2019-01-01
+end_date: 2026-04-30
+warmup_start_date: 2018-01-01
