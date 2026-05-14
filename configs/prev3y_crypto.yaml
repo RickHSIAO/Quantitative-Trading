@@ -8,3 +8,9 @@ entry_price: t1_open
 start_date: 2019-01-01
 end_date: 2026-04-30
 warmup_start_date: 2018-01-01
+benchmark:
+  primary: cash
+  btc_symbol: BYBIT:BTCUSDT.P
+  alternatives:
+    - btc_perp
+    - equal_weight_long_only

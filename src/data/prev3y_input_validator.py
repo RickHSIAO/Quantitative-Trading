@@ -177,6 +177,19 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         errors.append("config ranking_method must be return or risk_adjusted_return")
     if config["entry_price"] not in {"t1_open", "t1_close"}:
         errors.append("config entry_price must be t1_open or t1_close")
+    benchmark = config.get("benchmark", {})
+    if benchmark and not isinstance(benchmark, dict):
+        errors.append("config benchmark must be a mapping when provided")
+    if isinstance(benchmark, dict) and benchmark:
+        primary = benchmark.get("primary", "cash")
+        if primary not in {"cash", "btc_perp", "equal_weight_long_only"}:
+            errors.append("config benchmark.primary must be cash, btc_perp, or equal_weight_long_only")
+        btc_symbol = benchmark.get("btc_symbol", "")
+        if not isinstance(btc_symbol, str) or not btc_symbol:
+            errors.append("config benchmark.btc_symbol must be a non-empty string")
+        alternatives = benchmark.get("alternatives", [])
+        if alternatives and not isinstance(alternatives, list):
+            errors.append("config benchmark.alternatives must be a list when provided")
     try:
         warmup = pd.Timestamp(str(config["warmup_start_date"]))
         start = pd.Timestamp(str(config["start_date"]))
@@ -215,14 +228,43 @@ def validate_coverage(config: dict[str, Any], prices: pd.DataFrame, membership: 
 
 def load_simple_yaml(path: Path) -> dict[str, Any]:
     config: dict[str, Any] = {}
+    current_map: dict[str, Any] | None = None
+    current_list_key: str | None = None
     for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.split("#", 1)[0].strip()
+        line_without_comment = raw.split("#", 1)[0].rstrip()
+        line = line_without_comment.strip()
         if not line:
+            continue
+        indent = len(line_without_comment) - len(line_without_comment.lstrip(" "))
+        if indent >= 4 and current_map is not None and current_list_key is not None and line.startswith("- "):
+            current_map.setdefault(current_list_key, []).append(parse_scalar(line[2:].strip()))
+            continue
+        if indent >= 2 and current_map is not None:
+            if ":" not in line:
+                raise ValueError(f"Invalid nested config line: {raw}")
+            key, value = line.split(":", 1)
+            nested_key = key.strip()
+            nested_value = value.strip()
+            if nested_value == "":
+                current_map[nested_key] = []
+                current_list_key = nested_key
+            else:
+                current_map[nested_key] = parse_scalar(nested_value)
+                current_list_key = None
             continue
         if ":" not in line:
             raise ValueError(f"Invalid config line: {raw}")
         key, value = line.split(":", 1)
-        config[key.strip()] = parse_scalar(value.strip())
+        top_key = key.strip()
+        top_value = value.strip()
+        if top_value == "":
+            config[top_key] = {}
+            current_map = config[top_key]
+            current_list_key = None
+        else:
+            config[top_key] = parse_scalar(top_value)
+            current_map = None
+            current_list_key = None
     return config
 
 

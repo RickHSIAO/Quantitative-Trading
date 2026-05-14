@@ -27,6 +27,15 @@
 - Final non-overwriting rerun: `outputs/backtests/prev3y_crypto/20260513_run002_baseline.csv`,
   `20260513_run002_positions.parquet`, `20260513_run002_stats.json`,
   `outputs/logs/prev3y_crypto/20260513_run002.log`
+- TASK-001c reporting supplement: `outputs/backtests/prev3y_crypto/20260513_run003_stats.json`
+- TASK-001b benchmark supplement: `outputs/backtests/prev3y_crypto/20260513_run004_baseline.csv`,
+  `20260513_run004_positions.parquet`, `20260513_run004_stats.json`,
+  `outputs/logs/prev3y_crypto/20260513_run004.log`
+- TASK-001d missing-data supplement: `outputs/backtests/prev3y_crypto/20260513_run007_baseline.csv`,
+  `20260513_run007_positions.parquet`, `20260513_run007_stats.json`,
+  `outputs/logs/prev3y_crypto/20260513_run007.log`,
+  `outputs/data_quality/prev3y_crypto/20260513_run007_data_quality_summary.csv`,
+  `outputs/data_quality/prev3y_crypto/20260513_run007_data_quality_aggregate.json`
 
 關鍵結果：
 
@@ -40,8 +49,22 @@
 - 本地 Bybit OHLCV coverage 從 `2020-10-21` 開始；3 年 lookback 後，第一個有效持倉日為 `2024-04-01`。
 - PIT universe 來源是本機 `data/trading.db`：`prices`、`crypto_market_cap_rankings`、`crypto_bybit_linear_instruments`。
 - 平均 universe size：全樣本 76.79；rebalance eligible tradable symbols 平均 15.22。
-- Benchmark：config 未指定 benchmark，因此使用「同日 PIT universe 等權 long-only」，缺 return 的 symbol 在當日 benchmark 中剔除。
+- Benchmark：TASK-001b 起 primary benchmark 為 cash；`benchmark_return = benchmark_cash_return`。
+  `benchmark_eqw_return` 保留舊版 run003 的「同日 PIT universe 等權 long-only」benchmark，缺 return 的 symbol 當日剔除。
+  `benchmark_btc_return` 使用 `BYBIT:BTCUSDT.P` open-to-open return；BTC 缺資料日期保留 NaN，不補 0。
 - `stats.json` 可由 `baseline.csv` 重算重現，誤差小於 `1e-12`；同一 config/data snapshot 內部雙跑 stats hash 相同。
+
+TASK-001b benchmark IR（run004）：
+
+| benchmark | full IR | active IR |
+|---|---:|---:|
+| cash | 0.493574 | 0.926682 |
+| BTC perp (`BYBIT:BTCUSDT.P`) | -0.324759 | -0.017486 |
+| PIT equal-weight long-only | -0.061757 | 0.722657 |
+
+Coverage：BTC return 覆蓋 `2021-03-03` 至 `2026-04-30`；full period 缺 `793` 天，active period 缺 `0` 天。Equal-weight benchmark 平均可用 symbols `76.748226`、最小 `0`、缺 benchmark symbols 天數 `660`。
+
+TASK-001d data-quality policy：missing return 不補 0；nonpositive OHLC 不補值；不 forward fill price；volume <= 0 只記 warning；missing volume / quote_volume hard exclusion。run007 DQ 摘要：abnormal symbol-days `332`、holding exclusions `115`、ranking exclusions `0`、forced holding exits `0`；COMP-USD / ICP-USD 已標記。run007 vs run004 的 portfolio_return、exposure、turnover、positions 均相同。
 
 重現指令：
 
