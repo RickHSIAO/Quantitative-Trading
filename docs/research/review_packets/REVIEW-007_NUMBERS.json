@@ -1,0 +1,248 @@
+{
+  "analysis_basis": "TASK-007 post-processing overlay study, not a trading decision",
+  "fail_gates": {
+    "baseline_mismatch": {
+      "threshold": 1e-06,
+      "triggered": false,
+      "value": 2.0469737016526324e-16
+    },
+    "missing_outputs": {
+      "missing": [],
+      "triggered": false
+    },
+    "schema_mismatch": {
+      "errors": [],
+      "triggered": false
+    }
+  },
+  "git_commit": "c044f55ea767dbc307e80aa799318cab91458efc",
+  "key_numbers": [
+    {
+      "gross_alpha": 0.2958303702519035,
+      "ir_vs_btc_active": -0.027270136895207235,
+      "ir_vs_cash_active": 0.8918383335973169,
+      "ir_vs_equal_weight_active": 0.7168297988967604,
+      "long_net_contribution": -0.0500936861537534,
+      "max_dd": -0.19639391054316346,
+      "net_alpha": 0.285325552778563,
+      "sharpe_active": 0.8918383335973169,
+      "short_net_contribution": 0.33562923893231644,
+      "single_symbol_concentration_net_alpha_total": 0.25453623476808096,
+      "top5_concentration_net_alpha_total": 0.9555841694899185,
+      "variant": "baseline_current_long_short"
+    },
+    {
+      "gross_alpha": 0.31625127229464856,
+      "ir_vs_btc_active": 0.01343551338418832,
+      "ir_vs_cash_active": 0.40452349412793404,
+      "ir_vs_equal_weight_active": 0.5511032175197697,
+      "long_net_contribution": 0.0,
+      "max_dd": -0.4918343936488285,
+      "net_alpha": 0.3373277527017551,
+      "sharpe_active": 0.40452349412793404,
+      "short_net_contribution": 0.33732775270175513,
+      "single_symbol_concentration_net_alpha_total": 0.21529711476656369,
+      "top5_concentration_net_alpha_total": 0.724691105325445,
+      "variant": "short_only_unscaled"
+    },
+    {
+      "gross_alpha": 0.6429882367436677,
+      "ir_vs_btc_active": 0.14934986679162257,
+      "ir_vs_cash_active": 0.4105843615584708,
+      "ir_vs_equal_weight_active": 0.5189067545422866,
+      "long_net_contribution": 0.0,
+      "max_dd": -0.7574227473645785,
+      "net_alpha": 0.6851538916189115,
+      "sharpe_active": 0.4105843615584708,
+      "short_net_contribution": 0.6851538916189116,
+      "single_symbol_concentration_net_alpha_total": 0.21242948089029515,
+      "top5_concentration_net_alpha_total": 0.7163543862933514,
+      "variant": "short_only_rescaled"
+    },
+    {
+      "gross_alpha": -0.020420902042744868,
+      "ir_vs_btc_active": -0.6615637883174287,
+      "ir_vs_cash_active": -0.07633935782808647,
+      "ir_vs_equal_weight_active": 0.9492572986294188,
+      "long_net_contribution": -0.05179219992319216,
+      "max_dd": -0.41584708720411534,
+      "net_alpha": -0.0517921999231922,
+      "sharpe_active": -0.07633935782808647,
+      "short_net_contribution": 0.0,
+      "single_symbol_concentration_net_alpha_total": -0.9664054774960399,
+      "top5_concentration_net_alpha_total": -3.8935286558490336,
+      "variant": "long_only_unscaled"
+    },
+    {
+      "gross_alpha": -0.03680651419630185,
+      "ir_vs_btc_active": -0.5486890431558911,
+      "ir_vs_cash_active": -0.07334826576246302,
+      "ir_vs_equal_weight_active": 1.7341149054345266,
+      "long_net_contribution": -0.09947464176986315,
+      "max_dd": -0.704416617879796,
+      "net_alpha": -0.09947464176986337,
+      "sharpe_active": -0.07334826576246302,
+      "short_net_contribution": 0.0,
+      "single_symbol_concentration_net_alpha_total": -1.0075804451966024,
+      "top5_concentration_net_alpha_total": -4.058935445733926,
+      "variant": "long_only_rescaled"
+    },
+    {
+      "gross_alpha": 0.31625127229464856,
+      "ir_vs_btc_active": 0.01343551338418832,
+      "ir_vs_cash_active": 0.40452349412793404,
+      "ir_vs_equal_weight_active": 0.5511032175197697,
+      "long_net_contribution": 0.0,
+      "max_dd": -0.4918343936488285,
+      "net_alpha": 0.3373277527017551,
+      "sharpe_active": 0.40452349412793404,
+      "short_net_contribution": 0.33732775270175513,
+      "single_symbol_concentration_net_alpha_total": 0.21529711476656369,
+      "top5_concentration_net_alpha_total": 0.724691105325445,
+      "variant": "no_long_side"
+    },
+    {
+      "gross_alpha": 0.3060408212732759,
+      "ir_vs_btc_active": -0.0023014479656795826,
+      "ir_vs_cash_active": 0.5846071489024671,
+      "ir_vs_equal_weight_active": 0.6224849629752951,
+      "long_net_contribution": -0.02577187849527291,
+      "max_dd": -0.34040497287622273,
+      "net_alpha": 0.31143165274015905,
+      "sharpe_active": 0.5846071489024671,
+      "short_net_contribution": 0.337203531235432,
+      "single_symbol_concentration_net_alpha_total": 0.23319945563777214,
+      "top5_concentration_net_alpha_total": 0.805758652738138,
+      "variant": "long_half_weight"
+    },
+    {
+      "gross_alpha": 0.2982825671592271,
+      "ir_vs_btc_active": -0.024745530019452358,
+      "ir_vs_cash_active": 0.8999792286518747,
+      "ir_vs_equal_weight_active": 0.7181672744316511,
+      "long_net_contribution": -0.04759997625276323,
+      "max_dd": -0.19639391054316346,
+      "net_alpha": 0.2880292626795532,
+      "sharpe_active": 0.8999792286518747,
+      "short_net_contribution": 0.33562923893231644,
+      "single_symbol_concentration_net_alpha_total": 0.2521469215028212,
+      "top5_concentration_net_alpha_total": 0.9469463761664858,
+      "variant": "long_with_50pct_cap"
+    },
+    {
+      "gross_alpha": 0.2426078638345844,
+      "ir_vs_btc_active": -0.07993608367216942,
+      "ir_vs_cash_active": 0.7225476158500358,
+      "ir_vs_equal_weight_active": 0.6926986154870609,
+      "long_net_contribution": -0.05002939947166443,
+      "max_dd": -0.19639391054316369,
+      "net_alpha": 0.2299215687898153,
+      "sharpe_active": 0.7225476158500358,
+      "short_net_contribution": 0.2799509682614798,
+      "single_symbol_concentration_net_alpha_total": 0.21387308518629367,
+      "top5_concentration_net_alpha_total": 1.0356110970474368,
+      "variant": "top5_symbol_cap_5pct"
+    },
+    {
+      "gross_alpha": 0.26336948619445977,
+      "ir_vs_btc_active": -0.059363721997474604,
+      "ir_vs_cash_active": 0.7921847347538138,
+      "ir_vs_equal_weight_active": 0.7030223916801337,
+      "long_net_contribution": -0.0500936861537534,
+      "max_dd": -0.19639391054316313,
+      "net_alpha": 0.25150608385207157,
+      "sharpe_active": 0.7921847347538138,
+      "short_net_contribution": 0.30159977000582505,
+      "single_symbol_concentration_net_alpha_total": 0.21361735759152659,
+      "top5_concentration_net_alpha_total": 0.983057771514553,
+      "variant": "DOT_capped"
+    },
+    {
+      "gross_alpha": 0.22670405592423093,
+      "ir_vs_btc_active": -0.09875798838025723,
+      "ir_vs_cash_active": 0.7131865925855001,
+      "ir_vs_equal_weight_active": 0.6965139691626783,
+      "long_net_contribution": -0.0500936861537534,
+      "max_dd": -0.1757806167978465,
+      "net_alpha": 0.2129098608911862,
+      "sharpe_active": 0.7131865925855001,
+      "short_net_contribution": 0.26300354704493967,
+      "single_symbol_concentration_net_alpha_total": 0.25234183529963755,
+      "top5_concentration_net_alpha_total": 1.1612661305543361,
+      "variant": "no_DOT"
+    },
+    {
+      "gross_alpha": 0.31999193939258674,
+      "ir_vs_btc_active": -0.0017624797472399767,
+      "ir_vs_cash_active": 0.9586442125441919,
+      "ir_vs_equal_weight_active": 0.7281538732883033,
+      "long_net_contribution": -0.022933864613070357,
+      "max_dd": -0.20270037977658784,
+      "net_alpha": 0.3126953743192462,
+      "sharpe_active": 0.9586442125441919,
+      "short_net_contribution": 0.33562923893231644,
+      "single_symbol_concentration_net_alpha_total": 0.23225700746449035,
+      "top5_concentration_net_alpha_total": 0.8721863715127797,
+      "variant": "high_funding_cost_filter"
+    },
+    {
+      "gross_alpha": 0.2602977983363477,
+      "ir_vs_btc_active": -0.059967429447981495,
+      "ir_vs_cash_active": 0.8036703627263506,
+      "ir_vs_equal_weight_active": 0.6961034976096455,
+      "long_net_contribution": 0.042137302598932336,
+      "max_dd": -0.20270037977658806,
+      "net_alpha": 0.2499075813568325,
+      "sharpe_active": 0.8036703627263506,
+      "short_net_contribution": 0.2077702787579001,
+      "single_symbol_concentration_net_alpha_total": 0.19725358978276364,
+      "top5_concentration_net_alpha_total": 0.9191504237296175,
+      "variant": "combined_paper_safe_variant"
+    }
+  ],
+  "reproducibility_hash": "824ff334e30810aeeaef8a06319a9ac8563b61f903835c89ae6cfbd9e140066f",
+  "run_date": "20260515",
+  "warning_gates": {
+    "cap_variants_destroy_more_than_50pct_net_alpha": {
+      "cap_variant_losses": {
+        "DOT_capped": 0.11852940823964057,
+        "combined_paper_safe_variant": 0.12413178937821195,
+        "no_DOT": 0.25380023339016383,
+        "top5_symbol_cap_5pct": 0.19417813598961434
+      },
+      "threshold": 0.5,
+      "triggered": false,
+      "value": 0.25380023339016383
+    },
+    "combined_paper_safe_variant_ir_eqw_below_0p2": {
+      "threshold": 0.2,
+      "triggered": false,
+      "value": 0.6961034976096455
+    },
+    "combined_paper_safe_variant_sharpe_below_0p5": {
+      "threshold": 0.5,
+      "triggered": false,
+      "value": 0.8036703627263506
+    },
+    "long_only_rescaled_net_alpha_negative": {
+      "threshold": 0.0,
+      "triggered": true,
+      "value": -0.09947464176986337
+    },
+    "short_only_rescaled_max_dd_worse_than_baseline_1p5x": {
+      "threshold": 1.5,
+      "triggered": true,
+      "value": 3.856650877156968
+    },
+    "single_symbol_concentration_remains_above_25pct": {
+      "threshold": 0.25,
+      "triggered": true,
+      "value": 0.25453623476808096
+    },
+    "top5_concentration_remains_above_60pct": {
+      "threshold": 0.6,
+      "triggered": true,
+      "value": 1.1612661305543361
+    }
+  }
+}

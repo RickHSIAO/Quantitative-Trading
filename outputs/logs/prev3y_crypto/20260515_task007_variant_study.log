@@ -1,0 +1,96 @@
+TASK-007 Long-side Variant Study
+run_date=20260515
+analysis_basis=post-processing overlay study, not a trading decision
+baseline_run_id=20260513_run008
+cost_stress_run_id=20260515
+primary_scenario=realistic_combo
+git_commit=c044f55ea767dbc307e80aa799318cab91458efc
+reproducibility_hash=824ff334e30810aeeaef8a06319a9ac8563b61f903835c89ae6cfbd9e140066f
+
+methodology:
+{
+  "annualization_factor": 365.25,
+  "cap_policy": "primary cap variants use cap_no_redistribution; excess weight is removed",
+  "cost_scaling": "cost_scale = abs(variant_weight / original_weight); all costs zero when variant_weight is zero",
+  "cost_source": "official TASK-002 realistic_combo symbol-day costs",
+  "funding_cost_policy": "primary outputs do not recalculate funding from raw funding rates",
+  "high_funding_threshold_8h": 0.0003,
+  "high_funding_window_days": 30,
+  "return_dating": "positions.date + 1 day = return_date",
+  "std_ddof": 1
+}
+
+fail_gates:
+{
+  "baseline_mismatch": {
+    "threshold": 1e-06,
+    "triggered": false,
+    "value": 2.0469737016526324e-16
+  },
+  "missing_outputs": {
+    "missing": [],
+    "triggered": false
+  },
+  "schema_mismatch": {
+    "errors": [],
+    "triggered": false
+  }
+}
+
+warning_gates:
+{
+  "cap_variants_destroy_more_than_50pct_net_alpha": {
+    "cap_variant_losses": {
+      "DOT_capped": 0.11852940823964057,
+      "combined_paper_safe_variant": 0.12413178937821195,
+      "no_DOT": 0.25380023339016383,
+      "top5_symbol_cap_5pct": 0.19417813598961434
+    },
+    "threshold": 0.5,
+    "triggered": false,
+    "value": 0.25380023339016383
+  },
+  "combined_paper_safe_variant_ir_eqw_below_0p2": {
+    "threshold": 0.2,
+    "triggered": false,
+    "value": 0.6961034976096455
+  },
+  "combined_paper_safe_variant_sharpe_below_0p5": {
+    "threshold": 0.5,
+    "triggered": false,
+    "value": 0.8036703627263506
+  },
+  "long_only_rescaled_net_alpha_negative": {
+    "threshold": 0.0,
+    "triggered": true,
+    "value": -0.09947464176986337
+  },
+  "short_only_rescaled_max_dd_worse_than_baseline_1p5x": {
+    "threshold": 1.5,
+    "triggered": true,
+    "value": 3.856650877156968
+  },
+  "single_symbol_concentration_remains_above_25pct": {
+    "threshold": 0.25,
+    "triggered": true,
+    "value": 0.25453623476808096
+  },
+  "top5_concentration_remains_above_60pct": {
+    "threshold": 0.6,
+    "triggered": true,
+    "value": 1.1612661305543361
+  }
+}
+
+input_hashes:
+{
+  "attribution_summary_json": "72fc2b53b22259e0de5bffc7a47358a546f1c4591e65eb6ce2c1b5e6c28a10c4",
+  "cost_stress_csv": "f8663c9e0f813d099f2b2858b57f37e34c88fd5ff14382398b98825799703f09",
+  "cost_stress_positions_cost_parquet": "fc77fcb2b2c9f0731feda73fc3a4300646e0cc4923531a29e02df25116793309",
+  "funding_rates_parquet": "e754b52c0f4801d61aa96eb7bccacd1ea7afc37acd9af7cae6833095a56a131b",
+  "prev3y_crypto_yaml": "e4118508c1d925522872a8b0c268430461b0000f18ec53a339f1fbcc19885575",
+  "prices_daily_parquet": "be067f1471e4bc20e980d5d86cc96e644792bc5282d8d550e4fde299e7352bd8",
+  "run008_baseline_csv": "051b89b2b5834b4a305b51436348548f569d3c4524ce487e2a7986b2c896f49f",
+  "run008_positions_parquet": "cb1190bdce7724cdb5cf8d5a8d84d0e0d4d6365953cc1f5a1a67d90afe5ee3b6",
+  "universe_membership_parquet": "8450bde5923d08b04f168eca2d5ed626976a0efd0af75d7bd37bfdc012962c2f"
+}

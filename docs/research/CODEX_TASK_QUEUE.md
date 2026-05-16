@@ -1,6 +1,6 @@
 # Codex Task Queue
 
-最後更新：2026-05-12
+最後更新：2026-05-14
 維護者：Claude（任務卡撰寫） / Rick（核可）
 狀態圖例：`TODO` / `READY_TO_IMPLEMENT` / `IN_PROGRESS` / `REVIEW` / `BLOCKED` / `BLOCKED_BY_DATA` / `DONE`
 
@@ -16,7 +16,7 @@
 
 ## TASK-001 — Prev3Y Crypto Universe 測試
 
-- **狀態**：**DONE**（Claude REVIEW-001_final PASS，2026-05-13）
+- **狀態**：**DONE**（Claude REVIEW-001_final PASS，2026-05-14）
 - **最終正式 baseline**：`20260513_run008`
 - **Owner**：Codex
 - **預估**：M（2–3 天）
@@ -263,10 +263,10 @@ COMP-USD 在 2021-04..2022-01 有 205 列 missing OHLCV，目前以 return=0 處
 
 ## TASK-001e - Final Review Readiness Patch
 
-- **Status**: DONE（Claude REVIEW-001e PASS，2026-05-13）
+- **Status**: DONE（Claude REVIEW-001e PASS，2026-05-14）
 - **Owner**: Codex
 - **Date**: 2026-05-14
-- **Dependency**: TASK-001b / TASK-001c / TASK-001d are DONE; TASK-001 remains REVIEW, not DONE.
+- **Dependency**: TASK-001b / TASK-001c / TASK-001d are DONE; TASK-001e is now archived into final TASK-001 closure.
 
 ### Goal
 Close the small REVIEW-001d final-review gaps before `REVIEW-001_final`, without changing strategy behavior.
@@ -307,32 +307,187 @@ Close the small REVIEW-001d final-review gaps before `REVIEW-001_final`, without
 - No data-quality policy behavior changes.
 - No cost / funding / slippage added.
 - No raw data modified.
-- TASK-001 remains REVIEW and must wait for `REVIEW-001_final`.
-- TASK-002 / TASK-003 remain BLOCKED.
+- TASK-001 is now DONE after `REVIEW-001_final`.
+- TASK-002 / TASK-003 are now TODO, but were not run during TASK-001e.
 
-### Claude REVIEW-001e 結論（2026-05-13）
+### Claude REVIEW-001e 結論（2026-05-14）
 - 結論：**PASS**。詳見 `docs/research/CLAUDE_REVIEW_LOG.md` → REVIEW-001e。
 - 強證據：baseline.csv / positions.parquet / DQ summary / DQ aggregate 四份檔案與 run007 **byte-identical**（SHA-256 全相同），證明只動報表 + 測試。
 - 新 metadata 4 欄獨立驗算：`ir_vs_btc_full_effective_days=1884`、`ir_vs_btc_active_effective_days=760`、`benchmark_eqw_effective_days_full=2017`、`benchmark_eqw_effective_days_active=760` 全部可由 CSV 重算對到。
 - 三個 REVIEW-001d 列的單元測試缺口（ranking exclusion / missing_price_row / aggregator 邊界）全部被新測試覆蓋；Read tool 直接驗證 Windows-side 5 test 完整存在。
 - 環境註記（非 Codex 問題）：Linux mount 同步延遲 + stale pyc cache 讓本環境 `python -m unittest` 看不到新測試；Codex Windows 端自報 5 tests PASS，視為可信。建議下次把 unittest console output 一併貼進交付摘要。
 - **允許 TASK-001e 轉 DONE**；**允許 Claude 開 REVIEW-001_final**。
-- final review 通過後：TASK-001 整體轉 DONE，TASK-002 / TASK-003 解除 BLOCKED，SUMMARY.md 更新到最終態。
+- final review 已通過：TASK-001 整體轉 DONE，TASK-002 / TASK-003 解除 BLOCKED 並轉 TODO。
+
+---
+
+## TASK-001f - Final Cleanup / Archive Patch
+
+- **Status**: DONE
+- **Owner**: Codex
+- **Date**: 2026-05-14
+
+### Scope Completed
+- Archived TASK-001 final state in `docs/research/TASK_001_PREV3Y_BASELINE_SUMMARY.md`.
+- Added final NOTE lines to `docs/research/codex_workorders/TASK-001_prev3y_crypto_baseline.md`.
+- Added cache ignore rules to `.gitignore`.
+- Added `docs/research/TASK_001_FINAL_CLEANUP_REPORT.md`.
+
+### Guardrails Confirmed
+- No strategy program changes.
+- No backtest logic changes.
+- No new experiments.
+- TASK-002 / TASK-003 were not run.
+- run008 outputs and raw data were not modified.
+- No stage / commit was performed for TASK-001f.
+
+---
+
+## TASK-002a — Cost / Funding Input Builder
+
+- **狀態**：**DONE**（Claude REVIEW-002a_phase2_full PASS，2026-05-14）
+- **最終正式輸出**：`data/crypto/funding_rates.parquet`（750,641 列、273 symbols、active period 2024-04-01 ~ 2026-04-30、無 proxy）
+- **子狀態**：
+  - Phase 1（scaffolding + smoke）：DONE
+  - Phase 2 dry-run（4 symbols × 7 days）：DONE
+  - Phase 2 full fetch（273 symbols × 760 days）：**DONE**（Claude REVIEW-002a_phase2_full PASS）
+- **重大發現（影響 TASK-002）**：Bybit funding 是 **1h / 4h / 8h 混合 interval**（1 symbol / 145 symbols / 127 symbols），非統一 8h。詳見 REVIEW-002a_phase2_full 第 3 節 5 項必改清單。
+- **Owner**：Codex
+- **預估**：S–M（Phase 1 已落地；Phase 2 預估 1 天視 API rate-limit / 273 symbol 抓取狀況）
+- **工單**：`docs/research/codex_workorders/TASK-002a_cost_funding_inputs.md`（可整份貼給 Codex）；Phase 2 額外規則見 `CLAUDE_REVIEW_LOG.md` → REVIEW-002a_phase1 第 4 節
+- **依賴**：TASK-001 已 DONE；run008 三件套作為 read-only 輸入
+
+### 任務目的
+建立 TASK-002 所需的 3 個輸入檔案（`data/crypto/funding_rates.parquet`、`data/crypto/fees.yaml`、`configs/cost_stress.yaml`），但**不執行**任何 cost stress 計算。解除 TASK-002 的 `BLOCKED_BY_INPUTS`。
+
+### 為什麼重要
+- TASK-002 readiness check 已標記為 `BLOCKED_BY_INPUTS`：缺 funding_rates / fees / cost_stress 三個輸入。
+- 真實 funding 是 TASK-002 fail gate 結論的核心；若用平均化 / 模擬 funding，整份 stress test 報廢。
+- Symbol mapping（`BYBIT:XXXUSDT.P` ↔ `XXXUSDT`）容易出錯，必須在這一步寫成獨立函式 + 單元測試。
+
+### 主要輸出
+- `data/crypto/funding_rates.parquet`（7 欄；含 `is_proxy` / `source` 兩個關鍵欄）
+- `data/crypto/fees.yaml`（單一 fee tier；含取數日期 / 來源 / fee rebate 處理）
+- `configs/cost_stress.yaml`（**12 個 scenario 名稱與工單一字不差**）
+- `outputs/data_quality/funding_coverage/<YYYYMMDD>_funding_coverage_{report.csv,summary.json}`
+- `src/costs/symbol_mapping.py` + `tests/cost_inputs/test_symbol_mapping.py`
+
+### 驗收門檻摘要
+- Active period（2024-04-01 ~ 2026-04-30）real coverage ≥ 80%（低於門檻 → 必須 `PROXY_ONLY` 或 `BLOCKED_BY_DATA`）。
+- funding_rate 為小數（非百分比）；interval_hours 為 8（或交易所實際 interval）。
+- symbol 一律 `BYBIT:XXXUSDT.P` 格式，與 run008 positions 對齊。
+- 缺資料的 symbol-day **不出現** 在 parquet 內（不 fill 0），由 coverage report 紀錄。
+- 任何 proxy 列 `is_proxy=True` 並標 source；TASK-002 fail gate 須排除 proxy 列。
+- Symbol mapping 單元測試覆蓋 `1000PEPE` / `RLUSDUSDT` 等邊界 case。
+
+### 禁止修改範圍
+- 不可動 run008 任何檔案。
+- 不可執行 TASK-002 stress（這是下一棒）。
+- 不可改 strategy / signals / universe / DQ / benchmark / backtester。
+- 不可用平均 funding / 隨機 funding 當**正式**資料。
+- 不可在沒有 Claude REVIEW-002a 通過前 merge 回 main。
+
+### NOTE
+- 完成後 Codex 回報 7 件事（狀態、覆蓋率、來源、symbol mapping 邊界、proxy 使用、檔案位置、未做）。
+- Claude 開 REVIEW-002a 審查；REVIEW-002a PASS 後 TASK-002 才可重做 readiness check。
+
+### Phase 1 交付摘要（2026-05-14）
+- 新增 `src/costs/symbol_mapping.py` 與 `tests/cost_inputs/test_symbol_mapping.py`（7 tests PASS）。
+- 建立 `data/crypto/fees.yaml`（Bybit VIP 0 / Non-VIP；maker 2.0 bps、taker 5.5 bps；含取數日期 / URL / tier / 無 rebate）。
+- 建立 `configs/cost_stress.yaml`（12 scenarios 完整，名稱與工單一字不差，defaults 6 欄齊備）。
+- Bybit public funding API smoke check OK。
+- `outputs/data_quality/funding_coverage/20260514_funding_coverage_{report.csv, summary.json}` 已建立，明確標示 funding_rates.parquet 尚未存在、real coverage 0.0%、missing = 29586 symbol-days。
+- **未交付**：`data/crypto/funding_rates.parquet` 仍不存在；coverage 0%；TASK-002 仍 BLOCKED_BY_TASK_002A。
+- Claude REVIEW-002a_phase1 結論：**PASS**（Phase 1 範圍合格）。詳見 `CLAUDE_REVIEW_LOG.md` → REVIEW-002a_phase1。
+
+### Phase 2 範圍（Codex 接下來執行）
+- 抓 Bybit public funding history API 對 run008 PIT universe 273 個 symbol、active period 2024-04-01 ~ 2026-04-30 全部 8h funding 結算。
+- 寫進 `data/crypto/funding_rates.parquet`（7 欄 schema，見原工單第 7 節）。
+- 重做 `funding_coverage_report.csv` / `funding_coverage_summary.json`；report 帶三個獨立 coverage 欄位（real / proxy / total）。
+- 若 real coverage < 80%，依工單第 10 節決策樹啟動 `proxy_universe_median`（優先）或 `proxy_zero`（只能在無同類可參考時用）。
+- 完成後 Claude 開 REVIEW-002a_phase2_full；通過後 TASK-002a 才轉 DONE，TASK-002 才可解除 BLOCK。
+
+### Phase 2 dry-run 交付摘要（2026-05-14）
+- 範圍：4 symbols（BTCUSDT / ETHUSDT / ADAUSDT / BCHUSDT）× 7 天（2024-04-01 ~ 2024-04-07 UTC）。
+- 產出（**非正式**，在 `outputs/data_quality/funding_coverage/`）：parquet 84 列 / 21 列/symbol；schema 7 欄完全合規；timestamp 為 8h 結算（hours={0,8,16}）；funding_rate abs max = 0.00075（小數單位 PASS）；mapping 273/273；live diff max_abs_diff = 0；API 10 calls / 8 cache hits / 0 retry / 0 error。
+- 命名修正：summary 採 `phase_status: READY_TO_REVIEW_PHASE2_DRYRUN`，並有 `formal_funding_rates_written: false`。
+- Claude REVIEW-002a_phase2_dryrun 結論：**PASS**（dry-run 範圍合格、允許進 controlled full fetch）。詳見 `CLAUDE_REVIEW_LOG.md` → REVIEW-002a_phase2_dryrun。
+
+### Phase 2 full fetch 必守 12 條限制（詳見 LOG 第 3 節）
+1. 範圍：273 symbols × 760 days；正式輸出 `data/crypto/funding_rates.parquet`。
+2. 不可覆蓋 dry-run 路徑，dry-run 不當正式 input。
+3. Raw API cache 到 `data/cache/funding/bybit_raw/<symbol>_<pageN>.json`。
+4. Coverage gate：active PIT real ≥ 80% → PHASE2_READY；50–80% → PHASE2_PROXY_ONLY（須 Rick 同意）；< 50% → PHASE2_BLOCKED_BY_DATA。
+5. Sanity 抽查擴大到 **30 筆**（跨 2024/2025/2026 各年至少 5 筆）live diff < 1e-9。
+6. 任一 funding_rate `abs > 0.01` 在 coverage report 與 summary `outlier_funding_rates` 列出（標記、不修正）。
+7. 連續性檢查：> 24h funding 間隙在 coverage report 列出（symbol / from_ts / to_ts / gap_hours）。
+8. Idempotency：full fetch 完整跑兩次，第二次完全使用 raw cache（API request count = 0），兩次 parquet SHA-256 必須相同。
+9. 缺資料 symbol-day **不出現** 在 parquet 內；proxy 順序：`proxy_universe_median` → `proxy_zero`；`proxy_zero` 涉及的 symbol-day 在 NOTE 區單獨列出。
+10. summary.json `phase_status` 終態三選一（PHASE2_READY / PHASE2_PROXY_ONLY / PHASE2_BLOCKED_BY_DATA）+ top-level `task_002a_overall_status: COMPLETE / INCOMPLETE` 二選一。
+11. log 印 `bybit_api_calls_made / errors / pages_fetched / first_response_at / last_response_at / cache_hit_count / total_request_seconds`。
+12. 禁止項：不可動 run008、不可改 strategy/signals/DQ/benchmark/backtester、不可執行 TASK-002 stress、不可在 active period 外多抓（buffer 同 dry-run）、未過 REVIEW-002a_phase2_full 不可 merge main。
 
 ---
 
 ## TASK-002 — Funding / Cost Stress Test
 
-- **狀態**：**TODO**（2026-05-13 由 REVIEW-001_final 解除 BLOCKED）
+- **狀態**：**REVIEW**（2026-05-15 Codex v2 implementation complete；等待 REVIEW-002）
+- **Readiness Check 結論（2026-05-15，Claude Sonnet）**：13/15 通過。唯一阻塞點：`configs/cost_stress.yaml` defaults 仍為 v1（`funding_application` 舊值 + 缺 3 個 v2 policy key）。詳見 `CLAUDE_REVIEW_LOG.md` → READINESS-002。
+- **Codex 解除阻塞動作（只需 1 次 commit）**：
+  ```yaml
+  # configs/cost_stress.yaml defaults 區塊改為：
+  defaults:
+    annualization_factor: 365.25
+    std_ddof: 1
+    slippage_application: "per_turnover_one_side_bps"
+    fee_application: "per_turnover_both_sides"
+    funding_application: "pit_per_interval_settlement_accumulated"   # v1→v2 必改
+    funding_proxy_policy: "exclude_from_fail_gate"
+    funding_interval_policy: "use_interval_hours_per_row"            # v2 新增
+    funding_gap_policy: "mark_funding_gap_true_no_fill"               # v2 新增
+    outlier_policy: "report_no_clamp"                                  # v2 新增
+  ```
+- **此 commit 完成後：TASK-002 直接進入 READY_TO_IMPLEMENT，可開始實作 cost stress**。
+- **Opus REVIEW-002 結論（2026-05-15，第二輪）**：**`PASS`** —— TASK-002 → DONE。詳見 `CLAUDE_REVIEW_LOG.md` → REVIEW-002（Opus 2026-05-15 第二輪）。
+- **狀態**：**DONE**（2026-05-15，Opus PASS；最終交付 = `20260515_cost_stress_*`；fail gates 全過、v2 兩條新 WARNING 全未觸發）。
+- **核心數字（active 口徑）**：realistic Sharpe `0.892` / IR_eqw `+0.717` / max DD `−19.64%` / alpha decay `0.81%`；worst_case Sharpe `0.840` / IR_eqw `+0.708` / max DD `−19.80%` / alpha decay `2.04%`。
+- **核心發現**：cost rank = **slippage > fee > funding**（推翻事前對 funding 主導的假設）。
+- **策略判定**：**保留**（從 REVIEW-001_final 的「需要更多測試」升級）。
+- **工單**：`docs/research/codex_workorders/TASK-002_cost_funding_slippage_stress.md`（**v2** — 已修正 funding 固定 8h 假設、改為 per-interval；含 v2 change log）
+- **下一個 Codex 動作**：對工單 v2 重新跑 readiness check，產出 `READY_TO_IMPLEMENT` / `BLOCKED_BY_DATA` / `NEED_CLARIFICATION` 三選一。
+- **解除 BLOCK 條件**（v2 readiness check 細則）：
+  - 驗證 `data/crypto/funding_rates.parquet` 存在 + schema 7 欄 + `is_proxy` 全 False + `source` 全 `bybit_api` + `interval_hours ∈ {1, 4, 8}`。
+  - 驗證 `data/crypto/fees.yaml` 與 `configs/cost_stress.yaml` 存在；後者 `defaults.funding_application` 必須是 `pit_per_interval_settlement_accumulated`（若仍是 v1 的 `pit_8h_settlement_accumulated`，須在 readiness check 階段一併 commit 更新後再判斷狀態）。
+  - 驗證 run008 三件套唯讀就位。
+- **狀態演進**：TODO → BLOCKED_BY_INPUTS → BLOCKED_BY_TASK_002A → BLOCKED_BY_WORKORDER_UPDATE → READY_FOR_READINESS_RECHECK_AGAINST_V2 → **NEED_CLARIFICATION**（2026-05-15 Readiness Check 完成，data PASS，cost_stress.yaml v1 config 待更新）。
+- **funding_rates.parquet 已就位** ✓（無 proxy、coverage 97–99%、live diff = 0）；TASK-002 開工只剩 Codex 對 v2 跑 readiness check 與後續 stress 計算。
+- **v2 新增的 5 項規則**（Codex 開工前務必讀工單第 v2 Change Log 與 § 8 / § 11 / § 12 / § 14）：
+  1. 全面 per-interval funding 累加（依 `interval_hours`，不再硬寫 8h）。
+  2. Known funding gap 7 symbols（XTZ / FLOW / LPT / AXS / RVN / INJ / CTC）標 `funding_gap=True`、不 fill。
+  3. Outlier（abs ≥ 0.01，max abs = 0.05）照實累加 + 三 combo 情境 outlier 貢獻拆解。
+  4. 新增兩條 WARNING gate（funding gap > 5% / outlier contribution > 30%）。
+  5. Codex 完成回報從 7 件擴為 9 件（新增 v2 per-interval audit + interval_distribution_used）。
+- **Codex v2 交付摘要（2026-05-15）**：
+  - 新增 v2 cost layer：`src/costs/config.py`、`turnover.py`、`fees.py`、`slippage.py`、`funding.py`、`engine.py`、`metrics.py`、`reporting.py`、`reproducibility.py`。
+  - 新增正式 runner：`scripts/task002_cost_stress_v2.py`；未使用舊 `scripts/crypto_cost_stress.py` 或 `output/crypto_cost_stress.csv`。
+  - 官方輸出：`outputs/backtests/prev3y_crypto/20260515_cost_stress.csv`、`20260515_cost_stress_summary.json`、`20260515_cost_stress_positions_cost.parquet`、`outputs/logs/prev3y_crypto/20260515_cost_stress.log`。
+  - no-cost sanity gate：`no_cost_baseline_max_diff_vs_run008 = 0.0`；daily net identity max diff `2.00e-16`；12 scenarios 各 2,677 列。
+  - Result verdict in summary: `PASS`; failures `[]`; warnings `[]`.
+  - Funding diagnostics：known-gap symbol-days `343`（`1.1593%` active positions）；outliers `653` total rows / `23` held rows；max abs funding rate `0.05`; outlier contribution pct `2.5748%`。
+  - Reproducibility：同 config/data/output-date 重跑兩次 hash 一致，`55c651476c0641cda80200b12209b9f95bcf43536dd8f883404ce3414844654d`。
+  - 未修改 run008、funding_rates.parquet、strategy/signals/ranking/universe/data-quality/backtest engine。
 - **Owner**：Codex
 - **預估**：M（2–3 天）
-- **依賴**：TASK-001 已 DONE；input 用 `20260513_run008_*`
-- **入場條件已達成**：active Sharpe = 0.9267 ≥ 0.7 ✓；active IR_vs_eqw = 0.7227 ≥ 0.3 ✓
+- **工單**：`docs/research/codex_workorders/TASK-002_cost_funding_slippage_stress.md`（可整份貼給 Codex）
+- **依賴**：TASK-001 已 DONE + **TASK-002a REVIEW-002a PASS**
+- **解除 BLOCK 條件**：TASK-002a 三個輸出檔（funding_rates.parquet、fees.yaml、cost_stress.yaml）存在 + Claude REVIEW-002a 結論為 PASS（real coverage ≥ 80% 或 PROXY_ONLY 經 Rick 同意）後，Codex 才可重做 TASK-002 readiness check（READY_TO_IMPLEMENT / BLOCKED_BY_DATA / NEED_CLARIFICATION）。
+- **入場條件已達成（研究面）**：active Sharpe = 0.9267 ≥ 0.7 ✓；active IR_vs_eqw = 0.7227 ≥ 0.3 ✓
 - **必須繼承的 caveat / methodology**（見 SUMMARY.md 第 7 節 + REVIEW-001_final）：
   - 所有結論以 active 口徑（760 天）為主，full 口徑僅供 reference。
   - annualization=365.25、ddof=1、IR/Sortino 公式不可變更。
-  - cost stress 自身的 fail gate：pessimistic 情境下若 active IR_vs_eqw < 0.3 標 WARNING；extreme 情境下 < 0 標 FAIL。
+  - cost stress 自身的 fail gate：見工單第 12 節（realistic_combo active Sharpe < 0.5 → FAIL；realistic_combo IR_vs_eqw < 0.2 → FAIL；conservative_combo IR_vs_eqw < 0 → FAIL）。
   - 不可動策略 / 訊號 / ranking / universe / data quality / benchmark 邏輯。
+  - **proxy funding 列必須從 fail gate 排除**（cost_stress.yaml defaults 已規範 `funding_proxy_policy: exclude_from_fail_gate`）。
 
 ### 任務目的
 在 TASK-001 baseline 之上，加入交易成本 / funding rate / 滑點，做多情境壓力測試，找出策略「在多悲觀的假設下還活著」的邊界。
@@ -371,51 +526,73 @@ Close the small REVIEW-001d final-review gaps before `REVIEW-001_final`, without
 
 ## TASK-003 — Baseline Attribution
 
-- **狀態**：**TODO**（2026-05-13 由 REVIEW-001_final 解除 BLOCKED）
+- **狀態**：**DONE**（2026-05-15 Opus REVIEW-003 = CONDITIONAL_PASS）
+- **REVIEW 結論**：詳見 `CLAUDE_REVIEW_LOG.md` → REVIEW-003（Opus 2026-05-15）。**4 條 fail gates 全 PASS、reproducibility hash 一致、對帳機器精度**；4 條 warning（含 Opus 採工單公式後新觸發的 top5=95.56% 與 DOT=25.45%）、2 條結構性發現（long-side net −5.1%、2025 占 89%）一併記錄為 caveat。
+- **核心數字**：gross 29.58% / net 28.53% / short net +33.65% / long net −5.10% / cost drag 1.05% / slippage > fee > funding。
+- **策略 narrative 更新**：**short-driven crypto alpha + long-side 結構性虧損**（不是對稱多空）。
+- **Codex 必補（不擋 DONE）**：(a) 下版 attribution 對 concentration 並列輸出兩個分母（`/net_alpha_total` 與 `/sum_abs_net`）；(b) 補 `long_side_drag` warning gate；(c) 自動產出 review packet（per Token Budget Rule）。
 - **Owner**：Codex
-- **預估**：S–M（1–2 天）
-- **依賴**：TASK-001 已 DONE；input 用 `20260513_run008_*`；TASK-002 可平行
-- **開工前先確認**：`data/crypto/factor_returns.parquet` 是否存在且 schema 正確（含 `market, size, liquidity, momentum_short`）。若缺資料，先進 BLOCKED_BY_DATA / NEED_CLARIFICATION，由 Claude / Rick 決定下一步。
-- **必須繼承的 methodology**：annualization=365.25、ddof=1；regression 採 rolling + full-sample 雙產出。
+- **預估**：M（2–3 天）
+- **依賴**：TASK-001 已 DONE；TASK-002 已 DONE；input 用 `20260513_run008_*` + `20260515_cost_stress_*`
+- **完整工單**：`docs/research/codex_workorders/TASK-003_baseline_attribution.md`（v1.0，2026-05-15，可整份貼給 Codex）
+- **必須繼承的 methodology**：annualization=365.25、ddof=1；active period = gross_exposure > 0，共 760 天（2024-04-01 ~ 2026-04-30）
+- **Opus REVIEW-002 指派的 attribution 重點問題**：
+  1. 7 個 funding gap symbols（XTZ/FLOW/LPT/AXS/RVN/INJ/CTC）是否貢獻不成比例的 alpha？若是，paper trading 規劃需要 size cap。
+  2. alpha 是否集中在 8h interval 大幣（持倉 interval 分布 1:5.4 偏 8h，vs 全集 1:1.9）？
+  3. 在 net-of-cost（realistic_combo）口徑下，symbol-level attribution 排名與 gross 排名是否一致？
 
 ### 任務目的
-把 TASK-001 baseline 的 PnL 拆解成幾個解釋來源：market beta、size / liquidity factor、sector（如有）、idiosyncratic。輸出標準格式的 attribution 表。
+拆解 run008 baseline 與 20260515 cost stress 後的 net-of-cost alpha 來源，確認策略是否由少數 symbol / 特定年份 / 特定 side / 特定 funding interval / 特定資料缺口 symbol 主導，輸出可重現的 attribution report。
 
 ### 為什麼重要
-- 沒有 attribution 就無法判斷「這是真 alpha 還是隱性 beta」。
-- 之後若 Claude 在審查中懷疑「策略只是長期 long BTC」，可以用這份表直接證偽 / 證實。
-- Attribution 是和 ChatGPT 討論方向時最有用的素材。
+- 沒有 attribution 就無法判斷「alpha 是否穩健且分散」；TASK-002 只確認成本未殺死策略，但未回答集中度問題。
+- Funding gap 7 symbols 以 cost=0 計入，attribution 可量化此效應是否造成結果失真。
+- Attribution 是與 ChatGPT 討論下一步（paper trading 規劃 / 策略修改）時最核心的素材。
 
-### 輸入檔案（規劃路徑）
-- TASK-001 的 `positions.parquet`、`baseline.csv`。
-- `data/crypto/factor_returns.parquet`：欄位 `[date, factor_name, return]`，至少含 `market, size, liquidity, momentum_short`。
+### 輸入檔案（read-only，不可修改）
+- `outputs/backtests/prev3y_crypto/20260513_run008_baseline.csv`
+- `outputs/backtests/prev3y_crypto/20260513_run008_positions.parquet`
+- `outputs/backtests/prev3y_crypto/20260515_cost_stress.csv`（主口徑：`realistic_combo`）
+- `outputs/backtests/prev3y_crypto/20260515_cost_stress_positions_cost.parquet`
+- `data/crypto/funding_rates.parquet`（interval_hours 分組用）
 
-### 輸出檔案
-- `outputs/attribution/prev3y_crypto/<YYYYMMDD>_attribution.csv`
-  欄位：`date, total_return, market_contrib, size_contrib, liquidity_contrib, mom_short_contrib, residual`
-- `outputs/attribution/prev3y_crypto/<YYYYMMDD>_attribution_summary.json`
-  欄位：`r2, avg_beta_market, avg_beta_size, ..., residual_sharpe`
+### 輸出檔案（寫入 `outputs/attribution/prev3y_crypto/`）
+- `<YYYYMMDD>_attribution_by_symbol.csv`
+- `<YYYYMMDD>_attribution_by_year.csv`
+- `<YYYYMMDD>_attribution_by_month.csv`
+- `<YYYYMMDD>_attribution_by_side.csv`
+- `<YYYYMMDD>_attribution_by_funding_gap.csv`
+- `<YYYYMMDD>_attribution_by_interval.csv`
+- `<YYYYMMDD>_attribution_by_cost_type.csv`
+- `<YYYYMMDD>_attribution_top_contributors.csv`
+- `<YYYYMMDD>_attribution_drawdown.csv`
+- `<YYYYMMDD>_attribution_summary.json`（含 warning_gates 觸發狀態）
 - `outputs/logs/prev3y_crypto/<YYYYMMDD>_attribution.log`
 
-### 驗收標準
-- [ ] 對 daily portfolio return 做 rolling regression（window 至少 90 天）以及 full-sample regression，兩份都產出。
-- [ ] `total_return = sum(*_contrib) + residual`，每列誤差 < 1e-8。
-- [ ] residual 不可顯示出明顯季節 / 月份 pattern（若有，log 警告）。
-- [ ] regression 樣本內 R² 在 summary.json 明確記錄。
-- [ ] 若 market beta 的 t-stat > 5 且持續存在，標 `WARNING: high market beta — alpha 可能不純`。
+### Warning Gates（觸發後標記 WARNING，不強制停止）
+- Top 5 symbols 合計貢獻 > 60% net alpha
+- 任一 symbol 單獨貢獻 > 25% net alpha
+- Funding gap 7 symbols 合計貢獻 > 20% net alpha
+- 任一年貢獻 > 70% net alpha
+- Short side net alpha 為負且 abs(short) > 50% × gross combined
+- 任一 symbol gross 排名 vs net 排名相差 > 10 名
 
 ### 禁止修改範圍
-- 不可改 TASK-001、TASK-002 的輸出。
-- 不可把 factor 計算寫進策略模組（attribution 屬於分析層，不是策略層）。
+- **不可修改**：run008 任何輸出、20260515 任何輸出、data/ 目錄、策略程式、configs/
+- **不可執行**：任何 baseline runner、任何 cost stress runner
+- **不可使用**：舊輸出 `output/crypto_cost_stress.csv`
+- **不可自行轉 DONE**：完成後改狀態為 `REVIEW`，等 Claude 審查後才轉 DONE
 
 ---
 
 ## TASK-004 — Quant Cowork Lab Dashboard
 
-- **狀態**：TODO
+- **狀態**：**READY_TO_IMPLEMENT**（2026-05-15 由 Opus REVIEW-002 PASS 解鎖；可與 TASK-003 平行）
 - **Owner**：Codex
 - **預估**：M（3–4 天）
-- **依賴**：TASK-001 通過後可開始；TASK-002 / 003 結果出來後再加面板
+- **依賴**：TASK-001 ✓ DONE；TASK-002 ✓ DONE；TASK-003 結果出來後再加 attribution 面板
+- **v1 範圍（即刻可做）**：baseline 雙口徑 + 三 benchmark IR + 12 個 cost stress scenarios 比較表 + 最近 30 天每日 PnL
+- **v2 範圍（TASK-003 完成後加）**：attribution 面板
 
 ### 任務目的
 建一個輕量化 web dashboard，集中顯示目前各策略的 baseline 績效、cost 情境、attribution、近期變化，作為 Rick 每日早上的「Cowork Lab 首頁」。
@@ -451,10 +628,10 @@ Close the small REVIEW-001d final-review gaps before `REVIEW-001_final`, without
 
 ## TASK-005 — VPS Bot Monitor
 
-- **狀態**：TODO
+- **狀態**：**READY_TO_IMPLEMENT**（2026-05-15 由 Opus REVIEW-002 PASS 解鎖；可與 TASK-003 / TASK-004 完全平行）
 - **Owner**：Codex
 - **預估**：M（3–5 天）
-- **依賴**：可獨立進行；之後會和 Ollama 串接做 log 摘要
+- **依賴**：可獨立進行；之後會和 Ollama 串接做 log 摘要；**為 paper trading 預先建好監控基建**
 
 ### 任務目的
 為跑在 VPS 上的 trading bot 建一個監控層：心跳檢查、最近一次下單時間、PnL daily delta、錯誤 log 收集，並在出狀況時推播通知。
@@ -486,6 +663,149 @@ Close the small REVIEW-001d final-review gaps before `REVIEW-001_final`, without
 - 不可讓 monitor 取得 **可下單 key**（只准用 read-only / IP-whitelisted key）。
 - 不可改 bot 本身的下單邏輯（monitor 是旁觀者）。
 - 不可把 monitor 直接寫進策略 repo 的核心模組，獨立成 `apps/monitor/`。
+
+---
+
+## TASK-006 — Paper Trading Plan（**規劃，非執行**）
+
+- **狀態**：**TODO**（2026-05-15 由 Opus REVIEW-002 PASS 開放規劃；**禁止執行**）
+- **Owner**：Claude / Rick（規劃工單）→ Codex（後續實作 monitor 整合）
+- **預估**：S（0.5–1 天寫工單）
+- **依賴**：TASK-002 ✓ DONE；TASK-003 必須 PASS 後才可進「執行」階段
+- **範圍邊界**：
+  - **本任務只是「寫工單 + 確認規則」**——不可啟動任何 paper trading。
+  - paper 執行前需：(a) TASK-003 attribution PASS、(b) TASK-005 VPS monitor 上線、(c) Opus 對 paper plan 做最終 review。
+- **工單必須涵蓋**：
+  1. 資金大小（建議從 USD 10k–50k demo 帳戶）
+  2. Execution venue（Bybit perp）與 maker / taker preference
+  3. 停損規則（active max DD 觸發機制、kill switch）
+  4. Reporting cadence（每日 / 每週 PnL、attribution 對齊）
+  5. Paper-forward sample 最少 30 天才能稱為 forward-validated
+  6. 任何違反 TASK-002 caveats（不擊敗 BTC、funding gap、760 天樣本）的執行情境必須有對應的 risk-off 動作
+- **REVIEW-003 新增的 3 條 mandatory caveat（2026-05-15 由 Opus 加入，必加進 paper trading 規劃工單）**：
+  1. **Position size cap**：單一 symbol 上限不超過總 NAV 的 **5%**（理由：DOT 在 attribution 內貢獻 25.45% net alpha，paper 不能讓單一 symbol 部位這麼集中）。
+  2. **Long-side allocation cap**：多頭部位上限不超過 gross exposure 的 **50%**（理由：long-side net −5.1%、被 funding contango 吞噬）。
+  3. **High-funding-cost symbol filter**：對最近 30 天平均 funding rate > 0.03% 的 symbol，若被 momentum 訊號排進多頭，**降低 50% 權重** 或 **剔除**（針對 BTC/ETH/LINK 這類 contango 結構性受害者）。
+
+- **REVIEW-007 進一步確認（2026-05-16 由 Opus）**：上面 3 條 caveat **同時施加** 即為 `combined_paper_safe_variant` —— 該 variant 已驗證可同時達到 long_net 轉正（+4.21%）、single_conc < 25%（19.73%）、Sharpe ≥ 0.7（0.80）、max DD < 1.5× baseline。**TASK-006 工單採此為 primary spec**，`high_funding_cost_filter`（Sharpe 0.96）為 secondary / sensitivity spec。
+- **TASK-006 工單可立即開始寫**（不必等 TASK-007b/007c/008），但 paper 執行需要 TASK-007b 完成 + 30 天 forward + Opus 另一輪 review。
+- **與 live trading 的關係**：paper 完成 30+ 天 forward-validated + 通過 Opus 最終 review 才可考慮 live；現階段**live trading 維持禁止**。
+
+---
+
+## TASK-007 — Long-side Variant Study（**REVIEW-003 follow-up**，2026-05-15 新增）
+
+- **狀態**：**DONE**（Opus REVIEW-007 = CONDITIONAL_PASS，2026-05-16；詳見 `CLAUDE_REVIEW_LOG.md` → REVIEW-007）
+- **核心結論**：(a) **不要砍多頭**（short_only Sharpe 0.40 / DD −49.18%）；(b) `high_funding_cost_filter` 是 Pareto-dominant 變體（Sharpe 0.96 / alpha retention 109.6%）；(c) `combined_paper_safe_variant` 唯一同時達到 long_net 轉正（+4.21%）、single_conc < 25%（19.73%）、Sharpe ≥ 0.7（0.80）。**集中度根源 = 高 funding 大幣 + 過度集中；overlay 無法根治**（no_DOT 悖論 top5 升至 116.13% → TASK-008）。
+- **Opus 指派 3 個 follow-up（不擋本次 DONE）**：
+  - **TASK-007b**：weight cap + redistribution（cap 20%/15%/10%）—— paper 執行前須完成
+  - **TASK-007c**：Variant C 0.01%/8h + 0.005%/8h-discount-0.5 規格 —— sensitivity
+  - **TASK-008**：策略層 per-symbol weight cap —— concentration 結構性根治
+- **TASK-006 paper trading primary spec = `combined_paper_safe_variant`、secondary = `high_funding_cost_filter`**。
+- **Owner**：Claude（寫工單）→ Codex（後續實作）
+- **預估**：M（2–3 天，視 variant 數量）
+- **依賴**：TASK-001 ✓ DONE；TASK-002 ✓ DONE；TASK-003 ✓ DONE；input 用 `20260513_run008_*` + `20260515_cost_stress_*` + `20260515_attribution_*`
+
+### 任務目的
+回答 REVIEW-003 Q2：「Prev3Y crypto 多頭是否該砍？」研究三個 variant 並比較對 active Sharpe / IR_vs_eqw / max DD 的影響：
+
+| Variant | 內容 |
+|---|---|
+| A. Short-only | 完全砍掉多頭部位，純空頭策略；對比 baseline 的市場暴險變化 |
+| B. Long funding-discount filter | 對最近 30 天平均 funding rate > 0.03% 的 symbol，若進多頭則降權或剔除 |
+| C. Long size cap | 多頭 gross 上限為 total gross 的 50% |
+
+### 為什麼重要
+REVIEW-003 揭露 **long-side net −5.1%、short 貢獻 117.9% 的 net alpha**。BTC / ETH / LINK 因 funding contango 在多頭 net 翻負。若 variant 結果優於 baseline，paper trading 規劃應採用 variant；若劣於 baseline，則 long-side 是必要對沖、cap 設計需細修。
+
+### 輸入檔案
+- run008 三件套
+- 20260515 cost stress 三件套
+- 20260515 attribution 全套
+- `data/crypto/funding_rates.parquet`（用於 funding-discount filter）
+
+### 輸出檔案
+- `outputs/long_side_variants/<YYYYMMDD>_variant_A_short_only_summary.json`
+- `outputs/long_side_variants/<YYYYMMDD>_variant_B_funding_filter_summary.json`
+- `outputs/long_side_variants/<YYYYMMDD>_variant_C_long_cap_summary.json`
+- `outputs/long_side_variants/<YYYYMMDD>_variants_comparison.csv`（三 variant + baseline 並列）
+- `outputs/logs/prev3y_crypto/<YYYYMMDD>_long_side_variants.log`
+- Review packet：`docs/research/review_packets/REVIEW-007_PACKET.md`（per Token Budget Rule）
+
+### 禁止修改範圍
+- 不可改 baseline / cost stress 既有產出
+- 不可動策略訊號的核心 ranking 邏輯（variant 只是 post-processing 過濾 / 砍多頭）
+- 不可改 universe / DQ / benchmark
+- 不可在 Opus REVIEW-007 通過前 merge 回 main
+
+### 完成後回報
+- 三個 variant 對 baseline 的 4 個關鍵數字（active Sharpe / IR_vs_eqw / max DD / alpha decay）
+- 哪個 variant 最佳？是否值得作為 paper trading 候選？
+
+### Codex 實作回報（2026-05-15）
+- 輸出：
+  - `outputs/variants/prev3y_crypto/20260515_task007_variant_daily.csv`
+  - `outputs/variants/prev3y_crypto/20260515_task007_variant_summary.csv`
+  - `outputs/variants/prev3y_crypto/20260515_task007_variant_summary.json`
+  - `outputs/variants/prev3y_crypto/20260515_task007_variant_concentration.csv`
+  - `outputs/variants/prev3y_crypto/20260515_task007_variant_cost_breakdown.csv`
+  - `outputs/logs/prev3y_crypto/20260515_task007_variant_study.log`
+  - `docs/research/review_packets/REVIEW-007_PACKET.md`
+  - `docs/research/review_packets/REVIEW-007_NUMBERS.json`
+- Baseline reconciliation：`baseline_current_long_short` vs TASK-002 `realistic_combo` net return max diff `2.05e-16`，PASS。
+- Best Sharpe overlay：`high_funding_cost_filter`，Sharpe `0.9586`，IR_vs_eqw `0.7282`，max DD `-20.27%`，net alpha `31.27%`。
+- Warning gates triggered：`short_only_rescaled_max_dd_worse_than_baseline_1p5x`、`long_only_rescaled_net_alpha_negative`、`top5_concentration_remains_above_60pct`、`single_symbol_concentration_remains_above_25pct`。
+- Reproducibility hash：`824ff334e30810aeeaef8a06319a9ac8563b61f903835c89ae6cfbd9e140066f`。
+- Note：所有結果都是 post-processing overlay study，不是新策略 backtest，不代表 paper/live trading approval。
+
+---
+
+## TASK-007b — Weight Cap + Redistribution（REVIEW-007 Q1 follow-up，2026-05-16 新增）
+
+- **狀態**：**TODO**（Opus 指派；paper trading 執行前須完成）
+- **Owner**：Codex
+- **預估**：S（0.5–1 天）
+- **依賴**：TASK-007 ✓ DONE；input 用 TASK-007 既有 baseline + run008 positions
+- **目的**：補齊工單原規格的 weight-cap + redistribution 設計（cap=20%、15%、10%），與 TASK-007 的 alpha-based selection（top5_cap_5pct / DOT_capped / no_DOT）對比。
+- **核心規則**：
+  - 對每日每 symbol 計算 `|weight| / gross_exposure` 占比。
+  - 超過 cap 的部分**等比例補回同方向（long↔long、short↔short）其他 symbol**（redistribution），不是直接砍掉。
+  - cap 三檔：20% / 15% / 10%。
+- **輸出**：3 個 variant summary（同 TASK-007 schema）+ NUMBERS.json 補充 + log。
+- **驗收**：cap=15% 的 top5 concentration 是否 < 70%（工單 gate `concentration_not_reduced` 的反向驗證）；cap=10% 的 Sharpe 是否跌 < 30%（gate `cap10_sharpe_drop`）。
+- **禁止**：不動策略訊號、不重跑 baseline / cost stress / attribution；只做 overlay。
+
+---
+
+## TASK-007c — Variant C Spec Compliance（REVIEW-007 Q2 follow-up，2026-05-16 新增）
+
+- **狀態**：**TODO**（Opus 指派；sensitivity，與 TASK-007b 平行）
+- **Owner**：Codex
+- **預估**：S（半天）
+- **目的**：補齊工單原規格的兩個 Variant C 門檻：
+  - C1：threshold 0.01%/8h（=0.0001 decimal）、discount 0（完全排除）
+  - C2：threshold 0.005%/8h（=0.00005 decimal）、discount 0.5（部分打折）
+- **與既有 high_funding_cost_filter（0.03%/8h）並列輸出**，做 sensitivity 比較表。
+- **輸出**：2 個 variant summary + 三 threshold（0.03 / 0.01 / 0.005-discount-0.5）比較表。
+- **禁止**：不重跑 baseline / cost stress / attribution；不改 funding_rates.parquet；只 overlay。
+
+---
+
+## TASK-008 — Strategy-Layer Per-Symbol Weight Cap（REVIEW-007 結構性發現 follow-up，2026-05-16 新增）
+
+- **狀態**：**TODO**（Opus 指派；長期任務、不擋短期 paper 規劃）
+- **Owner**：Claude（寫工單）→ Codex（後續實作）
+- **預估**：M（3–5 天，包含 backtest 重跑）
+- **目的**：解決 REVIEW-007 揭露的「集中度結構性問題」—— `no_DOT` 悖論顯示 overlay 移除最大貢獻者反使 top5 concentration 升到 116.13%，證明 overlay 無法根治集中度。需要**在策略層（ranking / position sizing layer）加 per-symbol weight cap**。
+- **核心規則**：
+  - 在 baseline backtester 的 `signals / position sizing` 層加 `max_per_symbol_weight = 0.05`（5%，與 paper trading mandatory caveat 對齊）。
+  - 不是 overlay，是策略訊號的一部分；新跑 baseline、cost stress、attribution 全部用新規則。
+  - 對比 run008（無 cap）的所有 Key Numbers。
+- **預期效果（Opus 假設，需 Codex 驗證）**：
+  - top5_conc 應顯著降低（因為 DOT 等大貢獻者被天然 cap）。
+  - net alpha 可能略降（DOT 空頭 alpha 被 cap），但 single_conc 應穩定 < 25%。
+- **與 TASK-006 paper trading 的關係**：TASK-008 完成後產出的新 baseline 是**正式 paper 上線版本**；TASK-006 第一版用 `combined_paper_safe_variant` 是「等 TASK-008 期間的近似」。
+- **禁止**：在 TASK-008 完成前不可上 paper trading；不可在沒有 Opus REVIEW-008 通過下宣稱 baseline 已更新。
 
 ---
 
