@@ -1,0 +1,118 @@
+TASK-005a Real Alert Channel Delivery
+run_date=20260517
+status=REVIEW_READY
+scope=real alert channel implementation with mockable transport
+paper_execution_status=FORBIDDEN
+live_trading_status=FORBIDDEN
+reproducibility_hash=06a28f791dbfeb931a35dadf1eb856f92c791d0bf8648b09ba004da5b8d58817
+
+channels:
+{
+  "dry_run_default": true,
+  "enabled": [
+    "local_jsonl",
+    "telegram",
+    "discord"
+  ],
+  "external": [
+    "telegram",
+    "discord"
+  ],
+  "local_jsonl_retained": true,
+  "results": [
+    {
+      "channel": "local_jsonl",
+      "delivered_count": 1,
+      "detail": "alerts JSONL written",
+      "dry_run": true,
+      "enabled": true,
+      "endpoint": "outputs\\monitor\\prev3y_crypto\\alerts\\20260517.jsonl",
+      "error_count": 0,
+      "external_post_attempted": false,
+      "status": "WRITTEN",
+      "test_send": false
+    },
+    {
+      "channel": "telegram",
+      "delivered_count": 1,
+      "detail": "would send Telegram alerts; no POST attempted",
+      "dry_run": true,
+      "enabled": true,
+      "endpoint": "https://api.telegram.org/bot<redacted>/sendMessage",
+      "error_count": 0,
+      "external_post_attempted": false,
+      "status": "DRY_RUN",
+      "test_send": false
+    },
+    {
+      "channel": "discord",
+      "delivered_count": 1,
+      "detail": "would send Discord alerts; no POST attempted",
+      "dry_run": true,
+      "enabled": true,
+      "endpoint": "https://discord.com/api/webhooks/<redacted>",
+      "error_count": 0,
+      "external_post_attempted": false,
+      "status": "DRY_RUN",
+      "test_send": false
+    }
+  ],
+  "test_send_requested": false
+}
+
+fail_gates:
+{
+  "channel_dispatch_failure": false,
+  "exchange_api_present": false,
+  "local_jsonl_removed": false,
+  "missing_outputs": false,
+  "monitor_auto_restart_present": false,
+  "order_submission_code_present": false,
+  "real_external_post_during_validation": false,
+  "secret_hardcoded": false,
+  "secret_in_vcs": false,
+  "secret_written_to_logs": false,
+  "test_failure": false
+}
+
+warning_gates:
+{
+  "external_channels_dry_run_only": true,
+  "no_example_secrets_file": false,
+  "no_test_send_flag": false,
+  "only_one_channel": false,
+  "readme_not_updated": false
+}
+
+safety_scan:
+{
+  "api_key_requested": false,
+  "exchange_connection_made": false,
+  "exchange_token_violations": [],
+  "forbidden_token_violations": [],
+  "gates": {
+    "api_key_permission_violation": false,
+    "exchange_api_present": false,
+    "local_jsonl_removed": false,
+    "monitor_auto_restart_present": false,
+    "order_submission_code_present": false,
+    "secret_hardcoded": false,
+    "secret_in_vcs": false,
+    "secret_written_to_logs": false
+  },
+  "live_trading_started": false,
+  "paper_execution_started": false,
+  "secret_ignore": {
+    "errors": [],
+    "required_patterns": [
+      "configs/monitor_secrets.local.yaml",
+      "configs/monitor_secrets.local.yml",
+      "configs/monitor_secrets.yaml",
+      "configs/monitor_secrets.yml"
+    ],
+    "status": "PASS"
+  },
+  "secret_literal_violations": [],
+  "secret_output_violations": [],
+  "status": "PASS"
+}

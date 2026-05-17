@@ -1,0 +1,98 @@
+{
+  "alerts_schema": {
+    "errors": [],
+    "row_count": 1,
+    "status": "PASS"
+  },
+  "analysis_basis": "local monitor sample output only; no paper or live execution",
+  "bot_name": "prev3y_crypto_paper",
+  "environment": "offline_sample",
+  "fail_gates": {
+    "alerts_schema_invalid": false,
+    "api_key_permission_violation": false,
+    "heartbeat_schema_invalid": false,
+    "missing_outputs": false,
+    "monitor_auto_restart_present": false,
+    "order_submission_code_present": false,
+    "schema_mismatch": false,
+    "secret_in_vcs": false,
+    "test_failure": false
+  },
+  "git_commit": "c44e12e54fde5a46ce0f0f1d53f5deabc92022f4",
+  "heartbeat_schema": {
+    "errors": [],
+    "row_count": 1,
+    "status": "PASS"
+  },
+  "live_trading_status": "FORBIDDEN",
+  "monitor_hook_integration": {
+    "mode": "local_stub",
+    "sample_event": {
+      "event_type": "heartbeat",
+      "nav_usd": 10000.0,
+      "source": "task005_monitor_sample",
+      "status": "OK",
+      "timestamp": "2026-05-17T00:00:00Z"
+    },
+    "side_effect_free": true
+  },
+  "output_paths": {
+    "alerts": "outputs\\monitor\\prev3y_crypto\\alerts\\20260517.jsonl",
+    "heartbeat": "outputs\\monitor\\prev3y_crypto\\20260517_heartbeat.parquet",
+    "review_numbers": "docs\\research\\review_packets\\REVIEW-005_NUMBERS.json",
+    "review_packet": "docs\\research\\review_packets\\REVIEW-005_PACKET.md",
+    "setup_log": "outputs\\logs\\prev3y_crypto\\20260517_monitor_setup.log"
+  },
+  "paper_execution_status": "FORBIDDEN",
+  "read_only_api_boundary": {
+    "account_mode": "read_only_monitor",
+    "api_key_requested": false,
+    "exchange_connection_made": false,
+    "secrets_source": "environment_or_local_ignored_config_only",
+    "secrets_written_to_logs": false,
+    "secrets_written_to_outputs": false,
+    "secrets_written_to_repo": false
+  },
+  "reproducibility_hash": "714f5417223892fc2954f483040c85c20397b664c4f11b618b3eaf28348ab41b",
+  "run_date": "20260517",
+  "safety_scan": {
+    "api_key_requested": false,
+    "exchange_connection_made": false,
+    "exchange_token_violations": [],
+    "forbidden_token_violations": [],
+    "gates": {
+      "api_key_permission_violation": false,
+      "exchange_api_present": false,
+      "local_jsonl_removed": false,
+      "monitor_auto_restart_present": false,
+      "order_submission_code_present": false,
+      "secret_hardcoded": false,
+      "secret_in_vcs": false,
+      "secret_written_to_logs": false
+    },
+    "live_trading_started": false,
+    "paper_execution_started": false,
+    "secret_ignore": {
+      "errors": [],
+      "required_patterns": [
+        "configs/monitor_secrets.local.yaml",
+        "configs/monitor_secrets.local.yml",
+        "configs/monitor_secrets.yaml",
+        "configs/monitor_secrets.yml"
+      ],
+      "status": "PASS"
+    },
+    "secret_literal_violations": [],
+    "secret_output_violations": [],
+    "status": "PASS"
+  },
+  "status": "REVIEW_READY",
+  "task": "TASK-005 VPS Bot Monitor",
+  "warning_gates": {
+    "dedup_window_too_long": false,
+    "heartbeat_interval_too_long": false,
+    "no_pnl_floor_check": false,
+    "no_recovery_alert": false,
+    "single_channel_only": false
+  }
+}

@@ -1,0 +1,42 @@
+bot_name: prev3y_crypto_paper
+environment: offline_sample
+account_mode: read_only_monitor
+secrets_config_path: configs/monitor_secrets.local.yaml
+paper_execution_status: FORBIDDEN
+live_trading_status: FORBIDDEN
+
+heartbeat:
+  interval_seconds: 60
+  failure_threshold: 3
+  stale_fill_minutes: 15
+
+pnl:
+  daily_delta_warn_pct: 5.0
+  equity_floor_usd: 8000.0
+
+alerts:
+  dedup_window_minutes: 30
+  channels:
+    - type: local_jsonl
+      enabled: true
+      dry_run: true
+    - type: telegram
+      enabled: true
+      dry_run: true
+      secrets_path: configs/monitor_secrets.local.yaml
+      secrets_env_token: MONITOR_TELEGRAM_TOKEN
+      secrets_env_chat_id: MONITOR_TELEGRAM_CHAT_ID
+      timeout_seconds: 10
+    - type: discord
+      enabled: true
+      dry_run: true
+      secrets_path: configs/monitor_secrets.local.yaml
+      secrets_env_webhook_url: MONITOR_DISCORD_WEBHOOK_URL
+      timeout_seconds: 10
+
+logging:
+  bot_log_paths:
+    - logs/quantbot/*.log
+  output_heartbeat: outputs/monitor/prev3y_crypto
+  output_alerts_dir: outputs/monitor/prev3y_crypto/alerts
+  output_log_dir: outputs/logs/prev3y_crypto
