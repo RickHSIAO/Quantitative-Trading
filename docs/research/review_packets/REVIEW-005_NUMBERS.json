@@ -86,13 +86,4 @@
     "secret_output_violations": [],
     "status": "PASS"
   },
-  "status": "REVIEW_READY",
-  "task": "TASK-005 VPS Bot Monitor",
-  "warning_gates": {
-    "dedup_window_too_long": false,
-    "heartbeat_interval_too_long": false,
-    "no_pnl_floor_check": false,
-    "no_recovery_alert": false,
-    "single_channel_only": false
-  }
-}
+  "status": "REV

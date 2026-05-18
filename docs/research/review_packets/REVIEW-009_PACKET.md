@@ -18,4 +18,4 @@
 ## Outputs
 - primary: `outputs\forward_record\prev3y_crypto`
 - shadow: `outputs\forward_record\prev3y_crypto_shadow_a_roll12`
-- numbers: `docs\research\review_packets\REVIEW-009_NUMBERS.json`
+- numbers: `docs\research\review_packets\REVIE

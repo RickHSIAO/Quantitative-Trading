@@ -7,17 +7,20 @@ WAITING
 Rick
 
 ## Task
-Windows baseline validation 記錄完了。等待 Rick 決定 VPS 部署の次のステップ。
+Option C — working tree clean plan 提示済み。Rick の承認後に実施する。
 
 ## Last Completed
-Windows baseline validation（2026-05-18，Rick 手動実行）
-- `python -m unittest discover -v`：**PASS，90 tests**
-- `python scripts/run_forward_record.py --date 20260517 --dry-run --shadow-track`：**PASS，REVIEW_READY**
-- `python scripts/drill_forward_alerts.py --date 20260517`：**PASS，13/13 scenarios**
-- safety scan：**PASS**
-- Baseline artifact path：`outputs/forward_record/baselines/20260518/`
-- Combined baseline SHA-256：`b8d4fd69fb77c52ad557b307cae3ecf23cc869f287e95702cd26ac2aaeb73476`
-- paper/live：FORBIDDEN；clock：NOT_STARTED；Bybit：NOT_ATTEMPTED
+Discord webhook VPS strict guard validation — confirmed on actual VPS（2026-05-18，Rick + Claude Sonnet）
+- VPS hostname: instance-20260506-0945 / python: .venv/bin/python
+- overall_result=PASS（6/6 gates）
+- W-0 PASS：actual webhook_config_present=True  webhook_config_non_empty=True  secret_value_observed=False
+- G-1 PASS：dry_run=True  external_post_attempted=False  load_channel_secrets_called=False
+- G-2 PASS：URL redaction confirmed
+- G-3 PASS：status=DRY_RUN  secret_value_observed=False
+- G-4 PASS：violations=[]
+- G-5 PASS：dry_run=True  FORBIDDEN_live_trading=NOT_ATTEMPTED  FORBIDDEN_bybit_write=NOT_ATTEMPTED
+- clock_started=False  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+- Artifact：`outputs/forward_record/discord_webhook_vps_dry_run/20260518/validation_result.json`
 
 ## Paper Execution Gate 現況（5/7）
 - TASK-007b DONE ✅
@@ -36,58 +39,30 @@ Windows baseline validation（2026-05-18，Rick 手動実行）
 | TASK-009b forward monitor alerting DONE | ✅ |
 | TASK-009c tech debt 收斂 DONE | ✅ |
 | TASK-009d alert E2E drill DONE | ✅ |
-| Windows baseline pytest + safety scan artifact | ✅（2026-05-18；90 tests；SHA-256 b8d4fd69…） |
-| VPS 實際部署（Phase 1–5 + 7–8）| ❌ NOT_STARTED |
-| read-only data source 驗證（Bybit API 可讀） | ❌ NOT_STARTED |
-| working tree clean（git stash / commit） | ❌ 需確認 |
-| Discord webhook / monitor config 上 VPS | ❌ NOT_STARTED |
-| Rick 明示「開始計時」| ❌ 待 Rick 指示 |
+| Windows baseline artifact | ✅（90 tests；SHA-256 b8d4fd69…） |
+| VPS 部署 + dry-run validation | ✅（Ubuntu 24.04；REVIEW_READY；drill 13/13） |
+| Read-only data source validation | ✅（cache + Bybit public GET PASS） |
+| Discord webhook dry-run dispatch 安全性（コード解析）| ✅（G-1~G-5 code analysis + G-2/G-4 sandbox） |
+| Discord webhook VPS strict guard drill + actual config 確認 | ✅ DONE（2026-05-18；instance-20260506-0945；PASS 6/6） |
+| working tree clean（git stash / commit） | ❌ TODO — Rick 承認後実施 |
+| Rick 明示「開始計時」 | ❌ 待 Rick 指示 |
 
-## Baseline Artifact 記錄
+## Option C — Working Tree Clean Plan（承認待ち、未実施）
 
-| Artifact | Path |
+### Git status summary（Windows 側 git diff HEAD より）
+- Modified（M）tracked files: 40 件
+- New untracked files（not in .gitignore）: 確認済み（下記）
+- Deleted: 0
+- Staged: 0
+
+### 分類表
+
+#### COMMIT — source code & registry（意図的な変更、すべてコミット対象）
+
+| ファイル | 分類理由 |
 |---|---|
-| pytest result | `outputs/forward_record/baselines/20260518/pytest_result.txt` |
-| forward record result | `outputs/forward_record/baselines/20260518/forward_record_result.json` |
-| drill result | `outputs/forward_record/baselines/20260518/drill_result.json` |
-| safety scan | `outputs/forward_record/baselines/20260518/safety_scan.json` |
-| baseline hash | `outputs/forward_record/baselines/20260518/baseline_hash.json` |
-| **Combined SHA-256** | `b8d4fd69fb77c52ad557b307cae3ecf23cc869f287e95702cd26ac2aaeb73476` |
-
-## Next Step Options
-
-### Option A — Rick VPS 部署
-- 參考：`docs/research/manual_ops/VPS_DEPLOYMENT_CHECKLIST.md`
-- Phase 1–5 + 7–8（Phase 6 已解鎖）
-- 完成後即可進行 Option B/C/D
-
-### Option B — read-only data source 驗證
-- 在 VPS 上確認 Bybit read-only API key 可正常讀取市場資料
-- 依賴：Option A 完成
-- 禁止：不可使用 write API；不可下單
-
-### Option C — working tree clean
-- `git stash` 或 `git commit` 現有 uncommitted diffs（含 task007 CSV / trading.db）
-- 可在本機（Windows）執行，不依賴 VPS
-- 啟動 30-day clock 前的必要條件
-
-### Option D — Discord webhook / monitor config 上 VPS
-- 在 VPS 上設定 Discord webhook URL（`configs/monitor_secrets.local.yaml`）
-- 驗證 dry-run alert 可正常生成（不送實際 Discord）
-- 依賴：Option A 完成
-
-### Option E — 準備 start-date selection
-- 確認 30-day forward record 的 start date（即 clock 啟動日）
-- 討論 start date 選擇邏輯（交易日？月初？Rick 指定日？）
-- 不需 VPS 完成即可討論
-
-## Do Not
-- 不得在沒有 Rick 指示下自行啟動任何 Option
-- 不得啟動 30-day forward clock（需 Rick 明示「開始計時」）
-- 不得批准 paper execution
-- 不得批准 live trading
-- 不得修改策略程式或官方輸出
-- 不得連接 Bybit
-- 不得送真實 Discord alert
-- 不得使用 --live-alerts
-- 不得重跑測試或 baseline
+| `apps/monitor/report.py` | TASK-009b/009c 成果物 |
+| `apps/monitor/safety.py` | TASK-009c 成果物 |
+| `apps/monitor/README.md` | ドキュメント更新 |
+| `apps/monitor/channels/discord.py` | TASK-009b discord channel |
+| `apps/monitor/channels/redaction.py` | TASK-009b redacti
