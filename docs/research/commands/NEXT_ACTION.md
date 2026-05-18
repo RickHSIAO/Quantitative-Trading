@@ -118,6 +118,15 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 | pytest 29/29 | PASS |
 | DISCORD_NOTIFY log tokens | UNCHANGED (SKIP/DRY_RUN/PASS/FAIL) |
 | machine-readable values | PRESERVED (FORBIDDEN, REVIEW_READY, True) |
+
+## TASK-008D Fix Discord Typo Status
+
+| item | status |
+|---|---|
+| scripts/send_forward_discord_summary.py | FIXED (\u5024 -> \u503c) |
+| 原始値 -> 原始值 | CONFIRMED in --dry-run |
+| pytest 29/29 | PASS |
+| DISCORD_NOTIFY tokens | UNCHANGED |
 ## VPS One-time Setup (Rick action required)
 
 On instance-20260506-0945:

@@ -230,7 +230,7 @@ def build_discord_message(row: dict[str, str]) -> str:
         f"\u2699\ufe0f \u57f7\u884c\u72c0\u614b\uff1a`{status}`",
         f"\U0001f4be \u8cc7\u6599\u4f86\u6e90\uff1a`{data_src}`",
         DIVIDER,
-        "**\U0001f512 \u5b89\u5168\u9598\u9580**\uff08machine-readable \u539f\u59cb\u5024\uff09",
+        "**\U0001f512 \u5b89\u5168\u9598\u9580**\uff08machine-readable \u539f\u59cb\u503c\uff09",
         f"  paper\_execution\_status\uff1a`{paper_status}`",
         f"  live\_trading\_status\uff1a`{live_status}`",
         f"  FORBIDDEN\_order\_endpoint\uff1a`{forbidden_ep}`",

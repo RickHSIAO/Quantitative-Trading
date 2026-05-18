@@ -21,6 +21,28 @@ Notes:
 
 ---
 
+### 2026-05-18（TASK-008D — Fix Discord Traditional Chinese Typo）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（TASK-008D Fix Discord Traditional Chinese Typo）
+Task: Replace Japanese kanji 値 (U+5024) with correct Traditional Chinese 值 (U+503C) in Discord message.
+Status before: Discord message showed 「原始値」(Japanese U+5024)
+Status after:  Discord message shows 「原始值」(Traditional Chinese U+503C)
+
+Files changed:
+  scripts/send_forward_discord_summary.py  -- \u5024 -> \u503c (1 occurrence)
+
+Validation (5/5 PASS):
+  1. py_compile: PASS
+  2. --dry-run: 「原始值」(U+503C) confirmed in output
+  3. pytest tests/forward_record/test_discord_summary.py: 29 passed
+  4. bash -n run_forward_record_daily.sh: PASS
+  5. DISCORD_NOTIFY=SKIP (no webhook, exit 0): PASS
+
+Safety: no functional change; text-only fix; main.py NOT modified
+
+---
+
 ### 2026-05-18（TASK-008C — Beautify Discord Summary Layout + Clarify Validation Dates）
 
 Agent: Claude Sonnet
