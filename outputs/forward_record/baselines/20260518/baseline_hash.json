@@ -1,0 +1,25 @@
+{
+  "artifact": "windows_forward_baseline_hash_manifest",
+  "baseline_dir": "outputs/forward_record/baselines/20260518",
+  "combined_sha256": "b8d4fd69fb77c52ad557b307cae3ecf23cc869f287e95702cd26ac2aaeb73476",
+  "files": [
+    {
+      "path": "outputs/forward_record/baselines/20260518/pytest_result.txt",
+      "sha256": "d1de78587de577a6367bfd0fcc52067c6fb7ba89bd125e74d657ada7ccac78e4"
+    },
+    {
+      "path": "outputs/forward_record/baselines/20260518/forward_record_result.json",
+      "sha256": "0925ff858c09cd19fd518b7c410b49e444ea47e884d1b4a6e9fb4e36d6f3479a"
+    },
+    {
+      "path": "outputs/forward_record/baselines/20260518/drill_result.json",
+      "sha256": "32cb6aef7f678587d02f1d615b76d250690b6e1fdad4d55b3d7053aa9b4e2212"
+    },
+    {
+      "path": "outputs/forward_record/baselines/20260518/safety_scan.json",
+      "sha256": "b37c72cbc2252c4126dae46792a3b6d4fa26c9904300ae8a7725791e68c5138d"
+    }
+  ],
+  "record_date": "20260517",
+  "run_ts": "2026-05-18T04:17:18Z"
+}

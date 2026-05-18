@@ -21,6 +21,943 @@ Notes:
 
 ---
 
+### 2026-05-18（Windows baseline validation）
+
+Agent: Rick（手動実行）+ Claude Sonnet（記録）
+Command source: Rick direct chat instruction（本次唯一目標：記錄 Windows baseline validation artifact）
+Task: Windows 環境で unittest / forward record dry-run / drill / safety scan を実行し、baseline artifact を生成・記録
+Status before: TASK-009c DONE；Windows baseline validation 未記錄；30-day clock 前置條件 VPS 部署のみ未完了
+Status after: Windows baseline validation 記錄完了；baseline artifact hash 記錄；NEXT_ACTION WAITING
+Validation results:
+- `python -m unittest discover -v`：**PASS，90 tests**
+- `python scripts/run_forward_record.py --date 20260517 --dry-run --shadow-track`：**PASS，REVIEW_READY**
+- `python scripts/drill_forward_alerts.py --date 20260517`：**PASS，13/13 scenarios**
+- safety scan：**PASS**
+Artifacts:
+- `outputs/forward_record/baselines/20260518/pytest_result.txt`
+- `outputs/forward_record/baselines/20260518/forward_record_result.json`
+- `outputs/forward_record/baselines/20260518/drill_result.json`
+- `outputs/forward_record/baselines/20260518/safety_scan.json`
+- `outputs/forward_record/baselines/20260518/baseline_hash.json`
+- Combined baseline SHA-256：`b8d4fd69fb77c52ad557b307cae3ecf23cc869f287e95702cd26ac2aaeb73476`
+Safety gates:
+- paper/live：FORBIDDEN（不変）
+- clock_started：NOT_STARTED（不変）
+- Bybit connection：NOT_ATTEMPTED
+- credential request：NOT_ATTEMPTED
+- Discord real send：NOT_ATTEMPTED
+- --live-alerts：NOT_ATTEMPTED
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，baseline validation DONE 記錄)
+
+---
+
+### 2026-05-18（REVIEW-009c final decision）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（本次唯一目標：記錄 REVIEW-009c final decision，更新 queue / log / NEXT_ACTION）
+Task: REVIEW-009c final decision 記錄；TASK-009c DONE；sandbox artifact caveat 記錄
+Status before: TASK-009c = REVIEW；REVIEW-009c draft = PASS（Sonnet）；registry files 未更新
+Status after: TASK-009c = **DONE**；REVIEW-009c = PASS（Opus）；TASK-009b/009c/009d 全部 DONE；30-day clock NOT_STARTED；paper/live FORBIDDEN
+Files changed:
+- `docs/research/CLAUDE_REVIEW_LOG.md` (REVIEW-009c final decision appended)
+- `docs/research/CLAUDE_REVIEW_QUEUE.md` (REVIEW-009c PASS entry added above REVIEW-009d)
+- `docs/research/CODEX_TASK_QUEUE.md` (TASK-009c DONE；sandbox caveat + review findings 補充)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Key findings（Opus 裁定）：
+1. C-1~C-6 全部正確實作並驗證
+2. Linux sandbox stale .pyc / truncated source = infrastructure noise；Windows 110 tests PASS；不阻擋 DONE
+3. NOTE-1（legacy constant）、NOTE-2（drill task tag）均 non-blocking；可 cleanup sprint 處理
+4. TASK-009b / TASK-009c / TASK-009d 全部 DONE；30-day clock 前置條件除 VPS 部署外均達成
+Notes: 未送 Discord alert；未連接 Bybit；未啟動 30-day clock；未批准 paper/live execution；未修改策略訊號
+
+---
+
+### 2026-05-18 (scheduled-task auto-resume)
+
+Agent: Claude Sonnet
+Command source: `NEXT_ACTION.md` READY (REVIEW-009c draft); scheduled-task resume after usage-limit interruption
+Task: REVIEW-009c draft — verify C-1~C-6 implementation, tests, drill report, safety gates, refreshed REVIEW-009d artifacts; write REVIEW-009c_DRAFT_BY_SONNET.md
+Status before: TASK-009c = REVIEW; REVIEW-009c_DRAFT_BY_SONNET.md not yet written
+Status after: REVIEW-009c_DRAFT_BY_SONNET.md written; TASK-009c remains REVIEW (no DONE without Opus verdict); NEXT_ACTION unchanged
+Files changed:
+- `docs/research/review_packets/REVIEW-009c_DRAFT_BY_SONNET.md` (created)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation:
+- Read NEXT_ACTION.md: Status=READY, Task=REVIEW-009c draft, confirmed REVIEW-009c_DRAFT_BY_SONNET.md did not yet exist.
+- Confirmed interruption state: Codex DID complete all tests before interruption (COMMAND_LOG 2026-05-18 08:25 entry shows 54+13 tests + drill all PASS). The "53/53" in scheduled-task prompt was an intermediate count.
+- Verified C-1: `alert_conditions.py` line 220 — only `("data_source=FAILED","RuntimeError")` in marker loop; `CacheMarketDataProvider` removed.
+- Verified C-2: `_extract_yyyymmdd()` lines 303–308 — pathlib stem + word-boundary regex; 9-digit guard confirmed.
+- Verified C-3: `configs/forward_record.yaml` exists (18 lines, `{date}` templates); `resolve_forward_output_paths_from_config()` and `_resolve_runtime_paths()` in `alerting.py`.
+- Verified C-4: drill_report.json shows `raw_content` checks with `has_condition_id_in_raw=false` (confirms raw/preview separation).
+- Verified C-5: `AlertConditionResult.__post_init__` raises ValueError for None message/action_required (lines 23–27).
+- Verified C-6: drill_report.json S-A5c `triggered=false, result=PASS`; REVIEW-009c_NUMBERS.json `s_a5c_not_triggered=true`.
+- Verified REVIEW-009d artifacts: REVIEW-009d_PACKET.md includes S-A5c line 20; REVIEW-009d_NUMBERS.json has `"S-A5c": true` in negative_scenarios_not_triggered.
+- Verified safety gates: all FORBIDDEN items NOT_ATTEMPTED; clock_started=false; paper/live FORBIDDEN.
+- Linux sandbox artifact: `tests.monitor.test_channels` fails due to stale pyc (timestamp-mode) + truncated config.py on Linux mount (7,395-byte file, last line is `current[list_key].`). Root cause: NTFS→Linux mount sync lag. NOT a code regression — Windows COMMAND_LOG entry confirms 13/13 PASS on 2026-05-18.
+Outputs:
+- `docs/research/review_packets/REVIEW-009c_DRAFT_BY_SONNET.md`
+Notes: Did not mark TASK-009c DONE. Did not send Discord alert. Did not connect Bybit. Did not start 30-day clock. Did not approve paper/live execution. Did not modify implementation files. Draft verdict = PASS pending Opus confirmation. Opus should rerun tests.monitor.test_channels on Windows to confirm 13/13 before issuing final verdict.
+
+---
+
+### 2026-05-18 08:25 +08:00
+
+Agent: Codex
+Command source: Rick latest direct chat instruction; `NEXT_ACTION.md` was `WAITING`, and Rick explicitly authorized TASK-009c implementation
+Task: Implement TASK-009c forward record tech debt fixes C-1 through C-6
+Status before: TASK-009c queue status `TODO`; workorder v1.0 exists; 30-day clock not started; paper/live `FORBIDDEN`
+Status after: TASK-009c moved to `REVIEW`; REVIEW-009c artifacts generated; 30-day clock not started; paper/live remains `FORBIDDEN`
+Files changed:
+- `apps/forward_record/alert_conditions.py`
+- `apps/forward_record/alerting.py`
+- `configs/forward_record.yaml`
+- `scripts/drill_forward_alerts.py`
+- `tests/forward_record/test_alerting.py`
+- `tests/forward_record/test_alert_e2e_drill.py`
+- `docs/research/CODEX_TASK_QUEUE.md`
+- `docs/research/commands/COMMAND_LOG.md`
+- `docs/research/review_packets/REVIEW-009c_PACKET.md`
+- `docs/research/review_packets/REVIEW-009c_NUMBERS.json`
+- `docs/research/review_packets/REVIEW-009d_PACKET.md`
+- `docs/research/review_packets/REVIEW-009d_NUMBERS.json`
+- `outputs/forward_record/drill/20260517_drill_report.json`
+Validation:
+- Ran `python -m py_compile apps\forward_record\alert_conditions.py apps\forward_record\alerting.py scripts\drill_forward_alerts.py` PASS.
+- Ran `python -m unittest tests.forward_record.test_alerting -v` PASS (22 tests).
+- Ran `python -m unittest tests.forward_record.test_alert_e2e_drill -v` PASS (21 tests).
+- Ran `python scripts\drill_forward_alerts.py --date 20260517` PASS; scenario_count=`13`; overall_result=`PASS`; external_post_attempted=`false`; safety_scan=`PASS`.
+- Ran `python -m unittest tests.forward_record -v` PASS (54 tests).
+- Ran `python -m unittest tests.monitor.test_channels -v` PASS (13 tests).
+Outputs:
+- `configs/forward_record.yaml`
+- `docs/research/review_packets/REVIEW-009c_PACKET.md`
+- `docs/research/review_packets/REVIEW-009c_NUMBERS.json`
+- `outputs/forward_record/drill/20260517_drill_report.json`
+Notes: Completed C-1 A-5 marker narrowing, C-2 path date parsing hardening, C-3 runtime output path config, C-4 raw/template check separation, C-5 raw None placeholder gate, and C-6 S-A5c negative drill scenario. Did not rerun the forward record runner, connect Bybit, request/read API keys or Discord credentials, send real Discord alerts, use `--live-alerts`, set Discord `dry_run=false`, start the 30-day forward clock, approve paper/live execution, modify strategy code, or modify `apps/paper_trading/`.
+
+---
+
+### 2026-05-18（TASK-009c implementation plan）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（本次唯一目標：建立 TASK-009c implementation plan）
+Task: 建立 TASK-009c workorder v1.0（六項 caveat 修補實作計畫）
+Status before: TASK-009c = TODO；workorder 不存在；scope 已在 CODEX_TASK_QUEUE.md 合併 009b+009d 六項
+Status after: TASK-009c workorder v1.0 建立；8 section；T-1~T-14；執行順序 C-1→C-2→C-3→C-6→C-4→C-5；NEXT_ACTION=WAITING
+Files changed:
+- `docs/research/codex_workorders/TASK-009c_forward_record_tech_debt.md` (created, v1.0)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Workorder highlights:
+- C-1：`check_data_source_failure()` 移除 `"CacheMarketDataProvider"` log marker → 保留 `"data_source=FAILED"` 與 `"RuntimeError"`
+- C-2：`_extract_yyyymmdd()` 改用 pathlib stem + regex word boundary；邊界 test T-4~T-8
+- C-3：`configs/forward_record.yaml` 新增（output path 模板）；`alerting.py` 不再 hardcode REVIEW-009_NUMBERS.json；`{date}` 佔位符支援
+- C-4：`_raw_content_check()` 新函式；`_scenario()` 拆成 raw check 層 + preview 層；has_date/has_condition_id/has_action 不再靠 inject header 充數
+- C-5：`no_placeholder_raw` pre-sanitize check；AlertConditionResult None guard at construction time
+- C-6：S-A5c negative scenario（CacheMarketDataProvider in log → A-5 should not trigger）；drill scenarios 12 → 13
+Notes: 未送 Discord alert；未連接 Bybit；未啟動 30-day clock；未批准 paper/live execution；未修改策略訊號
+
+---
+
+### 2026-05-18（REVIEW-009d final decision）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（本次唯一目標：記錄 REVIEW-009d final decision，更新 queue / log / NEXT_ACTION）
+Task: REVIEW-009d final decision 記錄；TASK-009d DONE；TASK-009c 合併 W-1/W-2/W-3 scope
+Status before: TASK-009d = REVIEW_READY；REVIEW-009d draft = PASS；registry files 未更新
+Status after: TASK-009d = **DONE**；REVIEW-009d = PASS（Opus）；TASK-009c scope 合併 009b + 009d 六項 caveat；30-day clock NOT_STARTED；paper/live FORBIDDEN
+Files changed:
+- `docs/research/CLAUDE_REVIEW_LOG.md` (REVIEW-009b + REVIEW-009d final decision appended)
+- `docs/research/CLAUDE_REVIEW_QUEUE.md` (REVIEW-009d PASS entry added above REVIEW-009b)
+- `docs/research/CODEX_TASK_QUEUE.md` (TASK-009d DONE；TASK-009c scope 擴充至六項)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Key findings:
+1. Opus verdict：PASS（W-1/W-2/W-3 全部 CAVEAT non-blocking）
+2. TASK-009d 前置條件全達成：10/10 fail gates；18/18 tests；12/12 scenarios；redaction/dedupe/template 全 PASS
+3. 30-day clock 前置條件：TASK-009d = DONE；VPS 部署尚未執行（NOT_STARTED）；Bybit API 未設定；Rick 未明示「開始計時」
+4. TASK-009c 合併六項 caveat：REVIEW-009b W-1/W-2/W-3 + REVIEW-009d W-1/W-2/W-3（XS 預估）
+Notes: 未送 Discord alert；未連接 Bybit；未啟動 30-day clock；未批准 paper/live execution；未修改策略訊號
+
+---
+
+### 2026-05-18（REVIEW-009d draft）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（本次唯一目標：執行 REVIEW-009d draft）
+Task: REVIEW-009d TASK-009d Alert Delivery E2E Drill — Sonnet draft review
+Status before: TASK-009d = REVIEW_READY；Codex implementation complete；draft not yet written
+Status after: REVIEW-009d draft written；verdict = **PASS**（draft）；TASK-009d not marked DONE；clock NOT_STARTED；Discord NOT_ATTEMPTED
+Files changed:
+- `docs/research/review_drafts/REVIEW-009d_DRAFT_BY_SONNET.md` (created, 13 sections)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Key findings:
+1. **Fail gates（10）：全部 PASS** — scan_no_order_endpoints violations=[]；FORBIDDEN fields 全部 NOT_ATTEMPTED；18/18 tests PASS（unittest 直接執行）；12/12 scenarios PASS；dry_run=True；ChannelResult.status=DRY_RUN；clock_started=false
+2. **Scenarios 12/12 PASS**：正 trigger 8 件（S-A1~A7 + S-A5b）+ 負 trigger 4 件（S-A1b/A3b/A4b/A6b）全部符合預期
+3. **Redaction PASS**：9 pattern 掃描全 12 scenarios → violation_count=0
+4. **Dedupe PASS**：A-6 首日 triggered=True / 次日 suppressed=True；A-2 每日觸發（not deduped）確認
+5. **Discord template PASS**：6 項格式驗證全 True（non-empty / action / condition_id / date / no_placeholder / severity）
+6. **W-1（CAVEAT）**：`_message_preview()` が context inject するため has_date / has_condition_id / has_action が inflated；required_terms は実文字列を検証しており本質的 content は確認済み
+7. **W-2（CAVEAT）**：`_sanitize_text("None"→"n/a")` が no_placeholder を形骸化する可能性；現 conditions では None 混入なし
+8. **W-3（CAVEAT）**：CacheMarketDataProvider false positive の negative scenario が drill に未含；TASK-009c で修正後に S-A5c 追加推奨
+Verdict: **PASS**（draft）；Sonnet 認為不強制需要 Opus；提供 §12 Opus prompt 備用；決定權在 Rick
+Notes: 未標 TASK-009d DONE；未送 Discord alert；未連接 Bybit；未啟動 30-day clock；未批准 paper/live execution
+
+---
+
+### 2026-05-18 07:55 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`Implement TASK-009d alert E2E dry-run drill`
+Task: Implement TASK-009d Alert Delivery E2E Drill with dry-run/mock fixtures only
+Status before: TASK-009d queue status `TODO`; workorder v1.0 exists; drill script/tests/report absent; 30-day clock not started; paper/live `FORBIDDEN`
+Status after: TASK-009d moved to `REVIEW`; drill result `PASS`; REVIEW-009d artifacts generated; 30-day clock not started; paper/live remains `FORBIDDEN`
+Files changed:
+- `scripts/drill_forward_alerts.py`
+- `tests/forward_record/test_alert_e2e_drill.py`
+- `docs/research/CODEX_TASK_QUEUE.md`
+- `docs/research/commands/COMMAND_LOG.md`
+- `docs/research/review_packets/REVIEW-009d_PACKET.md`
+- `docs/research/review_packets/REVIEW-009d_NUMBERS.json`
+- `outputs/forward_record/drill/20260517_drill_report.json`
+Validation:
+- Ran `python scripts\drill_forward_alerts.py --date 20260517` PASS; overall_result=`PASS`; dry_run=`true`; external_post_attempted=`false`; safety_scan=`PASS`.
+- Ran `python -m py_compile scripts\drill_forward_alerts.py` PASS.
+- Ran `python -m unittest tests.forward_record.test_alert_e2e_drill -v` PASS (18 tests).
+- Ran `python -m unittest tests.forward_record -v` PASS (44 tests).
+- Ran `python -m unittest tests.monitor.test_channels -v` PASS (13 tests).
+Outputs:
+- `outputs/forward_record/drill/20260517_drill_report.json`
+- `docs/research/review_packets/REVIEW-009d_PACKET.md`
+- `docs/research/review_packets/REVIEW-009d_NUMBERS.json`
+Notes: Implemented only dry-run/mock alert E2E drill. S-A1/S-A2/S-A3/S-A4/S-A5/S-A5b/S-A6/S-A7 trigger scenarios and S-A1b/S-A3b/S-A4b/S-A6b suppression scenarios passed. Redaction, dedupe, Discord template, force_dry_run, and SENT fail gate all passed. Did not send any real Discord alert, use `--live-alerts`, set Discord `dry_run=false`, connect Bybit, request/read credential material, start the 30-day forward clock, approve paper/live execution, modify strategy code, or modify `apps/forward_record/alerting.py` / `apps/forward_record/alert_conditions.py`.
+
+---
+
+### 2026-05-18 07:41 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`TASK-009d implementation plan`
+Task: Prepare TASK-009d Alert Delivery E2E Drill implementation plan only
+Status before: TASK-009d readiness_status=`READY_TO_IMPLEMENT`; drill script/tests/report not generated; 30-day clock not started; paper/live `FORBIDDEN`
+Status after: implementation plan prepared in Codex reply only; no TASK-009d code or outputs generated; 30-day clock not started; paper/live remains `FORBIDDEN`
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- Read `AGENTS.md`, `docs/research/commands/NEXT_ACTION.md`, `docs/research/commands/CODEX_COMMANDS.md#task-009d-implementation-plan`, `docs/research/codex_workorders/TASK-009d_alert_e2e_drill.md`, `docs/research/commands/COMMAND_LOG.md`, `apps/forward_record/alert_conditions.py`, `apps/forward_record/alerting.py`, `tests/forward_record/test_alerting.py`, `docs/research/review_packets/REVIEW-009b_NUMBERS.json`, and `outputs/forward_record/alerts/20260517_alert_log.json`.
+- Confirmed TASK-009d must be dry-run/mock only despite old `CODEX_TASK_QUEUE.md` wording about VPS/live drill.
+- Confirmed plan can add `scripts/drill_forward_alerts.py`, `tests/forward_record/test_alert_e2e_drill.py`, `outputs/forward_record/drill/<YYYYMMDD>_drill_report.json`, `REVIEW-009d_PACKET.md`, and `REVIEW-009d_NUMBERS.json` without modifying `alerting.py` or `alert_conditions.py`.
+Outputs: TASK-009d implementation plan in Codex reply only. No drill script, tests, report, or REVIEW-009d artifacts generated.
+Notes: Did not implement TASK-009d, send Discord alerts, use `--live-alerts`, set Discord `dry_run=false`, connect Bybit, request/read API keys, start the forward clock, approve paper/live, or mark TASK-009d DONE.
+
+---
+
+### 2026-05-18 07:30 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`TASK-009d readiness check`
+Task: TASK-009d Alert Delivery E2E Drill readiness check only
+Status before: TASK-009d workorder exists with status `TODO`; TASK-009b alerting implementation and dry-run alert log exist; 30-day clock not started; paper/live `FORBIDDEN`
+Status after: readiness_status=`READY_TO_IMPLEMENT`; implementation plan prepared in Codex reply only; no TASK-009d code or outputs generated; 30-day clock not started; paper/live remains `FORBIDDEN`
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- Read `AGENTS.md`, `docs/research/commands/NEXT_ACTION.md`, `docs/research/codex_workorders/TASK-009d_alert_e2e_drill.md`, `docs/research/commands/CODEX_COMMANDS.md#task-009d-readiness`, `docs/research/commands/COMMAND_LOG.md`, `apps/forward_record/alert_conditions.py`, `apps/forward_record/alerting.py`, `tests/forward_record/test_alerting.py`, `docs/research/review_packets/REVIEW-009b_NUMBERS.json`, and `outputs/forward_record/alerts/20260517_alert_log.json`.
+- Verified S-A1~S-A7 positive scenarios and S-A1b/A3b/A4b/A5b/A6b negative scenarios can be generated with temp files and mock fixtures only.
+- Verified redaction validation can scan webhook/api_key/api_secret/token/Bearer/Discord webhook URL patterns.
+- Verified A-6 dedupe and A-2 daily notification no-dedupe behavior can be tested without modifying `alerting.py` or `alert_conditions.py`.
+- Verified Discord template validation is implementable from `AlertConditionResult.message` plus condition metadata and from dry-run `Alert` previews.
+- Verified `force_dry_run=True` and `live_alerts=False` can be enforced; any `ChannelResult.status == SENT` can be treated as drill failure.
+- `python -m unittest tests.forward_record.test_alerting -v` PASS (15 tests)
+- `python -m unittest tests.monitor.test_channels -v` PASS (13 tests)
+Outputs: Readiness result only. No drill script, drill test, drill report, REVIEW-009d packet, or REVIEW-009d numbers generated.
+Notes: `CODEX_TASK_QUEUE.md` still contains an older live/VPS-oriented TASK-009d description, but the current `NEXT_ACTION.md`, TASK-009d workorder, and Rick's current instruction require dry-run/mock drill only. Did not implement TASK-009d, send Discord alerts, use `--live-alerts`, set Discord `dry_run=false`, connect Bybit, request/read API keys, start the forward clock, approve paper/live, or mark TASK-009d DONE.
+
+---
+
+### 2026-05-18（TASK-009d 工單建立）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（本次唯一目標：建立 TASK-009d alert delivery E2E drill 工單）
+Task: 建立 `docs/research/codex_workorders/TASK-009d_alert_e2e_drill.md`
+Status before: TASK-009d = TODO（CODEX_TASK_QUEUE 已有 entry）；工單尚未建立
+Status after: TASK-009d 工單 v1.0 建立完成；NEXT_ACTION = WAITING，Owner=Rick
+Files changed:
+- `docs/research/codex_workorders/TASK-009d_alert_e2e_drill.md` (created, 15 sections + 2 appendices)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Workorder contents:
+- §1 任務一句話：dry-run / mock 模式下對 A-1~A-7 全部逐一人工觸發驗證
+- §2–3 目的與重要性（silent failure 防範；REVIEW-009b W-1 後遺症；TASK-009c 修補驗收）
+- §4 Scope：drill 腳本 + E2E 測試 only；不修改 alerting.py / alert_conditions.py
+- §5–6 Inputs / Outputs（含 drill_report.json schema + REVIEW-009d_NUMBERS.json）
+- §7 Drill Scenarios：S-A1 ~ S-A7 + 5 個 negative scenarios（S-A1b/A3b/A4b/A5b/A6b）
+- §8 Redaction validation：9 個掃描字串（webhook / api_key / api_secret / token 等）
+- §9 Dedupe validation：A-6 首日觸發 / 次日抑制；A-2 不 dedupe 確認
+- §10 Discord template validation：6 項格式檢查（非空 / condition ID / 日期 / action / severity / 無空白 placeholder）
+- §11 dry_run 強制規定：force_dry_run=True；禁止 live_alerts=True；ChannelResult.status ≠ SENT
+- §12 Tests T-1~T-18（全部必須 PASS）
+- §13–14 Safety gates & Forbidden actions
+- §15 Completion report format（含 18 項 Forbidden Items Confirmation）
+Validation: 未修改策略；未連接 Bybit；未啟動 forward clock；未批准 paper/live execution；未送 Discord alert
+Notes: 工單建立後 TASK-009d 可交 Codex 執行；30-day clock 啟動仍需 Rick 明示；TASK-009d 是 clock 前置必辦
+
+---
+
+### 2026-05-18（REVIEW-009b final decision recording）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（本次唯一目標：記錄 REVIEW-009b final decision，7-step explicit）
+Task: 記錄 REVIEW-009b Opus PASS；更新 queue / log；建立 TASK-009c / TASK-009d；更新 NEXT_ACTION
+Status before: REVIEW-009b draft complete；TASK-009b = REVIEW；登錄檔未反映 Opus 最終裁定
+Status after: TASK-009b = **DONE**（Opus REVIEW-009b PASS，2026-05-18）；W-1/W-2/W-3 = CAVEAT；TASK-009c/d = TODO；NEXT_ACTION = WAITING
+Files changed:
+- `docs/research/CLAUDE_REVIEW_LOG.md` — REVIEW-009b PASS final decision appended（6 sections）
+- `docs/research/CLAUDE_REVIEW_QUEUE.md` — REVIEW-009b PASS entry added（top of completed reviews）
+- `docs/research/CODEX_TASK_QUEUE.md` — TASK-009 / TASK-009a / TASK-009b / TASK-009c / TASK-009d entries appended（009b DONE with W-1/W-2/W-3 caveat；009a/c/d TODO）
+- `docs/research/commands/COMMAND_LOG.md` — this entry
+- `docs/research/commands/NEXT_ACTION.md` — WAITING，Owner=Rick
+Key decisions recorded:
+1. **Opus verdict**：PASS（0/10 fail gates）
+2. **W-1 ruling**：CAVEAT — A-5 `CacheMarketDataProvider` marker false positive → TASK-009c
+3. **W-2 ruling**：CAVEAT — `_extract_yyyymmdd()` path parsing 脆弱 → TASK-009c
+4. **W-3 ruling**：CAVEAT — `REVIEW_NUMBERS_PATH` 依賴 review artifact → TASK-009c
+5. **TASK-009c**：TODO（XS；W-1/W-2/W-3 caveat 技術收斂）
+6. **TASK-009d**：TODO（S；alert delivery E2E drill；30-day clock 啟動前置**必辦**）
+7. **Monitor readiness**：READY
+Validation: 未修改策略；未重跑任何程式；未連接 Bybit；未啟動 forward clock；未批准 paper/live execution；未送 Discord alert
+Notes: Paper execution gate 仍 5/7；30-day clock 需 Rick 明示「開始計時」才啟動；TASK-009d 為 clock 前置必辦
+
+---
+
+### 2026-05-18（REVIEW-009b draft）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（本次唯一目標：執行 REVIEW-009b draft）；Codex が NEXT_ACTION.md を READY に設定済み
+Task: REVIEW-009b TASK-009b Forward Monitor Alerting — Sonnet draft review
+Status before: TASK-009b = REVIEW_READY；Codex implementation complete；draft not yet written
+Status after: REVIEW-009b draft written；verdict = **PASS**（draft）；TASK-009b not marked DONE；clock NOT_STARTED；Discord NOT_ATTEMPTED
+Files changed:
+- `docs/research/review_drafts/REVIEW-009b_DRAFT_BY_SONNET.md` (created, 11 sections)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Key findings:
+1. **Fail gates（10）：全部 PASS** — scan_no_order_endpoints violations=[]；FORBIDDEN fields 全部 NOT_ATTEMPTED；15/15 tests PASS（pytest 直接執行）；dry_run 三重 gate 確認；Discord external_post_attempted=false；clock_started 無 mutation
+2. **dry_run 三重防護**：force_dry_run=True default + `True if force_dry_run or not live_alerts` logic + yaml dry_run:true；三條件同時滿足才可實際 POST
+3. **A-6 設計確認**：review_006b_trigger_ready=True 只送通知（severity=INFO）；不觸發任何自動執行；duplicate 抑制正確
+4. **W-1（CAVEAT）**：A-5 的 `CacheMarketDataProvider` log marker 潛在 false positive；現無實際觸發；建議後續補修
+5. **W-2（CAVEAT）**：`_extract_yyyymmdd()` 取路徑中第一個 8 位數字序列；目前路徑格式安全；長期可用佔位符替代
+6. **W-3（CAVEAT）**：`REVIEW_NUMBERS_PATH` 依賴 review artifact；穩定但非 runtime config；長期建議移入 yaml
+Verdict: **PASS**（draft）；Sonnet 認為不強制需要 Opus；提供 §10 Opus prompt 備用；決定權在 Rick
+Notes: 未標 TASK-009b DONE；未送 Discord alert；未用 --live-alerts；未連接 Bybit；未啟動 30-day clock；未批准 paper/live execution
+
+---
+
+### 2026-05-18 07:08 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`Implement TASK-009b forward monitor alerting`
+Task: Implement TASK-009b Forward Monitor Alerting
+Status before: TASK-009b queue status `TODO`; alerting modules absent; 30-day clock not started; paper/live `FORBIDDEN`
+Status after: TASK-009b queue status `REVIEW`; alerting dry-run completed; REVIEW-009b packet/numbers generated; 30-day clock not started; paper/live remains `FORBIDDEN`
+Files changed:
+- `apps/forward_record/alert_conditions.py`
+- `apps/forward_record/alerting.py`
+- `tests/forward_record/test_alerting.py`
+- `scripts/run_forward_record.py`
+- `docs/research/review_packets/REVIEW-009b_PACKET.md`
+- `docs/research/review_packets/REVIEW-009b_NUMBERS.json`
+- `outputs/forward_record/alerts/20260517_alert_log.json`
+- `docs/research/CODEX_TASK_QUEUE.md`
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- `python -m py_compile apps/forward_record/__init__.py apps/forward_record/alert_conditions.py apps/forward_record/alerting.py apps/forward_record/config.py apps/forward_record/market_data.py apps/forward_record/signal_loader.py apps/forward_record/primary.py apps/forward_record/shadow.py apps/forward_record/pnl_calculator.py apps/forward_record/gate_checker.py apps/forward_record/stats_updater.py apps/forward_record/safety.py apps/forward_record/report_writer.py scripts/run_forward_record.py` PASS
+- `python -m unittest tests.forward_record.test_alerting -v` PASS (15 tests)
+- `python -m unittest tests.forward_record -v` PASS (26 tests)
+- `python -m unittest tests.monitor.test_channels -v` PASS (13 tests)
+- `python scripts/run_forward_record.py --date 20260517 --dry-run --shadow-track` PASS; alert log written
+- Forward alerting safety scan PASS: no order/private endpoint violations
+Outputs:
+- Alert log `outputs/forward_record/alerts/20260517_alert_log.json`: `dry_run=true`, `alerts_sent=0`, `discord_results=[]`, `FORBIDDEN_live_trading=NOT_ATTEMPTED`, `FORBIDDEN_order_endpoint=NOT_ATTEMPTED`, `FORBIDDEN_bybit_write=NOT_ATTEMPTED`, `review_006b_trigger_ready=false`
+- REVIEW artifact `docs/research/review_packets/REVIEW-009b_PACKET.md`
+- REVIEW numbers `docs/research/review_packets/REVIEW-009b_NUMBERS.json`
+Notes: Did not connect to Bybit, request/read API keys, send real Discord alerts, use `--live-alerts`, set Discord `dry_run=false`, start or mutate the 30-day forward clock, approve paper/live execution, modify strategy code, modify `apps/forward_record/gate_checker.py`, or modify `apps/monitor/channels/discord.py`. `configs/monitor.yaml` was already dirty in the worktree and remains with Discord `dry_run=true`.
+
+---
+
+### 2026-05-18 07:01 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`TASK-009b implementation plan`
+Task: Prepare TASK-009b Forward Monitor Alerting implementation plan only
+Status before: TASK-009b readiness_status=`READY_TO_IMPLEMENT`; `apps/forward_record/alerting.py`, `apps/forward_record/alert_conditions.py`, and `tests/forward_record/test_alerting.py` absent; 30-day clock not started; paper/live `FORBIDDEN`
+Status after: implementation plan prepared in Codex reply only; no TASK-009b code or outputs generated; 30-day clock not started; paper/live remains `FORBIDDEN`
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- Read `AGENTS.md`, `docs/research/commands/NEXT_ACTION.md`, `docs/research/commands/CODEX_COMMANDS.md#task-009b-implementation-plan`, `docs/research/codex_workorders/TASK-009b_forward_monitor_alerting.md`, `docs/research/review_packets/REVIEW-009_PACKET.md`, `docs/research/review_packets/REVIEW-009_NUMBERS.json`, `apps/forward_record/`, `apps/monitor/`, `scripts/run_forward_record.py`, and `configs/monitor.yaml`.
+- Confirmed implementation plan should discover actual TASK-009 paths from `REVIEW-009_NUMBERS.json` instead of relying on workorder example `primary/YYYYMMDD/...` paths.
+- Confirmed Discord integration should reuse `apps.monitor.channels.discord.send_discord_alerts()` without modifying `discord.py`; default channel config remains `dry_run=true`.
+Outputs: TASK-009b implementation plan in Codex reply only. No implementation files created. No alert log generated. No Discord POST attempted.
+Notes: Did not implement TASK-009b, connect Bybit, request/read API keys, send real Discord alerts, start the forward clock, approve paper/live, modify strategy code, or mark TASK-009b DONE.
+
+---
+
+### 2026-05-18 06:59 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`TASK-009b readiness check`
+Task: TASK-009b Forward Monitor Alerting readiness check only
+Status before: TASK-009b workorder exists with status `TODO`; `apps/forward_record/alerting.py`, `apps/forward_record/alert_conditions.py`, and `tests/forward_record/test_alerting.py` absent; 30-day clock not started; paper/live `FORBIDDEN`
+Status after: readiness_status=`READY_TO_IMPLEMENT`; implementation plan prepared in Codex reply only; no TASK-009b code or outputs generated; 30-day clock not started; paper/live remains `FORBIDDEN`
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- Read `AGENTS.md`, `docs/research/commands/NEXT_ACTION.md`, `docs/research/codex_workorders/TASK-009b_forward_monitor_alerting.md`, `docs/research/commands/CODEX_COMMANDS.md#task-009b-readiness`, `docs/research/commands/COMMAND_LOG.md`, `apps/forward_record/`, `apps/monitor/`, `scripts/run_forward_record.py`, `docs/research/review_packets/REVIEW-009_PACKET.md`, and `docs/research/review_packets/REVIEW-009_NUMBERS.json`.
+- Verified A-1~A-7 are computable from existing forward outputs, gate stats, primary/shadow parquet files, runner log, and monitor config.
+- Verified TASK-005/TASK-005a Discord channel can be reused safely with dry-run: mock readiness call returned `ChannelResult.status=DRY_RUN` and `external_post_attempted=False`.
+- Verified current monitor config has Discord `enabled=true`, `dry_run=true`; TASK-009 runner has dry-run defaults and `clock_started=false`.
+- `python -m unittest tests.forward_record -v` PASS (11 tests)
+- `python -m unittest tests.monitor.test_channels -v` PASS (13 tests)
+Outputs: Readiness result only. No implementation files created. No alert log generated. No Discord POST attempted.
+Notes: Implementation caveats: TASK-009b should read actual paths from `REVIEW-009_NUMBERS.json` because TASK-009 output layout is date-prefixed flat files, while workorder examples mention `primary/YYYYMMDD/...`; TASK-009 is now recorded DONE after REVIEW-009 PASS in project logs, but 30-day clock remains NOT_STARTED. Did not implement TASK-009b, connect Bybit, request/read API keys, send real Discord alerts, start the forward clock, approve paper/live, modify strategy code, or mark TASK-009b DONE.
+
+---
+
+### 2026-05-17（TASK-009b 工單建立）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（本次唯一目標：建立 TASK-009b forward monitor alerting 工單）
+Task: 建立 `docs/research/codex_workorders/TASK-009b_forward_monitor_alerting.md`
+Status before: TASK-009b = TODO（CODEX_TASK_QUEUE 已有 entry）；工單尚未建立
+Status after: TASK-009b 工單 v1.0 建立完成；NEXT_ACTION = WAITING，Owner=Rick
+Files changed:
+- `docs/research/codex_workorders/TASK-009b_forward_monitor_alerting.md` (created, 17 sections + 2 appendices)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Workorder contents:
+- §1 任務一句話：apps/forward_record/alerting.py + Discord 整合
+- §2–3 目的與重要性（30-day clock 前置；stop gate 閉環；REVIEW-006b 通知）
+- §4 Scope：alerting.py, alert_conditions.py, test_alerting.py, run_forward_record.py 末端整合
+- §5–6 Inputs / Outputs（含 YYYYMMDD_alert_log.json schema）
+- §7 Alert Conditions：A-1 runner missing（連續 2 天）；A-2 stop gate；A-3 warning streak（N=3）；A-4 alpha gap（threshold 0.05）；A-5 data source failure；A-6 review_006b_trigger_ready；A-7 FORBIDDEN field violation
+- §8 Integration：直接呼叫 send_discord_alerts()；dry_run 預設 True；--live-alerts flag 控制
+- §9–13 Daily health check, stop gate detail, data source detail, missing row logic, alpha gap calc
+- §14 Tests T-1~T-15（全部必須 PASS）
+- §15–16 Safety gates & Forbidden actions
+- §17 Completion report format（含 Forbidden Items Confirmation checklist）
+Validation: 未修改策略；未連接 Bybit；未啟動 forward clock；未批准 paper/live execution
+Notes: 工單建立後 TASK-009b 可交 Codex 執行；30-day clock 啟動仍需 Rick 明示
+
+---
+
+### 2026-05-17（REVIEW-009 final decision recording）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（REVIEW-009 final decision，7-step explicit）
+Task: 記錄 REVIEW-009 Opus PASS；更新 queue / log / TASK-009a / TASK-009b / NEXT_ACTION
+Status before: REVIEW-009 draft complete；TASK-009 = REVIEW；所有登錄檔未反映 Opus 最終裁定
+Status after: TASK-009 = **DONE**（Opus REVIEW-009 PASS，2026-05-17）；W-1/W-2/W-3 = CAVEAT；TASK-009a/b = TODO；NEXT_ACTION = WAITING
+Files changed:
+- `docs/research/CLAUDE_REVIEW_LOG.md` — REVIEW-009 PASS final decision appended（6 sections）
+- `docs/research/CLAUDE_REVIEW_QUEUE.md` — REVIEW-009 PASS entry added（top of completed reviews）
+- `docs/research/CODEX_TASK_QUEUE.md` — TASK-009 REVIEW → DONE with W-1/W-2/W-3 caveat notes；TASK-009a/b TODO entries added
+- `docs/research/commands/COMMAND_LOG.md` — this entry
+- `docs/research/commands/NEXT_ACTION.md` — WAITING，Owner=Rick
+Key decisions recorded:
+1. **Opus verdict**：PASS（0/10 fail gates）
+2. **W-1 ruling**：CAVEAT — `api_key_request=NOT_ATTEMPTED` false positive；TASK-009a 補白名單
+3. **W-2 ruling**：CAVEAT — dry-run 日 cap 未觸發；TASK-009a 加 `alpha_cap_triggered_today`
+4. **W-3 ruling**：CAVEAT — pre-existing uncommitted diffs；Rick forward clock 前需 clean working tree
+5. **VPS Phase 6**：解鎖（DEFERRED → ⬜ 可執行）
+6. **TASK-009a**：TODO（XS，secret scan 白名單 + alpha_cap_triggered_today 欄位）
+7. **TASK-009b**：TODO（S，forward monitor alerting；30-day clock 啟動前置）
+Validation: 未修改策略；未重跑任何任務；未連接 Bybit；未啟動 forward clock；未批准 paper execution；未批准 live trading
+Notes: Paper execution gate 仍 5/7；30-day clock 需 Rick 明示「開始計時」才啟動
+
+---
+
+### 2026-05-17（REVIEW-009 draft）
+
+Agent: Claude Sonnet
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Claude Sonnet, Task=REVIEW-009 draft
+Task: REVIEW-009 TASK-009 Forward Record Runner — Sonnet draft review
+Status before: TASK-009 = REVIEW；Codex implementation complete；draft not yet written
+Status after: REVIEW-009 draft written；verdict = **PASS**（draft）；TASK-009 not marked DONE；paper/live = FORBIDDEN；clock NOT_STARTED
+Files changed:
+- `docs/research/review_drafts/REVIEW-009_DRAFT_BY_SONNET.md` (created)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Key findings:
+1. **Fail gates（10）：全部 PASS** — 無下單 endpoint；FORBIDDEN flags 全部存在；11/11 unit tests PASS；CLI dry-run REVIEW_READY；clock_started=false；bybit NOT_ATTEMPTED；prev3y_momentum.py 未修改
+2. **架構設計**：apps/forward_record/ 正確 import apps/paper_trading/overlay.py；shadow track 獨立輸出目錄；BybitReadOnlyMarketDataProvider allow_network=False 拋出 RuntimeError
+3. **W-1（false positive）**：scan_no_secrets_in_outputs() 在共享 log 目錄中掃到 "api_key" substring，來源為 (a) runner log 的 "api_key_request=NOT_ATTEMPTED"（無真實 key 值）(b) 既有 TASK-005/005a log（超出 TASK-009 範圍）；runner 正式 safety_scan.status = PASS；建議後續 PR 限縮掃描範圍
+4. **W-2（benign）**：dry-run primary = shadow weights（TASK-008 cap 在 20260430 未觸發）；live run 時差異將出現
+5. **W-3（observation）**：pre-existing uncommitted diff（task007 CSV + trading.db）；與 TASK-009 無關
+Verdict: **PASS**（draft）；Sonnet 認為不需 Opus；提供 §13 Opus prompt 備用；決定權在 Rick
+Notes: 未標 TASK-009 DONE；未連接 Bybit；未啟動 30-day clock；未批准 paper execution；未批准 live trading
+
+---
+
+### 2026-05-17 22:37 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`Implement TASK-009 forward record runner`
+Task: Implement TASK-009 Forward Record Runner in dry-run/cache mode
+Status before: TASK-009 queue status `TODO`; `apps/forward_record/` and `scripts/run_forward_record.py` absent; 30-day clock not started; paper/live `FORBIDDEN`
+Status after: TASK-009 queue status `REVIEW`; runner dry-run completed; REVIEW-009 packet/numbers generated; 30-day clock not started; paper/live remains `FORBIDDEN`
+Files changed:
+- `apps/forward_record/__init__.py`
+- `apps/forward_record/config.py`
+- `apps/forward_record/market_data.py`
+- `apps/forward_record/signal_loader.py`
+- `apps/forward_record/primary.py`
+- `apps/forward_record/shadow.py`
+- `apps/forward_record/pnl_calculator.py`
+- `apps/forward_record/stats_updater.py`
+- `apps/forward_record/gate_checker.py`
+- `apps/forward_record/report_writer.py`
+- `apps/forward_record/safety.py`
+- `scripts/run_forward_record.py`
+- `tests/forward_record/__init__.py`
+- `tests/forward_record/test_gate_checker.py`
+- `tests/forward_record/test_market_data.py`
+- `tests/forward_record/test_no_order_endpoint.py`
+- `tests/forward_record/test_pnl_calculator.py`
+- `tests/forward_record/test_primary_shadow.py`
+- `tests/forward_record/test_report_and_safety.py`
+- `tests/forward_record/test_signal_loader.py`
+- `tests/forward_record/test_stats_updater.py`
+- `docs/research/review_packets/REVIEW-009_PACKET.md`
+- `docs/research/review_packets/REVIEW-009_NUMBERS.json`
+- `outputs/forward_record/prev3y_crypto/20260517_positions.parquet`
+- `outputs/forward_record/prev3y_crypto/20260517_pnl.json`
+- `outputs/forward_record/prev3y_crypto/20260517_overlay_check.json`
+- `outputs/forward_record/prev3y_crypto/20260517_forward_stats.json`
+- `outputs/forward_record/prev3y_crypto/forward_summary.json`
+- `outputs/forward_record/prev3y_crypto_shadow_a_roll12/20260517_positions.parquet`
+- `outputs/forward_record/prev3y_crypto_shadow_a_roll12/20260517_pnl.json`
+- `outputs/forward_record/prev3y_crypto_shadow_a_roll12/20260517_overlay_check.json`
+- `outputs/forward_record/prev3y_crypto_shadow_a_roll12/20260517_forward_stats.json`
+- `outputs/forward_record/prev3y_crypto_shadow_a_roll12/forward_summary.json`
+- `outputs/logs/prev3y_crypto/20260517_forward_record.log`
+- `docs/research/CODEX_TASK_QUEUE.md`
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- `python -m py_compile apps/forward_record/*.py scripts/run_forward_record.py` PASS
+- `python -m unittest tests.forward_record -v` PASS (11 tests)
+- `python -m unittest discover -s tests/forward_record -v` PASS (11 tests)
+- `python scripts/run_forward_record.py --date 20260517 --dry-run --shadow-track` PASS, status `REVIEW_READY`
+- safety scan PASS: no order/private endpoint violations, no output secret indicators, FORBIDDEN flags present in primary and shadow outputs
+Outputs: Primary `combined_paper_safe_variant` generated 50 position rows from signal_date 2026-04-30; shadow `A_roll12_share20_exclude` generated 50 position rows from TASK-008 adapter and signal_date 2026-04-30; `review_006b_trigger_ready=false`; W/S gates empty.
+Notes: Did not connect to Bybit, request/write API keys, submit/cancel orders, connect private endpoints, start the 30-day forward clock, approve paper/live, modify strategy code, modify `src/signals/prev3y_momentum.py`, or rerun official baseline/cost stress/attribution.
+
+---
+
+### 2026-05-17 22:25 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`TASK-009 implementation plan`
+Task: Prepare TASK-009 Forward Record Runner implementation plan only
+Status before: readiness_status=`READY_TO_IMPLEMENT`; TASK-009 queue status `TODO`; runner not implemented; 30-day clock not started; paper/live `FORBIDDEN`
+Status after: implementation plan prepared in Codex reply only; no TASK-009 code or outputs generated; 30-day clock not started; paper/live remains `FORBIDDEN`
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md`
+Validation: Read AGENTS.md, NEXT_ACTION.md, CODEX_COMMANDS.md#task-009-implementation-plan, TASK-009 workorder, COMMAND_LOG, apps/paper_trading config/overlay/recorder/validator, apps/monitor file list, src/variants/task008.py API surface, manual ops 30-day plan/start checklist/VPS checklist. Confirmed plan must use apps/forward_record adapter for TASK-008 A_roll12_share20_exclude because task008.py has VariantSpec/build_monthly_variant_weights but no apply_alpha_contribution_cap helper.
+Outputs: TASK-009 implementation plan in Codex reply only; no implementation files generated.
+Notes: Did not implement, connect Bybit, request/write API keys, submit/cancel orders, connect private endpoints, start 30-day clock, approve paper/live, modify strategy code, or mark DONE.
+
+---
+
+### 2026-05-17 22:17 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`TASK-009 readiness check`
+Task: TASK-009 Forward Record Runner readiness check only
+Status before: TASK-009 queue status `TODO`; forward record runner not implemented; 30-day clock not started; paper/live execution `FORBIDDEN`
+Status after: readiness_status=`READY_TO_IMPLEMENT`; implementation plan prepared in Codex reply only; no TASK-009 code or outputs generated; 30-day clock not started; paper/live execution remains `FORBIDDEN`
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md`
+Validation: Read `AGENTS.md`, `docs/research/commands/NEXT_ACTION.md`, `docs/research/commands/CODEX_COMMANDS.md#task-009-readiness`, `docs/research/codex_workorders/TASK-009_forward_record_runner.md`, `docs/research/CODEX_TASK_QUEUE.md`, `docs/research/CLAUDE_REVIEW_QUEUE.md`, `docs/research/commands/COMMAND_LOG.md`, `apps/paper_trading/config.py`, `apps/paper_trading/overlay.py`, `apps/paper_trading/recorder.py`, `apps/paper_trading/validator.py`, `apps/monitor/`, `src/variants/task008.py`, and manual ops docs for the 30-day forward record and VPS deployment. Ran local existence/schema checks for run008 positions, prices, funding rates, baseline, and TASK-008 outputs. Ran forbidden-term scan over `apps/paper_trading`, `apps/monitor`, and `src/variants/task008.py`; hits were only in the TASK-009 workorder text itself, not implementation code.
+Outputs: Readiness result only; no TASK-009 implementation files generated.
+Notes: Scope is forward record / offline paper record only. Bybit usage is limited by spec to read-only GET market data (`GET /v5/market/kline`, `GET /v5/market/funding/history`) with cache fallback. Existing `apps/paper_trading` modules can be reused for config, primary overlay, local intended-fill recording, and validation math. Monitor stack can provide local heartbeat/alert integration with FORBIDDEN paper/live flags. Primary is `combined_paper_safe_variant`; shadow is `A_roll12_share20_exclude`. Non-blocking implementation note: TASK-009 docs name `apply_alpha_contribution_cap()`, while current `src/variants/task008.py` exposes `VariantSpec` / monthly weight builders instead of that exact helper, so implementation should add a small TASK-009 adapter or wrapper without changing strategy code. Did not implement TASK-009; did not connect to Bybit; did not ask for API keys; did not create or write secrets; did not submit/cancel orders; did not connect to private trading endpoints; did not start the 30-day forward clock; did not approve paper or live trading; did not modify strategy code; did not mark TASK-009 DONE.
+
+---
+
+### 2026-05-17（TASK-009 forward record runner 工單）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（建立 TASK-009 forward record runner 工單）
+Task: 建立 `docs/research/codex_workorders/TASK-009_forward_record_runner.md` v1.0；更新 CODEX_TASK_QUEUE.md
+Status before: VPS_DEPLOYMENT_CHECKLIST.md Phase 6 = DEFERRED（runner 未建立）；無 TASK-009 工單
+Status after: TASK-009 工單 v1.0 建立；CODEX_TASK_QUEUE.md TASK-009 TODO entry 加入；NEXT_ACTION = WAITING
+Files changed:
+- `docs/research/codex_workorders/TASK-009_forward_record_runner.md` (created, v1.0)
+- `docs/research/CODEX_TASK_QUEUE.md` (TASK-009 TODO entry added)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING confirmed)
+Key content（16 sections）:
+- §1 任務一句話：run_forward_record.py + apps/forward_record/ 模組，daily signal → overlay → PnL → stats → gate
+- §2–3 任務目的 / 為什麼重要：解鎖 Phase 6 DEFERRED；REVIEW-006b 前置
+- §4 Scope：重用 apps/paper_trading/ 模組；read-only Bybit API + cache fallback；不修改策略
+- §5 Inputs：OHLCV + funding（read-only API / cache）；PaperTradingConfig；前日 positions
+- §6 Outputs：primary 5 檔 + shadow 4 檔 + runner log + STOP_GATE_*.json
+- §7 Daily Record Schema：7a~7e 完整 JSON/parquet schema（全部含 FORBIDDEN 欄位）
+- §8 Primary / shadow-track 同步記錄規則：8 步 pipeline；shadow 不影響 gate；獨立輸出目錄
+- §9 Warning / stop gates（W-1~W-6 / S-1~S-6）+ safety_check() 實作
+- §10 REVIEW-006b 啟動條件（5 條全部滿足）；runner 自動設 review_006b_trigger_ready
+- §11 Reproducibility hash（positions + prices + funding + date；sha256）
+- §12 9 種單元測試 + CLI dry-run + schema 驗證 + no-order-endpoint import check
+- §13 13 條 red lines
+- §14 Completion report format（含 Forbidden Items Confirmation checklist）
+- §15 後續步驟（TASK-009 完成後的 5 個 Claude 動作）
+Validation: 未修改策略；未實作任何程式碼；未批准 paper execution；未批准 live trading；API key 未出現於工單
+Notes: 工單基於 apps/paper_trading/（overlay.py / config.py / recorder.py / validator.py）實際程式碼撰寫，確保 Codex 可直接 import 重用
+
+---
+
+### 2026-05-17（VPS deployment checklist）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（建立 VPS deployment checklist）
+Task: 建立 `docs/research/manual_ops/VPS_DEPLOYMENT_CHECKLIST.md` v1.0
+Status before: 無 VPS 部署操作文件
+Status after: VPS_DEPLOYMENT_CHECKLIST.md v1.0 建立；9 Phases 覆蓋 OS/Repo → dependency → read-only API → Discord secret → test-send → forward record dry-run → cron/log → security → notification；NEXT_ACTION = WAITING
+Files changed:
+- `docs/research/manual_ops/VPS_DEPLOYMENT_CHECKLIST.md` (created, v1.0)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Key content:
+- Phase 1：OS（Ubuntu 22.04 / Debian 12）、時區 UTC、git clone / rsync、.gitignore secrets 確認
+- Phase 2：venv 建立、pip install requirements.txt（9 套件）、apps.monitor / src.signals / src.variants import 驗證
+- Phase 3：Bybit **read-only** API key（env var / .env 兩種方式）；read-only 連線驗證（get_tickers）；IP 白名單建議
+- Phase 4：Discord webhook（env var / monitor_secrets.local.yaml 兩種方式）；monitor.yaml dry_run=true 確認
+- Phase 5：test-send 流程（dry_run 臨時改 false → 執行 → 立即還原）；7 項 proof 驗證 assertion
+- Phase 6：forward record dry-run（runner 尚待 TASK-009，標記 DEFERRED）；safety grep 確認無下單 endpoint
+- Phase 7：輸出路徑結構表；cron 格式範本（start-date 當天才啟用）；log rotation
+- Phase 8：.gitignore 確認；API key 權限二次確認（Bybit 控制台）；git diff 策略程式碼完整性；port/firewall
+- Phase 9：Rick 通知 Claude 的訊息格式；Claude 收到後執行步驟（4 項）
+Validation: 未修改策略；未實作任何 VPS 部署；未批准 paper execution；未批准 live trading；API key / webhook 未出現在文件中
+Notes: Phase 6 標記 DEFERRED（forward record runner 待 TASK-009 / Codex）；30-day clock 須 Rick 明示「開始計時」才啟動
+
+---
+
+### 2026-05-17（30-day forward record start checklist）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（建立 30-day forward start checklist）
+Task: 建立 `docs/research/manual_ops/30_day_forward_start_checklist.md`；確認所有前置狀態；記錄 primary / shadow-track 同步規則；stop/warning gate 快速參考；REVIEW-006b 啟動條件；禁止事項
+Status before: 30_day_forward_record_plan.md 存在（規劃文件）；無操作清單
+Status after: `30_day_forward_start_checklist.md` v1.0 建立；前置確認表已填入最新 gate 狀態（5/7）；shadow-track = A_roll12_share20_exclude（TASK-008 CONDITIONAL_PASS）標注；NEXT_ACTION = WAITING
+Files changed:
+- `docs/research/manual_ops/30_day_forward_start_checklist.md` (created, v1.0)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Key content:
+- §0：前置狀態確認表（10 項，2 項 NOT_STARTED：VPS 部署 / Bybit read-only API）
+- §1：Rick 必要指定項（起算日、shadow-track 選項 A/B、initial NAV）
+- §2：primary spec（combined_paper_safe_variant）+ shadow-track（A_roll12_share20_exclude）規格確認
+- §3：每日輸出檔案清單（primary 5 個 + shadow-track 4 個 + monitor 2 個）
+- §4：每日 11 項檢查清單
+- §5：W-1~W-6 warning gates + S-1~S-6 stop gates 快速參考
+- §6：REVIEW-006b 啟動條件（7 條全部滿足）
+- §7：10 條 red lines
+- §8：30 天完成後動作流程
+Validation: 未修改策略；未啟動 forward record；未連接交易 API；未批准 paper execution；未批准 live trading；TASK-008 CONDITIONAL_PASS 狀態正確記錄
+Notes: VPS 部署 + Bybit read-only API 配置是 clock 啟動的最後兩個前置條件；30-day clock 尚未啟動；shadow-track 需 Rick 在 §1b 選擇 Option A 後才同步開跑
+
+---
+
+### 2026-05-17（REVIEW-008 final decision recording）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（REVIEW-008 final decision，6-step explicit）
+Task: 記錄 REVIEW-008 Opus CONDITIONAL_PASS；更新 queue / log / TASK-006 runbook / NEXT_ACTION
+Status before: REVIEW-008 draft complete；TASK-008 = REVIEW；CLAUDE_REVIEW_QUEUE.md / CLAUDE_REVIEW_LOG.md / CODEX_TASK_QUEUE.md / TASK-006 runbook 均未反映 Opus 最終裁定
+Status after: TASK-008 = **DONE**（Opus REVIEW-008 CONDITIONAL_PASS，2026-05-17）；W-1 caveat 降為 observation；所有登錄檔更新完畢；NEXT_ACTION = WAITING / Owner = Rick
+Files changed:
+- `docs/research/CLAUDE_REVIEW_QUEUE.md` — REVIEW-008 CONDITIONAL_PASS entry added
+- `docs/research/CLAUDE_REVIEW_LOG.md` — REVIEW-008 final decision appended（9 subsections）
+- `docs/research/CODEX_TASK_QUEUE.md` — TASK-008 status REVIEW → DONE with W-1 caveat note
+- `docs/research/codex_workorders/TASK-006_paper_trading_plan.md` — Section 5 新增 Tertiary spec（A_roll12_share20_exclude，shadow-track）
+- `docs/research/commands/COMMAND_LOG.md` — this entry
+- `docs/research/commands/NEXT_ACTION.md` — WAITING，Owner=Rick
+Key decisions recorded:
+1. **Opus verdict**：CONDITIONAL_PASS（W-1 = CAVEAT，非 BLOCKING）
+2. **W-1 ruling**：top5_conc < 75% 降為 observation metric；可接受上限 ≤ 90%；single_conc < 25% ✅（23.43%）
+3. **推薦 variant**：`A_roll12_share20_exclude`（Pareto-dominant；Sharpe 0.9636；alpha_retention 108.65%）
+4. **TASK-008b**：列為 backlog，低優先度
+5. **Paper execution gate**：仍 5/7（30-day forward record + REVIEW-006b 未完成）
+Validation: No strategy code modified；no paper/live trading approved；no run outputs changed
+Notes: 未批准 paper execution；未批准 live trading；TASK-008 DONE 不等於 paper 正式規格更新（需 TASK-009 + Opus）
+
+---
+
+### 2026-05-17（REVIEW-008 draft）
+
+Agent: Claude Sonnet
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Claude Sonnet, Task=REVIEW-008 draft
+Task: REVIEW-008 Alpha-Space Concentration Cap — Sonnet draft review
+Status before: TASK-008 = REVIEW；Codex 已完成 11 variants；draft not yet written
+Status after: REVIEW-008 draft written；verdict = **CONDITIONAL_PASS_CANDIDATE**（draft，pending Opus）；TASK-008 not marked DONE；paper/live = FORBIDDEN
+Files changed:
+- `docs/research/review_drafts/REVIEW-008_DRAFT_BY_SONNET.md` (created)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Key findings:
+1. **Fail gates（8）：全部 PASS** — baseline mismatch 5.55e-17；paper/live FORBIDDEN；no weight overlay；main flow untouched；reproducibility hash confirmed
+2. **推薦 variant：A_roll12_share20_exclude**（= A_roll24_share20_exclude = A_roll12_penalize50，三者等效）
+   - Sharpe 0.9636（+8.0% vs baseline 0.8918）
+   - top5_conc 87.95%（−7.61pp；W-1 caveat：未達 75% 目標）
+   - single_conc 23.43%（< 25% ✅）
+   - net_alpha 31.00%（+8.65%；alpha_retention 108.65%）
+   - cost −9.73 bps（成本降低）
+   - long_net −2.56%（improved from −5.01%）
+   - Pareto-dominant across all 11 metrics
+3. **Variant B（alpha-share sizing）**：集中度幾乎無改善（top5 95.22%；minimal impact）；不推薦
+4. **Variant C（cooldown k≥6）**：catastrophic；no_DOT paradox at scale（top5 最高 642%）；Sharpe 崩至 0.15；alpha_retention 18.75%；proof that more aggressive removal is counterproductive
+5. **Warning gates（19）**：全部由 W-1 top5>75%（所有 11 variants）+ Variant C 的 W-2/W-3/W-6 組成；推薦 variant（A）只觸發 W-1
+6. **核心問題**：W-1（top5 87.95% > 75%）是 CAVEAT 還是 BLOCKING？Sonnet 認為 CAVEAT（見 draft § 5）；Opus 裁定
+Verdict: **CONDITIONAL_PASS_CANDIDATE**（draft）；Opus final 裁定 W-1 是否接受
+Notes: 未標 TASK-008 DONE；未修改策略；未重跑任何任務；未修改官方輸出；未批准 paper execution；未批准 live trading
+
+---
+
+### 2026-05-17 19:38 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`TASK-008 implementation plan`
+Task: Prepare TASK-008 Alpha-Space Concentration Cap implementation plan only
+Status before: TASK-008 readiness_status=`READY_TO_IMPLEMENT`; TASK-008 not implemented; paper execution = FORBIDDEN; live trading = FORBIDDEN
+Status after: implementation plan prepared in Codex reply only; no TASK-008 code or outputs generated; paper/live execution remains FORBIDDEN
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md`
+Validation: Read `AGENTS.md`, `docs/research/commands/NEXT_ACTION.md`, `docs/research/commands/CODEX_COMMANDS.md#task-008-implementation-plan`, `docs/research/codex_workorders/TASK-008_alpha_space_concentration_cap.md`, `docs/research/commands/COMMAND_LOG.md`, TASK-003 attribution summary/by-symbol, TASK-007 summary, run008 positions parquet, TASK-002 positions-cost parquet, `data/crypto/prices_daily.parquet`, `data/crypto/universe_membership.parquet`, `configs/prev3y_crypto.yaml`, and `src/signals/prev3y_momentum.py`. Confirmed config values `lookback_days=1095`, `rebalance_freq=monthly`, `top_n=25`, `bottom_n=25`, `ranking_method=return`. Confirmed `build_prev3y_targets()` exposes candidate ranks and signal values without modifying main strategy code. Confirmed input schemas: run008 positions include `date`, `decision_date`, `effective_date`, `symbol`, `weight`, `signal_rank`, `signal_value`; TASK-002 positions-cost includes `scenario`, `weight`, `fee_cost`, `funding_cost`, `slippage_cost`, `trade_turnover`; prices include OHLCV; universe membership includes `date`, `symbol`, `is_member`. Baseline/TASK-007 comparison references: baseline Sharpe `0.8918383335973169`, top5 concentration `0.9555841694899185`, single concentration `0.25453623476808096`; combined paper safe Sharpe `0.8036703627263506`, top5 concentration `0.9191504237296175`, single concentration `0.19725358978276364`.
+Outputs: TASK-008 implementation plan in Codex reply only. Planned isolated files: `src/variants/task008.py`, `scripts/task008_alpha_conc_cap.py`, tests under `tests/variants/` if implementation is later authorized, and TASK-008 outputs/review packet only during implementation. Weight-space redistribution from TASK-007b is explicitly excluded.
+Notes: Did not implement TASK-008; did not modify `src/signals/prev3y_momentum.py` or main strategy code; did not rerun baseline, cost stress, attribution, TASK-007, or TASK-007b; did not modify raw data, universe, ranking, data-quality policy, or official outputs; did not approve paper execution; did not approve live trading; did not mark TASK-008 DONE.
+
+---
+
+### 2026-05-17 19:34 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Codex, Task=`TASK-008 readiness check`
+Task: TASK-008 Alpha-Space Concentration Cap readiness check only
+Status before: TASK-008 = `TODO`; TASK-007b = `DONE` / REVIEW-007b PASS; paper execution = FORBIDDEN; live trading = FORBIDDEN
+Status after: readiness_status=`READY_TO_IMPLEMENT`; implementation plan prepared in Codex reply only; TASK-008 not implemented; paper/live execution remains FORBIDDEN
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md`
+Validation: Read `AGENTS.md`, `docs/research/commands/NEXT_ACTION.md`, `docs/research/commands/CODEX_COMMANDS.md#task-008-readiness`, `docs/research/codex_workorders/TASK-008_alpha_space_concentration_cap.md`, `docs/research/CODEX_TASK_QUEUE.md`, `docs/research/CLAUDE_REVIEW_QUEUE.md`, `docs/research/commands/COMMAND_LOG.md`, TASK-003 attribution summary/by-symbol, TASK-007 summary, TASK-007b cap summary, run008 positions parquet, and TASK-002 positions-cost parquet. Required files exist. Schema checks passed for `attribution_by_symbol` (`symbol`, `gross_alpha_contribution`, `net_alpha_contribution`, `side_primary`, `net_alpha_rank`), run008 positions (`date`, `decision_date`, `effective_date`, `symbol`, `weight`, `signal_rank`, `signal_value`), and positions-cost (`date`, `scenario`, `symbol`, `weight`, `fee_cost`, `slippage_cost`, `funding_cost`, `trade_turnover`). `realistic_combo` has 29,679 rows across 760 dates; run008 positions have 29,586 rows across 760 dates and 90 symbols; overlap is 29,586/29,586 rows. Existing reconciliation references are available: TASK-003 net active daily max diff `2.0469737016526324e-16`; TASK-007 baseline mismatch `2.0469737016526324e-16`. TASK-007 summary includes `baseline_current_long_short` and `combined_paper_safe_variant`; TASK-007b summary includes baseline and confirms weight-space cap/redistribution comparison is available only as an excluded reference.
+Outputs: readiness result only. Verified all three TASK-008 variants are implementable as alpha-space/post-selection overlays: rolling alpha-contribution cap, alpha-share-based sizing, and top-contributor cooldown/blacklist. Implementation will need full candidate ranks from existing read-only `data/crypto/prices_daily.parquet`, `data/crypto/universe_membership.parquet`, and `configs/prev3y_crypto.yaml` via `build_prev3y_targets()`; run008 positions alone contain held symbols, not replacement candidates. Weight-space cap/redistribution from TASK-007b is explicitly excluded from TASK-008 implementation.
+Notes: Did not implement TASK-008; did not modify main strategy code, ranking, universe selection, data-quality policy, raw data, run008 outputs, TASK-002 outputs, TASK-003 outputs, TASK-007 outputs, or TASK-007b outputs; did not rerun baseline, cost stress, attribution, or any backtest; did not approve paper execution; did not approve live trading; did not mark TASK-008 DONE.
+
+---
+
+### 2026-05-17（TASK-008 workorder 建立）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction — 建立 TASK-008 alpha-space concentration cap 工單
+Task: 建立 docs/research/codex_workorders/TASK-008_alpha_space_concentration_cap.md
+Status before: TASK-008 = TODO（CODEX_TASK_QUEUE.md 有占位，但工單不存在）；weight-space 路徑已關閉；paper execution = FORBIDDEN
+Status after: TASK-008 工單 v1.0 建立完成；可送 Codex 實作；TASK-008 仍 TODO；paper execution = FORBIDDEN
+Files changed:
+- `docs/research/codex_workorders/TASK-008_alpha_space_concentration_cap.md` (created, v1.0)
+- `docs/research/CODEX_TASK_QUEUE.md` (TASK-008 entry 更新，補入工單路徑 + 三變體 + 比較指標)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Key content:
+1. **背景**：REVIEW-007b 確認 weight-space 路徑關閉；alpha-space 問題（no_DOT 悖論：top5 116.13%，cap10 惡化 +3.3pp）
+2. **介入點**：`src/signals/prev3y_momentum.py` → `build_prev3y_targets()` post-selection，via `src/variants/task008.py`（不修改主流程）
+3. **三個必研究變體**：
+   - A: Rolling alpha-contribution cap（exclude / penalize；rolling_window=12/24 periods；max_alpha_share=0.15–0.25）
+   - B: Alpha-share-based position sizing（反向 alpha share 壓低高貢獻者 weight；sizing_floor 選項）
+   - C: Top contributor cooldown / blacklist（連續 K 期 → 冷卻 M 期；universe 過小時 fallback）
+4. **比較指標（11 個）**：Sharpe / IR / max DD / net alpha / top5_conc / single_conc / long_net / short_net / alpha_retention / cost_impact / turnover_change
+5. **目標**：top5_conc < 75%（attribution）且 Sharpe ≥ 0.70（active 口徑）
+6. **8 條 fail gates**：F-1 baseline reconciliation / F-2 paper FORBIDDEN / F-3 weight overlay / F-4 主流程未修改 / F-5 attribution 公式 / F-6 top5>100% / F-7 missing outputs / F-8 reproducibility
+7. **8 條 warning gates**：W-1 top5>75% / W-2 Sharpe<0.70 / W-3 retention<85% / W-4 turnover>1.5× / W-5 cooldown fallback / W-6 long_net<−10% / W-7 cost>30bps / W-8 universe 不足
+8. **14 條 red lines**（含禁止 weight-space、禁止修改主流程、禁止官方 baseline）
+9. **REVIEW-008 by Opus**；PASS 後新 baseline 取代 combined_paper_safe_variant 作為正式 paper 版本
+Notes: 未實作；未重跑任何任務；未修改策略程式；未批准 paper execution；未批准 live trading
+
+---
+
+### 2026-05-17（30-day forward record plan 建立）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction — 建立 30-day forward paper record plan / checklist
+Task: 建立 docs/research/manual_ops/30_day_forward_record_plan.md
+Status before: Rick test-send gate DONE；paper execution = FORBIDDEN（5/7）；30-day forward record = NOT_STARTED（規劃文件不存在）
+Status after: 規劃文件建立完成；30-day record 仍 NOT_STARTED（等待 VPS 上線）；paper execution = FORBIDDEN
+Files changed:
+- `docs/research/manual_ops/30_day_forward_record_plan.md` (created, v1.0)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Key content:
+1. **起始條件**：6 條（TASK-007b ✅、TASK-005 VPS ❌、TASK-005a test-send ✅、TASK-006 補件 ✅、read-only Bybit API ❌、無進行中任務）；全滿足才開始計時
+2. **策略規格**：combined_paper_safe_variant（3 overlay rules）；fill = position delta；annualization = 365.25；ddof=1
+3. **每日檔案**：positions.parquet / pnl.json / overlay_check.json / forward_stats.json / forward_summary.json（新目錄 outputs/forward_record/）
+4. **Metrics schema**：5 個 JSON/parquet schema 完整定義
+5. **Sharpe 判定**：rolling 30d ≥ 0.5 = PASS；< 0.5 = WARN（延至 Day 45）；< -0.5 = STOP；歷史參考：active Sharpe 0.9267
+6. **DD 判定**：max_dd > -0.30 = PASS；≤ -0.40 = STOP；歷史參考：-19.64%
+7. **Tracking error**：vs combined_paper_safe_variant 回測；年化 < 0.30 = PASS；> 0.50 連 5 天 = STOP
+8. **Warning gates（W-1 ~ W-6）**：低 Sharpe / 中度 DD / 高 tracking error / overlay 頻繁觸發 / heartbeat 中斷 / clock 中斷
+9. **Stop gates（S-1 ~ S-6）**：Sharpe < -0.5 / DD < -40% / tracking error > 0.50 / overlay 失效 / safety scan FAIL / 資料異常
+10. **REVIEW-006b 啟動條件**：7 項全滿足；Opus 執行；PASS 後仍需 Rick 批准才可 paper execute
+Notes: 未實作；未啟動 paper execution；未接 exchange；未批准 live trading
+
+---
+
+### 2026-05-17（Rick real --test-send evidence 記錄）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction — 記錄 TASK-005a real test-send evidence
+Task: 確認並記錄 Rick 手動 Discord --test-send 完成，更新 paper execution gate
+Status before: Rick test-send gate = NOT_DONE；paper execution = FORBIDDEN（4/7 conditions met）
+Status after: Rick test-send gate = **DONE**（Discord channel verified）；paper execution = FORBIDDEN（5/7 conditions met）
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/CODEX_TASK_QUEUE.md` (Rick test-send gate → DONE；gate count 4/7 → 5/7)
+- `docs/research/commands/NEXT_ACTION.md` (WAITING，Owner=Rick)
+Validation (4 checks, all PASS):
+1. `outputs/monitor/test_send/20260517_discord_proof.txt` 存在（708 bytes）✅
+2. Proof 不含真實 webhook URL（pattern scan: PASS）✅
+3. `configs/monitor.yaml` Discord `dry_run: true` 已還原 ✅
+4. `monitor_secrets.local.yaml` 不在 `git status`（gitignored）✅
+Proof content (redacted):
+- channel: discord
+- status: SENT
+- runner_status: REVIEW_READY
+- errors: []
+- external_post_attempted: true
+- dry_run_during_test: false
+- dry_run_restored_after_test: true
+- secret_source: environment variable MONITOR_DISCORD_WEBHOOK_URL
+- webhook_url: REDACTED
+- paper_execution_status: FORBIDDEN
+- live_trading_status: FORBIDDEN
+Notes: 未重跑 --test-send；未讀取或輸出 webhook URL；未批准 paper execution；未批准 live trading；Discord channel 已實際收到測試告警（Rick 確認）
+
+---
+
+### 2026-05-17 19:12 +08:00
+
+Agent: Codex
+Command source: Rick latest direct chat instruction, Task=`Fix TASK-005a Discord Cloudflare 403 test-send transport`
+Task: Add explicit JSON request headers to the monitor HTTP client used by Discord webhook dispatch
+Status before: Rick's real `--test-send` reached Discord/Cloudflare but failed with redacted diagnostics `http_status=403`, `response_text_preview="error code: 1010"`; direct PowerShell POST to the same webhook succeeded; paper/live execution = FORBIDDEN
+Status after: `DefaultHttpClient` sends `Content-Type: application/json`, `Accept: application/json`, and `User-Agent: QuantMonitor/1.0`; Discord still treats all 2xx as `SENT` including 204 empty body; 403/4xx/5xx still report `FAILED` with redacted diagnostics; normal dry-run runner status `REVIEW_READY`; paper/live execution remains FORBIDDEN
+Files changed:
+- `apps/monitor/channels/base.py`
+- `tests/monitor/test_channels.py`
+- `docs/research/review_packets/REVIEW-005_PACKET.md`
+- `docs/research/review_packets/REVIEW-005_NUMBERS.json`
+- `docs/research/review_packets/REVIEW-005a_PACKET.md`
+- `docs/research/review_packets/REVIEW-005a_NUMBERS.json`
+- `outputs/logs/prev3y_crypto/20260517_monitor_setup.log`
+- `outputs/logs/prev3y_crypto/20260517_task005a_alert_channel.log`
+- `docs/research/commands/COMMAND_LOG.md`
+Validation: Ran `python -m py_compile apps\monitor\channels\base.py apps\monitor\channels\discord.py tests\monitor\test_channels.py` PASS. Ran `python -m unittest tests.monitor.test_heartbeat tests.monitor.test_alerts tests.monitor.test_channels` PASS, 19 tests in 0.097s. Ran `python scripts\task005_vps_bot_monitor.py --output-date 20260517` without `--test-send`; status `REVIEW_READY`, `errors=[]`, `task005a_reproducibility_hash=738294854ecce75a1becc95ef741309fa50f2839f0c8ee4ee2281fec0d249f32`.
+Outputs: REVIEW-005a numbers/log show `safety_scan.status=PASS`, `channel_dispatch_failure=false`, `real_external_post_during_validation=false`, Discord `status=DRY_RUN`, `external_post_attempted=false`, endpoint redacted as `https://discord.com/api/webhooks/<redacted>`, paper execution `FORBIDDEN`, live trading `FORBIDDEN`. Secret leak check against review packets/logs/apps/scripts/config found no concrete Discord webhook URL.
+Notes: Root cause identified from Rick's diagnostic run as Python urllib transport/header fingerprint rejected by Discord/Cloudflare (`403`, `error code: 1010`) while the webhook itself was valid. Did not run `--test-send`, ask Rick to paste webhook, connect Telegram/Discord, create `configs/monitor_secrets.local.yaml`, connect exchange APIs, submit orders, add auto-restart, approve paper execution, or approve live trading.
+
+---
+
+### 2026-05-17 19:06 +08:00
+
+Agent: Codex
+Command source: Rick latest direct chat instruction, Task=`Add TASK-005a Discord redacted dispatch diagnostics`
+Task: Add redacted Discord dispatch diagnostics for HTTP exceptions and non-2xx responses without real external sends
+Status before: Discord real `--test-send` failure only reported `Discord dispatch had errors`; no exception class, exception message, HTTP status, or response preview was persisted; paper/live execution = FORBIDDEN
+Status after: `ChannelResult` carries a `diagnostics` dict; Discord failed dispatch records redacted `exception_class` / `exception_message` for client exceptions, or `http_status` / `response_text_preview` for non-2xx responses; Discord 2xx success still includes 204 No Content and does not parse JSON; normal dry-run runner status `REVIEW_READY`; paper/live execution remains FORBIDDEN
+Files changed:
+- `apps/monitor/channels/base.py`
+- `apps/monitor/channels/discord.py`
+- `tests/monitor/test_channels.py`
+- `docs/research/review_packets/REVIEW-005_PACKET.md`
+- `docs/research/review_packets/REVIEW-005_NUMBERS.json`
+- `docs/research/review_packets/REVIEW-005a_PACKET.md`
+- `docs/research/review_packets/REVIEW-005a_NUMBERS.json`
+- `outputs/logs/prev3y_crypto/20260517_monitor_setup.log`
+- `outputs/logs/prev3y_crypto/20260517_task005a_alert_channel.log`
+- `docs/research/commands/COMMAND_LOG.md`
+Validation: Ran `python -m py_compile apps\monitor\channels\base.py apps\monitor\channels\discord.py tests\monitor\test_channels.py` PASS. Ran `python -m unittest tests.monitor.test_heartbeat tests.monitor.test_alerts tests.monitor.test_channels` PASS, 17 tests in 0.075s. Ran `python scripts\task005_vps_bot_monitor.py --output-date 20260517` without `--test-send`; status `REVIEW_READY`, `errors=[]`, `task005a_reproducibility_hash=738294854ecce75a1becc95ef741309fa50f2839f0c8ee4ee2281fec0d249f32`.
+Outputs: REVIEW-005a numbers/log show `safety_scan.status=PASS`, `channel_dispatch_failure=false`, `real_external_post_during_validation=false`, Discord `status=DRY_RUN`, `external_post_attempted=false`, `diagnostics={}`, endpoint redacted as `https://discord.com/api/webhooks/<redacted>`, paper execution `FORBIDDEN`, live trading `FORBIDDEN`. Secret leak check against review packets/logs/apps/scripts/config found no concrete Discord webhook URL.
+Notes: Did not run `--test-send` because Rick explicitly prohibited real test alerts in this request. The prior real dispatch failure cannot be recovered from the old log because it did not persist exception or HTTP response detail; the next authorized `--test-send` run will expose the actual cause through the new redacted diagnostics. Did not ask Rick to paste webhook, connect Telegram/Discord, create `configs/monitor_secrets.local.yaml`, connect exchange APIs, submit orders, add auto-restart, approve paper execution, or approve live trading.
+
+---
+
+### 2026-05-17 18:55 +08:00
+
+Agent: Codex
+Command source: Rick latest direct chat instruction, Task=`Fix TASK-005a Discord channel_dispatch_failure`
+Task: Fix TASK-005a Discord channel success handling and validation coverage without real external sends
+Status before: TASK-005a validation reported Discord `channel_dispatch_failure`; paper/live execution = FORBIDDEN
+Status after: Discord 2xx success handling is explicit; 204 and 200 mocked responses are covered as `SENT`; 4xx/5xx mocked responses are covered as `FAILED`; dry-run runner status `REVIEW_READY`; paper/live execution remains FORBIDDEN
+Files changed:
+- `apps/monitor/channels/discord.py`
+- `tests/monitor/test_channels.py`
+- `docs/research/review_packets/REVIEW-005_PACKET.md`
+- `docs/research/review_packets/REVIEW-005_NUMBERS.json`
+- `docs/research/review_packets/REVIEW-005a_PACKET.md`
+- `docs/research/review_packets/REVIEW-005a_NUMBERS.json`
+- `outputs/logs/prev3y_crypto/20260517_monitor_setup.log`
+- `outputs/logs/prev3y_crypto/20260517_task005a_alert_channel.log`
+- `docs/research/commands/COMMAND_LOG.md`
+Validation: Ran `python -m py_compile apps\monitor\channels\discord.py tests\monitor\test_channels.py` PASS. Ran `python -m unittest tests.monitor.test_heartbeat tests.monitor.test_alerts tests.monitor.test_channels` PASS, 15 tests in 0.099s. Ran `python scripts\task005_vps_bot_monitor.py --output-date 20260517` without `--test-send`; status `REVIEW_READY`, `errors=[]`, `task005a_reproducibility_hash=11683028327f2af564cb28b2ad30d0ba90c1ca7858e83514bad7e184295b7ff4`.
+Outputs: REVIEW-005a numbers/log show `safety_scan.status=PASS`, `channel_dispatch_failure=false`, `real_external_post_during_validation=false`, Discord `status=DRY_RUN`, `external_post_attempted=false`, endpoint redacted as `https://discord.com/api/webhooks/<redacted>`, paper execution `FORBIDDEN`, live trading `FORBIDDEN`.
+Notes: Did not ask Rick to paste token/webhook, connect Telegram/Discord, send a real test alert, create `configs/monitor_secrets.local.yaml`, connect exchange APIs, write order submission code, write process-control restart code, approve paper execution, or approve live trading.
+
+---
+
+### 2026-05-17（TASK-005a test-send checklist）
+
+Agent: Claude Sonnet
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Claude Sonnet, Task=Create TASK-005a manual test-send checklist
+Task: 建立 Rick 手動執行真實 --test-send 的操作清單
+Status before: REVIEW-005a PASS；TASK-005a DONE；Rick test-send gate = NOT_DONE；paper execution = FORBIDDEN
+Status after: 操作清單建立完成；Rick test-send gate 仍 NOT_DONE（等待 Rick 執行）；paper execution = FORBIDDEN
+Files changed:
+- `docs/research/manual_ops/TASK-005a_test_send_checklist.md` (created)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (updated to WAITING)
+Key content:
+1. **Path A（Telegram）**：env var 或 local YAML 兩種 secret 載入方式；暫時 dry_run=false → 執行 --test-send → 立刻還原 dry_run=true；PowerShell 遮蔽指令
+2. **Path B（Discord）**：同上，webhook URL 遮蔽格式
+3. **技術備注**：`--test-send` flag 本身不繞過 `dry_run`；必須同時將 channel 的 `dry_run: false` 才會真實 POST
+4. **存檔格式**：`outputs/monitor/test_send/<YYYYMMDD>_<channel>_proof.txt`（token/webhook 必須遮蔽）
+5. **完成確認清單**：7 項（訊息收到、SENT 狀態、dry_run 還原、gitignore 保護、証據存檔、遮蔽確認）
+6. **完成後通知 Claude**：Rick 回報後由 Sonnet 更新 CODEX_TASK_QUEUE.md gate 狀態（5/7）
+Notes: 未執行 --test-send；未建立 monitor_secrets.local.yaml；未連接 Telegram / Discord；未要求 Rick 在 chat 貼 token / webhook；未批准 paper execution；未批准 live trading
+
+---
+
+### 2026-05-17（record-review-005a-final）
+
+Agent: Claude Sonnet
+Command source: `docs/research/commands/NEXT_ACTION.md` Status=READY, Owner=Claude Sonnet, Task=`Record REVIEW-005a final decision and update queues`
+Task: record-review-005a-final — 記錄 REVIEW-005a Opus final decision，更新 CODEX_TASK_QUEUE、CLAUDE_REVIEW_QUEUE、CLAUDE_REVIEW_LOG、COMMAND_LOG，NEXT_ACTION 回 WAITING
+Status before: TASK-005a = `REVIEW`；REVIEW-005a = Sonnet draft PASS，等 Opus final；NEXT_ACTION = READY
+Status after: REVIEW-005a = **PASS**（Opus final 已記錄）；TASK-005a = **DONE**；NEXT_ACTION = **WAITING / STANDBY**，Owner=Rick；paper/live = FORBIDDEN
+Files changed:
+- `docs/research/CLAUDE_REVIEW_LOG.md` (appended REVIEW-005a final decision)
+- `docs/research/CODEX_TASK_QUEUE.md` (TASK-005a REVIEW → DONE；paper execution gate 更新，加入 Rick --test-send 手動 gate)
+- `docs/research/CLAUDE_REVIEW_QUEUE.md` (新增 REVIEW-005a PASS 條目)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (updated to WAITING / STANDBY，Owner=Rick)
+Key decisions recorded:
+1. REVIEW-005a verdict: **PASS**
+2. TASK-005a: **DONE**
+3. external_channels_dry_run_only: Caveat（不擋 TASK-005a DONE）；**Blocker for paper execution unlock**
+4. Rick 手動 gate 新增：Rick 必須執行真實 --test-send（≥1 channel），證據存至 `outputs/monitor/test_send/<YYYYMMDD>_<channel>_proof.txt`，不得在 chat 貼 token / webhook
+5. Paper execution: **仍 FORBIDDEN**
+6. Live trading: **仍 FORBIDDEN**
+Notes: 未修改策略程式；未重跑任何研究輸出；未修改官方 outputs；未批准 paper execution；未批准 live trading；未執行 --test-send；未要求 Rick 貼 token / webhook
+
+---
+
 ### 2026-05-17（REVIEW-005a draft）
 
 Agent: Claude Sonnet
@@ -953,3 +1890,63 @@ Caveats:
 - C-1: intended_fill_count=3 for 50-position portfolio（需 Codex 說明）
 - C-2: funding filter 在當前市況（2026 Q1）無效果（regime-dependent protection）
 Next: Rick 將 Section 8 Opus Prompt 貼給 Opus 進行 REVIEW-006b final decision
+### 2026-05-17 20:30 +08:00
+
+Agent: Codex
+Command source: `docs/research/commands/CODEX_COMMANDS.md#task-008-implement`
+Task: Implement TASK-008 alpha-space concentration cap
+Status before: `NEXT_ACTION.md` Status=`READY`, Owner=`Codex`, Task=`Implement TASK-008 alpha-space concentration cap`; TASK-008 queue status `TODO`
+Status after: TASK-008 implementation moved to `REVIEW`; runner status `REVIEW_READY`; paper/live execution remains `FORBIDDEN`
+Files changed:
+- `src/variants/task008.py`
+- `scripts/task008_alpha_conc_cap.py`
+- `tests/variants/test_task008.py`
+- `docs/research/CODEX_TASK_QUEUE.md`
+- `docs/research/commands/COMMAND_LOG.md`
+- `docs/research/review_packets/REVIEW-008_PACKET.md`
+- `docs/research/review_packets/REVIEW-008_NUMBERS.json`
+Validation:
+- Ran `python -m unittest tests.monitor.test_heartbeat tests.monitor.test_alerts tests.monitor.test_channels tests.variants.test_task008 -v` PASS (`24` tests).
+- Ran `python -m py_compile src\variants\task008.py scripts\task008_alpha_conc_cap.py` PASS.
+- Ran `python scripts\task008_alpha_conc_cap.py --output-date 20260517` with status `REVIEW_READY`.
+Outputs:
+- `outputs/variants/prev3y_crypto/20260517_task008_comparison.csv`
+- `outputs/variants/prev3y_crypto/20260517_task008_comparison.json`
+- `outputs/variants/prev3y_crypto/20260517_task008_variant_detail.csv`
+- `outputs/variants/prev3y_crypto/20260517_task008_attribution.json`
+- `outputs/logs/prev3y_crypto/20260517_task008_alpha_conc.log`
+- `docs/research/review_packets/REVIEW-008_PACKET.md`
+- `docs/research/review_packets/REVIEW-008_NUMBERS.json`
+Key results:
+- Baseline reconciliation max mismatch `5.55e-17`.
+- Fail gates `0`; warning gates `19`.
+- Best Sharpe alpha-space candidate group: `A_roll12_share20_exclude`, `A_roll12_share20_penalize50`, and `A_roll24_share20_exclude`; Sharpe `0.9636`, IR vs equal-weight `0.7289`, net alpha `31.00%`, alpha retention `108.66%`, top5 concentration `87.95%`.
+- Concentration target `<75%` is not met by the best Sharpe candidates; this is left for REVIEW-008, not approved by Codex.
+Notes: Implemented an offline alpha-space variant study only. Reconstructed candidate ranks by read-only use of `build_prev3y_targets()`, used `positions.date + 1 day = return_date` via existing attribution reconstruction, and scaled TASK-002 `realistic_combo` symbol-day costs by absolute variant/base weight ratio. Did not modify `src/signals/prev3y_momentum.py`, main strategy, ranking, universe selection, data-quality policy, raw data, run008 immutable outputs, official baseline, official cost stress, or official attribution. Did not reuse TASK-007b weight-space redistribution. Did not connect to exchange APIs, write order submission, start paper execution, or approve live trading.
+
+---
+
+### 2026-05-18 12:20 +08:00
+
+Agent: Codex
+Command source: Rick direct chat instruction; `NEXT_ACTION.md` was `WAITING`, but Rick explicitly authorized Windows baseline pytest + safety scan before 30-day forward clock start.
+Task: Produce Windows baseline validation ground truth for record date `20260517`
+Status after: Baseline artifacts created; safety scan `PASS`; 30-day clock remains `NOT_STARTED`; paper/live execution remains `FORBIDDEN`
+Files changed:
+- `outputs/forward_record/baselines/20260518/pytest_result.txt`
+- `outputs/forward_record/baselines/20260518/forward_record_result.json`
+- `outputs/forward_record/baselines/20260518/drill_result.json`
+- `outputs/forward_record/baselines/20260518/safety_scan.json`
+- `outputs/forward_record/baselines/20260518/baseline_hash.json`
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- Ran `python -m unittest discover -v` PASS (`90` tests).
+- Ran `python scripts/run_forward_record.py --date 20260517 --dry-run --shadow-track` PASS, status `REVIEW_READY`.
+- Ran `python scripts/drill_forward_alerts.py --date 20260517` PASS, drill `13/13` scenarios, overall `PASS`.
+- Safety scan PASS: no order/private endpoint markers in forward/drill/monitor source paths; no credential or external alert secret markers in generated baseline/forward/drill/alert outputs; primary and shadow outputs keep `paper_execution_status=FORBIDDEN` and `live_trading_status=FORBIDDEN`; `clock_started=false`; dry-run only and no external post attempted.
+Outputs:
+- Baseline directory: `outputs/forward_record/baselines/20260518/`
+- Combined baseline SHA-256: `b8d4fd69fb77c52ad557b307cae3ecf23cc869f287e95702cd26ac2aaeb73476`
+Notes: Did not connect to Bybit, request credentials, send Discord, use `--live-alerts`, change Discord dry-run behavior, start the 30-day clock, approve paper execution, approve live trading, or modify strategy signals/ranking/universe/data-quality policy/raw data/run008 immutable outputs.
+
+---

@@ -1,0 +1,15 @@
+﻿{
+    "command":  "python scripts/run_forward_record.py --date 20260517 --dry-run --shadow-track",
+    "exit_code":  0,
+    "stdout_path":  "outputs/forward_record/baselines/20260518/forward_record_stdout.txt",
+    "record_date":  "20260517",
+    "dry_run":  true,
+    "shadow_track":  true,
+    "live_alerts_used":  false,
+    "bybit_connection":  "NOT_ATTEMPTED",
+    "credential_request":  "NOT_ATTEMPTED",
+    "discord_live_post":  "NOT_ATTEMPTED",
+    "paper_execution_status":  "FORBIDDEN",
+    "live_trading_status":  "FORBIDDEN",
+    "clock_status":  "NOT_STARTED"
+}

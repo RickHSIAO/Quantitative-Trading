@@ -1,0 +1,36 @@
+{
+  "artifact": "windows_forward_baseline_safety_scan",
+  "baseline_dir": "outputs/forward_record/baselines/20260518",
+  "checks": {
+    "bybit_connection": {
+      "status": "NOT_ATTEMPTED"
+    },
+    "clock_not_started": {
+      "status": "PASS"
+    },
+    "discord_live_post": {
+      "status": "NOT_ATTEMPTED"
+    },
+    "dry_run_no_external_post": {
+      "status": "PASS"
+    },
+    "no_credential_or_external_alert_secret_output": {
+      "status": "PASS",
+      "violations": []
+    },
+    "no_order_or_private_endpoint": {
+      "status": "PASS",
+      "violations": []
+    },
+    "paper_and_live_forbidden": {
+      "output_flags_present": {
+        "outputs/forward_record/prev3y_crypto": true,
+        "outputs/forward_record/prev3y_crypto_shadow_a_roll12": true
+      },
+      "status": "PASS"
+    }
+  },
+  "record_date": "20260517",
+  "run_ts": "2026-05-18T04:17:18Z",
+  "status": "PASS"
+}

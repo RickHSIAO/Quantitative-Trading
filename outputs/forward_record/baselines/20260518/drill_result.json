@@ -1,0 +1,15 @@
+﻿{
+    "command":  "python scripts/drill_forward_alerts.py --date 20260517",
+    "exit_code":  0,
+    "stdout_path":  "outputs/forward_record/baselines/20260518/drill_stdout.txt",
+    "drill_report_path":  "outputs/forward_record/drill/20260517_drill_report.json",
+    "record_date":  "20260517",
+    "dry_run":  true,
+    "live_alerts_used":  false,
+    "external_post_attempted":  false,
+    "scenario_count":  13,
+    "overall_result":  "PASS",
+    "paper_execution_status":  "FORBIDDEN",
+    "live_trading_status":  "FORBIDDEN",
+    "clock_status":  "NOT_STARTED"
+}
