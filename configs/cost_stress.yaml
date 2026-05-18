@@ -1,0 +1,117 @@
+version: 1
+description: |
+  TASK-002 Cost / Funding / Slippage Stress Test scenarios.
+  Multipliers apply on top of fees.yaml base bps and funding_rates.parquet real values.
+  Scenario "no_cost_baseline" must reproduce run008 portfolio_return exactly.
+
+baseline_run_id: "20260513_run008"
+
+defaults:
+  annualization_factor: 365.25
+  std_ddof: 1
+  active_window_policy: "gross_exposure_gt_0"
+  benchmark_policy: "reuse_run008_benchmark_columns"
+  slippage_application: "per_turnover_one_side_bps"
+  fee_application: "per_turnover_both_sides"
+  funding_application: "pit_per_interval_settlement_accumulated"
+  funding_proxy_policy: "exclude_from_fail_gate"
+  funding_interval_policy: "use_interval_hours_per_row"
+  funding_gap_policy: "mark_funding_gap_true_no_fill"
+  outlier_policy: "report_no_clamp"
+
+scenarios:
+  - name: no_cost_baseline
+    fee_multiplier_taker: 0.0
+    fee_multiplier_maker: 0.0
+    funding_multiplier: 0.0
+    slippage_bps_one_side: 0.0
+    entry_side: maker
+    exit_side: maker
+
+  - name: fee_taker_entry_maker_exit
+    fee_multiplier_taker: 1.0
+    fee_multiplier_maker: 1.0
+    funding_multiplier: 0.0
+    slippage_bps_one_side: 0.0
+    entry_side: taker
+    exit_side: maker
+
+  - name: fee_taker_entry_taker_exit
+    fee_multiplier_taker: 1.0
+    fee_multiplier_maker: 1.0
+    funding_multiplier: 0.0
+    slippage_bps_one_side: 0.0
+    entry_side: taker
+    exit_side: taker
+
+  - name: funding_low
+    fee_multiplier_taker: 0.0
+    fee_multiplier_maker: 0.0
+    funding_multiplier: 0.5
+    slippage_bps_one_side: 0.0
+    entry_side: maker
+    exit_side: maker
+
+  - name: funding_mid
+    fee_multiplier_taker: 0.0
+    fee_multiplier_maker: 0.0
+    funding_multiplier: 1.0
+    slippage_bps_one_side: 0.0
+    entry_side: maker
+    exit_side: maker
+
+  - name: funding_high
+    fee_multiplier_taker: 0.0
+    fee_multiplier_maker: 0.0
+    funding_multiplier: 1.5
+    slippage_bps_one_side: 0.0
+    entry_side: maker
+    exit_side: maker
+
+  - name: slippage_5bps
+    fee_multiplier_taker: 0.0
+    fee_multiplier_maker: 0.0
+    funding_multiplier: 0.0
+    slippage_bps_one_side: 5.0
+    entry_side: maker
+    exit_side: maker
+
+  - name: slippage_10bps
+    fee_multiplier_taker: 0.0
+    fee_multiplier_maker: 0.0
+    funding_multiplier: 0.0
+    slippage_bps_one_side: 10.0
+    entry_side: maker
+    exit_side: maker
+
+  - name: slippage_20bps
+    fee_multiplier_taker: 0.0
+    fee_multiplier_maker: 0.0
+    funding_multiplier: 0.0
+    slippage_bps_one_side: 20.0
+    entry_side: maker
+    exit_side: maker
+
+  - name: realistic_combo
+    fee_multiplier_taker: 1.0
+    fee_multiplier_maker: 1.0
+    funding_multiplier: 1.0
+    slippage_bps_one_side: 5.0
+    entry_side: taker
+    exit_side: maker
+
+  - name: conservative_combo
+    fee_multiplier_taker: 1.0
+    fee_multiplier_maker: 1.0
+    funding_multiplier: 1.0
+    slippage_bps_one_side: 10.0
+    entry_side: taker
+    exit_side: taker
+
+  - name: worst_case_combo
+    fee_multiplier_taker: 1.0
+    fee_multiplier_maker: 1.0
+    funding_multiplier: 1.5
+    slippage_bps_one_side: 20.0
+    entry_side: taker
+    exit_side: taker

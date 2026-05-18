@@ -21,7 +21,7 @@ alerts:
       enabled: true
       dry_run: true
     - type: telegram
-      enabled: true
+      enabled: false
       dry_run: true
       secrets_path: configs/monitor_secrets.local.yaml
       secrets_env_token: MONITOR_TELEGRAM_TOKEN

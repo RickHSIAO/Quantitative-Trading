@@ -1,0 +1,17 @@
+# Forward record runtime output path templates.
+# {date} is replaced with YYYYMMDD by apps.forward_record.alerting.
+
+output_paths:
+  log: "outputs/logs/prev3y_crypto/{date}_forward_record.log"
+  primary:
+    positions: "outputs/forward_record/prev3y_crypto/{date}_positions.parquet"
+    forward_stats: "outputs/forward_record/prev3y_crypto/{date}_forward_stats.json"
+    forward_summary: "outputs/forward_record/prev3y_crypto/forward_summary.json"
+    overlay_check: "outputs/forward_record/prev3y_crypto/{date}_overlay_check.json"
+    pnl: "outputs/forward_record/prev3y_crypto/{date}_pnl.json"
+  shadow:
+    positions: "outputs/forward_record/prev3y_crypto_shadow_a_roll12/{date}_positions.parquet"
+    forward_stats: "outputs/forward_record/prev3y_crypto_shadow_a_roll12/{date}_forward_stats.json"
+    forward_summary: "outputs/forward_record/prev3y_crypto_shadow_a_roll12/forward_summary.json"
+    overlay_check: "outputs/forward_record/prev3y_crypto_shadow_a_roll12/{date}_overlay_check.json"
+    pnl: "outputs/forward_record/prev3y_crypto_shadow_a_roll12/{date}_pnl.json"

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
 
@@ -19,12 +19,18 @@ class HttpClient(Protocol):
 
 
 class DefaultHttpClient:
+    JSON_HEADERS = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "QuantMonitor/1.0",
+    }
+
     def post_json(self, url: str, payload: dict[str, Any], timeout_seconds: int) -> HttpResult:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(
             url,
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers=self.JSON_HEADERS,
             method="POST",
         )
         try:
@@ -48,6 +54,7 @@ class ChannelResult:
     error_count: int = 0
     external_post_attempted: bool = False
     endpoint: str = ""
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
