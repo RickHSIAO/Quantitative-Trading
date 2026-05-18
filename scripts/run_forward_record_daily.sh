@@ -149,4 +149,49 @@ else
 fi
 
 echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
-echo "ALL_DONE: ${DATE_TAIPEI} forward record + dashboard complete → ${RUN_LOG}"
+
+# ---------------------------------------------------------------------------
+# TASK-008: Send Discord daily summary after dashboard build
+#
+# Safety: Discord notify runs in isolation (set +e).
+# A notify failure MUST NOT affect forward record data or dashboard outputs.
+# Behaviour:
+#   DISCORD_NOTIFY=SKIP   -- MONITOR_DISCORD_WEBHOOK_URL not set (silent, exit 0)
+#   DISCORD_NOTIFY=PASS   -- message delivered
+#   DISCORD_NOTIFY=FAIL   -- send failed (error logged; runner still exits 0)
+# ---------------------------------------------------------------------------
+echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
+echo "DISCORD_NOTIFY: starting send_forward_discord_summary.py" | tee -a "${RUN_LOG}"
+
+NOTIFY_SCRIPT="${PROJECT_ROOT}/scripts/send_forward_discord_summary.py"
+
+if [[ ! -f "${NOTIFY_SCRIPT}" ]]; then
+    echo "DISCORD_NOTIFY=SKIP (script not found: ${NOTIFY_SCRIPT})" | tee -a "${RUN_LOG}"
+else
+    set +e
+    NOTIFY_OUTPUT="$("${PYTHON}" "${NOTIFY_SCRIPT}" 2>&1)"
+    NOTIFY_EXIT="${?}"
+    set -e
+
+    if [[ "${NOTIFY_EXIT}" -eq 0 ]]; then
+        {
+        echo "${NOTIFY_OUTPUT}"
+        } | tee -a "${RUN_LOG}"
+        # Extract DISCORD_NOTIFY= line for visibility
+        NOTIFY_STATUS="$(echo "${NOTIFY_OUTPUT}" | grep "DISCORD_NOTIFY=" | tail -1)"
+        echo "${NOTIFY_STATUS:-DISCORD_NOTIFY=PASS}"
+    else
+        {
+        echo "DISCORD_NOTIFY=FAIL (exit_code=${NOTIFY_EXIT})"
+        echo "DISCORD_ERROR_BEGIN"
+        echo "${NOTIFY_OUTPUT}"
+        echo "DISCORD_ERROR_END"
+        } | tee -a "${RUN_LOG}" >&2
+        echo "WARNING: Discord notify failed — forward record data and dashboard are intact" >&2
+        # NOTE: we do NOT exit non-zero here.
+        # Discord failure is non-fatal.
+    fi
+fi
+
+echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
+echo "ALL_DONE: ${DATE_TAIPEI} forward record + dashboard + discord complete → ${RUN_LOG}"

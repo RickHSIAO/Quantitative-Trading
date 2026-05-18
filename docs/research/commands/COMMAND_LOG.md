@@ -21,6 +21,52 @@ Notes:
 
 ---
 
+### 2026-05-18（TASK-008 — Daily Discord Forward Validation Summary）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（TASK-008 Daily Discord Forward Validation Summary）
+Task: Create send_forward_discord_summary.py; wire into run_forward_record_daily.sh after dashboard build.
+      Discord notify must be isolated (non-fatal). SKIP if webhook not set.
+Status before: no Discord daily summary; cron only ran forward record + dashboard
+Status after: cron runs forward record → dashboard build → Discord summary (SKIP/PASS/FAIL logged)
+
+Scripts created/updated:
+  scripts/send_forward_discord_summary.py  -- NEW (271L)
+  scripts/run_forward_record_daily.sh      -- UPDATED (added TASK-008 section, lines 153-197)
+
+Validation (6/6 PASS):
+  1. bash -n syntax: PASS
+  2. py_compile send_forward_discord_summary.py: PASS
+  3. DISCORD_NOTIFY=SKIP (no webhook set, exit 0): PASS
+  4. DISCORD_NOTIFY=DRY_RUN (--dry-run, no POST): PASS
+  5. notify FAIL isolation (script exits 0 even if Discord fails): PASS
+  6. message preview: PASS (all 9 required fields present)
+
+Environment variable:
+  MONITOR_DISCORD_WEBHOOK_URL   (consistent with existing monitor infrastructure)
+
+Safety invariants:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+  order_endpoint_called=False  bybit_write_called=False
+  No webhook set -> DISCORD_NOTIFY=SKIP (exit 0, no error)
+  --dry-run -> DISCORD_NOTIFY=DRY_RUN (no POST, exit 0)
+  Discord failure -> DISCORD_NOTIFY=FAIL logged, runner exits 0
+  Reuses DefaultHttpClient + redact_text from apps.monitor.channels (existing safe primitives)
+  main.py live logic: NOT modified
+
+TASK-007C noted (separate task):
+  dashboard days_completed currently includes pre-clock-start outputs (e.g. 20260517 shadow drill)
+  Requires filtering FORWARD_DIR scan to date >= CLOCK_START in build_forward_validation_dashboard.py
+  NOT implemented in TASK-008 per Rick's instructions.
+
+Files changed:
+- scripts/send_forward_discord_summary.py (NEW)
+- scripts/run_forward_record_daily.sh (TASK-008 section appended)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+- docs/research/commands/NEXT_ACTION.md (TASK-008 DONE + TASK-007C pending)
+
+---
+
 ### 2026-05-18（TASK-007B — Auto Build Dashboard After Daily Forward Record）
 
 Agent: Claude Sonnet

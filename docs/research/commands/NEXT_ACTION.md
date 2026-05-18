@@ -65,6 +65,28 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 | How to test manually (VPS) | bash scripts/run_forward_record_daily.sh |
 | Standalone dashboard rebuild | python3 scripts/build_forward_validation_dashboard.py |
 
+## TASK-008 Discord Daily Summary Status
+
+| item | status |
+|---|---|
+| scripts/send_forward_discord_summary.py | DONE (py_compile OK, dry-run OK) |
+| run_forward_record_daily.sh TASK-008 section | DONE (appended after dashboard build) |
+| DISCORD_NOTIFY=SKIP (no webhook) | IMPLEMENTED |
+| DISCORD_NOTIFY=DRY_RUN (--dry-run) | IMPLEMENTED |
+| DISCORD_NOTIFY=PASS/FAIL | IMPLEMENTED |
+| Discord failure isolation | PASS (runner exits 0 even on Discord fail) |
+| Environment variable | MONITOR_DISCORD_WEBHOOK_URL |
+| Cron auto-sends Discord | YES (after VPS cron install + webhook set) |
+| Dry-run test | python3 scripts/send_forward_discord_summary.py --dry-run |
+| Live send test | MONITOR_DISCORD_WEBHOOK_URL=<url> python3 scripts/send_forward_discord_summary.py |
+
+## TASK-007C Pending (days_completed counter fix)
+
+| item | status |
+|---|---|
+| Issue | dashboard days_completed includes pre-clock-start outputs (e.g. 20260517 shadow drill) |
+| Fix needed | filter collect_days() to date >= CLOCK_START (20260518) in build_forward_validation_dashboard.py |
+| Status | PENDING — not implemented per Rick's instruction (separate task) |
 ## VPS One-time Setup (Rick action required)
 
 On instance-20260506-0945:
