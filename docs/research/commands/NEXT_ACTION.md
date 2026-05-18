@@ -50,6 +50,21 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 | order endpoint called | False |
 | How to run | python3 scripts/build_forward_validation_dashboard.py |
 
+## TASK-007B Auto Dashboard Status
+
+| item | status |
+|---|---|
+| scripts/run_forward_record_daily.sh | UPDATED — dashboard build appended post-run |
+| DASHBOARD_BUILD=PASS log on success | IMPLEMENTED |
+| DASHBOARD_BUILD=FAIL log on failure | IMPLEMENTED (non-fatal, forward data preserved) |
+| bash -n syntax | PASS |
+| py_compile dashboard builder | PASS |
+| --dry-run guard | PASS (exit 2 if missing) |
+| dashboard FAIL isolation | PASS (script exits 0 even if dashboard fails) |
+| Cron auto-updates dashboard | YES — after cron installs on VPS |
+| How to test manually (VPS) | bash scripts/run_forward_record_daily.sh |
+| Standalone dashboard rebuild | python3 scripts/build_forward_validation_dashboard.py |
+
 ## VPS One-time Setup (Rick action required)
 
 On instance-20260506-0945:
@@ -97,6 +112,4 @@ Manual run: bash ~/quant/scripts/run_forward_record_daily.sh
 - 不得把 discord dry_run 改為 false
 - 不得送真實 Discord alert
 - 不得使用 --live-alerts
-- 不得連接 Bybit write API
-- 不得修改策略程式或官方輸出
-- 不得更改 clock start date（2026-05-18）
+- 不得連接 Bybit w

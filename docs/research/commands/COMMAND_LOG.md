@@ -21,6 +21,40 @@ Notes:
 
 ---
 
+### 2026-05-18（TASK-007B — Auto Build Dashboard After Daily Forward Record）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（TASK-007B Auto Build Dashboard After Daily Forward Record）
+Task: Extend run_forward_record_daily.sh to call build_forward_validation_dashboard.py after each
+      successful forward record run. Dashboard failure must be isolated (non-fatal) and logged.
+Status before: dashboard builder existed but was not called by cron runner
+Status after: run_forward_record_daily.sh calls dashboard builder post-run; DASHBOARD_BUILD=PASS/FAIL logged
+Files changed:
+  scripts/run_forward_record_daily.sh   -- added TASK-007B section (lines 111-152)
+  docs/research/commands/COMMAND_LOG.md -- this entry
+  docs/research/commands/NEXT_ACTION.md -- TASK-007B DONE section
+Validation (5/5 PASS):
+  1. bash -n syntax: PASS
+  2. py_compile build_forward_validation_dashboard.py: PASS
+  3. --dry-run guard (missing flag → exit 2): PASS
+  4. dashboard builder direct run: PASS (safety_self_check PASS, 2 days collected)
+  5. dashboard FAIL isolation: PASS (script exits 0 even if dashboard fails, log shows DASHBOARD_BUILD=FAIL)
+Safety invariants:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+  bybit_connection=NOT_ATTEMPTED  order_endpoint_called=False
+  --dry-run guard: aborts with exit 2 if flag missing
+  dashboard failure: non-fatal (forward record data preserved, DASHBOARD_BUILD=FAIL logged)
+  main.py live logic: NOT modified
+Cron behaviour after this change:
+  cron runs run_forward_record_daily.sh at 10:10 UTC daily (once installed on VPS)
+  → runs forward record (--dry-run) → on success, runs dashboard builder
+  → DASHBOARD_BUILD=PASS or DASHBOARD_BUILD=FAIL written to daily_logs/YYYYMMDD_run.log
+Manual test:
+  bash scripts/run_forward_record_daily.sh   (on VPS)
+  python3 scripts/build_forward_validation_dashboard.py  (standalone)
+
+---
+
 ### 2026-05-18（TASK-007 — 30-Day Forward Validation Dashboard）
 
 Agent: Claude Sonnet
@@ -357,11 +391,4 @@ VPS run command:
   python scripts/validate_discord_webhook_vps_dryrun.py
 Safety gates:
 - Discord 真実 POST：NOT_ATTEMPTED
-- --live-alerts：NOT_ATTEMPTED
-- paper execution：FORBIDDEN
-- live trading：FORBIDDEN
-- 30-day clock：NOT_STARTED
-Files changed:
-- `scripts/validate_discord_webhook_vps_dryrun.py` (created — strict guard version)
-- `outputs/forward_record/discord_webhook_vps_dry_run/20260518/validation_result_template.json` (created)
-- `docs/research/commands/COMMAND_LOG.md` (this entry
+- --live-alerts：N

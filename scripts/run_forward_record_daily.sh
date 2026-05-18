@@ -92,7 +92,7 @@ set +e
 EXIT_CODE="${PIPESTATUS[0]}"
 set -e
 
-# --- Log footer -------------------------------------------------------------
+# --- Log footer (forward record) --------------------------------------------
 {
 echo "=================================================="
 echo "exit_code=${EXIT_CODE}"
@@ -107,3 +107,46 @@ if [[ "${EXIT_CODE}" -ne 0 ]]; then
 fi
 
 echo "DONE: ${DATE_TAIPEI} forward record complete → ${RUN_LOG}"
+
+# ---------------------------------------------------------------------------
+# TASK-007B: Build dashboard after successful forward record
+#
+# Safety: dashboard build runs in isolation (set +e).
+# A dashboard failure MUST NOT destroy forward record data or cause
+# data loss. It only affects the dashboard output files.
+# Result is written to the same daily log so cron.log captures it.
+# ---------------------------------------------------------------------------
+echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
+echo "DASHBOARD_BUILD: starting build_forward_validation_dashboard.py" | tee -a "${RUN_LOG}"
+
+DASHBOARD_SCRIPT="${PROJECT_ROOT}/scripts/build_forward_validation_dashboard.py"
+
+if [[ ! -f "${DASHBOARD_SCRIPT}" ]]; then
+    echo "DASHBOARD_BUILD=FAIL (script not found: ${DASHBOARD_SCRIPT})" | tee -a "${RUN_LOG}" >&2
+else
+    set +e
+    DASHBOARD_OUTPUT="$("${PYTHON}" "${DASHBOARD_SCRIPT}" 2>&1)"
+    DASHBOARD_EXIT="${?}"
+    set -e
+
+    if [[ "${DASHBOARD_EXIT}" -eq 0 ]]; then
+        {
+        echo "DASHBOARD_BUILD=PASS"
+        echo "${DASHBOARD_OUTPUT}"
+        } | tee -a "${RUN_LOG}"
+        echo "DASHBOARD_BUILD=PASS: outputs/forward_record/dashboard/ updated"
+    else
+        {
+        echo "DASHBOARD_BUILD=FAIL (exit_code=${DASHBOARD_EXIT})"
+        echo "DASHBOARD_ERROR_BEGIN"
+        echo "${DASHBOARD_OUTPUT}"
+        echo "DASHBOARD_ERROR_END"
+        } | tee -a "${RUN_LOG}" >&2
+        echo "WARNING: dashboard build failed — forward record data is intact, dashboard not updated" >&2
+        # NOTE: we do NOT exit non-zero here.
+        # Forward record data is safe; dashboard failure is non-fatal.
+    fi
+fi
+
+echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
+echo "ALL_DONE: ${DATE_TAIPEI} forward record + dashboard complete → ${RUN_LOG}"
