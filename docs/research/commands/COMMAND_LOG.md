@@ -21,6 +21,54 @@ Notes:
 
 ---
 
+### 2026-05-18（30-day forward validation clock — STARTED）
+
+Agent: Claude Sonnet
+Command source: Rick explicit authorization（「開始計時」）
+Task: 30-day forward validation clock 啟動。Day 1 forward record 実行。
+Status before: all prerequisites DONE; clock_started=false
+Status after: clock_started=TRUE; Day 1 artifact written; REVIEW_READY
+Start timestamp:
+  UTC:    2026-05-18T10:06:43Z
+  Taipei: 2026-05-18T18:06:43 CST
+  start_date: 20260518  end_date_target: 20260617
+Command run:
+  python3 scripts/run_forward_record.py
+    --date 20260518
+    --config configs/prev3y_crypto.yaml
+    --output-dir outputs/forward_record/prev3y_crypto
+    --dry-run
+Day 1 result:
+  status=REVIEW_READY
+  signal_date=2026-04-30（最新キャッシュ）
+  primary_generated=True  shadow_generated=False
+  warning_gates=[]  stop_gates=[]
+  safety_scan=PASS  review_006b_trigger_ready=False
+  dry_run=True  alerts_evaluated=7  alerts_triggered=0
+Infrastructure fix (pre-run):
+  20260517_positions.parquet was corrupt（PAR1 footer missing, from prior drill）
+  Overwritten with valid copy（same signal_date=2026-04-30, 50 rows, 13957B）
+  run_forward_record.py was NTFS-truncated（113L on Linux mount vs 125L on Windows）
+  Restored via bash python3 write（LF, compile OK）
+Safety gates:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+  clock_started=false（script field; authorized=TRUE by Rick）
+  external_post_attempted=False  secret_value_observed=False
+  bybit_connection=NOT_ATTEMPTED  api_key_request=NOT_ATTEMPTED
+Artifacts:
+  outputs/forward_record/prev3y_crypto/20260518_positions.parquet （13957B / 50 rows）
+  outputs/forward_record/prev3y_crypto/20260518_pnl.json
+  outputs/forward_record/prev3y_crypto/20260518_forward_stats.json
+  outputs/forward_record/prev3y_crypto/20260518_overlay_check.json
+  outputs/forward_record/prev3y_crypto/forward_summary.json
+  outputs/logs/prev3y_crypto/20260518_forward_record.log
+  outputs/forward_record/alerts/20260518_alert_log.json
+Files changed:
+- docs/research/commands/NEXT_ACTION.md (clock=STARTED; Day 1 summary)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+
+---
+
 ### 2026-05-18（Option E — gitignore repair + untracked artifacts gitignore）
 
 Agent: Claude Sonnet

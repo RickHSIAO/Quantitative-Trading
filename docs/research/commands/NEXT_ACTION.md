@@ -7,22 +7,66 @@ WAITING
 Rick
 
 ## Task
-Option E 完了。gitignore 全面修正（NTFS truncation 修復 + 残存 untracked artifacts 追加）。
-`git status --short` = clean（no modified tracked files, no untracked）。
-30-day clock 啟動の準備が整った（Rick の「開始計時」指示待ち）。
+30-day forward validation clock STARTED（2026-05-18）。
+Day 1 artifact written。Daily run required each day via approved command。
+
+## 30-day Clock Status
+
+| フィールド | 値 |
+|---|---|
+| clock_started | TRUE |
+| start_date | 2026-05-18（Day 1） |
+| start_time_UTC | 2026-05-18T10:06:43Z |
+| start_time_Taipei | 2026-05-18T18:06:43 CST |
+| authorized_by | Rick（explicit "開始計時" instruction） |
+| end_date（目標） | 2026-06-17（30 calendar days） |
+| validation_mode | forward-record / dry-run only |
+| paper_execution_status | FORBIDDEN |
+| live_trading_status | FORBIDDEN |
+| clock_paused | false |
+
+## Day 1 Run Summary（2026-05-18）
+
+Command run:
+  python3 scripts/run_forward_record.py
+    --date 20260518
+    --config configs/prev3y_crypto.yaml
+    --output-dir outputs/forward_record/prev3y_crypto
+    --dry-run
+
+| フィールド | 値 |
+|---|---|
+| status | REVIEW_READY |
+| signal_date | 2026-04-30（最新キャッシュ） |
+| record_date | 20260518 |
+| primary_generated | True |
+| shadow_generated | False |
+| warning_gates | [] |
+| stop_gates | [] |
+| safety_scan | PASS |
+| review_006b_trigger_ready | False |
+| dry_run | True |
+| alerts_evaluated | 7 |
+| alerts_triggered | 0 |
+| bybit_connection | NOT_ATTEMPTED |
+| paper_execution_status | FORBIDDEN |
+| live_trading_status | FORBIDDEN |
+| external_post_attempted | False |
+
+Artifacts:
+- outputs/forward_record/prev3y_crypto/20260518_positions.parquet （13957B / 50 rows）
+- outputs/forward_record/prev3y_crypto/20260518_pnl.json
+- outputs/forward_record/prev3y_crypto/20260518_forward_stats.json
+- outputs/forward_record/prev3y_crypto/20260518_overlay_check.json
+- outputs/forward_record/prev3y_crypto/forward_summary.json
+- outputs/logs/prev3y_crypto/20260518_forward_record.log
+- outputs/forward_record/alerts/20260518_alert_log.json
 
 ## Last Completed
 Discord webhook VPS strict guard validation — confirmed on actual VPS（2026-05-18，Rick + Claude Sonnet）
 - VPS hostname: instance-20260506-0945 / python: .venv/bin/python
 - overall_result=PASS（6/6 gates）
-- W-0 PASS：actual webhook_config_present=True  webhook_config_non_empty=True  secret_value_observed=False
-- G-1 PASS：dry_run=True  external_post_attempted=False  load_channel_secrets_called=False
-- G-2 PASS：URL redaction confirmed
-- G-3 PASS：status=DRY_RUN  secret_value_observed=False
-- G-4 PASS：violations=[]
-- G-5 PASS：dry_run=True  FORBIDDEN_live_trading=NOT_ATTEMPTED  FORBIDDEN_bybit_write=NOT_ATTEMPTED
 - clock_started=False  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
-- Artifact：`outputs/forward_record/discord_webhook_vps_dry_run/20260518/validation_result.json`
 
 ## Paper Execution Gate 現況（5/7）
 - TASK-007b DONE ✅
@@ -30,10 +74,10 @@ Discord webhook VPS strict guard validation — confirmed on actual VPS（2026-0
 - TASK-005a DONE ✅
 - TASK-006 三補件 ✅
 - Rick test-send ✅
-- ❌ 30 天 forward paper record（VPS 部署 + Rick 明示啟動後計時）
+- ❌ 30 天 forward paper record（Day 1 STARTED → 29 days remaining）
 - ❌ REVIEW-006b + Rick 批准
 
-## 30-day Clock 啟動前需完成的前置條件
+## 30-day Clock 前置条件（全 ✅ DONE）
 
 | 條件 | 狀態 |
 |---|---|
@@ -42,65 +86,26 @@ Discord webhook VPS strict guard validation — confirmed on actual VPS（2026-0
 | TASK-009c tech debt 收斂 DONE | ✅ |
 | TASK-009d alert E2E drill DONE | ✅ |
 | Windows baseline artifact | ✅（90 tests；SHA-256 b8d4fd69…） |
-| VPS 部署 + dry-run validation | ✅（Ubuntu 24.04；REVIEW_READY；drill 13/13） |
-| Read-only data source validation | ✅（cache + Bybit public GET PASS） |
-| Discord webhook dry-run dispatch 安全性（コード解析）| ✅（G-1~G-5 code analysis + G-2/G-4 sandbox） |
-| Discord webhook VPS strict guard drill + actual config 確認 | ✅ DONE（2026-05-18；instance-20260506-0945；PASS 6/6） |
-| working tree clean（Option C + E commits）| ✅ DONE（2026-05-18；378dc34 / c20bc09 / 2d5d90c / a833f4f / gitignore-fix） |
-| Rick 明示「開始計時」 | ❌ 待 Rick 指示 |
+| VPS 部署 + dry-run validation | ✅（Ubuntu 24.04；drill 13/13） |
+| Read-only data source validation | ✅（PASS） |
+| Discord webhook VPS strict guard | ✅ DONE（PASS 6/6） |
+| working tree clean | ✅ DONE（5 commits through 38db728） |
+| Rick 明示「開始計時」 | ✅ DONE（2026-05-18） |
 
-## Tracked Modified Files — 解決済み（2026-05-18）
+## Daily Action（毎日必须 — VPS 上で実行）
 
-| ファイル | 処置 | 結果 |
-|---|---|---|
-| `src/backtester.py` | `git show HEAD: \| write` → CRLF→LF 復元 | ✅ HEAD 一致 |
-| `src/indicators.py` | 同上 | ✅ HEAD 一致 |
-| `src/reporter.py` | 同上 | ✅ HEAD 一致 |
-| `src/risk.py` | 同上 | ✅ HEAD 一致 |
-| `src/strategies.py` | 同上 | ✅ HEAD 一致 |
-| `tests/monitor/test_channels.py` | 同上（NTFS truncation 復元；276L） | ✅ HEAD 一致 |
-| `.claude/settings.local.json` | `git rm --cached` | ✅ untracked（on disk） |
-| `outputs/monitor/prev3y_crypto/alerts/20260517.jsonl` | `git rm --cached` | ✅ untracked（on disk） |
-| `outputs/variants/prev3y_crypto/` (5 files) | `git rm --cached` | ✅ untracked（on disk） |
-
-## gitignore 修正内容（Option E — 2026-05-18）
-
-.gitignore が NTFS truncation により 115B/8L に破損していた。正しい内容（1020B/54L）に修復し以下を追加：
-
-| 追加ルール | 対象 |
-|---|---|
-| `outputs/attribution/` | ローカル backtesting attribution 成果物 |
-| `outputs/backtests/` | ローカル backtesting 成果物 |
-| `outputs/data_quality/` | ローカル data quality 成果物 |
-| `outputs/paper_trading/` | paper trading ローカル成果物 |
-| `outputs/forward_record/alerts/` | forward record alert ローカル成果物 |
-| `outputs/forward_record/prev3y_crypto/` | forward record ローカル成果物 |
-| `outputs/forward_record/prev3y_crypto_shadow_a_roll12/` | shadow variant ローカル成果物 |
-| `data/crypto/` | API-fetched 価格/ユニバースデータ（large） |
-| `data/*.malformed_*` | DB crash recovery artifacts |
-| `*.zip` | local deploy bundles |
-
-保護された committed 監査成果物（gitignore しない）：
-- `outputs/forward_record/baselines/`, `drill/`, `discord_webhook_*/`, `read_only_data_source/`
-- `outputs/logs/`
-
-## Next Step Options
-
-### Option D — 30-day clock 啟動（start-date selection）
-- 全前置条件 ✅ 完了
-- Rick が「開始計時」を宣言して 30-day forward record を開始
-
-### Option F — 暫停，等待 Rick 決定
-- 不執行任何新任務
+  python3 scripts/run_forward_record.py
+    --date YYYYMMDD
+    --config configs/prev3y_crypto.yaml
+    --output-dir outputs/forward_record/prev3y_crypto
+    --dry-run
 
 ## Do Not
-- 不得在沒有 Rick 指示下自行啟動任何 Option
-- 不得啟動 30-day forward clock（需 Rick 明示「開始計時」）
+- 不得啟動 live trading
+- 不得啟動 paper execution（FORBIDDEN）
 - 不得把 discord dry_run 改為 false
 - 不得送真實 Discord alert
 - 不得使用 --live-alerts
-- 不得批准 paper execution
-- 不得批准 live trading
 - 不得連接 Bybit write API
 - 不得修改策略程式或官方輸出
-- 不得進行 start-date selection（Rick 指示前）
+- 不得進行 start-date selection（已完成）
