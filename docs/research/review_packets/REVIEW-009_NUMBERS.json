@@ -4,23 +4,17 @@
   "clock_started": false,
   "dry_run": true,
   "live_trading_status": "FORBIDDEN",
-  "output_date": "20260517",
+  "output_date": "20260518",
   "outputs": {
-    "log": "outputs\\logs\\prev3y_crypto\\20260517_forward_record.log",
+    "log": "outputs/logs/prev3y_crypto/20260518_forward_record.log",
     "primary": {
-      "forward_stats": "outputs\\forward_record\\prev3y_crypto\\20260517_forward_stats.json",
-      "forward_summary": "outputs\\forward_record\\prev3y_crypto\\forward_summary.json",
-      "overlay_check": "outputs\\forward_record\\prev3y_crypto\\20260517_overlay_check.json",
-      "pnl": "outputs\\forward_record\\prev3y_crypto\\20260517_pnl.json",
-      "positions": "outputs\\forward_record\\prev3y_crypto\\20260517_positions.parquet"
+      "forward_stats": "outputs/forward_record/prev3y_crypto/20260518_forward_stats.json",
+      "forward_summary": "outputs/forward_record/prev3y_crypto/forward_summary.json",
+      "overlay_check": "outputs/forward_record/prev3y_crypto/20260518_overlay_check.json",
+      "pnl": "outputs/forward_record/prev3y_crypto/20260518_pnl.json",
+      "positions": "outputs/forward_record/prev3y_crypto/20260518_positions.parquet"
     },
-    "shadow": {
-      "forward_stats": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\20260517_forward_stats.json",
-      "forward_summary": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\forward_summary.json",
-      "overlay_check": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\20260517_overlay_check.json",
-      "pnl": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\20260517_pnl.json",
-      "positions": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\20260517_positions.parquet"
-    }
+    "shadow": {}
   },
   "paper_execution_status": "FORBIDDEN",
   "primary_generated": true,
@@ -33,8 +27,7 @@
       "violations": []
     },
     "forbidden_flags": {
-      "outputs\\forward_record\\prev3y_crypto": true,
-      "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12": true
+      "outputs/forward_record/prev3y_crypto": true
     },
     "secret_scan": {
       "status": "PASS",
@@ -42,5 +35,8 @@
     },
     "status": "PASS"
   },
-  "shadow_generated": true,
-  "shadow_variant
+  "shadow_generated": false,
+  "shadow_variant": null,
+  "status": "REVIEW_READY",
+  "task": "TASK-009"
+}

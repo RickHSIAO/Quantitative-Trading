@@ -2,9 +2,9 @@
 
 - Status: REVIEW_READY
 - Runner version: task009_v1.0
-- Output date: 20260517
+- Output date: 20260518
 - Primary generated: True
-- Shadow generated: True
+- Shadow generated: False
 - review_006b_trigger_ready: False
 - Warning gates: []
 - Stop gates: []
@@ -16,6 +16,6 @@
 - 30-day forward clock: NOT_STARTED
 
 ## Outputs
-- primary: `outputs\forward_record\prev3y_crypto`
-- shadow: `outputs\forward_record\prev3y_crypto_shadow_a_roll12`
-- numbers: `docs\research\review_packets\REVIE
+- primary: `outputs/forward_record/prev3y_crypto`
+- shadow: `disabled`
+- numbers: `docs/research/review_packets/REVIEW-009_NUMBERS.json`
