@@ -13,3 +13,13 @@ configs/monitor_secrets.local.yml
 output/
 compare.py
 
+
+# Local runtime/cache artifacts
+__pycache__/
+**/__pycache__/
+*.pyc
+data/trading.db
+data/trading.db-shm
+data/trading.db-wal
+data/live_positions.json
+output/*.xlsx
