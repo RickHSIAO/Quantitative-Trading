@@ -27,30 +27,4 @@ secret material under the repository.
 
 ## Alert Channels
 
-`local_jsonl` remains the durable local alert record and must stay enabled.
-Telegram and Discord channels are configured in `configs/monitor.yaml` with
-`dry_run: true` by default. In dry-run mode the monitor records that it would
-send a notification, but it does not make an external POST.
-
-Use `--test-send` only as an explicit operator action. With the default config
-it still stays dry-run. Real channel credentials must be provided only through
-environment variables or `configs/monitor_secrets.local.yaml`, which is ignored
-by Git. The committed `configs/monitor_secrets.example.yaml` file contains only
-empty placeholders.
-
-Supported environment variables:
-
-- `MONITOR_TELEGRAM_TOKEN`
-- `MONITOR_TELEGRAM_CHAT_ID`
-- `MONITOR_DISCORD_WEBHOOK_URL`
-
-Logs, outputs, review packets, and command logs must contain redacted channel
-metadata only.
-
-## Boundaries
-
-- Read-only account observation only.
-- No trading action interface.
-- No automated process-control action.
-- No paper execution.
-- No live trading.
+`local_jsonl` remains the durable local alert record and must stay enabled

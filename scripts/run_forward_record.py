@@ -111,14 +111,4 @@ def main() -> int:
         force_dry_run=bool(args.dry_run) or not bool(args.live_alerts),
     )
     print(f"TASK-009 forward record status={numbers['status']}")
-    print(f"primary={config.output_dir}")
-    print(f"shadow={config.shadow_output_dir if shadow_paths else 'disabled'}")
-    print(f"review_packet={config.review_packet_path}")
-    print(f"review_numbers={config.review_numbers_path}")
-    print(f"log={log_path}")
-    print(f"alert_log={alert_log['alert_log_path']}")
-    return 0 if numbers["status"] == "REVIEW_READY" else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    
