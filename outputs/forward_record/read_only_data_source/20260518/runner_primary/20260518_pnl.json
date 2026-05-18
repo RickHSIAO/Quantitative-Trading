@@ -1,0 +1,33 @@
+{
+  "annualization": 365.25,
+  "clock_started": false,
+  "cumulative_pnl_pct": 0.0,
+  "daily_pnl_pct": 0.0,
+  "data_source": "cache_fallback",
+  "date": "20260518",
+  "day_number": 0,
+  "dry_run": true,
+  "fee_cost_usd": 0.0,
+  "funding_cost_usd": 0.0,
+  "gross_exposure": 1.0,
+  "live_trading_status": "FORBIDDEN",
+  "long_weight_sum": 0.5,
+  "n_longs": 25,
+  "n_shorts": 25,
+  "nav_change_usd": 0.0,
+  "nav_usd": 10000.0,
+  "net_exposure": 3.469446951953614e-17,
+  "overlay_events": [],
+  "paper_execution_status": "FORBIDDEN",
+  "reproducibility": {
+    "date": "20260518",
+    "positions_hash": "sha256:6c4fbcf1824a6bd6a8bea87e2a4560589f7e7786d8ea1388ecf8f102e94422c7",
+    "positions_rows": 50,
+    "runner_version": "task009_v1.0"
+  },
+  "short_weight_sum": -0.5,
+  "slippage_cost_usd": 0.0,
+  "top1_symbol": "BYBIT:1INCHUSDT.P",
+  "top1_symbol_weight": -0.02,
+  "variant": "combined_paper_safe_variant"
+}

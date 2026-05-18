@@ -47,21 +47,4 @@ safety_scan:
     ],
     "status": "PASS"
   },
-  "secret_literal_violations": [],
-  "secret_output_violations": [],
-  "status": "PASS"
-}
-
-heartbeat_schema:
-{
-  "errors": [],
-  "row_count": 1,
-  "status": "PASS"
-}
-
-alerts_schema:
-{
-  "errors": [],
-  "row_count": 1,
-  "status": "PASS"
-}
+  "secret_l

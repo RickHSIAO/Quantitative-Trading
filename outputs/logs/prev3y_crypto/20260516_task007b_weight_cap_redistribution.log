@@ -1,0 +1,164 @@
+TASK-007b Weight Cap + Redistribution Study
+run_date=20260516
+analysis_basis=post-processing overlay study, not a trading decision
+baseline_run_id=20260513_run008
+cost_stress_run_id=20260515
+task007_run_id=20260515
+primary_scenario=realistic_combo
+git_commit=c44e12e54fde5a46ce0f0f1d53f5deabc92022f4
+reproducibility_hash=f5c962e11189cc4f91dedbc50b00456830d1fdc6e868c1638ad6b3e3e4db07b7
+
+methodology:
+{
+  "annualization_factor": 365.25,
+  "cap_levels": {
+    "cap_10pct": 0.1,
+    "cap_15pct": 0.15,
+    "cap_20pct": 0.2
+  },
+  "cap_logic": "daily_weight_pct_of_original_gross_exposure_with_same_direction_redistribution",
+  "cost_scaling": "cost_scale = abs(new_weight / original_weight); costs zero if new_weight is zero",
+  "cost_source": "official TASK-002 realistic_combo symbol-day costs",
+  "no_room_policy": "reduce gross exposure and record redistribution_has_no_room; never force opposite-side redistribution",
+  "redistribution": "long excess to eligible long symbols only; short excess to eligible short symbols only",
+  "return_dating": "positions.date + 1 day = return_date",
+  "std_ddof": 1
+}
+
+gate_results:
+{
+  "baseline_reconciliation": {
+    "gross_vs_run008_max_diff": 1.0495077029659683e-16,
+    "gross_vs_task007_max_diff": 9.974659986866641e-17,
+    "net_vs_task002_realistic_combo_max_diff": 2.0469737016526324e-16,
+    "net_vs_task007_max_diff": 9.974659986866641e-17
+  },
+  "fail_gates": {
+    "baseline_reconciliation_mismatch": {
+      "details": {
+        "gross_vs_run008_max_diff": 1.0495077029659683e-16,
+        "gross_vs_task007_max_diff": 9.974659986866641e-17,
+        "net_vs_task002_realistic_combo_max_diff": 2.0469737016526324e-16,
+        "net_vs_task007_max_diff": 9.974659986866641e-17
+      },
+      "threshold": 1e-06,
+      "triggered": false,
+      "value": 2.0469737016526324e-16
+    },
+    "missing_outputs": {
+      "missing": [],
+      "triggered": false
+    },
+    "paper_live_execution_code": {
+      "details": {
+        "forbidden_matches": [],
+        "real_or_paper_execution_code_detected": false,
+        "scanned_paths": [
+          "src\\variants\\task007b.py",
+          "scripts\\task007b_weight_cap_redistribution.py"
+        ]
+      },
+      "triggered": false
+    },
+    "redistribution_overflow": {
+      "details": {
+        "max_overflow_amount": 0.0,
+        "overflow_rows": 0,
+        "sample": []
+      },
+      "threshold": 1e-06,
+      "triggered": false,
+      "value": 0.0
+    },
+    "schema_mismatch": {
+      "errors": [],
+      "triggered": false
+    }
+  },
+  "paper_live_execution_scan": {
+    "forbidden_matches": [],
+    "real_or_paper_execution_code_detected": false,
+    "scanned_paths": [
+      "src\\variants\\task007b.py",
+      "scripts\\task007b_weight_cap_redistribution.py"
+    ]
+  },
+  "redistribution_overflow": {
+    "max_overflow_amount": 0.0,
+    "overflow_rows": 0,
+    "sample": []
+  },
+  "reproducibility_hash": "f5c962e11189cc4f91dedbc50b00456830d1fdc6e868c1638ad6b3e3e4db07b7",
+  "warning_gates": {
+    "alpha_retention_below_threshold": {
+      "description": "cap variants retaining less than 70% of baseline net alpha",
+      "threshold": 0.7,
+      "triggered": false,
+      "values": {}
+    },
+    "cap10_sharpe_drop": {
+      "description": "cap=10% Sharpe drop vs baseline exceeds 30%",
+      "threshold": 0.3,
+      "triggered": false,
+      "value": 0.0647764826908815
+    },
+    "concentration_not_reduced_cap15": {
+      "description": "cap=15% top5 concentration remains above 70%",
+      "threshold": 0.7,
+      "triggered": true,
+      "value": 0.9555841694899185
+    },
+    "redistribution_has_no_room": {
+      "description": "same-side redistribution had no eligible room and gross exposure was reduced",
+      "threshold": 0,
+      "triggered": true,
+      "value": 488
+    },
+    "single_symbol_concentration_above_threshold": {
+      "description": "cap variants with single-symbol concentration above 25%",
+      "threshold": 0.25,
+      "triggered": true,
+      "values": {
+        "cap_15pct": 0.25453623476808096,
+        "cap_20pct": 0.25453623476808096
+      }
+    },
+    "top5_concentration_above_threshold": {
+      "description": "cap variants with top5 concentration above 70%",
+      "threshold": 0.7,
+      "triggered": true,
+      "values": {
+        "cap_10pct": 0.986903079531406,
+        "cap_15pct": 0.9555841694899185,
+        "cap_20pct": 0.9555841694899185
+      }
+    }
+  }
+}
+
+redistribution_summary:
+{
+  "cap_breach_dates": {
+    "cap_10pct": 61
+  },
+  "event_type_counts": {
+    "redistribution_has_no_room": 488
+  },
+  "rows": 488
+}
+
+input_hashes:
+{
+  "cost_stress_positions_cost_parquet": "fc77fcb2b2c9f0731feda73fc3a4300646e0cc4923531a29e02df25116793309",
+  "prev3y_crypto_yaml": "e4118508c1d925522872a8b0c268430461b0000f18ec53a339f1fbcc19885575",
+  "prices_daily_parquet": "be067f1471e4bc20e980d5d86cc96e644792bc5282d8d550e4fde299e7352bd8",
+  "review007_numbers_json": "148dd31199e536c244305aee5f01982bc051dde07cd05805e33ab3aff11fc584",
+  "review007_packet_md": "4702c21a085999a8b46d02c790296d28ea96303978dfdfa494aabd8c9da9fb34",
+  "run008_baseline_csv": "051b89b2b5834b4a305b51436348548f569d3c4524ce487e2a7986b2c896f49f",
+  "run008_positions_parquet": "cb1190bdce7724cdb5cf8d5a8d84d0e0d4d6365953cc1f5a1a67d90afe5ee3b6",
+  "task007_concentration_csv": "3ddc67c735cd0bc1ac3c26f323c62f83d17ec9e200343a29754ea9b031abbb59",
+  "task007_daily_csv": "badd51357755e8cca6c06d938f997a1ecf9661b9219f842c95a6e6e32d309809",
+  "task007_summary_json": "860a7ef2b62717541552299eef4edd46b88f963a275a2976f48075d1391d92f8",
+  "universe_membership_parquet": "8450bde5923d08b04f168eca2d5ed626976a0efd0af75d7bd37bfdc012962c2f"
+}
+

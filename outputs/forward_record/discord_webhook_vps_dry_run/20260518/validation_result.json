@@ -1,0 +1,82 @@
+{
+  "validation": "discord_webhook_vps_dryrun",
+  "date": "20260518",
+  "run_ts": "2026-05-18T06:03:20+00:00Z",
+  "overall_result": "PASS",
+  "environment": {
+    "hostname": "claude",
+    "platform": "Linux",
+    "release": "6.8.0-106-generic",
+    "python_version": "3.10.12"
+  },
+  "gates": [
+    {
+      "gate": "W-0",
+      "name": "webhook config presence (VPS)",
+      "env_var": "MONITOR_DISCORD_WEBHOOK_URL",
+      "webhook_config_present": true,
+      "webhook_config_non_empty": true,
+      "source_env_var": true,
+      "source_secrets_file": false,
+      "secret_value_observed": false,
+      "pass": true
+    },
+    {
+      "gate": "G-1",
+      "name": "dry_run exits before load_channel_secrets() -- strict guard",
+      "status": "DRY_RUN",
+      "dry_run": true,
+      "external_post_attempted": false,
+      "endpoint": "https://discord.com/api/webhooks/<redacted>",
+      "load_channel_secrets_called": false,
+      "secret_value_observed": false,
+      "no_secret_leak_in_output": true,
+      "pass": true
+    },
+    {
+      "gate": "G-2",
+      "name": "webhook URL redaction",
+      "real_url_removed": true,
+      "discordapp_url_removed": true,
+      "redacted_marker_present": true,
+      "no_leak_in_redacted_output": true,
+      "pass": true
+    },
+    {
+      "gate": "G-3",
+      "name": "no secret in ChannelResult output -- real env",
+      "status": "DRY_RUN",
+      "external_post_attempted": false,
+      "no_secret_leak_in_output": true,
+      "secret_value_observed": false,
+      "pass": true
+    },
+    {
+      "gate": "G-4",
+      "name": "safety scan: no order endpoint imports",
+      "scan_status": "PASS",
+      "violations": [],
+      "pass": true
+    },
+    {
+      "gate": "G-5",
+      "name": "triple dry_run gate: force_dry_run + live_alerts=False",
+      "dry_run": true,
+      "FORBIDDEN_live_trading": "NOT_ATTEMPTED",
+      "FORBIDDEN_order_endpoint": "NOT_ATTEMPTED",
+      "FORBIDDEN_bybit_write": "NOT_ATTEMPTED",
+      "clock_started": null,
+      "no_secret_leak_in_alert_log": true,
+      "pass": true
+    }
+  ],
+  "secret_leak_violations": [],
+  "FORBIDDEN_live_trading": "NOT_ATTEMPTED",
+  "FORBIDDEN_discord_real_post": "NOT_ATTEMPTED",
+  "FORBIDDEN_live_alerts": "NOT_ATTEMPTED",
+  "clock_started": false,
+  "paper_execution_status": "FORBIDDEN",
+  "live_trading_status": "FORBIDDEN",
+  "external_post_attempted": false,
+  "secret_value_observed": false
+}

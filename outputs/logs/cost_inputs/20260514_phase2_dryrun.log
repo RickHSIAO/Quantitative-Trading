@@ -1,0 +1,91 @@
+random_seed=0
+baseline_run_id=20260513_run008
+phase_status=READY_TO_REVIEW_PHASE2_DRYRUN
+request_count=10
+cache_hit_count=8
+retry_count=0
+api_error_count=0
+symbols_failed_count=0
+raw_cache_snapshot_hash=9706cf0ccb31adb4990d076b930430c2f1005c4b0ae8bb7c87dded694b44a75e
+data_snapshot_hash=dc155c3bebdbf03fa1d341f8770eaeb41db0d5ce4ec0140b824b411cd258a4ab
+git_commit=c044f55ea767dbc307e80aa799318cab91458efc
+NOTE: Phase 2 dry-run only; formal data/crypto/funding_rates.parquet was not written.
+NOTE: TASK-002 stress was not executed and TASK-002 remains blocked.
+NOTE: No proxy, average, or fake funding rows were generated.
+{
+  "api_error_count": 0,
+  "api_errors": [],
+  "baseline_run_id": "20260513_run008",
+  "cache_hit_count": 8,
+  "coverage": {
+    "active_pit": {
+      "coverage_missing_pct": 96.969697,
+      "coverage_proxy_pct": 0.0,
+      "coverage_real_pct": 3.030303,
+      "missing_symbol_days": 896,
+      "proxy_symbol_days": 0,
+      "real_funded_symbol_days": 28,
+      "symbol_days": 924
+    },
+    "active_position": {
+      "coverage_missing_pct": 50.0,
+      "coverage_proxy_pct": 0.0,
+      "coverage_real_pct": 50.0,
+      "missing_symbol_days": 28,
+      "proxy_symbol_days": 0,
+      "real_funded_symbol_days": 28,
+      "symbol_days": 56
+    }
+  },
+  "data_snapshot_hash": "dc155c3bebdbf03fa1d341f8770eaeb41db0d5ce4ec0140b824b411cd258a4ab",
+  "dryrun_end_utc": "2024-04-07T23:59:59Z",
+  "dryrun_funding_rates_path": "outputs\\data_quality\\funding_coverage\\20260514_phase2_dryrun_funding_rates.parquet",
+  "dryrun_raw_symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "ADAUSDT",
+    "BCHUSDT"
+  ],
+  "dryrun_start_utc": "2024-04-01T00:00:00Z",
+  "dryrun_symbols": [
+    "BYBIT:BTCUSDT.P",
+    "BYBIT:ETHUSDT.P",
+    "BYBIT:ADAUSDT.P",
+    "BYBIT:BCHUSDT.P"
+  ],
+  "fetch_end_utc": "2024-04-08T23:59:59Z",
+  "fetch_start_utc": "2024-03-31T00:00:00Z",
+  "formal_funding_rates_written": false,
+  "funding_unit_check": {
+    "max_abs_funding_rate": 0.00075064,
+    "note": "Funding rates are parsed as decimals from Bybit fundingRate strings.",
+    "status": "PASS"
+  },
+  "git_commit": "c044f55ea767dbc307e80aa799318cab91458efc",
+  "live_diff_check": {
+    "failures": [],
+    "matched_count": 10,
+    "max_abs_diff": 0.0,
+    "sample_count": 10,
+    "status": "PASS",
+    "threshold": 1e-09
+  },
+  "mapping_integration": {
+    "failed_symbols": 0,
+    "failures": [],
+    "passed_symbols": 273,
+    "total_symbols": 273
+  },
+  "notes": [
+    "Phase 2 dry-run only; no TASK-002 stress executed.",
+    "No fake funding or average-value funding was generated.",
+    "Dry-run parquet is not the formal data/crypto/funding_rates.parquet."
+  ],
+  "phase_status": "READY_TO_REVIEW_PHASE2_DRYRUN",
+  "raw_cache_snapshot_hash": "9706cf0ccb31adb4990d076b930430c2f1005c4b0ae8bb7c87dded694b44a75e",
+  "request_count": 10,
+  "retry_count": 0,
+  "schema_errors": [],
+  "symbol_failures": [],
+  "symbols_failed_count": 0
+}

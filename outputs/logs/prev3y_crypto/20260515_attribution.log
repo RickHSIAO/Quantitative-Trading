@@ -1,0 +1,108 @@
+TASK-003 baseline attribution
+run_date=20260515
+baseline_run_id=20260513_run008
+cost_stress_run_id=20260515
+primary_scenario=realistic_combo
+git_commit=c044f55ea767dbc307e80aa799318cab91458efc
+reproducibility_hash=483ad042db6ae447b02458de53982a26724c2f14348d48476a479e4021352e30
+active_window=2024-04-01..2026-04-30
+active_days=760
+
+methodology:
+{
+  "funding_gap_source": "TASK-002 positions_cost funding_gap column; no funding cost recomputation",
+  "funding_interval_source": "data/crypto/funding_rates.parquet interval_hours mapped by symbol",
+  "gross_formula": "gross_contribution = prior_day_weight * symbol_open_to_open_return",
+  "net_formula": "net_contribution = gross_contribution - fee_cost - slippage_cost - funding_cost",
+  "primary_cost_source": "TASK-002 positions_cost parquet filtered to realistic_combo",
+  "return_dating": "positions.date + 1 day = return_date",
+  "return_dating_reason": "run008 computes each day's portfolio_return from weights held before applying that day's effective target; positions rows are emitted after the target update.",
+  "tradable_filter": "existing data_quality.apply_data_quality_policy tradable_membership is applied on return_date + symbol before calculating gross contribution"
+}
+
+reconciliation:
+{
+  "gross_active_daily_max_diff": 1.0495077029659683e-16,
+  "gross_active_total_diff": -4.7870304183302015e-15,
+  "gross_bad_days_gt_tolerance": 0,
+  "net_active_daily_max_diff": 2.0469737016526324e-16,
+  "net_active_total_diff": -6.8408413699330706e-15,
+  "net_bad_days_gt_tolerance": 0,
+  "tolerance": 1e-06
+}
+
+warning_gates:
+{
+  "funding_gap_concentration": {
+    "threshold": 0.2,
+    "triggered": false,
+    "value": 0.03362959644464837
+  },
+  "gross_net_rank_divergence": {
+    "max_rank_change": 13,
+    "threshold": 10,
+    "triggered": true
+  },
+  "short_side_drag": {
+    "short_net_alpha": 0.33648950702455455,
+    "threshold_pct": 0.5,
+    "triggered": false,
+    "value": 1.1374407121825565
+  },
+  "single_symbol_concentration": {
+    "threshold": 0.25,
+    "triggered": false,
+    "value": 0.07702661565018633,
+    "worst_symbol": "BYBIT:DOTUSDT.P"
+  },
+  "single_year_concentration": {
+    "threshold": 0.7,
+    "triggered": true,
+    "value": 0.8562497025290197,
+    "worst_year": "2025"
+  },
+  "top5_symbol_concentration": {
+    "threshold": 0.6,
+    "triggered": false,
+    "value": 0.2891746026327747
+  }
+}
+
+fail_gates:
+{
+  "missing_output_files": {
+    "missing": [],
+    "triggered": false
+  },
+  "net_pnl_sum_mismatch": {
+    "threshold": 1e-06,
+    "triggered": false,
+    "value": 2.0469737016526324e-16
+  },
+  "schema_mismatch": {
+    "errors": [],
+    "triggered": false
+  },
+  "symbol_pnl_sum_mismatch": {
+    "threshold": 1e-06,
+    "triggered": false,
+    "value": 1.0495077029659683e-16
+  }
+}
+
+warnings_triggered=['single_year_concentration', 'gross_net_rank_divergence']
+failures_triggered=none
+
+input_hashes:
+{
+  "cost_stress_csv": "f8663c9e0f813d099f2b2858b57f37e34c88fd5ff14382398b98825799703f09",
+  "cost_stress_positions_cost_parquet": "fc77fcb2b2c9f0731feda73fc3a4300646e0cc4923531a29e02df25116793309",
+  "cost_stress_summary_json": "566a3acb7f39d26ddfd0ab9df0225e2f8172e3079d253634629ad12b01c24c18",
+  "funding_rates_parquet": "e754b52c0f4801d61aa96eb7bccacd1ea7afc37acd9af7cae6833095a56a131b",
+  "prev3y_crypto_yaml": "e4118508c1d925522872a8b0c268430461b0000f18ec53a339f1fbcc19885575",
+  "prices_daily_parquet": "be067f1471e4bc20e980d5d86cc96e644792bc5282d8d550e4fde299e7352bd8",
+  "run008_baseline_csv": "051b89b2b5834b4a305b51436348548f569d3c4524ce487e2a7986b2c896f49f",
+  "run008_positions_parquet": "cb1190bdce7724cdb5cf8d5a8d84d0e0d4d6365953cc1f5a1a67d90afe5ee3b6",
+  "run008_stats_json": "6181a491a0421d55cd39153f6c8633fc555c3a0d3c7aaf09e8b4df7f25610f1c",
+  "universe_membership_parquet": "8450bde5923d08b04f168eca2d5ed626976a0efd0af75d7bd37bfdc012962c2f"
+}

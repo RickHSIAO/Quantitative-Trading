@@ -1,0 +1,34 @@
+Rick risk overlay comparison
+run_date=20260516
+analysis_basis=ad hoc post-processing overlay study, not a trading decision
+baseline_run_id=20260513_run008
+cost_stress_run_id=20260515
+primary_scenario=realistic_combo
+git_commit=c44e12e54fde5a46ce0f0f1d53f5deabc92022f4
+reproducibility_hash=fdb8becc4cac5f24759e66b6492bd55b477351bd0ec0dfe36d15d2f6378608bd
+
+methodology:
+{
+  "cost_policy": "TASK-002 realistic_combo symbol-day costs scaled by abs(variant_cost_weight / original_cost_weight); costs are not fully recomputed from turnover",
+  "long_gross_cap": 0.5,
+  "max_positions": 10,
+  "min_trade_risk": 0.0015,
+  "per_trade_risk_cap": 0.005,
+  "return_dating": "uses TASK-007 convention: positions.date + 1 day = return_date",
+  "risk_proxy": "run008 has no stop-loss or R-distance columns; risk caps are checked with risk_proxy = abs(weight) * 10.00%",
+  "selection": "keep strongest 5 longs by lowest signal_rank and strongest 5 shorts by highest signal_rank",
+  "short_gross_cap": 0.5,
+  "signals_ranking_universe_data_quality": "unchanged; official run008/TASK-002 inputs are read-only",
+  "symbol_cap_abs_weight": 0.05,
+  "total_risk_cap": 0.04
+}
+
+input_hashes:
+{
+  "cost_stress_positions_cost_parquet": "fc77fcb2b2c9f0731feda73fc3a4300646e0cc4923531a29e02df25116793309",
+  "prev3y_crypto_yaml": "e4118508c1d925522872a8b0c268430461b0000f18ec53a339f1fbcc19885575",
+  "prices_daily_parquet": "be067f1471e4bc20e980d5d86cc96e644792bc5282d8d550e4fde299e7352bd8",
+  "run008_baseline_csv": "051b89b2b5834b4a305b51436348548f569d3c4524ce487e2a7986b2c896f49f",
+  "run008_positions_parquet": "cb1190bdce7724cdb5cf8d5a8d84d0e0d4d6365953cc1f5a1a67d90afe5ee3b6",
+  "universe_membership_parquet": "8450bde5923d08b04f168eca2d5ed626976a0efd0af75d7bd37bfdc012962c2f"
+}

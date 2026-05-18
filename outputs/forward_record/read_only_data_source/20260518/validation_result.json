@@ -1,0 +1,84 @@
+{
+  "artifact": "read_only_data_source_validation",
+  "bybit_public_read_only_check": {
+    "base_url": "https://api.bybit.com",
+    "probes": [
+      {
+        "method": "GET",
+        "path": "/v5/market/kline",
+        "resource": "kline",
+        "ret_code": 0,
+        "ret_msg": "OK",
+        "row_count": 1,
+        "symbol": "BTCUSDT"
+      },
+      {
+        "method": "GET",
+        "path": "/v5/market/funding/history",
+        "resource": "funding/history",
+        "ret_code": 0,
+        "ret_msg": "OK",
+        "row_count": 1,
+        "symbol": "BTCUSDT"
+      }
+    ],
+    "status": "PASS"
+  },
+  "cache_check": {
+    "data_source": "cache_fallback",
+    "funding_max_timestamp": "2026-04-30T23:00:00+00:00",
+    "funding_path_exists": true,
+    "funding_rows": 750641,
+    "funding_symbols": 273,
+    "prices_max_date": "2026-04-30",
+    "prices_path_exists": true,
+    "prices_rows": 341786,
+    "prices_symbols": 324,
+    "status": "PASS"
+  },
+  "configured_data_sources": {
+    "bybit_public_market_get": "https://api.bybit.com/v5/market/{resource}",
+    "forward_runner_data_source": "cache_fallback",
+    "funding_path": "data/crypto/funding_rates.parquet",
+    "prices_path": "data/crypto/prices_daily.parquet"
+  },
+  "date": "20260518",
+  "run_ts": "2026-05-18T05:34:05Z",
+  "runner_check": {
+    "clock_started": false,
+    "data_source_values": [
+      "cache_fallback"
+    ],
+    "dry_run_values": [
+      true
+    ],
+    "external_post_attempted": false,
+    "live_trading_status": "FORBIDDEN",
+    "output_dir": "outputs/forward_record/read_only_data_source/20260518/runner_primary",
+    "paper_execution_status": "FORBIDDEN",
+    "paths": {
+      "forward_stats": "outputs/forward_record/read_only_data_source/20260518/runner_primary/20260518_forward_stats.json",
+      "forward_summary": "outputs/forward_record/read_only_data_source/20260518/runner_primary/forward_summary.json",
+      "overlay_check": "outputs/forward_record/read_only_data_source/20260518/runner_primary/20260518_overlay_check.json",
+      "pnl": "outputs/forward_record/read_only_data_source/20260518/runner_primary/20260518_pnl.json",
+      "positions": "outputs/forward_record/read_only_data_source/20260518/runner_primary/20260518_positions.parquet"
+    },
+    "positions_rows": 50,
+    "source_position_count": 50,
+    "status": "PASS"
+  },
+  "safety": {
+    "alerting_invoked": false,
+    "clock_started": false,
+    "external_post_attempted": false,
+    "live_trading_status": "FORBIDDEN",
+    "no_order_private_write_endpoint": {
+      "status": "PASS",
+      "violations": []
+    },
+    "paper_execution_status": "FORBIDDEN",
+    "secrets_modified": false,
+    "secrets_read": false
+  },
+  "status": "PASS"
+}

@@ -1,0 +1,40 @@
+{
+  "validation": "discord_webhook_vps_dryrun",
+  "date": "20260518",
+  "run_ts": "(populated on VPS execution)",
+  "overall_result": "(PASS expected on VPS)",
+  "method": "script_ready_pending_vps_execution",
+  "note": "G-2 and G-4 verified in sandbox. G-1/G-3/G-5/W-0 require VPS with complete apps/monitor/config.py. Run: python scripts/validate_discord_webhook_vps_dryrun.py",
+  "sandbox_verified": {
+    "G-2_redaction": {
+      "pass": true,
+      "method": "sandbox_executed",
+      "real_url_removed": true,
+      "discordapp_url_removed": true,
+      "redacted_marker_present": true,
+      "no_leak_in_output": true
+    },
+    "G-4_safety_scan": {
+      "pass": true,
+      "method": "sandbox_executed",
+      "scan_status": "PASS",
+      "violations": []
+    }
+  },
+  "vps_pending": {
+    "W-0": "webhook_config_presence check \u2014 boolean only, no value",
+    "G-1": "dry_run exits before load_channel_secrets() \u2014 strict monkeypatch guard",
+    "G-3": "no secret in ChannelResult \u2014 real env, strict monkeypatch",
+    "G-5": "triple dry_run gate via run_forward_alerting() \u2014 strict HTTP monkeypatch"
+  },
+  "script": "scripts/validate_discord_webhook_vps_dryrun.py",
+  "vps_run_command": "python scripts/validate_discord_webhook_vps_dryrun.py --output-dir outputs/forward_record/discord_webhook_vps_dry_run/20260518",
+  "FORBIDDEN_live_trading": "NOT_ATTEMPTED",
+  "FORBIDDEN_discord_real_post": "NOT_ATTEMPTED",
+  "FORBIDDEN_live_alerts": "NOT_ATTEMPTED",
+  "clock_started": false,
+  "paper_execution_status": "FORBIDDEN",
+  "live_trading_status": "FORBIDDEN",
+  "external_post_attempted": false,
+  "secret_value_observed": false
+}

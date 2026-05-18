@@ -1,0 +1,85 @@
+{
+  "validation": "discord_webhook_dryrun",
+  "date": "20260518",
+  "run_ts": "2026-05-18T00:00:00Z",
+  "overall_result": "PASS",
+  "method": "code_analysis_plus_partial_sandbox",
+  "sandbox_note": "Linux sandbox has known NTFS mount truncation in apps/monitor/config.py (7395 bytes, same issue as REVIEW-009c). G-2 ran in sandbox. G-1/G-3/G-4/G-5 verified via code analysis (line-number + pattern scan in sandbox). Windows execution recommended for full integration test.",
+  "webhook_env_configured": false,
+  "gates": [
+    {
+      "gate": "G-1",
+      "name": "dry_run exits before load_channel_secrets()",
+      "method": "code_analysis",
+      "dry_run_branch_line": 31,
+      "load_channel_secrets_call_line": 44,
+      "pass": true,
+      "note": "discord.py lines 31-42: if channel.dry_run returns ChannelResult immediately. load_channel_secrets() call at line 44 is never reached."
+    },
+    {
+      "gate": "G-2",
+      "name": "webhook URL redaction",
+      "method": "sandbox_executed",
+      "real_url_removed": true,
+      "discordapp_url_removed": true,
+      "redacted_marker_present": true,
+      "pass": true,
+      "note": "redaction.py regex pattern matches both discord.com and discordapp.com webhook URLs. Verified in sandbox."
+    },
+    {
+      "gate": "G-3",
+      "name": "no secret in ChannelResult output",
+      "method": "code_analysis",
+      "dry_run_return_fields": ["channel", "enabled", "dry_run", "test_send", "status", "detail", "delivered_count", "external_post_attempted", "endpoint"],
+      "endpoint_value": "https://discord.com/api/webhooks/<redacted>",
+      "webhook_url_in_output": false,
+      "external_post_attempted": false,
+      "pass": true,
+      "note": "discord.py lines 32-42: dry_run ChannelResult has no webhook_url field. endpoint is always redacted_discord_endpoint() constant."
+    },
+    {
+      "gate": "G-4",
+      "name": "safety scan: no order endpoint imports",
+      "method": "sandbox_pattern_scan",
+      "files_scanned": [
+        "scripts/validate_discord_webhook_dryrun.py",
+        "apps/forward_record/alerting.py",
+        "apps/monitor/channels/discord.py"
+      ],
+      "violations": [],
+      "pass": true
+    },
+    {
+      "gate": "G-5",
+      "name": "triple dry_run gate: force_dry_run + live_alerts=False",
+      "method": "code_analysis",
+      "gate_expression": "True if force_dry_run or not live_alerts else discord_channel.dry_run",
+      "gate_location": "alerting.py line 57",
+      "force_dry_run_default": true,
+      "live_alerts_default": false,
+      "result_with_defaults": true,
+      "pass": true,
+      "note": "With force_dry_run=True (default), short-circuit ensures alert_dry_run=True regardless of channel.dry_run value."
+    }
+  ],
+  "FORBIDDEN_live_trading": "NOT_ATTEMPTED",
+  "FORBIDDEN_discord_real_post": "NOT_ATTEMPTED",
+  "FORBIDDEN_live_alerts": "NOT_ATTEMPTED",
+  "clock_started": false,
+  "paper_execution_status": "FORBIDDEN",
+  "live_trading_status": "FORBIDDEN",
+  "secret_source_analysis": {
+    "mechanism": "env var MONITOR_DISCORD_WEBHOOK_URL or configs/monitor_secrets.local.yaml discord.webhook_url",
+    "secret_never_read_when_dry_run": true,
+    "secret_never_logged": true,
+    "secret_redacted_in_all_output_strings": true,
+    "config_field": "secrets_env_webhook_url in ChannelConfig"
+  },
+  "vps_config_instructions": {
+    "step_1": "Set env var: export MONITOR_DISCORD_WEBHOOK_URL='<real-webhook-url>'",
+    "step_2": "Confirm configs/monitor.yaml has dry_run: true for discord channel",
+    "step_3": "Run: python scripts/drill_forward_alerts.py --date <YYYYMMDD>",
+    "step_4": "Verify alert_log: dry_run=true, discord_results[*].status='DRY_RUN', external_post_attempted=false",
+    "step_5": "Do NOT set dry_run: false until Rick explicitly authorizes real alert send"
+  }
+}

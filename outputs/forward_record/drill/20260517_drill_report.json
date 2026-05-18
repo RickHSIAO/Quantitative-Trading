@@ -1,0 +1,504 @@
+{
+  "FORBIDDEN_bybit_write": "NOT_ATTEMPTED",
+  "FORBIDDEN_live_trading": "NOT_ATTEMPTED",
+  "FORBIDDEN_order_endpoint": "NOT_ATTEMPTED",
+  "FORBIDDEN_real_discord_post": "NOT_ATTEMPTED",
+  "clock_started": false,
+  "dedupe_scenario": {
+    "a2_not_deduped": true,
+    "a6_day1_triggered": true,
+    "a6_day2_suppressed": true,
+    "result": "PASS"
+  },
+  "discord_probe": {
+    "dry_run": true,
+    "external_post_attempted": false,
+    "live_alerts_used": false,
+    "preview_count": 1,
+    "sent_seen": false,
+    "statuses": [
+      "DRY_RUN"
+    ]
+  },
+  "discord_template_summary": {
+    "all_have_action_guidance": true,
+    "all_have_condition_id": true,
+    "all_have_raw_action": true,
+    "all_have_record_date": true,
+    "all_messages_nonempty": true,
+    "all_pass": true,
+    "no_placeholder_artifacts": true,
+    "no_placeholder_raw": true,
+    "severity_mapping_correct": true
+  },
+  "drill_date": "20260517",
+  "dry_run": true,
+  "external_post_attempted": false,
+  "live_alerts_used": false,
+  "live_trading_status": "FORBIDDEN",
+  "overall_result": "PASS",
+  "paper_execution_status": "FORBIDDEN",
+  "redaction_summary": {
+    "all_pass": true,
+    "violation_count": 0,
+    "violations": []
+  },
+  "run_ts": "2026-05-18T00:24:17Z",
+  "safety_scan": {
+    "status": "PASS",
+    "violations": []
+  },
+  "scenario_count": 13,
+  "scenarios": [
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-1",
+      "condition_name": "runner_missing_rows",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "Action required": true,
+          "FORWARD RECORD": true,
+          "Runner missing rows": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "missing_dates": [
+          "20260101",
+          "20260102"
+        ],
+        "row_counts": {
+          "20260101": null,
+          "20260102": null
+        }
+      },
+      "detail": "missing_or_empty_dates=['20260101', '20260102']; row_counts={'20260101': n/a, '20260102': n/a}",
+      "expected_triggered": true,
+      "message_preview": "S-A1 A-1 runner_missing_rows\nDate: 20260102\n[FORWARD RECORD] Runner missing rows\nDate: 20260102\nMissing: ['20260101', '20260102']\nAction required: Check VPS cron and runner log\nAction: check_vps_cron_and_runner_log",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A1",
+      "severity": "WARNING",
+      "triggered": true
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-1",
+      "condition_name": "runner_missing_rows",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "Runner missing rows": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "missing_dates": [],
+        "row_counts": {
+          "20260101": 1,
+          "20260102": 1
+        }
+      },
+      "detail": "missing_or_empty_dates=[]; row_counts={'20260101': 1, '20260102': 1}",
+      "expected_triggered": false,
+      "message_preview": "S-A1b A-1 runner_missing_rows\nDate: 20260102\n[FORWARD RECORD] Runner missing rows\nDate: 20260102\nMissing: []\nAction required: Check VPS cron and runner log\nAction: check_vps_cron_and_runner_log",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A1b",
+      "severity": "WARNING",
+      "triggered": false
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-2",
+      "condition_name": "stop_gate_hit",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "Do NOT restart automatically": true,
+          "S-2": true,
+          "STOP GATE": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "active_stop_gates": [
+          "S-2"
+        ]
+      },
+      "detail": "active_stop_gates=['S-2']",
+      "expected_triggered": true,
+      "message_preview": "S-A2 A-2 stop_gate_hit\nDate: 20260102\n[FORWARD RECORD] STOP GATE triggered\nDate: 20260102\nGates: ['S-2']\nAction required: Rick decision required. Do NOT restart automatically.\nAction: rick_decision_required_do_not_restart",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A2",
+      "severity": "CRITICAL",
+      "triggered": true
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-3",
+      "condition_name": "warning_gate_streak",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "3 days": true,
+          "W-1": true,
+          "Warning gate streak": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "by_date": {
+          "20260101": [
+            "W-1"
+          ],
+          "20260102": [
+            "W-1"
+          ],
+          "20260103": [
+            "W-1"
+          ]
+        },
+        "streak_days": 3,
+        "streak_gates": [
+          "W-1"
+        ]
+      },
+      "detail": "streak_days=3; streak_gates=['W-1']; by_date={'20260101': ['W-1'], '20260102': ['W-1'], '20260103': ['W-1']}",
+      "expected_triggered": true,
+      "message_preview": "S-A3 A-3 warning_gate_streak\nDate: 20260103\n[FORWARD RECORD] Warning gate streak\nDate: 20260103\nGates: ['W-1'] x 3 days\nAction: Monitor closely\nAction: monitor_warning_gate_streak",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A3",
+      "severity": "WARNING",
+      "triggered": true
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-3",
+      "condition_name": "warning_gate_streak",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "Warning gate streak": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "by_date": {
+          "20260101": [
+            "W-1"
+          ],
+          "20260102": [],
+          "20260103": [
+            "W-1"
+          ]
+        },
+        "streak_days": 3,
+        "streak_gates": []
+      },
+      "detail": "streak_days=3; streak_gates=[]; by_date={'20260101': ['W-1'], '20260102': [], '20260103': ['W-1']}",
+      "expected_triggered": false,
+      "message_preview": "S-A3b A-3 warning_gate_streak\nDate: 20260103\n[FORWARD RECORD] Warning gate streak\nDate: 20260103\nGates: [] x 3 days\nAction: Monitor closely\nAction: monitor_warning_gate_streak",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A3b",
+      "severity": "WARNING",
+      "triggered": false
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-4",
+      "condition_name": "primary_shadow_alpha_gap",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "Mean abs diff": true,
+          "Top divergent symbols": true,
+          "alpha gap exceeded": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "mean_abs_diff": 0.1,
+        "skipped": false,
+        "symbol_count": 2,
+        "threshold": 0.05,
+        "top_symbols": [
+          {
+            "abs_diff": 0.1,
+            "symbol": "S0"
+          },
+          {
+            "abs_diff": 0.1,
+            "symbol": "S1"
+          }
+        ],
+        "unmatched_primary": 0,
+        "unmatched_shadow": 0
+      },
+      "detail": "mean_abs_diff=0.1; threshold=0.05; matched=2",
+      "expected_triggered": true,
+      "message_preview": "S-A4 A-4 primary_shadow_alpha_gap\nDate: 20260102\n[FORWARD RECORD] Primary/shadow alpha gap exceeded\nDate: 20260102\nMean abs diff: 0.1 (threshold: 0.05)\nTop divergent symbols: [{'symbol': 'S0', 'abs_diff': 0.1}, {'symbol': 'S1', 'abs_diff': 0.1}]\nAction: review_shadow_track_output",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A4",
+      "severity": "WARNING",
+      "triggered": true
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-4",
+      "condition_name": "primary_shadow_alpha_gap",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "alpha gap": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "mean_abs_diff": null,
+        "skipped": true,
+        "symbol_count": 0,
+        "threshold": 0.05,
+        "top_symbols": [],
+        "unmatched_primary": 0,
+        "unmatched_shadow": 0
+      },
+      "detail": "skipped_no_shadow; threshold=0.05; matched=0",
+      "expected_triggered": false,
+      "message_preview": "S-A4b A-4 primary_shadow_alpha_gap\nDate: 20260102\n[FORWARD RECORD] Primary/shadow alpha gap exceeded\nDate: 20260102\nMean abs diff: n/a (threshold: 0.05)\nTop divergent symbols: []\nAction: review_shadow_track_output",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A4b",
+      "severity": "WARNING",
+      "triggered": false
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-5",
+      "condition_name": "data_source_failure",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "Check parquet cache": true,
+          "Data source failure": true,
+          "missing forward_stats": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "data_source": null,
+        "errors": [
+          "missing forward_stats: C:\\Users\\\u96ea\u72fc\u4e38\\AppData\\Local\\Temp\\task009d_alert_drill_avy7o4w_\\a5\\missing_forward_stats.json"
+        ]
+      },
+      "detail": "missing forward_stats: C:\\Users\\\u96ea\u72fc\u4e38\\AppData\\Local\\Temp\\task009d_alert_drill_avy7o4w_\\a5\\missing_forward_stats.json",
+      "expected_triggered": true,
+      "message_preview": "S-A5 A-5 data_source_failure\nDate: 20260102\n[FORWARD RECORD] Data source failure\nDate: 20260102\nError: missing forward_stats: C:\\Users\\\u96ea\u72fc\u4e38\\AppData\\Local\\Temp\\task009d_alert_drill_avy7o4w_\\a5\\missing_forward_stats.json\nAction: Check parquet cache and upstream data pipeline\nAction: check_parquet_cache_and_upstream_pipeline",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A5",
+      "severity": "CRITICAL",
+      "triggered": true
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-5",
+      "condition_name": "data_source_failure",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "Data source failure": true,
+          "data_source=FAILED": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "data_source": "FAILED",
+        "errors": [
+          "forward_stats data_source=FAILED"
+        ]
+      },
+      "detail": "forward_stats data_source=FAILED",
+      "expected_triggered": true,
+      "message_preview": "S-A5b A-5 data_source_failure\nDate: 20260102\n[FORWARD RECORD] Data source failure\nDate: 20260102\nError: forward_stats data_source=FAILED\nAction: Check parquet cache and upstream data pipeline\nAction: check_parquet_cache_and_upstream_pipeline",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A5b",
+      "severity": "CRITICAL",
+      "triggered": true
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-5",
+      "condition_name": "data_source_failure",
+      "content_checks": {
+        "forbidden_terms_absent": {},
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "data source readable": true
+        },
+        "severity_correct": true
+      },
+      "data": {
+        "data_source": "LIVE",
+        "errors": []
+      },
+      "detail": "data source readable",
+      "expected_triggered": false,
+      "message_preview": "S-A5c A-5 data_source_failure\nDate: 20260102\n[FORWARD RECORD] Data source readable\nDate: 20260102\nStatus: data source readable\nAction: Check parquet cache and upstream data pipeline\nAction: check_parquet_cache_and_upstream_pipeline",
+      "redaction_pass": true,
+      "result": "PASS",
+      "scenario_id": "S-A5c",
+      "severity": "CRITICAL",
+      "triggered": false
+    },
+    {
+      "action_guidance_present": true,
+      "condition_id": "A-6",
+      "condition_name": "review_006b_trigger_ready",
+      "content_checks": {
+        "forbidden_terms_absent": {
+          "live trading approved": true,
+          "paper execution approved": true
+        },
+        "has_action": true,
+        "has_condition_id": true,
+        "has_date": true,
+        "message_nonempty": true,
+        "no_placeholder": true,
+        "no_placeholder_raw": true,
+        "no_secret": true,
+        "raw_content": {
+          "has_action_in_raw": true,
+          "has_condition_id_in_raw": false,
+          "has_date_in_raw": true
+        },
+        "required_terms": {
+          "Informational only": true,
+          "REVIEW-006b trigger conditions met": true
+        },
+        "severity_correc

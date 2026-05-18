@@ -1,0 +1,25 @@
+{
+  "active_stop_gates": [],
+  "active_warning_gates": [],
+  "clock_paused": false,
+  "days_elapsed": 0,
+  "days_required": 30,
+  "gate_status": {
+    "max_dd_pass": true,
+    "no_stop_gate_triggered": true,
+    "overlay_always_pass": true,
+    "sharpe_pass": null
+  },
+  "latest_date": "20260518",
+  "live_trading_status": "FORBIDDEN",
+  "max_dd_pct": 0.0,
+  "paper_execution_status": "FORBIDDEN",
+  "pause_reason": null,
+  "review_006b_trigger_ready": false,
+  "runner_version": "task009_v1.0",
+  "sharpe_cumulative": null,
+  "sharpe_rolling_30d": null,
+  "start_date": null,
+  "strategy": "prev3y_crypto_combined_paper_safe_variant",
+  "tracking_error_vs_baseline_30d": null
+}

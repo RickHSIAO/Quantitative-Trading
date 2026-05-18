@@ -1,0 +1,19 @@
+{
+  "date": "20260518",
+  "live_trading_status": "FORBIDDEN",
+  "overlay_events": [],
+  "overlay_pass": true,
+  "paper_execution_status": "FORBIDDEN",
+  "rule1_long_cap_50pct": {
+    "triggered": false
+  },
+  "rule2_symbol_cap_5pct": {
+    "capped_symbols": [],
+    "triggered": false
+  },
+  "rule3_funding_filter_0.03pct_8h": {
+    "filtered_symbols": [],
+    "triggered": false
+  },
+  "variant": "combined_paper_safe_variant"
+}
