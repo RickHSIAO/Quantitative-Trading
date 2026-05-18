@@ -80,13 +80,18 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 | Dry-run test | python3 scripts/send_forward_discord_summary.py --dry-run |
 | Live send test | MONITOR_DISCORD_WEBHOOK_URL=<url> python3 scripts/send_forward_discord_summary.py |
 
-## TASK-007C Pending (days_completed counter fix)
+## TASK-007C Filter Dashboard Days Before Clock Start
 
 | item | status |
 |---|---|
-| Issue | dashboard days_completed includes pre-clock-start outputs (e.g. 20260517 shadow drill) |
-| Fix needed | filter collect_days() to date >= CLOCK_START (20260518) in build_forward_validation_dashboard.py |
-| Status | PENDING — not implemented per Rick's instruction (separate task) |
+| collect_days() date filter | DONE (skip date < CLOCK_START) |
+| skipped_pre_clock_start_count | DONE (printed + shown in MD + HTML KPI card) |
+| days_completed | FIXED: 2 → 1 (only 20260518+) |
+| days_remaining | FIXED: 28 → 29 |
+| 20260517 excluded from Daily Log | CONFIRMED |
+| 20260517 raw data on disk | PRESERVED (not deleted) |
+| Discord dry-run post-fix | PASS |
+| py_compile | PASS |
 ## VPS One-time Setup (Rick action required)
 
 On instance-20260506-0945:

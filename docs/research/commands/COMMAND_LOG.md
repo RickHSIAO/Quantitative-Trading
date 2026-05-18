@@ -21,6 +21,42 @@ Notes:
 
 ---
 
+### 2026-05-18（TASK-007C — Filter Dashboard Days Before Clock Start）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（TASK-007C Filter Dashboard Days Before Clock Start）
+Task: Fix collect_days() in build_forward_validation_dashboard.py to exclude date < CLOCK_START.
+      20260517 shadow drill output was polluting the official 30-day validation statistics.
+Status before: days_completed=2 (included 20260517 pre-clock shadow drill)
+Status after:  days_completed=1 (only 20260518+; skipped_pre_clock_start_count=1)
+
+Files changed:
+  scripts/build_forward_validation_dashboard.py  -- TASK-007C filter + skipped_count
+
+Changes in build_forward_validation_dashboard.py:
+  collect_days(): return type -> tuple[list[dict], int]; skips date < CLOCK_START; counts skipped
+  write_md_summary(): added skipped param; shows skipped_pre_clock_start in clock table
+  write_html(): added skipped param; added Pre-Clock Skipped KPI card
+  main(): unpacks (rows, skipped_pre_clock); passes skipped to write_* functions
+
+Validation (5/5 PASS):
+  1. py_compile: PASS
+  2. run builder: collected 1 day(s), skipped_pre_clock_start_count=1, exit 0
+  3. CSV: 1 row (date=20260518 only); 20260517 absent
+  4. MD: days_completed=1, days_remaining=29, 20260517 absent, skipped_pre_clock_start=1
+  5. Discord dry-run: DISCORD_NOTIFY=DRY_RUN, days_remaining=29, No live orders confirmed
+
+Raw data preserved:
+  outputs/forward_record/prev3y_crypto/20260517_* -- NOT deleted (4 files intact)
+  Filter is dashboard-only; raw artifacts on disk are untouched.
+
+Safety invariants:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+  order_endpoint_called=False  bybit_write_called=False
+  main.py NOT modified  strategy core NOT modified
+
+---
+
 ### 2026-05-18（TASK-008 — Daily Discord Forward Validation Summary）
 
 Agent: Claude Sonnet

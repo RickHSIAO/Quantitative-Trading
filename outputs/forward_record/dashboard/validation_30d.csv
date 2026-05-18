@@ -1,3 +1,2 @@
 date,day_elapsed,day_number,runner_status,data_source,safety_scan,dry_run,paper_execution_status,live_trading_status,FORBIDDEN_order_endpoint,FORBIDDEN_bybit_write,signal_count,n_longs,n_shorts,daily_pnl_pct,cumulative_pnl_pct,nav_usd,current_dd_pct,max_dd_pct,sharpe_cumulative,calmar_ratio,active_warning_gates,active_stop_gates,overlay_pass,review_006b_ready,alerts_triggered,alert_dry_run
 20260518,0,0,REVIEW_READY,cache_fallback,PASS,True,FORBIDDEN,FORBIDDEN,NOT_ATTEMPTED,NOT_ATTEMPTED,50,25,25,0.0,0.0,10000.0,0.0,0.0,,,[],[],True,False,0,True
-20260517,N/A,N/A,REVIEW_READY,N/A,PASS,True,FORBIDDEN,FORBIDDEN,NOT_ATTEMPTED,NOT_ATTEMPTED,,,,,,,,,,,[],[],N/A,False,0,True

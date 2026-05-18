@@ -98,17 +98,27 @@ def _days_since(yyyymmdd: str) -> int:
 # Data collection
 # ---------------------------------------------------------------------------
 
-def collect_days(lookback: int = 30) -> list[dict[str, Any]]:
+def collect_days(lookback: int = 30) -> tuple[list[dict[str, Any]], int]:
     """
-    Scan FORWARD_DIR for dated forward_stats files, up to `lookback` most recent.
-    Returns list of row dicts, newest-first.
+    Scan FORWARD_DIR for dated forward_stats files, date >= CLOCK_START only.
+    TASK-007C: dates before CLOCK_START (pre-clock shadow/drill outputs) are skipped.
+    Returns (rows newest-first, skipped_pre_clock_start_count).
     """
     stat_files = sorted(FORWARD_DIR.glob("*_forward_stats.json"), reverse=True)
     rows: list[dict[str, Any]] = []
+    skipped_pre_clock: int = 0
 
-    for stat_path in stat_files[:lookback]:
+    for stat_path in stat_files:
         stem = stat_path.stem                              # e.g. 20260518_forward_stats
         date = stem.split("_")[0]                          # 20260518
+
+        # TASK-007C: skip any output produced before the official 30-day clock start
+        if date < CLOCK_START:
+            skipped_pre_clock += 1
+            continue
+
+        if len(rows) >= lookback:
+            break
 
         stats   = _read_json(stat_path)
         pnl     = _read_json(FORWARD_DIR / f"{date}_pnl.json")
@@ -169,7 +179,7 @@ def collect_days(lookback: int = 30) -> list[dict[str, Any]]:
         }
         rows.append(row)
 
-    return rows
+    return rows, skipped_pre_clock
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +212,7 @@ def write_csv(rows: list[dict], path: Path) -> None:
 # Markdown summary
 # ---------------------------------------------------------------------------
 
-def write_md_summary(rows: list[dict], summary_json: dict, path: Path) -> None:
+def write_md_summary(rows: list[dict], summary_json: dict, path: Path, skipped: int = 0) -> None:
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     latest = rows[0] if rows else {}
     n_days = len(rows)
@@ -220,6 +230,7 @@ Generated: {now_utc}
 | start_date | {CLOCK_START} |
 | days_completed | {n_days} |
 | days_remaining | {max(0, 30 - n_days)} |
+| skipped_pre_clock_start | {summary_json.get("skipped_pre_clock_start_count", skipped)} |
 | target_end | 20260617 |
 | strategy | {STRATEGY} |
 | validation_mode | forward-record / dry-run only |
@@ -310,7 +321,7 @@ def _gate_badge(value: Any) -> str:
     )
 
 
-def write_html(rows: list[dict], summary_json: dict, path: Path) -> None:
+def write_html(rows: list[dict], summary_json: dict, path: Path, skipped: int = 0) -> None:
     now_utc  = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     n_days   = len(rows)
     latest   = rows[0] if rows else {}
@@ -397,6 +408,11 @@ def write_html(rows: list[dict], summary_json: dict, path: Path) -> None:
       <div class="card-label">Days OK</div>
       <div class="card-value" style="color:#22c55e">{days_ok}</div>
       <div class="card-sub">REVIEW_READY / DRY_RUN</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Pre-Clock Skipped</div>
+      <div class="card-value" style="color:#6b7280">{skipped}</div>
+      <div class="card-sub">excluded (before {CLOCK_START})</div>
     </div>
     <div class="card">
       <div class="card-label">Latest Status</div>
@@ -514,8 +530,8 @@ def main() -> int:
     safety_self_check()
 
     # Step 2: collect data (read-only)
-    rows = collect_days(lookback=30)
-    print(f"  collected {len(rows)} day(s)")
+    rows, skipped_pre_clock = collect_days(lookback=30)
+    print(f"  collected {len(rows)} day(s)  (skipped_pre_clock_start_count={skipped_pre_clock})")
     if not rows:
         print("  WARNING: no forward record data found — writing empty dashboard")
 
@@ -525,8 +541,8 @@ def main() -> int:
     print("  writing outputs...")
     DASHBOARD.mkdir(parents=True, exist_ok=True)
     write_csv(rows, DASHBOARD / "validation_30d.csv")
-    write_md_summary(rows, summary_json, DASHBOARD / "latest_summary.md")
-    write_html(rows, summary_json, DASHBOARD / "index.html")
+    write_md_summary(rows, summary_json, DASHBOARD / "latest_summary.md", skipped=skipped_pre_clock)
+    write_html(rows, summary_json, DASHBOARD / "index.html", skipped=skipped_pre_clock)
 
     # Step 4: confirm safety gates unchanged
     print()

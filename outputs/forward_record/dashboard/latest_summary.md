@@ -1,14 +1,15 @@
 # 30-Day Forward Validation — Dashboard Summary
 
-Generated: 2026-05-18T13:52:06Z
+Generated: 2026-05-18T14:33:44Z
 
 ## Clock
 
 | field | value |
 |---|---|
 | start_date | 20260518 |
-| days_completed | 2 |
-| days_remaining | 28 |
+| days_completed | 1 |
+| days_remaining | 29 |
+| skipped_pre_clock_start | 1 |
 | target_end | 20260617 |
 | strategy | prev3y_crypto / combined_paper_safe_variant |
 | validation_mode | forward-record / dry-run only |
@@ -40,11 +41,11 @@ Generated: 2026-05-18T13:52:06Z
 | alerts_triggered | 0.0 |
 | review_006b_ready | False |
 
-## Run Summary (2 days)
+## Run Summary (1 days)
 
 | metric | value |
 |---|---|
-| days_ok (REVIEW_READY/DRY_RUN) | 2 |
+| days_ok (REVIEW_READY/DRY_RUN) | 1 |
 | days_error | 0 |
 | forward_summary_status | {'max_dd_pass': True, 'no_stop_gate_triggered': True, 'overlay_always_pass': True, 'sharpe_pass': None} |
 
@@ -53,4 +54,3 @@ Generated: 2026-05-18T13:52:06Z
 | date | status | signals | daily_pnl | cum_pnl | max_dd | alerts |
 |---|---|---|---|---|---|---|
 | 20260518 | REVIEW_READY | 50.0 | 0.0000% | 0.0000% | 0.0000% | 0.0 |
-| 20260517 | REVIEW_READY | N/A | N/A | N/A | N/A | 0.0 |
