@@ -21,6 +21,40 @@ Notes:
 
 ---
 
+### 2026-05-18（VPS daily runner setup — cron 10:10 UTC）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（set up VPS daily runner for Days 2-30）
+Task: Create safe daily runner script + cron installer for 30-day forward validation。Verify idempotency and safety guards。
+Status before: Day 1 complete; no daily automation in place
+Status after: runner scripts created + verified; cron install pending on VPS (Rick action)
+Scripts created:
+  scripts/run_forward_record_daily.sh    -- daily runner (bash -n OK; --dry-run guard; Taipei date)
+  scripts/install_cron_daily_runner.sh   -- one-time cron installer for VPS
+Cron schedule: 10 10 * * *  (10:10 UTC = 18:10 Asia/Taipei, daily)
+Validation:
+  1. date computation: date_taipei=20260518 format=OK
+  2. log dir creation: outputs/forward_record/daily_logs/ EXISTS
+  3. safety guard: --dry-run detection PASS; missing-flag detection PASS
+  4. forward record re-run: REVIEW_READY (idempotent)
+  5. idempotency: positions/forward_stats/pnl checksums SAME before+after
+VPS one-time setup (Rick must run):
+  cd ~/quant && git pull && bash scripts/install_cron_daily_runner.sh && crontab -l
+Next run: 2026-05-19 10:10 UTC / 18:10 CST (Day 2)
+Safety gates:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+  external_post_attempted=False  bybit_connection=NOT_ATTEMPTED
+  dry_run=True  --dry-run guard aborts script if flag removed
+Files changed:
+- scripts/run_forward_record_daily.sh (NEW)
+- scripts/install_cron_daily_runner.sh (NEW)
+- outputs/forward_record/daily_logs/.gitkeep (NEW)
+- docs/research/commands/VPS_DAILY_RUNNER.md (NEW)
+- docs/research/commands/NEXT_ACTION.md (VPS runner status)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+
+---
+
 ### 2026-05-18（30-day forward validation clock — STARTED）
 
 Agent: Claude Sonnet
