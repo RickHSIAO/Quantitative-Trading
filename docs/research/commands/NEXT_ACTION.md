@@ -92,6 +92,20 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 | 20260517 raw data on disk | PRESERVED (not deleted) |
 | Discord dry-run post-fix | PASS |
 | py_compile | PASS |
+
+## TASK-008B Chinese Discord Summary Status
+
+| item | status |
+|---|---|
+| scripts/send_forward_discord_summary.py | UPDATED — 繁體中文 + 第 N / 30 天 |
+| _human_day() | DONE (20260518 -> 第 1 / 30 天) |
+| _days_remaining() | DONE (pre-clock -> N/A) |
+| Discord message language | 繁體中文 |
+| machine-readable values preserved | CONFIRMED (FORBIDDEN, REVIEW_READY, True) |
+| WEBHOOK_ENV | MONITOR_DISCORD_WEBHOOK_URL (unchanged) |
+| py_compile | PASS |
+| dry-run preview | PASS (第 1 / 30 天, 剩餘 29 天) |
+| day count test cases | 4/4 PASS |
 ## VPS One-time Setup (Rick action required)
 
 On instance-20260506-0945:

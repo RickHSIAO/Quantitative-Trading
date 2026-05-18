@@ -1,9 +1,9 @@
 """
 send_forward_discord_summary.py
-TASK-008: Daily Discord Forward Validation Summary
+TASK-008 / TASK-008B: Daily Discord Forward Validation Summary (繁體中文)
 
 Reads outputs/forward_record/dashboard/validation_30d.csv (newest row = today)
-and sends a concise summary to Discord via MONITOR_DISCORD_WEBHOOK_URL.
+and sends a Chinese-language summary to Discord via MONITOR_DISCORD_WEBHOOK_URL.
 
 Usage:
   python3 scripts/send_forward_discord_summary.py            # live send
@@ -63,6 +63,8 @@ SAFETY = {
 DASHBOARD   = ROOT / "outputs" / "forward_record" / "dashboard"
 CSV_PATH    = DASHBOARD / "validation_30d.csv"
 CLOCK_START = "20260518"
+TARGET_END  = "20260617"
+TOTAL_DAYS  = 30
 
 # Webhook env var -- consistent with existing monitor infrastructure
 WEBHOOK_ENV = "MONITOR_DISCORD_WEBHOOK_URL"
@@ -124,7 +126,42 @@ def _fmt_pct(v: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Message formatting
+# Day count helper (TASK-008B)
+# ---------------------------------------------------------------------------
+
+def _human_day(date: str) -> str:
+    """
+    Convert YYYYMMDD to human-friendly day label.
+    CLOCK_START (20260518) -> "第 1 / 30 天"
+    CLOCK_START+1 day      -> "第 2 / 30 天"
+    Before CLOCK_START     -> "N/A (clock start 前)"
+    """
+    try:
+        d_run   = datetime.strptime(date,        "%Y%m%d").replace(tzinfo=timezone.utc)
+        d_start = datetime.strptime(CLOCK_START, "%Y%m%d").replace(tzinfo=timezone.utc)
+        delta = (d_run - d_start).days
+        if delta < 0:
+            return "N/A (clock start 前)"
+        return f"第 {delta + 1} / {TOTAL_DAYS} 天"
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+def _days_remaining(date: str) -> str:
+    """Remaining days in 30-day clock after the given date."""
+    try:
+        d_run   = datetime.strptime(date,        "%Y%m%d").replace(tzinfo=timezone.utc)
+        d_start = datetime.strptime(CLOCK_START, "%Y%m%d").replace(tzinfo=timezone.utc)
+        delta   = (d_run - d_start).days
+        if delta < 0:
+            return "N/A"
+        return str(max(0, TOTAL_DAYS - (delta + 1)))
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+# ---------------------------------------------------------------------------
+# Message formatting (繁體中文, TASK-008B)
 # ---------------------------------------------------------------------------
 
 DIVIDER = "─" * 36
@@ -137,48 +174,43 @@ def build_discord_message(row: dict[str, str]) -> str:
     data_src     = row.get("data_source", "N/A")
     paper_status = row.get("paper_execution_status", "FORBIDDEN")
     live_status  = row.get("live_trading_status",    "FORBIDDEN")
+    dry_run_val  = _na(row.get("dry_run", "True"))
     signals      = _na(row.get("signal_count", ""))
     daily_pnl    = _fmt_pct(row.get("daily_pnl_pct", ""))
     cum_pnl      = _fmt_pct(row.get("cumulative_pnl_pct", ""))
     max_dd       = _fmt_pct(row.get("max_dd_pct", ""))
-    day_elapsed  = _na(row.get("day_elapsed", ""))
+    day_label    = _human_day(date)
+    remaining    = _days_remaining(date)
 
-    days_remaining_approx = "N/A"
-    try:
-        elapsed = int(float(row.get("day_elapsed", "")))
-        days_remaining_approx = str(max(0, 30 - elapsed - 1))
-    except (ValueError, TypeError):
-        pass
-
-    lines = [
-        "\U0001f4ca **30-Day Forward Validation — Daily Summary**",
-        "Strategy: `prev3y_crypto / combined_paper_safe_variant`",
+    parts = [
+        "📊 **30 天正式驗證 — 每日摘要**",
+        f"策略：`prev3y_crypto / combined_paper_safe_variant`",
         DIVIDER,
-        f"**Date:** {date}  |  **Day:** {day_elapsed}",
-        f"**Status:** {status}",
-        f"**Data Source:** {data_src}",
+        f"**日期：** {date}　｜　**進度：** {day_label}",
+        f"**執行狀態：** `{status}`",
+        f"**資料來源：** `{data_src}`",
         DIVIDER,
-        "\U0001f512 **Safety Gates**",
-        f"  paper_execution_status: `{paper_status}`",
-        f"  live_trading_status: `{live_status}`",
-        f"  FORBIDDEN_order_endpoint: `{_na(row.get('FORBIDDEN_order_endpoint','NOT_ATTEMPTED'))}`",
-        f"  FORBIDDEN_bybit_write: `{_na(row.get('FORBIDDEN_bybit_write','NOT_ATTEMPTED'))}`",
-        f"  dry_run: `{_na(row.get('dry_run','True'))}`",
+        "🔒 **安全闘門**（machine-readable 原始値）",
+        f"  paper_execution_status：`{paper_status}`",
+        f"  live_trading_status：`{live_status}`",
+        f"  FORBIDDEN_order_endpoint：`{_na(row.get('FORBIDDEN_order_endpoint','NOT_ATTEMPTED'))}`",
+        f"  FORBIDDEN_bybit_write：`{_na(row.get('FORBIDDEN_bybit_write','NOT_ATTEMPTED'))}`",
+        f"  dry_run：`{dry_run_val}`",
         DIVIDER,
-        "\U0001f4c8 **Performance (dry-run / paper only)**",
-        f"  Signal count: {signals}",
-        f"  Daily PnL: {daily_pnl}",
-        f"  Cumulative PnL: {cum_pnl}",
-        f"  Max Drawdown: {max_dd}",
+        "📈 **績效（dry-run / paper 模擬，非真實損益）**",
+        f"  信號數：{signals}",
+        f"  當日 PnL：{daily_pnl}",
+        f"  累計 PnL：{cum_pnl}",
+        f"  最大回撤：{max_dd}",
         DIVIDER,
-        "\U0001f4c5 **Clock**",
-        f"  Start: {CLOCK_START}  |  Target end: 20260617",
-        f"  Day elapsed: {day_elapsed}  |  Days remaining: {days_remaining_approx}",
+        "📅 **驗證時鐘**",
+        f"  開始日期：{CLOCK_START}　｜　目標結束：{TARGET_END}",
+        f"  今日進度：{day_label}　｜　剩餘天數：{remaining} 天",
         DIVIDER,
-        "⚠️ **No live orders were sent. This is a dry-run / paper record only.**",
-        f"Generated: {now_utc}",
+        "⚠️ **未送出任何真實訂單。這只是 dry-run / paper record。**",
+        f"產生時間（UTC）：{now_utc}",
     ]
-    return "\n".join(lines)
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +251,8 @@ def main() -> int:
         print("  DISCORD_NOTIFY=SKIP (no data)")
         return 0
 
-    print(f"  latest row: date={row.get('date','?')} status={row.get('runner_status','?')}")
+    print(f"  latest row: date={row.get('date','?')}")
+    print(f"  day label:  {_human_day(row.get('date',''))}")
 
     # Step 3: build message
     message = build_discord_message(row)

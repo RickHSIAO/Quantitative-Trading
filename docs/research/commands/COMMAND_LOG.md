@@ -21,6 +21,38 @@ Notes:
 
 ---
 
+### 2026-05-18（TASK-008B — Chinese Discord Summary + Human-Friendly Day Count）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（TASK-008B Chinese Discord Summary + Human-Friendly Day Count）
+Task: Rewrite Discord message in Traditional Chinese; replace Day 0 with 第 N / 30 天 display.
+Status before: Discord message in English, Day 0 shown (not intuitive)
+Status after:  Discord message in 繁體中文, 第 1 / 30 天 shown for CLOCK_START
+
+Files changed:
+  scripts/send_forward_discord_summary.py  -- Chinese message + _human_day() + _days_remaining()
+
+Key changes:
+  _human_day(date):      CLOCK_START -> "第 1 / 30 天"; CLOCK_START+1 -> "第 2 / 30 天"; pre-clock -> "N/A (clock start 前)"
+  _days_remaining(date): CLOCK_START -> "29"; pre-clock -> "N/A"
+  build_discord_message(): fully rewritten in 繁體中文
+  machine-readable values preserved: FORBIDDEN, REVIEW_READY, NOT_ATTEMPTED, True unchanged
+
+Validation (4/4 PASS):
+  1. py_compile: PASS
+  2. day count cases (20260518/19, 20260617, 20260517): ALL PASS
+  3. --dry-run: 中文訊息顯示正確，第 1 / 30 天，剩餘 29 天
+  4. DISCORD_NOTIFY=SKIP (no webhook): PASS exit 0
+  5. bash -n run_forward_record_daily.sh: PASS
+
+Safety invariants:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+  order_endpoint_called=False  bybit_write_called=False
+  WEBHOOK_ENV=MONITOR_DISCORD_WEBHOOK_URL (unchanged)
+  main.py NOT modified  strategy core NOT modified
+
+---
+
 ### 2026-05-18（TASK-007C — Filter Dashboard Days Before Clock Start）
 
 Agent: Claude Sonnet
