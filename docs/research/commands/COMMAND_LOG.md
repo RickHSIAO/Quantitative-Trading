@@ -21,6 +21,42 @@ Notes:
 
 ---
 
+### 2026-05-18（TASK-007 — 30-Day Forward Validation Dashboard）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（建立 TASK-007 30-Day Forward Validation Dashboard）
+Task: Build read-only static dashboard that scans outputs/forward_record/ daily artifacts and produces HTML/MD/CSV outputs.
+Status before: TASK-007 pending; no dashboard existed
+Status after: TASK-007 DONE; dashboard built and committed
+Scripts created:
+  scripts/build_forward_validation_dashboard.py  -- dashboard builder (new)
+Dashboard outputs:
+  outputs/forward_record/dashboard/index.html         (7343B — KPI cards, safety box, daily table)
+  outputs/forward_record/dashboard/latest_summary.md  (1462B — markdown summary)
+  outputs/forward_record/dashboard/validation_30d.csv (27 fields, 2 rows — Day 1 + shadow)
+Validation:
+  py_compile: OK (543L, 21488B, 0 null bytes)
+  safety_self_check: PASS (no forbidden imports)
+  run output: collected 2 day(s), exit 0
+  safety gates post-run: paper_execution_status=FORBIDDEN live_trading_status=FORBIDDEN
+                         order_endpoint_called=False bybit_write_called=False
+Safety invariants:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+  order_endpoint_called=False  bybit_write_called=False
+  Script reads ONLY from outputs/forward_record/ (no writes to strategy/position files)
+  No order endpoint imports (safety_self_check regex scan PASS)
+  main.py live logic NOT modified
+Files changed:
+- scripts/build_forward_validation_dashboard.py (NEW)
+- outputs/forward_record/dashboard/index.html (NEW)
+- outputs/forward_record/dashboard/latest_summary.md (NEW)
+- outputs/forward_record/dashboard/validation_30d.csv (NEW)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+- docs/research/commands/NEXT_ACTION.md (TASK-007 DONE)
+How to run: python3 scripts/build_forward_validation_dashboard.py
+
+---
+
 ### 2026-05-18（VPS daily runner setup — cron 10:10 UTC）
 
 Agent: Claude Sonnet

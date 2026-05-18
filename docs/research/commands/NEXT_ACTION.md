@@ -37,6 +37,19 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 | docs/research/commands/VPS_DAILY_RUNNER.md | CREATED |
 | cron installed on VPS | PENDING（Rick must run install_cron_daily_runner.sh on VPS） |
 
+
+## TASK-007 Dashboard Status
+
+| item | status |
+|---|---|
+| scripts/build_forward_validation_dashboard.py | DONE (py_compile OK, run OK) |
+| outputs/forward_record/dashboard/index.html | DONE (7343B) |
+| outputs/forward_record/dashboard/latest_summary.md | DONE (1462B) |
+| outputs/forward_record/dashboard/validation_30d.csv | DONE (2 rows) |
+| safety_self_check | PASS |
+| order endpoint called | False |
+| How to run | python3 scripts/build_forward_validation_dashboard.py |
+
 ## VPS One-time Setup (Rick action required)
 
 On instance-20260506-0945:
