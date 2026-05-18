@@ -1,0 +1,49 @@
+{
+  "active_stop_gates": [],
+  "active_warning_gates": [],
+  "clock_started": false,
+  "dry_run": true,
+  "live_trading_status": "FORBIDDEN",
+  "output_date": "20260517",
+  "outputs": {
+    "log": "outputs\\logs\\prev3y_crypto\\20260517_forward_record.log",
+    "primary": {
+      "forward_stats": "outputs\\forward_record\\prev3y_crypto\\20260517_forward_stats.json",
+      "forward_summary": "outputs\\forward_record\\prev3y_crypto\\forward_summary.json",
+      "overlay_check": "outputs\\forward_record\\prev3y_crypto\\20260517_overlay_check.json",
+      "pnl": "outputs\\forward_record\\prev3y_crypto\\20260517_pnl.json",
+      "positions": "outputs\\forward_record\\prev3y_crypto\\20260517_positions.parquet"
+    },
+    "shadow": {
+      "forward_stats": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\20260517_forward_stats.json",
+      "forward_summary": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\forward_summary.json",
+      "overlay_check": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\20260517_overlay_check.json",
+      "pnl": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\20260517_pnl.json",
+      "positions": "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12\\20260517_positions.parquet"
+    }
+  },
+  "paper_execution_status": "FORBIDDEN",
+  "primary_generated": true,
+  "primary_variant": "combined_paper_safe_variant",
+  "review_006b_trigger_ready": false,
+  "runner_version": "task009_v1.0",
+  "safety_scan": {
+    "endpoint_scan": {
+      "status": "PASS",
+      "violations": []
+    },
+    "forbidden_flags": {
+      "outputs\\forward_record\\prev3y_crypto": true,
+      "outputs\\forward_record\\prev3y_crypto_shadow_a_roll12": true
+    },
+    "secret_scan": {
+      "status": "PASS",
+      "violations": []
+    },
+    "status": "PASS"
+  },
+  "shadow_generated": true,
+  "shadow_variant": "A_roll12_share20_exclude",
+  "status": "REVIEW_READY",
+  "task": "TASK-009"
+}

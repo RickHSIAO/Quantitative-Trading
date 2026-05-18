@@ -149,3 +149,5 @@
 - NOTE: current missing required files = none.
 - NOTE: if either parquet input is missing or schema-invalid in a future run, TASK-001 must be marked `BLOCKED_BY_DATA`; do not generate random/simulated/synthetic data and do not run a baseline.
 - NOTE: data acquisition path = real daily OHLCV source for `prices_daily.parquet` plus real point-in-time membership source for `universe_membership.parquet`; see `docs/research/DATA_REQUIREMENTS_PREV3Y.md`.
+- NOTE: 2026-05-14 final baseline = `20260513_run008`; final review = PASS; TASK-001 is closed as DONE.
+- NOTE: next tasks after TASK-001 closure = TASK-002 funding/cost stress and TASK-003 baseline attribution.

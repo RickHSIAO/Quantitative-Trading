@@ -1,0 +1,273 @@
+{
+  "analysis_basis": "TASK-007b post-processing weight-cap redistribution overlay study, not a trading decision",
+  "gate_results": {
+    "baseline_reconciliation": {
+      "gross_vs_run008_max_diff": 1.0495077029659683e-16,
+      "gross_vs_task007_max_diff": 9.974659986866641e-17,
+      "net_vs_task002_realistic_combo_max_diff": 2.0469737016526324e-16,
+      "net_vs_task007_max_diff": 9.974659986866641e-17
+    },
+    "fail_gates": {
+      "baseline_reconciliation_mismatch": {
+        "details": {
+          "gross_vs_run008_max_diff": 1.0495077029659683e-16,
+          "gross_vs_task007_max_diff": 9.974659986866641e-17,
+          "net_vs_task002_realistic_combo_max_diff": 2.0469737016526324e-16,
+          "net_vs_task007_max_diff": 9.974659986866641e-17
+        },
+        "threshold": 1e-06,
+        "triggered": false,
+        "value": 2.0469737016526324e-16
+      },
+      "missing_outputs": {
+        "missing": [],
+        "triggered": false
+      },
+      "paper_live_execution_code": {
+        "details": {
+          "forbidden_matches": [],
+          "real_or_paper_execution_code_detected": false,
+          "scanned_paths": [
+            "src\\variants\\task007b.py",
+            "scripts\\task007b_weight_cap_redistribution.py"
+          ]
+        },
+        "triggered": false
+      },
+      "redistribution_overflow": {
+        "details": {
+          "max_overflow_amount": 0.0,
+          "overflow_rows": 0,
+          "sample": []
+        },
+        "threshold": 1e-06,
+        "triggered": false,
+        "value": 0.0
+      },
+      "schema_mismatch": {
+        "errors": [],
+        "triggered": false
+      }
+    },
+    "paper_live_execution_scan": {
+      "forbidden_matches": [],
+      "real_or_paper_execution_code_detected": false,
+      "scanned_paths": [
+        "src\\variants\\task007b.py",
+        "scripts\\task007b_weight_cap_redistribution.py"
+      ]
+    },
+    "redistribution_overflow": {
+      "max_overflow_amount": 0.0,
+      "overflow_rows": 0,
+      "sample": []
+    },
+    "reproducibility_hash": "f5c962e11189cc4f91dedbc50b00456830d1fdc6e868c1638ad6b3e3e4db07b7",
+    "warning_gates": {
+      "alpha_retention_below_threshold": {
+        "description": "cap variants retaining less than 70% of baseline net alpha",
+        "threshold": 0.7,
+        "triggered": false,
+        "values": {}
+      },
+      "cap10_sharpe_drop": {
+        "description": "cap=10% Sharpe drop vs baseline exceeds 30%",
+        "threshold": 0.3,
+        "triggered": false,
+        "value": 0.0647764826908815
+      },
+      "concentration_not_reduced_cap15": {
+        "description": "cap=15% top5 concentration remains above 70%",
+        "threshold": 0.7,
+        "triggered": true,
+        "value": 0.9555841694899185
+      },
+      "redistribution_has_no_room": {
+        "description": "same-side redistribution had no eligible room and gross exposure was reduced",
+        "threshold": 0,
+        "triggered": true,
+        "value": 488
+      },
+      "single_symbol_concentration_above_threshold": {
+        "description": "cap variants with single-symbol concentration above 25%",
+        "threshold": 0.25,
+        "triggered": true,
+        "values": {
+          "cap_15pct": 0.25453623476808096,
+          "cap_20pct": 0.25453623476808096
+        }
+      },
+      "top5_concentration_above_threshold": {
+        "description": "cap variants with top5 concentration above 70%",
+        "threshold": 0.7,
+        "triggered": true,
+        "values": {
+          "cap_10pct": 0.986903079531406,
+          "cap_15pct": 0.9555841694899185,
+          "cap_20pct": 0.9555841694899185
+        }
+      }
+    }
+  },
+  "git_commit": "c44e12e54fde5a46ce0f0f1d53f5deabc92022f4",
+  "key_numbers": [
+    {
+      "alpha_retention_pct": 1.0,
+      "cap_level": null,
+      "gross_alpha": 0.2958303702519035,
+      "gross_reduction": 0.0,
+      "ir_vs_btc_active": -0.027270136895207235,
+      "ir_vs_cash_active": 0.8918383335973169,
+      "ir_vs_equal_weight_active": 0.7168297988967604,
+      "long_net_contribution": -0.0500936861537534,
+      "max_dd": -0.19639391054316346,
+      "max_symbol_weight_pct_of_new_gross": 0.125,
+      "max_symbol_weight_pct_of_original_gross": 0.125,
+      "net_alpha": 0.285325552778563,
+      "redistribution_has_no_room_events": 0.0,
+      "sharpe_active": 0.8918383335973169,
+      "short_net_contribution": 0.33562923893231644,
+      "single_symbol_concentration_net_alpha_total": 0.25453623476808096,
+      "source": "task007b_weight_cap_redistribution",
+      "top5_concentration_net_alpha_total": 0.9555841694899185,
+      "variant": "baseline_current_long_short"
+    },
+    {
+      "alpha_retention_pct": 1.0,
+      "cap_level": 0.2,
+      "gross_alpha": 0.2958303702519035,
+      "gross_reduction": 0.0,
+      "ir_vs_btc_active": -0.027270136895207235,
+      "ir_vs_cash_active": 0.8918383335973169,
+      "ir_vs_equal_weight_active": 0.7168297988967604,
+      "long_net_contribution": -0.0500936861537534,
+      "max_dd": -0.19639391054316346,
+      "max_symbol_weight_pct_of_new_gross": 0.125,
+      "max_symbol_weight_pct_of_original_gross": 0.125,
+      "net_alpha": 0.285325552778563,
+      "redistribution_has_no_room_events": 0.0,
+      "sharpe_active": 0.8918383335973169,
+      "short_net_contribution": 0.33562923893231644,
+      "single_symbol_concentration_net_alpha_total": 0.25453623476808096,
+      "source": "task007b_weight_cap_redistribution",
+      "top5_concentration_net_alpha_total": 0.9555841694899185,
+      "variant": "cap_20pct"
+    },
+    {
+      "alpha_retention_pct": 1.0,
+      "cap_level": 0.15,
+      "gross_alpha": 0.2958303702519035,
+      "gross_reduction": 0.0,
+      "ir_vs_btc_active": -0.027270136895207235,
+      "ir_vs_cash_active": 0.8918383335973169,
+      "ir_vs_equal_weight_active": 0.7168297988967604,
+      "long_net_contribution": -0.0500936861537534,
+      "max_dd": -0.19639391054316346,
+      "max_symbol_weight_pct_of_new_gross": 0.125,
+      "max_symbol_weight_pct_of_original_gross": 0.125,
+      "net_alpha": 0.285325552778563,
+      "redistribution_has_no_room_events": 0.0,
+      "sharpe_active": 0.8918383335973169,
+      "short_net_contribution": 0.33562923893231644,
+      "single_symbol_concentration_net_alpha_total": 0.25453623476808096,
+      "source": "task007b_weight_cap_redistribution",
+      "top5_concentration_net_alpha_total": 0.9555841694899185,
+      "variant": "cap_15pct"
+    },
+    {
+      "alpha_retention_pct": 0.9237631072823277,
+      "cap_level": 0.1,
+      "gross_alpha": 0.2746179369451137,
+      "gross_reduction": 12.199999999999996,
+      "ir_vs_btc_active": -0.047534115285275264,
+      "ir_vs_cash_active": 0.8340681832179857,
+      "ir_vs_equal_weight_active": 0.7053324220784561,
+      "long_net_contribution": -0.04199599623690456,
+      "max_dd": -0.19639391054316357,
+      "max_symbol_weight_pct_of_new_gross": 0.125,
+      "max_symbol_weight_pct_of_original_gross": 0.1,
+      "net_alpha": 0.2635732192217731,
+      "redistribution_has_no_room_events": 488.0,
+      "sharpe_active": 0.8340681832179857,
+      "short_net_contribution": 0.3057792154586777,
+      "single_symbol_concentration_net_alpha_total": 0.24811674897104669,
+      "source": "task007b_weight_cap_redistribution",
+      "top5_concentration_net_alpha_total": 0.986903079531406,
+      "variant": "cap_10pct"
+    },
+    {
+      "alpha_retention_pct": 0.8058218640103858,
+      "cap_level": null,
+      "gross_alpha": 0.2426078638345844,
+      "gross_reduction": null,
+      "ir_vs_btc_active": -0.07993608367216942,
+      "ir_vs_cash_active": 0.7225476158500358,
+      "ir_vs_equal_weight_active": 0.6926986154870609,
+      "long_net_contribution": -0.05002939947166443,
+      "max_dd": -0.19639391054316369,
+      "max_symbol_weight_pct_of_new_gross": null,
+      "max_symbol_weight_pct_of_original_gross": null,
+      "net_alpha": 0.2299215687898153,
+      "redistribution_has_no_room_events": null,
+      "sharpe_active": 0.7225476158500358,
+      "short_net_contribution": 0.2799509682614798,
+      "single_symbol_concentration_net_alpha_total": 0.21387308518629367,
+      "source": "task007_alpha_based_reference",
+      "top5_concentration_net_alpha_total": 1.0356110970474368,
+      "variant": "top5_symbol_cap_5pct"
+    },
+    {
+      "alpha_retention_pct": 0.8814705917603596,
+      "cap_level": null,
+      "gross_alpha": 0.26336948619445977,
+      "gross_reduction": null,
+      "ir_vs_btc_active": -0.059363721997474604,
+      "ir_vs_cash_active": 0.7921847347538138,
+      "ir_vs_equal_weight_active": 0.7030223916801337,
+      "long_net_contribution": -0.0500936861537534,
+      "max_dd": -0.19639391054316313,
+      "max_symbol_weight_pct_of_new_gross": null,
+      "max_symbol_weight_pct_of_original_gross": null,
+      "net_alpha": 0.25150608385207157,
+      "redistribution_has_no_room_events": null,
+      "sharpe_active": 0.7921847347538138,
+      "short_net_contribution": 0.30159977000582505,
+      "single_symbol_concentration_net_alpha_total": 0.21361735759152659,
+      "source": "task007_alpha_based_reference",
+      "top5_concentration_net_alpha_total": 0.983057771514553,
+      "variant": "DOT_capped"
+    },
+    {
+      "alpha_retention_pct": 0.7461997666098363,
+      "cap_level": null,
+      "gross_alpha": 0.22670405592423093,
+      "gross_reduction": null,
+      "ir_vs_btc_active": -0.09875798838025723,
+      "ir_vs_cash_active": 0.7131865925855001,
+      "ir_vs_equal_weight_active": 0.6965139691626783,
+      "long_net_contribution": -0.0500936861537534,
+      "max_dd": -0.1757806167978465,
+      "max_symbol_weight_pct_of_new_gross": null,
+      "max_symbol_weight_pct_of_original_gross": null,
+      "net_alpha": 0.2129098608911862,
+      "redistribution_has_no_room_events": null,
+      "sharpe_active": 0.7131865925855001,
+      "short_net_contribution": 0.26300354704493967,
+      "single_symbol_concentration_net_alpha_total": 0.25234183529963755,
+      "source": "task007_alpha_based_reference",
+      "top5_concentration_net_alpha_total": 1.1612661305543361,
+      "variant": "no_DOT"
+    }
+  ],
+  "redistribution_summary": {
+    "cap_breach_dates": {
+      "cap_10pct": 61
+    },
+    "event_type_counts": {
+      "redistribution_has_no_room": 488
+    },
+    "rows": 488
+  },
+  "reproducibility_hash": "f5c962e11189cc4f91dedbc50b00456830d1fdc6e868c1638ad6b3e3e4db07b7",
+  "run_date": "20260516"
+}

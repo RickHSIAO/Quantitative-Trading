@@ -1,6 +1,26 @@
 # AI Workflow — Quant Cowork 多模型分工守則
 
-最後更新：2026-05-12
+## Token Budget Rule
+
+為了避免 review 流程耗盡 context 或讓 Claude 直接掃大檔，所有 review 任務必須遵守以下規則：
+
+1. Claude 不直接讀大 CSV / parquet。
+2. 大檔先由 Codex 轉成 review packet。
+3. Sonnet 只讀 review packet 產 draft。
+4. Opus 只讀 draft + review packet 做 final decision。
+5. 每個 review 任務必須先確認是否已有 `REVIEW_PACKET`。
+6. 若沒有 packet，`NEXT_ACTION.md` 應先指派 Codex 建 packet，而不是指派 Claude review。
+7. `REVIEW_LOG` 不作為預設輸入，只在需要查歷史裁決時讀。
+8. Queue 只讀最新任務區段，不要整份長期掃描。
+
+建議路徑：
+- Review packet: `docs/research/review_packets/<REVIEW_ID>_PACKET.md`
+- Sonnet draft: `docs/research/review_drafts/<REVIEW_ID>_DRAFT_BY_SONNET.md`
+- Final decision: `docs/research/CLAUDE_REVIEW_LOG.md`
+
+`NEXT_ACTION.md` 的 review 任務應優先列出 packet / draft / summary JSON，而不是列出多個大型 CSV、parquet 或完整 queue 檔。
+
+最後更新：2026-05-15
 維護者：Rick
 狀態：v1.0（草稿，會隨工具增加調整）
 
@@ -117,7 +137,62 @@
 
 ---
 
-## 3. 標準研究流程（SOP）
+## 3. Claude 模型分工規則
+
+### 3.1 預設模型
+
+**預設使用 Claude Sonnet。**
+所有日常審查、文件更新、任務管理一律由 Sonnet 執行，除非明確符合下方升級條件。
+
+### 3.2 Sonnet 負責的工作
+
+下列工作由 Sonnet 全權處理，無需升級：
+
+- `CODEX_TASK_QUEUE.md` / `CLAUDE_REVIEW_QUEUE.md` 的 queue 更新
+- README、SUMMARY、CHANGELOG 等文件更新
+- 工單（task card）格式整理與補全
+- schema 驗證 / readiness check
+- 單元測試結果檢查（pass / fail 判讀）
+- VPS bot log 摘要
+- context packet 建立（提供給下一輪 review 的背景資料）
+- review draft 初稿撰寫（供 Rick 確認後定稿）
+
+### 3.3 升級 Claude Opus 的條件
+
+**只有**下列情況才升級至 Claude Opus：
+
+| 情況 | 說明 |
+|---|---|
+| Major task final review | 一個研究任務走完 SOP，準備做最終裁決 |
+| 是否解除 BLOCKED | 判斷被擋下的任務是否已足夠安全可繼續 |
+| 是否淘汰 / 保留策略 | 決定一個策略方向是否繼續投入資源 |
+| 是否進入下一階段 | 例如從研究進入 paper trading，或從 paper 進入 live |
+| 資料洩漏 / 未來視 / survivorship bias 審查 | 懷疑回測結果含有嚴重 bias，需精細推理 |
+| cost / funding / execution 方法論改動 | 改動影響所有策略的共用假設 |
+| 回測結果互相矛盾 | 不同版本 / 不同期間結果衝突，需要仲裁 |
+| Paper trading / live trading 前審查 | 任何真錢 / 模擬真錢上線前的最終把關 |
+
+> 升級 Opus 需要 Rick 明確要求，或由 Sonnet 在 review draft 中標記建議後，由 Rick 確認。
+
+### 3.4 每次 Review 的必填欄位
+
+每一份 review 文件（或 review 段落）都必須標註以下三個欄位：
+
+```
+Suggested model:   Sonnet / Opus
+Escalation reason: <若建議 Opus，說明原因；若維持 Sonnet 則填 N/A>
+Opus final decision required: Yes / No
+```
+
+### 3.5 模型分工限制
+
+- Claude **不修改策略程式**（`strategies/`、`backtest/`、`data/` 等核心目錄）。
+- Claude **不執行回測或 stress test**，只審查已產出的結果。
+- 上述限制對 Sonnet 與 Opus 均適用，與模型等級無關。
+
+---
+
+## 4. 標準研究流程（SOP）
 
 每一個新的研究想法都應該走這條 pipeline：
 
@@ -151,7 +226,7 @@
 
 ---
 
-## 4. 檔案與命名約定
+## 5. 檔案與命名約定
 
 - 所有研究文件放在 `docs/research/`。
 - 每個研究任務有自己的目錄：`docs/research/<task_slug>/`。
@@ -161,7 +236,7 @@
 
 ---
 
-## 5. 目前 repo 狀態（2026-05-12）
+## 6. 目前 repo 狀態（2026-05-12）
 
 - repo 內目前只有 `src/__init__.py` + `.venv`，**策略程式尚未存在**。
 - 因此 `CODEX_TASK_QUEUE.md` 中所列的「輸入檔案」「禁止修改範圍」多為「規劃路徑」，由 Codex 在執行任務時建立。
@@ -169,7 +244,7 @@
 
 ---
 
-## 6. 衝突 / 例外處理
+## 7. 衝突 / 例外處理
 
 - **Codex 想改策略邏輯**：擋下來，先進 ChatGPT 討論 → 走完上面 SOP。
 - **Claude 找到嚴重 bias**：對應任務狀態改成 `BLOCKED`，停止任何 downstream 使用。
@@ -178,7 +253,7 @@
 
 ---
 
-## 7. 待辦（v1.0 後續）
+## 8. 待辦（v1.0 後續）
 
 - [ ] Ollama 啟用時補上 log 摘要的標準 prompt。
 - [ ] Notion 資料庫 schema 草案（Research Log / Decision Log / Bias Catalogue）。

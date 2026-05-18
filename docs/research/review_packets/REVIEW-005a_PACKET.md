@@ -11,11 +11,11 @@ No exchange connection, paper execution, or live trading approval is implied.
 - Telegram and Discord use injectable HTTP clients for mock-only tests.
 
 ## Channels
-- Enabled channels: local_jsonl, telegram, discord
-- External channels: telegram, discord
+- Enabled channels: local_jsonl, discord
+- External channels: discord
 - local_jsonl_retained: true
-- dry_run_default: true
-- test_send_requested: false
+- dry_run_default: false
+- test_send_requested: true
 
 ## Fail Gates
 - missing_outputs: false
@@ -35,7 +35,7 @@ No exchange connection, paper execution, or live trading approval is implied.
 - no_test_send_flag: false
 - readme_not_updated: false
 - no_example_secrets_file: false
-- external_channels_dry_run_only: true
+- external_channels_dry_run_only: false
 
 ## Safety
 - Safety scan: PASS
@@ -43,6 +43,6 @@ No exchange connection, paper execution, or live trading approval is implied.
 - Live trading: FORBIDDEN
 
 ## Reproducibility
-- reproducibility_hash: `06a28f791dbfeb931a35dadf1eb856f92c791d0bf8648b09ba004da5b8d58817`
-- git_commit: `c44e12e54fde5a46ce0f0f1d53f5deabc92022f4`
+- reproducibility_hash: `117bc86f0c6d7293e2adf5bdb7d29ced66d082bb13745ca3aff4b4a73ac35dbc`
+- git_commit: `0b8d4ac4cb9aab00d1a5bc6375c8dfb4ed341c92`
 - output_date: `20260517`

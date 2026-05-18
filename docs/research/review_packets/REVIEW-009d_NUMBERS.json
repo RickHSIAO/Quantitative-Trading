@@ -1,0 +1,45 @@
+{
+  "FORBIDDEN_bybit_write": "NOT_ATTEMPTED",
+  "FORBIDDEN_live_trading": "NOT_ATTEMPTED",
+  "FORBIDDEN_order_endpoint": "NOT_ATTEMPTED",
+  "FORBIDDEN_real_discord_post": "NOT_ATTEMPTED",
+  "clock_started": false,
+  "dedupe_pass": true,
+  "drill_date": "20260517",
+  "dry_run_confirmed": true,
+  "external_post_attempted": false,
+  "live_alerts_used": false,
+  "live_trading_status": "FORBIDDEN",
+  "negative_scenarios_not_triggered": {
+    "S-A1b": true,
+    "S-A3b": true,
+    "S-A4b": true,
+    "S-A5c": true,
+    "S-A6b": true
+  },
+  "outputs": {
+    "drill_report": "outputs\\forward_record\\drill\\20260517_drill_report.json",
+    "review_numbers": "docs\\research\\review_packets\\REVIEW-009d_NUMBERS.json",
+    "review_packet": "docs\\research\\review_packets\\REVIEW-009d_PACKET.md"
+  },
+  "paper_execution_status": "FORBIDDEN",
+  "positive_scenarios_triggered": {
+    "S-A1": true,
+    "S-A2": true,
+    "S-A3": true,
+    "S-A4": true,
+    "S-A5": true,
+    "S-A5b": true,
+    "S-A6": true,
+    "S-A7": true
+  },
+  "redaction_pass": true,
+  "run_ts": "2026-05-18T00:24:17Z",
+  "safety_scan": "PASS",
+  "scenario_count": 13,
+  "scenario_pass_count": 13,
+  "sent_fail_gate": "PASS",
+  "status": "REVIEW_READY",
+  "task": "TASK-009d",
+  "template_pass": true
+}

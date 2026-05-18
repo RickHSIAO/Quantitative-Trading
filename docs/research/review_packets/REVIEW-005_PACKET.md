@@ -38,6 +38,6 @@ No exchange connection, paper execution, or live trading approval is implied.
 - heartbeat_interval_too_long: false
 
 ## Reproducibility
-- reproducibility_hash: `714f5417223892fc2954f483040c85c20397b664c4f11b618b3eaf28348ab41b`
-- git_commit: `c44e12e54fde5a46ce0f0f1d53f5deabc92022f4`
+- reproducibility_hash: `f60034be2c93c2d1732d0b06bb0fa85a4c4fb845f9f853d725bdf584bf21bca0`
+- git_commit: `0b8d4ac4cb9aab00d1a5bc6375c8dfb4ed341c92`
 - output_date: `20260517`

@@ -1,0 +1,57 @@
+{
+  "alert_conditions": {
+    "A-1_runner_missing_rows": "IMPLEMENTED",
+    "A-2_stop_gate_hit": "IMPLEMENTED",
+    "A-3_warning_gate_streak": "IMPLEMENTED",
+    "A-4_primary_shadow_alpha_gap": "IMPLEMENTED",
+    "A-5_data_source_failure": "IMPLEMENTED",
+    "A-6_review_006b_trigger_ready": "IMPLEMENTED",
+    "A-7_forbidden_field_violation": "IMPLEMENTED"
+  },
+  "alert_log": {
+    "alerts_sent": 0,
+    "discord_results": [],
+    "dry_run": true,
+    "path": "outputs/forward_record/alerts/20260517_alert_log.json",
+    "review_006b_trigger_ready": false
+  },
+  "clock_started": false,
+  "discord": {
+    "config_dry_run": true,
+    "external_post_attempted": false,
+    "live_alerts_used_in_validation": false
+  },
+  "files": {
+    "alert_conditions": "apps/forward_record/alert_conditions.py",
+    "alerting": "apps/forward_record/alerting.py",
+    "runner": "scripts/run_forward_record.py",
+    "tests": "tests/forward_record/test_alerting.py"
+  },
+  "forbidden_confirmations": {
+    "api_key_request_or_access": "NOT_ATTEMPTED",
+    "bybit_connection": "NOT_ATTEMPTED",
+    "bybit_write": "NOT_ATTEMPTED",
+    "live_trading": "FORBIDDEN",
+    "order_endpoint": "NOT_ATTEMPTED",
+    "paper_execution": "FORBIDDEN"
+  },
+  "output_date": "20260517",
+  "runner_command": "python scripts/run_forward_record.py --date 20260517 --dry-run --shadow-track",
+  "status": "REVIEW_READY",
+  "task": "TASK-009b",
+  "test_results": {
+    "py_compile": "PASS",
+    "tests_forward_record": {
+      "passed": 26,
+      "status": "PASS"
+    },
+    "tests_forward_record_alerting": {
+      "passed": 15,
+      "status": "PASS"
+    },
+    "tests_monitor_channels": {
+      "passed": 13,
+      "status": "PASS"
+    }
+  }
+}

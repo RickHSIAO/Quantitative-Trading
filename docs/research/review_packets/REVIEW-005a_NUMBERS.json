@@ -2,14 +2,12 @@
   "analysis_basis": "mockable alert channel implementation; no real external notification sent",
   "bot_name": "prev3y_crypto_paper",
   "channels": {
-    "dry_run_default": true,
+    "dry_run_default": false,
     "enabled": [
       "local_jsonl",
-      "telegram",
       "discord"
     ],
     "external": [
-      "telegram",
       "discord"
     ],
     "local_jsonl_retained": true,
@@ -18,40 +16,45 @@
         "channel": "local_jsonl",
         "delivered_count": 1,
         "detail": "alerts JSONL written",
+        "diagnostics": {},
         "dry_run": true,
         "enabled": true,
         "endpoint": "outputs\\monitor\\prev3y_crypto\\alerts\\20260517.jsonl",
         "error_count": 0,
         "external_post_attempted": false,
         "status": "WRITTEN",
-        "test_send": false
+        "test_send": true
       },
       {
         "channel": "telegram",
-        "delivered_count": 1,
-        "detail": "would send Telegram alerts; no POST attempted",
+        "delivered_count": 0,
+        "detail": "telegram disabled",
+        "diagnostics": {},
         "dry_run": true,
-        "enabled": true,
+        "enabled": false,
         "endpoint": "https://api.telegram.org/bot<redacted>/sendMessage",
         "error_count": 0,
         "external_post_attempted": false,
-        "status": "DRY_RUN",
-        "test_send": false
+        "status": "SKIPPED",
+        "test_send": true
       },
       {
         "channel": "discord",
         "delivered_count": 1,
-        "detail": "would send Discord alerts; no POST attempted",
-        "dry_run": true,
+        "detail": "Discord dispatch completed",
+        "diagnostics": {
+          "payload_has_content": true
+        },
+        "dry_run": false,
         "enabled": true,
         "endpoint": "https://discord.com/api/webhooks/<redacted>",
         "error_count": 0,
-        "external_post_attempted": false,
-        "status": "DRY_RUN",
-        "test_send": false
+        "external_post_attempted": true,
+        "status": "SENT",
+        "test_send": true
       }
     ],
-    "test_send_requested": false
+    "test_send_requested": true
   },
   "environment": "offline_sample",
   "fail_gates": {
@@ -67,7 +70,7 @@
     "secret_written_to_logs": false,
     "test_failure": false
   },
-  "git_commit": "c44e12e54fde5a46ce0f0f1d53f5deabc92022f4",
+  "git_commit": "0b8d4ac4cb9aab00d1a5bc6375c8dfb4ed341c92",
   "live_trading_status": "FORBIDDEN",
   "output_paths": {
     "alerts": "outputs\\monitor\\prev3y_crypto\\alerts\\20260517.jsonl",
@@ -79,9 +82,9 @@
   "read_only_api_boundary": {
     "api_key_requested": false,
     "exchange_connection_made": false,
-    "external_posts_attempted": false
+    "external_posts_attempted": true
   },
-  "reproducibility_hash": "06a28f791dbfeb931a35dadf1eb856f92c791d0bf8648b09ba004da5b8d58817",
+  "reproducibility_hash": "117bc86f0c6d7293e2adf5bdb7d29ced66d082bb13745ca3aff4b4a73ac35dbc",
   "run_date": "20260517",
   "safety_scan": {
     "api_key_requested": false,
@@ -126,7 +129,7 @@
   "status": "REVIEW_READY",
   "task": "TASK-005a Real Alert Channel",
   "warning_gates": {
-    "external_channels_dry_run_only": true,
+    "external_channels_dry_run_only": false,
     "no_example_secrets_file": false,
     "no_test_send_flag": false,
     "only_one_channel": false,

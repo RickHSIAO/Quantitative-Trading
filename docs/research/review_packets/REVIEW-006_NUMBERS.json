@@ -1,0 +1,219 @@
+{
+  "analysis_basis": "TASK-006 offline planning/simulation/logging only",
+  "daily_pnl_rows": 760,
+  "fill_definition": {
+    "basis": "position_delta_vs_prior_period",
+    "current_intended_fill_count": 3,
+    "description": "Each simulated fill row is a nonzero target position delta versus the prior rebalance position, not one row per held position.",
+    "formula": "weight_delta = target_weight - prev_weight"
+  },
+  "forward_validation": {
+    "calendar_days": 30,
+    "fatal_errors": 0,
+    "forward_validation_pass": false,
+    "forward_validation_status": "NOT_STARTED",
+    "max_drawdown": -0.0694330179175574,
+    "min_nav_usd": 12240.625573884607,
+    "nav_floor_ratio": 0.9365048406148171,
+    "paper_sharpe": -2.9012213839393923,
+    "paper_sharpe_30d_proxy": -2.9012213839393923,
+    "paper_sharpe_30d_proxy_note": "Noisy short-window historical proxy; not a forward paper record.",
+    "paper_sharpe_30d_window_days": 30,
+    "pass_blocker": "requires real 30-day forward paper record plus Opus REVIEW-006b and Rick approval",
+    "proxy_sharpe_long_window": {
+      "annualization_factor": 365.25,
+      "basis": "historical_simulation_proxy_not_forward_execution",
+      "full_active_window": {
+        "annualized_sharpe": 0.8036703627263382,
+        "available": true,
+        "observed_days": 760,
+        "requested_days": 760
+      },
+      "short_window": {
+        "annualized_sharpe": -2.9012213839393923,
+        "label": "30d_proxy",
+        "note": "Noisy short-window proxy; keep separate from real forward paper results.",
+        "observed_days": 30,
+        "requested_days": 30
+      },
+      "window_90d": {
+        "annualized_sharpe": 1.1681227825465523,
+        "available": true,
+        "observed_days": 90,
+        "requested_days": 90
+      }
+    },
+    "tracking_error_monthly": 0.0,
+    "validation_basis": "historical_simulation_proxy_not_forward_execution"
+  },
+  "funding_filter_active_this_month": false,
+  "git_commit": "c44e12e54fde5a46ce0f0f1d53f5deabc92022f4",
+  "input_hashes": {
+    "funding_rates_parquet": "e754b52c0f4801d61aa96eb7bccacd1ea7afc37acd9af7cae6833095a56a131b",
+    "prices_daily_parquet": "be067f1471e4bc20e980d5d86cc96e644792bc5282d8d550e4fde299e7352bd8",
+    "review007_numbers_json": "148dd31199e536c244305aee5f01982bc051dde07cd05805e33ab3aff11fc584",
+    "run008_baseline_csv": "051b89b2b5834b4a305b51436348548f569d3c4524ce487e2a7986b2c896f49f",
+    "run008_positions_parquet": "cb1190bdce7724cdb5cf8d5a8d84d0e0d4d6365953cc1f5a1a67d90afe5ee3b6",
+    "task007_daily_csv": "badd51357755e8cca6c06d938f997a1ecf9661b9219f842c95a6e6e32d309809",
+    "task007_summary_csv": "24265ba7611d465aca14bcbf4041fdc28d0a6dbd3f5be20648f84aa404eef1d0"
+  },
+  "intended_fill_count": 3,
+  "live_trading_status": "FORBIDDEN",
+  "monthly_review": {
+    "date": "2026-04-01",
+    "fill_definition": {
+      "basis": "position_delta_vs_prior_period",
+      "current_intended_fill_count": 3,
+      "description": "Each simulated fill row is a nonzero target position delta versus the prior rebalance position, not one row per held position.",
+      "formula": "weight_delta = target_weight - prev_weight"
+    },
+    "forward_validation": {
+      "calendar_days": 30,
+      "fatal_errors": 0,
+      "forward_validation_pass": false,
+      "forward_validation_status": "NOT_STARTED",
+      "max_drawdown": -0.0694330179175574,
+      "min_nav_usd": 12240.625573884607,
+      "nav_floor_ratio": 0.9365048406148171,
+      "paper_sharpe": -2.9012213839393923,
+      "paper_sharpe_30d_proxy": -2.9012213839393923,
+      "paper_sharpe_30d_proxy_note": "Noisy short-window historical proxy; not a forward paper record.",
+      "paper_sharpe_30d_window_days": 30,
+      "pass_blocker": "requires real 30-day forward paper record plus Opus REVIEW-006b and Rick approval",
+      "proxy_sharpe_long_window": {
+        "annualization_factor": 365.25,
+        "basis": "historical_simulation_proxy_not_forward_execution",
+        "full_active_window": {
+          "annualized_sharpe": 0.8036703627263382,
+          "available": true,
+          "observed_days": 760,
+          "requested_days": 760
+        },
+        "short_window": {
+          "annualized_sharpe": -2.9012213839393923,
+          "label": "30d_proxy",
+          "note": "Noisy short-window proxy; keep separate from real forward paper results.",
+          "observed_days": 30,
+          "requested_days": 30
+        },
+        "window_90d": {
+          "annualized_sharpe": 1.1681227825465523,
+          "available": true,
+          "observed_days": 90,
+          "requested_days": 90
+        }
+      },
+      "tracking_error_monthly": 0.0,
+      "validation_basis": "historical_simulation_proxy_not_forward_execution"
+    },
+    "funding_filter_active_this_month": false,
+    "funding_filter_activity_note": "Funding filter is regime-dependent; false means no symbol breached the configured 30-day average funding threshold in this monthly setup.",
+    "funding_filter_event_count_this_month": 0,
+    "intended_fill_count": 3,
+    "live_trading_status": "FORBIDDEN",
+    "mandatory_caveats": {
+      "caveat_1_sample_size": "Strategy backtest covers 760 active days (2024-04-01 to 2026-04-30) only. Forward performance may differ materially.",
+      "caveat_2_btc_ir": "IR vs BTC = -0.0017 for the high_funding_cost_filter reference. Paper planning does not imply BTC outperformance.",
+      "caveat_3_concentration": "Top 5 symbols remain a structural concentration risk. TASK-008 strategy-layer cap is the permanent fix.",
+      "caveat_4_long_side": "Long-side net alpha is structurally negative at baseline. combined_paper_safe_variant turns long net positive historically, but this has not been forward validated.",
+      "caveat_5_forward_only": "All numbers are historical planning outputs. This does not approve paper or live trading.",
+      "live_trading_status": "FORBIDDEN"
+    },
+    "metrics": {
+      "max_drawdown": -0.0694330179175574,
+      "paper_sharpe": -2.9012213839393923,
+      "tracking_error_monthly": 0.0
+    },
+    "paper_execution_status": "FORBIDDEN_UNTIL_GATES_PASS",
+    "portfolio_summary": {
+      "gross_exposure_pct": 1.0,
+      "long_exposure_pct": 0.5,
+      "max_single_symbol_pct": 0.02,
+      "n_longs": 25,
+      "n_shorts": 25,
+      "net_exposure_pct": 3.469446951953614e-17,
+      "short_exposure_pct": 0.5
+    },
+    "review_basis": "offline historical simulation proxy; no paper execution started",
+    "variant": "combined_paper_safe_variant"
+  },
+  "overlay_event_count": 0,
+  "paper_execution_approval": false,
+  "paper_execution_status": "NOT_STARTED",
+  "portfolio_summary": {
+    "gross_exposure_pct": 1.0,
+    "long_exposure_pct": 0.5,
+    "max_single_symbol_pct": 0.02,
+    "n_longs": 25,
+    "n_shorts": 25,
+    "net_exposure_pct": 3.469446951953614e-17,
+    "short_exposure_pct": 0.5
+  },
+  "primary_task007_summary": {
+    "active_days": 760,
+    "alpha_decay_vs_baseline": 0.0354179714217304,
+    "alpha_retention_pct": 0.8758682106217882,
+    "fee_cost": 0.0028246939935064,
+    "funding_cost": 0.0039145976613333,
+    "gross_alpha": 0.2602977983363477,
+    "gross_exposure_mean": 0.9005394736842106,
+    "ir_vs_btc_active": -0.0599674294479814,
+    "ir_vs_cash_active": 0.8036703627263506,
+    "ir_vs_equal_weight_active": 0.6961034976096455,
+    "long_net_contribution": 0.0421373025989323,
+    "max_dd": -0.202700379776588,
+    "max_dd_vs_baseline_multiple": 1.0321113277696996,
+    "net_alpha": 0.2499075813568325,
+    "net_alpha_delta_vs_baseline": -0.0354179714217304,
+    "net_exposure_mean": -0.0032763157894736,
+    "sharpe_active": 0.8036703627263506,
+    "short_net_contribution": 0.2077702787579001,
+    "single_symbol_concentration_net_alpha_total": 0.1972535897827636,
+    "slippage_cost": 0.0036509253246753,
+    "top5_concentration_net_alpha_total": 0.9191504237296176,
+    "top_symbol": "BYBIT:XRPUSDT.P",
+    "turnover_proxy_sum": 7.30185064935065,
+    "variant": "combined_paper_safe_variant"
+  },
+  "primary_variant": "combined_paper_safe_variant",
+  "real_order_submission_possible": false,
+  "reproducibility_hash": "89feeb1c33fdf7c003ffcf705df1de8c22087463aa2852d65208edb63f53d7de",
+  "review007_reproducibility_hash": "824ff334e30810aeeaef8a06319a9ac8563b61f903835c89ae6cfbd9e140066f",
+  "risk_event_counts": {
+    "INFO": 1,
+    "STOP_PAPER_PENDING_REVIEW": 1
+  },
+  "run_date": "20260516",
+  "safety_scan": {
+    "status": "PASS",
+    "violations": []
+  },
+  "secondary_task007_summary": {
+    "active_days": 760,
+    "alpha_decay_vs_baseline": -0.0273698215406832,
+    "alpha_retention_pct": 1.0959248874632852,
+    "fee_cost": 0.0032050511363636,
+    "funding_cost": 1.1242182539408785e-07,
+    "gross_alpha": 0.3199919393925867,
+    "gross_exposure_mean": 0.996797932330827,
+    "ir_vs_btc_active": -0.0017624797472399,
+    "ir_vs_cash_active": 0.958644212544192,
+    "ir_vs_equal_weight_active": 0.7281538732883033,
+    "long_net_contribution": -0.0229338646130703,
+    "max_dd": -0.2027003797765878,
+    "max_dd_vs_baseline_multiple": 1.0321113277696985,
+    "net_alpha": 0.3126953743192462,
+    "net_alpha_delta_vs_baseline": 0.0273698215406832,
+    "net_exposure_mean": -0.0033900375939849,
+    "sharpe_active": 0.958644212544192,
+    "short_net_contribution": 0.3356292389323164,
+    "single_symbol_concentration_net_alpha_total": 0.2322570074644903,
+    "slippage_cost": 0.0040914015151515,
+    "top5_concentration_net_alpha_total": 0.8721863715127797,
+    "top_symbol": "BYBIT:DOTUSDT.P",
+    "turnover_proxy_sum": 8.182803030303031,
+    "variant": "high_funding_cost_filter"
+  },
+  "secondary_variant": "high_funding_cost_filter",
+  "target_date": "2026-04-01"
+}

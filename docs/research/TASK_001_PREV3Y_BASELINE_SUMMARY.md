@@ -130,8 +130,9 @@
 | REVIEW-001 | TASK-001（run002） | **CONDITIONAL_PASS**（2026-05-13） | ❌ 不允許 | CLAUDE_REVIEW_LOG.md → REVIEW-001 |
 | REVIEW-001c | TASK-001c（run003） | **PASS**（2026-05-13） | ✅ 允許 | CLAUDE_REVIEW_LOG.md → REVIEW-001c |
 | REVIEW-001b | TASK-001b（run004） | **PASS**（2026-05-13） | ✅ 允許 | CLAUDE_REVIEW_LOG.md → REVIEW-001b |
-| REVIEW-001d | TASK-001d（run007） | **IN_REVIEW** | — | CLAUDE_REVIEW_QUEUE.md → REVIEW-001d |
-| REVIEW-001_final | TASK-001 整體重審 | 尚未開始 | — | 等 001d 完成後啟動 |
+| REVIEW-001d | TASK-001d（run007） | **PASS**（2026-05-13） | ✅ 允許 | CLAUDE_REVIEW_LOG.md → REVIEW-001d |
+| REVIEW-001e | TASK-001e（run008 readiness patch） | **PASS**（2026-05-14） | ✅ 允許 | CLAUDE_REVIEW_QUEUE.md → REVIEW-001e |
+| REVIEW-001_final | TASK-001 整體重審 | **PASS**（2026-05-14） | ✅ TASK-001 → DONE | final baseline = `20260513_run008` |
 
 ### 5.1 REVIEW-001 重點
 
@@ -188,13 +189,13 @@
 
 - `eqw_benchmark_missing_days = 660`（universe 全空日）。
 - 這 660 天 benchmark fill 0（非 NaN），對 active IR 無影響（active 內全有 constituents），但 **full IR 會被 660 個 0-0=0 active return 稀釋分子分母**。
-- methodology 未明示 day-level（basket empty）的 fill-0 政策，下次重審前建議補。
+- run008 methodology 已明示 day-level（basket empty）使用 `0.0` `benchmark_eqw_return`。
 
-### 7.4 Missing return = 0 尚未修正
+### 7.4 Missing return policy 已修正
 
-- 當前對 missing OHLCV 的 symbol-day 政策是 `return = 0`。
-- 在本回測樣本下無實質影響（COMP / ICP 異常都在持倉視窗外），但是潛在埋雷。
-- **TASK-001d** 要把這個改成「missing → exclude from ranking & holding」，並抽成獨立 `data_quality/missing.py` 模組 + 單元測試。
+- run008 的 policy 是 missing return 不補 0；abnormal symbol-day 會從 ranking candidates、holding candidates 與 return calculation 中排除。
+- 在本回測樣本下 DQ 對績效無實質影響（COMP / ICP 異常都在持倉視窗外），但是 policy 已經落地，避免未來資料視窗推進後誤把 missing 當 0 return。
+- 實作位置：`src/data_quality/missing.py`；測試位置：`tests/data_quality/test_missing.py`。
 
 ### 7.5 COMP-USD / ICP-USD 資料異常
 
@@ -217,16 +218,17 @@
 
 ---
 
-## 8. 當前狀態（2026-05-13）
+## 8. 最終狀態（2026-05-14）
 
 | Task / Review | 狀態 | 備註 |
 |---|---|---|
-| TASK-001（baseline 主體） | **REVIEW**（CONDITIONAL_PASS） | 不可轉 DONE，等 TASK-001d 完成後做 `REVIEW-001_final` |
+| TASK-001（baseline 主體） | **DONE** | final baseline = `20260513_run008`; `REVIEW-001_final` PASS |
 | TASK-001b（benchmark） | **DONE** | REVIEW-001b PASS（2026-05-13） |
 | TASK-001c（雙口徑） | **DONE** | REVIEW-001c PASS（2026-05-13） |
-| TASK-001d（missing-data 升級） | **REVIEW** | run007 ready；等 Claude REVIEW-001d |
-| TASK-002（cost / funding stress） | **BLOCKED** | 等 REVIEW-001_final 通過 |
-| TASK-003（baseline attribution） | **BLOCKED** | 等 REVIEW-001_final 通過 |
+| TASK-001d（missing-data 升級） | **DONE** | REVIEW-001d PASS（2026-05-13） |
+| TASK-001e（final review readiness） | **DONE** | REVIEW-001e PASS（2026-05-14） |
+| TASK-002（cost / funding stress） | **TODO** | 可開始撰寫/執行工單；尚未執行 |
+| TASK-003（baseline attribution） | **TODO** | 可開始撰寫/執行工單；尚未執行 |
 | TASK-004（dashboard） | **TODO**（可平行） | 第一版只放 baseline 雙口徑面板即可 |
 | TASK-005（VPS monitor） | **TODO**（完全獨立） | 不受影響 |
 
@@ -234,24 +236,17 @@
 
 ## 9. 下一步建議（順序）
 
-1. **Codex 開始 TASK-001d**——missing-data 處理升級。
-   - 把 `return = 0` 改成「symbol-day 從 ranking 與 holding 中排除」。
-   - 抽成 `src/data_quality/missing.py` + 單元測試（COMP / ICP fixture）。
-   - 重跑 baseline，產出 `20260513_runXXX_*`（或 `20260514_*`，視日期）。
-   - **禁止動策略 / 訊號模組**。
+1. **TASK-002：Funding / Cost Stress Test**。
+   - 使用 final baseline `20260513_run008` 作為唯一上游 baseline。
+   - 只在 cost/funding/slippage layer 做壓力測試，不回頭改 TASK-001 策略、ranking、universe 或 benchmark 定義。
 
-2. **Claude 開 REVIEW-001d**——審查 TASK-001d 補件。
-   - 檢查 positions 變化（過去 missing→0 的 symbol-day 應該已不在）。
-   - 檢查 active 樣本是否仍 760 天或有微幅變動。
-   - 單元測試是否覆蓋 fixture。
+2. **TASK-003：Baseline Attribution**。
+   - 使用 final baseline `20260513_run008` 的 `baseline.csv` / `positions.parquet`。
+   - Attribution 應讀取 TASK-001 輸出，不 import 或修改 strategy/signal code。
 
-3. **Claude 開 REVIEW-001_final**——TASK-001 整體最終重審。
-   - 比對 b/c/d 三個補件後的最終 baseline 數字。
-   - 確認雙口徑 + 三 benchmark + 嚴格 missing-data 處理之後，active Sharpe / IR vs BTC / IR vs eqw 是否仍符合「值得進入 cost stress 的最低門檻」（建議：active Sharpe ≥ 0.7、active IR_vs_eqw ≥ 0.3）。
-   - 若通過 → TASK-001 轉 DONE；TASK-002 / TASK-003 解除 BLOCKED。
-   - 若不通過 → 進入「保留 / 淘汰 / 更多測試」討論，由 ChatGPT 與 Rick 決策。
-
-4. **平行進行**：TASK-004 dashboard 第一版（只放 baseline 雙口徑面板，cost/attribution 留空）、TASK-005 VPS bot monitor（與本研究線完全獨立）。
+3. **TASK-004 / TASK-005 可平行**。
+   - Dashboard 第一版可只放 TASK-001 final baseline 與後續 TASK-002/003 placeholder。
+   - VPS monitor 與本研究線獨立。
 
 ---
 
@@ -263,9 +258,9 @@
 
 1. **TASK-001 是 baseline，不是 production 策略**。它的功能是把乾淨的數字產出來，不是要上線交易。所以「IR 是負的」「Sharpe 才 0.5」等問題本身不重要，重要的是「這些數字背後有沒有暗坑」。
 
-2. **目前已經抓出三個暗坑**：(a) 全期 vs 有效期口徑混淆（TASK-001c 已修），(b) benchmark 選錯造成 IR 失真（TASK-001b 已修），(c) missing-data 處理是 fill-0（TASK-001d 未修，是當前主要工作）。
+2. **三個暗坑都已補完**：(a) 全期 vs 有效期口徑混淆（TASK-001c），(b) benchmark 選錯造成 IR 失真（TASK-001b），(c) missing-data fill-0 風險（TASK-001d）。TASK-001e 補齊 final review 前的單元測試與有效天數 metadata。
 
-3. **三個 run 的策略產出 byte-identical**——TASK-001b / 001c 兩個補件只動報表層，沒動策略。這是 Claude 在每次審查時都會強制驗證的。下個 run（TASK-001d）會是**第一個策略產出實際變動的 run**（因為被 missing-data 處理影響 ranking）。屆時 positions 不再 byte-identical 是預期的。
+3. **最終正式 baseline 是 run008**。run008 vs run007 的 `portfolio_return`、exposure、turnover、long/short counts、benchmark columns 全部 max diff `0.0`，positions 也相同。TASK-001d/e 的 DQ/reporting 補件沒有改策略產出。
 
 4. **真實的策略視窗只有 25 個月**（2024-04 ~ 2026-04）。下游做任何結論前，要清楚這是「能不能下一步」的試金石、不是「策略好不好」的證明。
 
@@ -281,7 +276,7 @@
    - raw data（`data/trading.db`）。
    - 既有產出檔（只能新增日期戳的新版本，不可覆寫）。
 
-8. **下一個動作**：開始 TASK-001d。完成後 Claude 會做 `REVIEW-001d` 與 `REVIEW-001_final`，通過後 TASK-001 才能轉 DONE，TASK-002 cost stress 才能開始。
+8. **下一個動作**：TASK-001 已 DONE。可以開始撰寫 TASK-002 / TASK-003 工單，但下游一律讀取 final baseline `20260513_run008`，不得使用舊 alias 欄位，也不得回頭修改 TASK-001 策略或 raw data。
 
 **找東西時的最快路徑：**
 
@@ -292,13 +287,13 @@
 - 想看分工守則：`docs/research/AI_WORKFLOW.md`。
 - 想看本文件：`docs/research/TASK_001_PREV3Y_BASELINE_SUMMARY.md`（you are here）。
 
-**最重要的一句話**：在 TASK-001d + REVIEW-001_final 跑完之前，**不要碰 TASK-002**，也不要在 Notion 把 Prev3Y 結果歸檔成「策略可上線」或「策略已淘汰」。它目前是「需要更多測試」。
+**最重要的一句話**：TASK-001 已結案為 DONE，final baseline 是 `20260513_run008`。下一步可以進 TASK-002 / TASK-003，但它們必須以 run008 為唯一起點，不得修改 TASK-001 策略、回測邏輯或 raw data。
 
 ---
 
 ## 2026-05-14 Addendum - TASK-001e Final Review Readiness
 
-TASK-001e is now in `REVIEW`, waiting for Claude before `REVIEW-001_final`. TASK-001 remains `REVIEW`, not `DONE`; TASK-002 and TASK-003 remain `BLOCKED`.
+TASK-001e passed review and is now `DONE`. It was the final readiness patch before `REVIEW-001_final`; after final review, TASK-001 is `DONE`, and TASK-002 / TASK-003 are `TODO` but not yet executed.
 
 ### b/c/d conclusions now covered
 
@@ -333,3 +328,35 @@ TASK-001e is now in `REVIEW`, waiting for Claude before `REVIEW-001_final`. TASK
 - run008 vs run007: `positions.parquet` equal.
 - Stats recompute from run008 `baseline.csv`: max diff `1.07e-14`.
 - Reproducibility hash: `ee8031732d1eda1406a9c10c57d11e49b6f54b3ac03c8e06fe84e63bbbe2a06f`.
+
+---
+
+## 2026-05-14 Final Closure - TASK-001f
+
+`20260513_run008` is the final official TASK-001 baseline. `REVIEW-001e` passed after confirming the final-review readiness patch: DQ unit coverage now includes ranking candidate exclusion, missing price rows, and aggregate boundary cases; stats/log expose BTC and equal-weight effective-days metadata. `REVIEW-001_final` passed, so TASK-001 is closed as `DONE`.
+
+TASK-002 and TASK-003 are now `TODO`, not BLOCKED, but neither has been executed in TASK-001f. They should start from run008 outputs only.
+
+### Final baseline files
+
+- `outputs/backtests/prev3y_crypto/20260513_run008_baseline.csv`
+- `outputs/backtests/prev3y_crypto/20260513_run008_positions.parquet`
+- `outputs/backtests/prev3y_crypto/20260513_run008_stats.json`
+- `outputs/logs/prev3y_crypto/20260513_run008.log`
+- `outputs/data_quality/prev3y_crypto/20260513_run008_data_quality_summary.csv`
+- `outputs/data_quality/prev3y_crypto/20260513_run008_data_quality_aggregate.json`
+
+### Final active metrics
+
+- Active IR vs cash: `0.926681647408177`
+- Active IR vs BTC: `-0.017485575012162788`
+- Active IR vs PIT equal-weight: `0.722656939335452`
+- Active Sharpe: `0.926681647408177`
+
+### Five caveats to preserve downstream
+
+1. Effective active sample is short: only `760` active days from `2024-04-01` to `2026-04-30`.
+2. Average tradable symbols are low: about `15.22`, far below configured `top_n + bottom_n = 50`.
+3. BTC comparison is not a like-for-like alpha benchmark because the strategy is approximately market-neutral while BTC is long-only beta.
+4. Equal-weight benchmark has empty-basket days in the full period; active-period equal-weight coverage is complete, but full-period IR is diluted by no-position/no-basket days.
+5. Legacy alias fields can mislead across runs. Downstream reports must use explicit fields only: `*_active`, `*_full`, and `ir_vs_<cash|btc|equal_weight>_<full|active>`. Do not use bare `ir`, `sharpe`, `hit_rate`, `sortino`, `calmar`, `max_dd`, or `turnover_annual`.

@@ -18,7 +18,7 @@
     "secret_in_vcs": false,
     "test_failure": false
   },
-  "git_commit": "c44e12e54fde5a46ce0f0f1d53f5deabc92022f4",
+  "git_commit": "0b8d4ac4cb9aab00d1a5bc6375c8dfb4ed341c92",
   "heartbeat_schema": {
     "errors": [],
     "row_count": 1,
@@ -53,7 +53,7 @@
     "secrets_written_to_outputs": false,
     "secrets_written_to_repo": false
   },
-  "reproducibility_hash": "714f5417223892fc2954f483040c85c20397b664c4f11b618b3eaf28348ab41b",
+  "reproducibility_hash": "f60034be2c93c2d1732d0b06bb0fa85a4c4fb845f9f853d725bdf584bf21bca0",
   "run_date": "20260517",
   "safety_scan": {
     "api_key_requested": false,
