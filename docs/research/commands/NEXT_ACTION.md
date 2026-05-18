@@ -7,7 +7,8 @@ WAITING
 Rick
 
 ## Task
-Option C — working tree clean plan 提示済み。Rick の承認後に実施する。
+Working tree cleanup 完了。追加コミット（git rm --cached 7 files + docs 更新）完了。
+Untracked files（output/ + outputs/attribution/ + outputs/backtests/ + outputs/forward_record/ 等）の扱いを Rick が決定する。
 
 ## Last Completed
 Discord webhook VPS strict guard validation — confirmed on actual VPS（2026-05-18，Rick + Claude Sonnet）
@@ -44,25 +45,17 @@ Discord webhook VPS strict guard validation — confirmed on actual VPS（2026-0
 | Read-only data source validation | ✅（cache + Bybit public GET PASS） |
 | Discord webhook dry-run dispatch 安全性（コード解析）| ✅（G-1~G-5 code analysis + G-2/G-4 sandbox） |
 | Discord webhook VPS strict guard drill + actual config 確認 | ✅ DONE（2026-05-18；instance-20260506-0945；PASS 6/6） |
-| working tree clean（git stash / commit） | ❌ TODO — Rick 承認後実施 |
+| working tree clean（3 commits + cleanup commit）| ✅ DONE（2026-05-18；378dc34 / c20bc09 / 2d5d90c + cleanup） |
 | Rick 明示「開始計時」 | ❌ 待 Rick 指示 |
 
-## Option C — Working Tree Clean Plan（承認待ち、未実施）
+## Tracked Modified Files — 解決済み（2026-05-18）
 
-### Git status summary（Windows 側 git diff HEAD より）
-- Modified（M）tracked files: 40 件
-- New untracked files（not in .gitignore）: 確認済み（下記）
-- Deleted: 0
-- Staged: 0
-
-### 分類表
-
-#### COMMIT — source code & registry（意図的な変更、すべてコミット対象）
-
-| ファイル | 分類理由 |
-|---|---|
-| `apps/monitor/report.py` | TASK-009b/009c 成果物 |
-| `apps/monitor/safety.py` | TASK-009c 成果物 |
-| `apps/monitor/README.md` | ドキュメント更新 |
-| `apps/monitor/channels/discord.py` | TASK-009b discord channel |
-| `apps/monitor/channels/redaction.py` | TASK-009b redacti
+| ファイル | 処置 | 結果 |
+|---|---|---|
+| `src/backtester.py` | `git show HEAD: \| write` → CRLF→LF 復元 | ✅ HEAD 一致 |
+| `src/indicators.py` | 同上 | ✅ HEAD 一致 |
+| `src/reporter.py` | 同上 | ✅ HEAD 一致 |
+| `src/risk.py` | 同上 | ✅ HEAD 一致 |
+| `src/strategies.py` | 同上 | ✅ HEAD 一致 |
+| `tests/monitor/test_channels.py` | 同上（NTFS truncation 復元；276L） | ✅ HEAD 一致 |
+| `.claude/settings.lo

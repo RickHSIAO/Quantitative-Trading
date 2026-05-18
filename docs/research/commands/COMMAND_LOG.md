@@ -21,6 +21,73 @@ Notes:
 
 ---
 
+### 2026-05-18（Working tree cleanup — git rm --cached + HEAD restore）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（残存 modified files 全解決）
+Task: 残存 9 tracked modified files を全解決：src/*.py 5 files（CRLF→LF 復元）、tests/monitor/test_channels.py（NTFS truncation 復元）、gitignored 7 files（git rm --cached）。追加コミット完了。
+Status before: 9 tracked modified files 残存（src/ CRLF diff + test truncation + gitignored .claude/ + outputs/monitor/ + outputs/variants/）
+Status after: tracked modified files = 0。staged deletions commit（4th commit）完了。Untracked files は gitignored or Rick 判断待ち。
+Resolution details:
+  src/backtester.py, indicators.py, reporter.py, risk.py, strategies.py — disk bytes > HEAD bytes（~1000B）
+    Root cause: CRLF（Windows \r\n）vs LF（HEAD）。line count identical。NOT real content change。
+    Fix: git show HEAD:<file> → write binary（LF）→ disk 一致
+  tests/monitor/test_channels.py — disk=127L/5268B vs HEAD=276L/11791B
+    Root cause: NTFS mount truncation（149 lines missing）
+    Fix: git show HEAD:tests/monitor/test_channels.py → write binary → 276L restored
+  git rm --cached（7 files — now gitignored）:
+    .claude/settings.local.json — on disk: YES
+    outputs/monitor/prev3y_crypto/alerts/20260517.jsonl — on disk: YES
+    outputs/variants/prev3y_crypto/{5 files} — on disk: YES（all）
+Safety gates（all sessions）:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN  clock_started=false
+  external_post_attempted=false  secret_value_observed=false
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (tracked files resolved; untracked inventory added)
+
+---
+
+### 2026-05-18（Option C working tree clean — 3 commits）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（Option C approved — 3-commit plan）
+Task: working tree を 3 commits で整理；gitignored ファイルを untrack；残存 modified files を記録
+Status before: working tree dirty（40+ M files，3 new scripts untracked，data/trading.db + output/Output.xlsx tracked but gitignored）
+Status after: 3 commits 完了；working tree partially clean（残存: src/ changes + .claude/ + outputs/monitor/ + outputs/variants/ — Rick 指示待ち）
+Commits:
+  378dc34 — TASK-009/009b/009c/009d: forward record runner + alerting + tech debt + E2E drill
+    - 20 files: apps/monitor/{README,report,safety}.py, config.py, main.py
+    - scripts/{run_forward_record,task005_vps_bot_monitor,crypto_sweep*.py,btc_moat,diag,intraday}.py
+    - NEW: scripts/validate_discord_webhook_dryrun.py, validate_discord_webhook_vps_dryrun.py, validate_read_only_data_source.py
+    - DELETE: data/trading.db（untrack via git rm --cached），output/Output.xlsx（untrack via git rm --cached）
+  c20bc09 — docs: TASK-009 review log, queue, workorders, COMMAND_LOG, README, gitignore
+    - 26 files: .gitignore（追加: data/cache/, backups/, .claude/, outputs/monitor/, outputs/variants/）
+    - README.md, docs/research/CLAUDE_REVIEW_LOG.md, CLAUDE_REVIEW_QUEUE.md, CODEX_TASK_QUEUE.md
+    - docs/research/commands/{CLAUDE_COMMANDS,CODEX_COMMANDS,COMMAND_LOG,NEXT_ACTION}.md
+    - docs/research/crypto_universe_methodology.md
+    - docs/research/review_packets/REVIEW-{005,005a,006,007,007b,008,009,009d}_{NUMBERS,PACKET}.*
+  2d5d90c — outputs: baseline + drill + webhook validation artifacts (20260518)
+    - 39 files: outputs/forward_record/baselines/20260518/, drill/, discord_webhook_*/, read_only_data_source/
+    - outputs/logs/{cost_inputs/,prev3y_crypto/}（20 log files）
+git rm --cached（untracked without deleting local files）:
+  data/trading.db — still on disk: YES
+  output/Output.xlsx — still on disk: YES
+Remaining modified tracked files（NOT in approved plan — Rick 指示待ち）:
+  src/backtester.py, src/indicators.py, src/reporter.py, src/risk.py, src/strategies.py
+  tests/monitor/test_channels.py
+  .claude/settings.local.json（now gitignored — needs git rm --cached）
+  outputs/monitor/prev3y_crypto/alerts/20260517.jsonl（now gitignored — needs git rm --cached）
+  outputs/variants/prev3y_crypto/{5 files}（now gitignored — needs git rm --cached）
+Safety gates（all sessions）:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN  clock_started=false
+  external_post_attempted=false  secret_value_observed=false
+Files changed:
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (working tree clean DONE; next options updated)
+
+---
+
 ### 2026-05-18（Discord webhook VPS strict guard validation — confirmed on actual VPS）
 
 Agent: Claude Sonnet（記録）+ Rick（VPS 実行）
@@ -174,89 +241,4 @@ Safety gates:
 - live trading：FORBIDDEN
 - 30-day clock：NOT_STARTED
 - Bybit 接続：NOT_ATTEMPTED
-Sandbox note: Linux mount の apps/monitor/config.py 截断（既知 infrastructure noise、REVIEW-009c と同一）により full integration test は sandbox 上で未実行。コード解析で全 gate を直接確認。Windows 上での `python scripts/validate_discord_webhook_dryrun.py` 実行を推奨。
-Files changed:
-- `scripts/validate_discord_webhook_dryrun.py` (created)
-- `outputs/forward_record/discord_webhook_validation/20260518/validation_result.json` (created)
-- `docs/research/commands/COMMAND_LOG.md` (this entry)
-- `docs/research/commands/NEXT_ACTION.md` (WAITING，Discord webhook dry-run validation DONE 記録)
-
----
-
-### 2026-05-18（VPS dry-run validation）
-
-Agent: Rick（手動実行）+ Claude Sonnet（記録）
-Command source: Rick direct chat instruction（本次唯一目標：記錄 VPS dry-run validation 結果）
-Task: Oracle Ubuntu 24.04 VPS 上で forward record dry-run / drill を実行し、VPS 環境の動作を確認
-Status before: Windows baseline DONE；VPS 部署完了；VPS 上での動作確認未記録
-Status after: VPS dry-run validation 記録完了；NEXT_ACTION WAITING
-Environment:
-- OS：Oracle Ubuntu 24.04（1GB RAM + 2GB swap enabled）
-- Deploy：quant_deploy.zip → venv → dependencies installed（pandas / numpy / pyarrow / pyyaml / requests）
-- Minimal data uploaded：
-  - `outputs/backtests/prev3y_crypto/20260513_run008_positions.parquet`
-  - `outputs/backtests/prev3y_crypto/20260513_run008_baseline.csv`
-  - `outputs/backtests/prev3y_crypto/20260515_cost_stress_positions_cost.parquet`
-  - `data/prices_daily.parquet`
-  - `data/universe_membership.parquet`
-  - `data/funding_rates.parquet`
-  - `outputs/backtests/prev3y_crypto/20260517_task008_variant_detail.csv`
-Validation results:
-- `python scripts/run_forward_record.py --date 20260517 --dry-run --shadow-track`：**REVIEW_READY, exit=0**
-- `python scripts/run_forward_record.py --date 20260517 --dry-run`：**REVIEW_READY, exit=0**
-- `python scripts/drill_forward_alerts.py --date 20260517`：**exit=0**
-- REVIEW-009d_NUMBERS：`status=REVIEW_READY, scenario_count=13, scenario_pass_count=13, external_post_attempted=false, dry_run_confirmed=true, live_alerts_used=false, sent_fail_gate=PASS, paper_execution_status=FORBIDDEN, live_trading_status=FORBIDDEN`
-- alert_log：`dry_run=true, alerts_sent=[], discord_results=[]`
-Caveat（non-blocking）：
-- alert_log に `external_post_attempted` / `paper_live` fields 不在；ただし REVIEW-009d_NUMBERS が安全状態を確認済み
-Safety gates:
-- --live-alerts：NOT_ATTEMPTED
-- Discord 真実 POST：NOT_ATTEMPTED
-- paper execution：FORBIDDEN
-- live trading：FORBIDDEN
-- 30-day clock：NOT_STARTED
-Files changed:
-- `docs/research/commands/COMMAND_LOG.md` (this entry)
-- `docs/research/commands/NEXT_ACTION.md` (WAITING，VPS dry-run DONE 記録)
-
----
-
-### 2026-05-18（Windows baseline validation）
-
-Agent: Rick（手動実行）+ Claude Sonnet（記録）
-Command source: Rick direct chat instruction（本次唯一目標：記錄 Windows baseline validation artifact）
-Task: Windows 環境で unittest / forward record dry-run / drill / safety scan を実行し、baseline artifact を生成・記録
-Status before: TASK-009c DONE；Windows baseline validation 未記錄；30-day clock 前置條件 VPS 部署のみ未完了
-Status after: Windows baseline validation 記錄完了；baseline artifact hash 記錄；NEXT_ACTION WAITING
-Validation results:
-- `python -m unittest discover -v`：**PASS，90 tests**
-- `python scripts/run_forward_record.py --date 20260517 --dry-run --shadow-track`：**PASS，REVIEW_READY**
-- `python scripts/drill_forward_alerts.py --date 20260517`：**PASS，13/13 scenarios**
-- safety scan：**PASS**
-Artifacts:
-- `outputs/forward_record/baselines/20260518/pytest_result.txt`
-- `outputs/forward_record/baselines/20260518/forward_record_result.json`
-- `outputs/forward_record/baselines/20260518/drill_result.json`
-- `outputs/forward_record/baselines/20260518/safety_scan.json`
-- `outputs/forward_record/baselines/20260518/baseline_hash.json`
-- Combined baseline SHA-256：`b8d4fd69fb77c52ad557b307cae3ecf23cc869f287e95702cd26ac2aaeb73476`
-Safety gates:
-- paper/live：FORBIDDEN（不変）
-- clock_started：NOT_STARTED（不変）
-- Bybit connection：NOT_ATTEMPTED
-- credential request：NOT_ATTEMPTED
-- Discord real send：NOT_ATTEMPTED
-- --live-alerts：NOT_ATTEMPTED
-Files changed:
-- `docs/research/commands/COMMAND_LOG.md` (this entry)
-- `docs/research/commands/NEXT_ACTION.md` (WAITING，baseline validation DONE 記錄)
-
----
-
-### 2026-05-18（REVIEW-009c final decision）
-
-Agent: Claude Sonnet
-Command source: Rick direct chat instruction（本次唯一目標：記錄 REVIEW-009c final decision，更新 queue / log / NEXT_ACTION）
-Task: REVIEW-009c final decision 記錄；TASK-009c DONE；sandbox artifact caveat 記錄
-Status before: TASK-009c = REVIEW；REVIEW-009c draft = PASS（Sonnet）；registry files 未更新
-Status after: TASK-009c = **DONE**；R
+Sandbox note: Linux mount の apps/monitor/config.py 截断（既知 infrastructure noise、REVIEW-009c と同一）により full integration test は sandbox 上で未実行。コード解析で全 gate を直接確認。Windows 上での `python scripts/validate_discord_webhook_dryrun.py` 実行を推

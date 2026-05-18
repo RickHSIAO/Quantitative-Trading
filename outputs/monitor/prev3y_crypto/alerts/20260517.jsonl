@@ -1,1 +1,0 @@
-{"action_required": "none_sample_only", "category": "MONITOR_SAMPLE", "dedupe_key": "MONITOR_SAMPLE:task005_sample", "live_trading_status": "FORBIDDEN", "message": "Sample local monitor alert; no external notification was sent.", "paper_execution_status": "FORBIDDEN", "severity": "INFO", "source": "task005_sample", "timestamp": "2026-05-17T00:00:00Z"}
