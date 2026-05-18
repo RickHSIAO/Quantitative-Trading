@@ -21,6 +21,43 @@ Notes:
 
 ---
 
+### 2026-05-18（TASK-008C — Beautify Discord Summary Layout + Clarify Validation Dates）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（TASK-008C Beautify Discord Summary + Clarify Validation Dates）
+Task: Beautify Discord message layout; fix "第 31 / 30 天" bug; add date display formatting.
+Status before: 第 31/30 天 shown for 20260617; English section headers; no date weekday display
+Status after:  20260617 shows "結算檢查日"; full Chinese layout; date shows "2026/05/18（一）"
+
+Files changed:
+  scripts/send_forward_discord_summary.py        -- TASK-008C beautify + date helpers
+  tests/forward_record/test_discord_summary.py   -- NEW (29 tests, all pass)
+
+New helpers in send_forward_discord_summary.py:
+  fmt_date_display(yyyymmdd):    "20260518" -> "2026/05/18（一）"
+  validation_day_label(date):    Day 1-30 -> "第 N / 30 天"; review -> "結算檢查日"; post -> "驗證期後"
+  days_remaining_label(date):    pre-clock -> "N/A"; review+ -> "0"
+  VALIDATION_DAY30 = "20260616"  (Day 30 = CLOCK_START + 29d)
+  REVIEW_DATE      = "20260617"  (結算檢查日 = CLOCK_START + 30d)
+
+Validation (6/6 PASS + pytest 29/29):
+  1. py_compile: PASS
+  2. --dry-run preview: 中文美化排版正確，第 1/30 天，2026/05/18（一）
+  3. day label / remaining cases (6 dates): ALL PASS
+  4. DISCORD_NOTIFY=SKIP (no webhook, exit 0): PASS
+  5. bash -n daily runner: PASS
+  6. pytest tests/forward_record/test_discord_summary.py: 29 passed, 0 failed
+
+Key fixes:
+  20260617 -> "結算檢查日"  (no longer "第 31 / 30 天")
+  20260616 -> "第 30 / 30 天"
+  20260518 -> "第 1 / 30 天" + "2026/05/18（一）"
+  machine-readable values preserved (FORBIDDEN, REVIEW_READY, True, NOT_ATTEMPTED)
+  WEBHOOK_ENV=MONITOR_DISCORD_WEBHOOK_URL unchanged
+  main.py NOT modified
+
+---
+
 ### 2026-05-18（TASK-008B — Chinese Discord Summary + Human-Friendly Day Count）
 
 Agent: Claude Sonnet

@@ -97,15 +97,27 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 
 | item | status |
 |---|---|
-| scripts/send_forward_discord_summary.py | UPDATED — 繁體中文 + 第 N / 30 天 |
-| _human_day() | DONE (20260518 -> 第 1 / 30 天) |
-| _days_remaining() | DONE (pre-clock -> N/A) |
+| scripts/send_forward_discord_summary.py | UPDATED (superseded by TASK-008C) |
 | Discord message language | 繁體中文 |
-| machine-readable values preserved | CONFIRMED (FORBIDDEN, REVIEW_READY, True) |
 | WEBHOOK_ENV | MONITOR_DISCORD_WEBHOOK_URL (unchanged) |
+
+## TASK-008C Beautify Discord Summary Status
+
+| item | status |
+|---|---|
+| scripts/send_forward_discord_summary.py | UPDATED — beautified layout + date helpers |
+| tests/forward_record/test_discord_summary.py | NEW — 29 tests, 29 passed |
+| fmt_date_display() | DONE ("20260518" -> "2026/05/18（一）") |
+| validation_day_label() | DONE (第 1-30/30 天, 結算檢查日, 驗證期後) |
+| days_remaining_label() | DONE (pre-clock -> N/A) |
+| VALIDATION_DAY30 | 20260616 (Day 30) |
+| REVIEW_DATE | 20260617 (結算檢查日) |
+| "第 31 / 30 天" bug | FIXED — 20260617 now shows 結算檢查日 |
 | py_compile | PASS |
-| dry-run preview | PASS (第 1 / 30 天, 剩餘 29 天) |
-| day count test cases | 4/4 PASS |
+| --dry-run preview | PASS (中文美化排版) |
+| pytest 29/29 | PASS |
+| DISCORD_NOTIFY log tokens | UNCHANGED (SKIP/DRY_RUN/PASS/FAIL) |
+| machine-readable values | PRESERVED (FORBIDDEN, REVIEW_READY, True) |
 ## VPS One-time Setup (Rick action required)
 
 On instance-20260506-0945:
