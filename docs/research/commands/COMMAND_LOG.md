@@ -21,6 +21,39 @@ Notes:
 
 ---
 
+### 2026-05-18（Option E — gitignore repair + untracked artifacts gitignore）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（Option E: finish true working tree cleanliness）
+Task: .gitignore NTFS truncation 修復（115B/8L → 1020B/54L）+ 残存 untracked artifacts を gitignore に追加。git status --short = CLEAN（M .gitignore のみ → commit 後 clean）。
+Status before: git status --short に ?? 80+ entries（.gitignore NTFS truncation で既存ルールが無効化されていた）
+Status after: git status --short = clean（no untracked, no modified tracked files）
+Root cause: .gitignore が Linux mount 側で 115B/8L に truncated。bash-side では commitc20bc09 の全ルールが消失していた。Windows Read tool では正常表示（ファイルシステムの非同期）。Fix: python3 open() write via bash（1020B/54L LF）。
+gitignore rules added（Option E）:
+  outputs/attribution/              -- local backtesting attribution artifacts
+  outputs/backtests/                -- local backtesting artifacts
+  outputs/data_quality/             -- local data quality artifacts
+  outputs/paper_trading/            -- local paper trading artifacts
+  outputs/forward_record/alerts/    -- forward record local alerts
+  outputs/forward_record/prev3y_crypto/                  -- local forward record
+  outputs/forward_record/prev3y_crypto_shadow_a_roll12/  -- shadow variant local
+  data/crypto/                      -- large API-fetched parquet/yaml files
+  data/*.malformed_*                -- DB crash recovery artifacts
+  *.zip                             -- local deploy bundles
+Protected committed audit dirs (NOT gitignored):
+  outputs/forward_record/baselines/, drill/, discord_webhook_*/, read_only_data_source/
+  outputs/logs/
+git check-ignore validation: all 14 new rules PASS; committed audit dirs NOT ignored
+Safety gates:
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN  clock_started=false
+  external_post_attempted=false  secret_value_observed=false
+Files changed:
+- `.gitignore` (repaired + Option E rules)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `docs/research/commands/NEXT_ACTION.md` (Option E complete; Option D ready)
+
+---
+
 ### 2026-05-18（Working tree cleanup — git rm --cached + HEAD restore）
 
 Agent: Claude Sonnet
@@ -213,32 +246,4 @@ Safety gates:
 Files changed:
 - `scripts/validate_discord_webhook_vps_dryrun.py` (created — strict guard version)
 - `outputs/forward_record/discord_webhook_vps_dry_run/20260518/validation_result_template.json` (created)
-- `docs/research/commands/COMMAND_LOG.md` (this entry)
-- `docs/research/commands/NEXT_ACTION.md` (WAITING)
-
----
-
-### 2026-05-18（Discord webhook dry-run validation）
-
-Agent: Claude Sonnet
-Command source: Rick direct chat instruction（本次唯一目標：執行 Discord webhook config on VPS dry-run validation）
-Task: Discord webhook secret source / redaction / dry-run dispatch path の安全性を検証し、VPS 設定手順を確立
-Status before: VPS dry-run DONE；Discord webhook 未設定；dry-run dispatch path 未検証
-Status after: 5 gate 全 PASS（コード解析 + sandbox 部分実行）；validation artifact 生成；VPS 設定手順記録；NEXT_ACTION WAITING
-Method:
-- G-1（コード解析）：discord.py line 31 の `if channel.dry_run:` が line 44 の `load_channel_secrets()` 呼び出しより前にリターン → webhook URL は dry_run 時に一切読み取られない
-- G-2（sandbox 実行）：`redact_text()` が `discord.com/api/webhooks/` および `discordapp.com/api/webhooks/` URL パターンを `<redacted>` に置換（regex 確認済み）
-- G-3（コード解析）：dry_run 分岐の `ChannelResult` は webhook_url フィールドを持たず、`endpoint` は常に固定文字列 `"https://discord.com/api/webhooks/<redacted>"`
-- G-4（sandbox パターンスキャン）：validate_discord_webhook_dryrun.py / alerting.py / discord.py に order endpoint import なし
-- G-5（コード解析）：`alert_dry_run = True if force_dry_run or not live_alerts else discord_channel.dry_run`（alerting.py line 57）— デフォルト引数で常に True
-Artifacts:
-- `outputs/forward_record/discord_webhook_validation/20260518/validation_result.json`
-- `scripts/validate_discord_webhook_dryrun.py`（VPS 実行用 validation script）
-Safety gates:
-- Discord 真実 POST：NOT_ATTEMPTED
-- --live-alerts：NOT_ATTEMPTED
-- paper execution：FORBIDDEN
-- live trading：FORBIDDEN
-- 30-day clock：NOT_STARTED
-- Bybit 接続：NOT_ATTEMPTED
-Sandbox note: Linux mount の apps/monitor/config.py 截断（既知 infrastructure noise、REVIEW-009c と同一）により full integration test は sandbox 上で未実行。コード解析で全 gate を直接確認。Windows 上での `python scripts/validate_discord_webhook_dryrun.py` 実行を推
+- `docs/research/commands/COMMAND_LOG.md` (this entry

@@ -6,4 +6,49 @@ src/__pycache__/
 .pytest_cache/
 .mypy_cache/
 data/trading.db
-configs/monitor_secrets
+configs/monitor_secrets.yaml
+configs/monitor_secrets.yml
+configs/monitor_secrets.local.yaml
+configs/monitor_secrets.local.yml
+output/
+compare.py
+
+
+# Local runtime/cache artifacts
+__pycache__/
+**/__pycache__/
+*.pyc
+data/trading.db
+data/trading.db-shm
+data/trading.db-wal
+data/live_positions.json
+output/*.xlsx
+
+# Data cache (large API response cache -- not committed)
+data/cache/
+
+# Backups / crash recovery (local only)
+backups/
+
+# Claude local settings
+.claude/
+
+# outputs not committed to repo
+outputs/monitor/
+outputs/variants/
+
+# outputs: local runtime/generated artifacts (Option E -- 2026-05-18)
+outputs/attribution/
+outputs/backtests/
+outputs/data_quality/
+outputs/paper_trading/
+outputs/forward_record/alerts/
+outputs/forward_record/prev3y_crypto/
+outputs/forward_record/prev3y_crypto_shadow_a_roll12/
+
+# data directory runtime artifacts
+data/crypto/
+data/*.malformed_*
+
+# zip archives (local deploy/data bundles)
+*.zip
