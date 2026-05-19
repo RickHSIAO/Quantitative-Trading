@@ -1,7 +1,39 @@
 # Next Action
 
+## Next Rick Action (set by 2026-05-19 scheduled task)
+
+1. Verify working tree (Windows or VPS) has uncommitted TASK-009 files:
+     git status
+     -> expect: new scripts/sync_forward_validation_to_notion.py,
+                new tests/forward_record/test_notion_sync.py,
+                modified scripts/run_forward_record_daily.sh,
+                modified docs/research/commands/{COMMAND_LOG,NEXT_ACTION}.md
+2. Commit:
+     git add scripts/sync_forward_validation_to_notion.py \
+             scripts/run_forward_record_daily.sh \
+             tests/forward_record/test_notion_sync.py \
+             docs/research/commands/COMMAND_LOG.md \
+             docs/research/commands/NEXT_ACTION.md
+     git commit -m "TASK-009: sync forward validation dashboard to Notion"
+3. Push (this also delivers 3ab9cfd / TASK-008D, which is still local-only):
+     git push origin main
+4. On the VPS:
+     cd ~/quant && git pull
+     export NOTION_TOKEN=...            # via secrets file or shell
+     export NOTION_FORWARD_VALIDATION_DATABASE_ID=...
+     # Confirm the Notion database has the 16 required properties listed below.
+     python3 scripts/sync_forward_validation_to_notion.py --dry-run
+     # Optional once env is set: bash scripts/run_forward_record_daily.sh
+
+Sandbox could not commit/push automatically: the bash-side .git/index in
+the Linux mount is corrupt (`fatal: index file corrupt`) and the
+.git/index.lock cannot be unlinked from the sandbox. The Windows-side
+working tree on F:\RickHSIAO\Python\量\u5316\u4ea4\u6613 has the
+new files written correctly (verified by py_compile + pytest 70/70 of the
+Notion + Discord suites).
+
 ## Status
-WAITING
+WAITING (Rick action: commit TASK-009 changes + push origin main)
 
 ## Owner
 Rick
@@ -127,6 +159,55 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 | 原始値 -> 原始值 | CONFIRMED in --dry-run |
 | pytest 29/29 | PASS |
 | DISCORD_NOTIFY tokens | UNCHANGED |
+| local commit 3ab9cfd | DONE |
+| pushed to origin/main | PENDING (Rick must `git push origin main`) |
+
+## TASK-009 Notion Sync Status
+
+| item | status |
+|---|---|
+| scripts/sync_forward_validation_to_notion.py | CREATED (urllib only, no new deps) |
+| scripts/run_forward_record_daily.sh TASK-009 section | APPENDED (after Discord notify) |
+| tests/forward_record/test_notion_sync.py | NEW — 41 tests, all PASS |
+| --dry-run never hits network | VERIFIED (test_dry_run_no_secret_leak) |
+| NOTION_SYNC=SKIP on missing env | VERIFIED (test_live_missing_*_skip) |
+| NOTION_SYNC=PASS / FAIL / DRY_RUN tokens | IMPLEMENTED |
+| safety_self_check (forbidden imports) | IMPLEMENTED (exit 99 on violation) |
+| schema mismatch -> FAIL with property names | IMPLEMENTED (check_required_properties) |
+| Notion API call isolation | upsert only — POST /pages or PATCH /pages/{id} |
+| Notion failure isolation in daily runner | set +e block; runner exits 0 |
+| Environment variables (never hardcoded) | NOTION_TOKEN, NOTION_FORWARD_VALIDATION_DATABASE_ID |
+| pytest test_notion_sync.py 41/41 | PASS |
+| pytest test_discord_summary.py 29/29 | PASS |
+| py_compile | PASS |
+| bash -n run_forward_record_daily.sh | PASS |
+| local commit | PENDING (sandbox git index corrupt — Rick must commit) |
+
+## TASK-009 Required Notion Database Properties
+
+The Notion database identified by `NOTION_FORWARD_VALIDATION_DATABASE_ID` must
+expose the following properties. If any are missing the script prints them and
+emits `NOTION_SYNC=FAIL`; it never alters the database schema automatically.
+
+| Notion property        | suggested type | CSV source                          |
+|---|---|---|
+| Date                   | date or title  | date (YYYYMMDD -> ISO)              |
+| Validation Day         | rich_text      | derived (Day N / 30, Review Day...) |
+| Days Remaining         | number         | derived                             |
+| Runner Status          | select         | runner_status                       |
+| Data Source            | rich_text      | data_source                         |
+| Safety Scan            | select         | safety_scan                         |
+| Dry Run                | checkbox       | dry_run                             |
+| Paper Execution Status | select         | paper_execution_status (FORBIDDEN)  |
+| Live Trading Status    | select         | live_trading_status (FORBIDDEN)     |
+| Signal Count           | number         | signal_count                        |
+| Daily PnL %            | number         | daily_pnl_pct                       |
+| Cumulative PnL %       | number         | cumulative_pnl_pct                  |
+| Max DD %               | number         | max_dd_pct                          |
+| Alerts Triggered       | number         | alerts_triggered                    |
+| Review Ready           | checkbox       | review_006b_ready                   |
+| Notes                  | rich_text      | derived (FORBIDDEN tokens summary)  |
+
 ## VPS One-time Setup (Rick action required)
 
 On instance-20260506-0945:

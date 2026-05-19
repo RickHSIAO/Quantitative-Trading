@@ -194,4 +194,50 @@ else
 fi
 
 echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
-echo "ALL_DONE: ${DATE_TAIPEI} forward record + dashboard + discord complete → ${RUN_LOG}"
+
+# ---------------------------------------------------------------------------
+# TASK-009: Sync 30-day forward validation dashboard to Notion
+#
+# Safety: Notion sync runs in isolation (set +e).
+# A sync failure MUST NOT affect forward record data, dashboard, or Discord.
+# Behaviour:
+#   NOTION_SYNC=SKIP    -- NOTION_TOKEN or DB id env var not set (silent, exit 0)
+#   NOTION_SYNC=PASS    -- upsert succeeded
+#   NOTION_SYNC=FAIL    -- schema missing or API error (logged; runner still exits 0)
+#   NOTION_SYNC=DRY_RUN -- only when invoked with --dry-run (not in cron path)
+# ---------------------------------------------------------------------------
+echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
+echo "NOTION_SYNC: starting sync_forward_validation_to_notion.py" | tee -a "${RUN_LOG}"
+
+NOTION_SCRIPT="${PROJECT_ROOT}/scripts/sync_forward_validation_to_notion.py"
+
+if [[ ! -f "${NOTION_SCRIPT}" ]]; then
+    echo "NOTION_SYNC=SKIP (script not found: ${NOTION_SCRIPT})" | tee -a "${RUN_LOG}"
+else
+    set +e
+    NOTION_OUTPUT="$("${PYTHON}" "${NOTION_SCRIPT}" 2>&1)"
+    NOTION_EXIT="${?}"
+    set -e
+
+    if [[ "${NOTION_EXIT}" -eq 0 ]]; then
+        {
+        echo "${NOTION_OUTPUT}"
+        } | tee -a "${RUN_LOG}"
+        # Extract NOTION_SYNC= line for visibility
+        NOTION_STATUS="$(echo "${NOTION_OUTPUT}" | grep "NOTION_SYNC=" | tail -1)"
+        echo "${NOTION_STATUS:-NOTION_SYNC=PASS}"
+    else
+        {
+        echo "NOTION_SYNC=FAIL (exit_code=${NOTION_EXIT})"
+        echo "NOTION_ERROR_BEGIN"
+        echo "${NOTION_OUTPUT}"
+        echo "NOTION_ERROR_END"
+        } | tee -a "${RUN_LOG}" >&2
+        echo "WARNING: Notion sync failed — forward record, dashboard, and Discord are intact" >&2
+        # NOTE: we do NOT exit non-zero here.
+        # Notion failure is non-fatal.
+    fi
+fi
+
+echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
+echo "ALL_DONE: ${DATE_TAIPEI} forward record + dashboard + discord + notion complete → ${RUN_LOG}"

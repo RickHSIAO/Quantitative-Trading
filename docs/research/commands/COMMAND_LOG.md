@@ -21,6 +21,86 @@ Notes:
 
 ---
 
+### 2026-05-19（TASK-009 — Notion Sync for 30-Day Forward Validation Dashboard）
+
+Agent: Claude Sonnet (scheduled task: resume-quant-notion-sync-after-reset)
+Command source: scheduled task instruction（TASK-009 Notion Sync）
+Task: Add Notion upsert sync for the 30-day forward validation dashboard. Read dashboard
+      output only. Never recalculate strategy results, never touch trading logic. Wire
+      into daily runner after Discord notify with set +e isolation.
+Status before: TASK-008D committed locally (3ab9cfd); no Notion integration
+Status after:  TASK-009 implemented; sync script + tests + daily runner step
+
+Files changed:
+  scripts/sync_forward_validation_to_notion.py   (NEW)
+  scripts/run_forward_record_daily.sh            (TASK-009 section appended)
+  tests/forward_record/test_notion_sync.py       (NEW — 41 tests, all pass)
+  docs/research/commands/COMMAND_LOG.md          (this entry)
+  docs/research/commands/NEXT_ACTION.md          (TASK-009 status)
+
+Required environment variables (never hardcoded, never printed):
+  NOTION_TOKEN                            -- Notion integration secret
+  NOTION_FORWARD_VALIDATION_DATABASE_ID   -- target database id
+
+Required Notion database properties (script fails safely with names if any missing):
+  Date, Validation Day, Days Remaining, Runner Status, Data Source, Safety Scan,
+  Dry Run, Paper Execution Status, Live Trading Status, Signal Count,
+  Daily PnL %, Cumulative PnL %, Max DD %, Alerts Triggered, Review Ready, Notes
+
+Behaviour / log tokens (parsed by run_forward_record_daily.sh):
+  NOTION_SYNC=DRY_RUN  -- --dry-run flag: payload printed, no API call
+  NOTION_SYNC=SKIP     -- token / db id env not set or CSV missing
+  NOTION_SYNC=PASS     -- upsert succeeded (CREATED or UPDATED)
+  NOTION_SYNC=FAIL     -- schema missing required props or API error
+
+Upsert behaviour:
+  Reads outputs/forward_record/dashboard/validation_30d.csv (newest row first)
+  Date is the unique key. Existing page with same date -> PATCH update.
+  No page found -> POST create. Date property may be Notion "date" or "title" type.
+
+Safety self-check (exit 99 on any violation):
+  Forbidden tokens in imports: bybit, ccxt, place_order, create_order,
+  submit_order, private_post, private_put, order_endpoint, live_trading,
+  paper_trading, set_leverage, cancel_order
+
+Validation (5/5 PASS):
+  1. py_compile sync_forward_validation_to_notion.py: PASS
+  2. --dry-run preview (date=20260518, Day 1 / 30): PASS
+  3. pytest tests/forward_record/test_notion_sync.py: 41 passed
+  4. pytest tests/forward_record/test_discord_summary.py: 29 passed
+  5. bash -n run_forward_record_daily.sh: PASS
+
+Safety invariants (verified):
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+  order_endpoint_called=False  bybit_write_called=False
+  Network never reached on --dry-run (external_post_attempted=False)
+  Token never printed; HTTPError bodies are token-redacted
+  Notion failure isolated by set +e in daily runner; non-fatal for forward record
+  main.py NOT modified  strategy core NOT modified  signals NOT modified
+
+Pre-existing test failures (unrelated to TASK-009):
+  tests/forward_record/test_alerting.py and test_alert_e2e_drill.py errors stem
+  from missing pyarrow/fastparquet parquet engine in the sandbox environment.
+  These failures pre-date TASK-009 and were not introduced by this change.
+  Touched-file test suites (test_notion_sync, test_discord_summary): all 70 PASS.
+
+Push status:
+  Local HEAD = 3ab9cfd (TASK-008D, pre-existing commit not yet pushed)
+  TASK-009 changes left UNCOMMITTED in working tree pending git index repair
+  (sandbox NTFS mount has corrupt git/index — see Notes).
+
+Notes:
+- The bash-side git index in this session is in a corrupt state (`error: improper
+  chunk offset(s) 1a24 and 1bb4`) with a stuck .git/index.lock that the sandbox
+  cannot unlink. As a result, no `git commit` was performed for TASK-009 in this
+  scheduled run; the new files (sync script, tests, run_forward_record_daily.sh
+  patch, and these doc updates) are written to the working tree. Rick should run
+  `git status`, `git add -A`, `git commit -m "TASK-009: sync forward validation
+  dashboard to Notion"` from a working git checkout (Windows or VPS), then push
+  3ab9cfd (TASK-008D) + the new TASK-009 commit to origin/main.
+
+---
+
 ### 2026-05-18（TASK-008D — Fix Discord Traditional Chinese Typo）
 
 Agent: Claude Sonnet
