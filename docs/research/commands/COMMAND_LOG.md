@@ -21,6 +21,38 @@ Notes:
 
 ---
 
+### 2026-05-19（TASK-008E — Fix Discord Escaped Underscore SyntaxWarning）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（TASK-008E Fix Discord SyntaxWarning \_）
+Task: Remove invalid Python escape sequences '\_' in send_forward_discord_summary.py
+      lines 234–238 to eliminate SyntaxWarning from cron logs.
+Status before: 5 lines had \_ escape sequences (paper\_execution\_status etc.)
+               causing SyntaxWarning in Python 3.12+; functional output was correct.
+Status after:  All 5 lines use plain underscores; no SyntaxWarning on py_compile or runtime.
+
+Files changed:
+  scripts/send_forward_discord_summary.py  -- removed \_ from 5 f-string lines (234–238)
+  docs/research/commands/COMMAND_LOG.md    (this entry)
+  docs/research/commands/NEXT_ACTION.md    (TASK-008E status)
+
+Lines fixed (paper_execution_status, live_trading_status,
+  FORBIDDEN_order_endpoint, FORBIDDEN_bybit_write, dry_run):
+  Before: f"  paper\_execution\_status：`{paper_status}`"
+  After:  f"  paper_execution_status：`{paper_status}`"
+
+Validation (5/5 PASS):
+  1. grep -n '\_' script: CLEAN (no \_ found)
+  2. py_compile send_forward_discord_summary.py: PASS
+  3. python3 -W error::SyntaxWarning --dry-run: exit 0, no SyntaxWarning
+  4. pytest tests/forward_record/test_discord_summary.py: 29 passed
+  5. bash -n run_forward_record_daily.sh: PASS
+
+Safety: text-only fix; no logic change; DISCORD_NOTIFY tokens unchanged;
+  NOTION_SYNC not affected; main.py NOT modified; no order endpoint touched.
+
+---
+
 ### 2026-05-19（TASK-009 — Notion Sync for 30-Day Forward Validation Dashboard）
 
 Agent: Claude Sonnet (scheduled task: resume-quant-notion-sync-after-reset)

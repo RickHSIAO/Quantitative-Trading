@@ -97,6 +97,21 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 | How to test manually (VPS) | bash scripts/run_forward_record_daily.sh |
 | Standalone dashboard rebuild | python3 scripts/build_forward_validation_dashboard.py |
 
+## TASK-008E Fix Discord Escaped Underscore SyntaxWarning Status
+
+| item | status |
+|---|---|
+| scripts/send_forward_discord_summary.py | FIXED — \_ removed from 5 f-string lines |
+| lines fixed | 234–238 (paper_execution_status, live_trading_status, FORBIDDEN_order_endpoint, FORBIDDEN_bybit_write, dry_run) |
+| SyntaxWarning eliminated | CONFIRMED (-W error::SyntaxWarning exit 0) |
+| py_compile | PASS |
+| pytest 29/29 | PASS |
+| bash -n | PASS |
+| DISCORD_NOTIFY tokens | UNCHANGED (SKIP/DRY_RUN/PASS/FAIL) |
+| NOTION_SYNC | NOT AFFECTED |
+| main.py | NOT MODIFIED |
+| order endpoint | NOT TOUCHED |
+
 ## TASK-008 Discord Daily Summary Status
 
 | item | status |
