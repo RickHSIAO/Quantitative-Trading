@@ -98,6 +98,32 @@ EXPECTED_PROPERTIES: list[str] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Property aliases -- maps each canonical (English) name to all accepted forms.
+# aliases[0] = English canonical, aliases[1] = Traditional Chinese.
+# When the Notion database uses Chinese property names the script resolves the
+# canonical name to the Chinese form before building API payloads or query
+# filters.  If both forms exist in the schema, Chinese is preferred.
+# ---------------------------------------------------------------------------
+PROPERTY_ALIASES: dict[str, list[str]] = {
+    "Date":                   ["Date",                   "日期"],
+    "Validation Day":         ["Validation Day",         "驗證日"],
+    "Days Remaining":         ["Days Remaining",         "剩餘天數"],
+    "Runner Status":          ["Runner Status",          "執行狀態"],
+    "Data Source":            ["Data Source",            "資料來源"],
+    "Safety Scan":            ["Safety Scan",            "安全掃描"],
+    "Dry Run":                ["Dry Run",                "模擬執行"],
+    "Paper Execution Status": ["Paper Execution Status", "紙上執行狀態"],
+    "Live Trading Status":    ["Live Trading Status",    "真實交易狀態"],
+    "Signal Count":           ["Signal Count",           "訊號數"],
+    "Daily PnL %":            ["Daily PnL %",            "當日 PnL %"],
+    "Cumulative PnL %":       ["Cumulative PnL %",       "累計 PnL %"],
+    "Max DD %":               ["Max DD %",               "最大回撤 %"],
+    "Alerts Triggered":       ["Alerts Triggered",       "觸發警報數"],
+    "Review Ready":           ["Review Ready",           "可檢視"],
+    "Notes":                  ["Notes",                  "備註"],
+}
+
+# ---------------------------------------------------------------------------
 # Safety self-check -- exit 99 if any forbidden token appears in an import
 # ---------------------------------------------------------------------------
 _FORBIDDEN_TOKENS = [
@@ -330,14 +356,16 @@ def build_property_payload(
 ) -> dict[str, dict]:
     """Build a Notion 'properties' dict matching the database schema types.
 
-    The schema dict is {prop_name: notion_property_object}. We respect each
-    property's declared type and pick the most appropriate value encoder.
-    Unknown types fall back to rich_text (string repr).
+    Property names in the returned dict use the actual names from the schema
+    (English or Chinese), resolved via PROPERTY_ALIASES.  Unknown Notion types
+    fall back to rich_text (string repr).
     """
+    resolved = resolve_schema_names(schema)
     props: dict[str, dict] = {}
 
-    def encode(name: str, value: Any) -> dict | None:
-        prop = schema.get(name)
+    def encode(canonical: str, value: Any) -> dict | None:
+        actual = resolved.get(canonical, canonical)
+        prop = schema.get(actual)
         if prop is None:
             return None
         ptype = prop.get("type")
@@ -370,7 +398,7 @@ def build_property_payload(
         # Fallback
         return _rt("" if value is None else str(value))
 
-    # Mapping from property name -> record value
+    # Mapping from canonical property name -> record value
     value_map: dict[str, Any] = {
         "Date": record["date_iso"] or record["date_yyyymmdd"],
         "Validation Day": record["validation_day"],
@@ -390,15 +418,17 @@ def build_property_payload(
         "Notes": record["notes"],
     }
 
-    # If Date is the title property, render YYYYMMDD as the title text
-    # (titles cannot be date values in Notion).
-    if "Date" in schema and schema["Date"].get("type") == "title":
+    # If the resolved "Date" property is title type, use YYYYMMDD as text
+    # (Notion title properties cannot hold date values).
+    date_actual = resolved.get("Date", "Date")
+    if date_actual in schema and schema[date_actual].get("type") == "title":
         value_map["Date"] = record["date_yyyymmdd"]
 
-    for name in EXPECTED_PROPERTIES:
-        encoded = encode(name, value_map.get(name))
+    for canonical in EXPECTED_PROPERTIES:
+        encoded = encode(canonical, value_map.get(canonical))
         if encoded is not None:
-            props[name] = encoded
+            actual = resolved.get(canonical, canonical)
+            props[actual] = encoded
 
     return props
 
@@ -415,12 +445,37 @@ def fetch_database_schema(token: str, db_id: str) -> dict[str, dict]:
 
 
 def check_required_properties(schema: dict[str, dict]) -> list[str]:
-    """Return list of missing property names."""
+    """Return diagnostics for each canonical property absent from schema.
+
+    Checks both English and Chinese aliases.  Each returned entry is formatted:
+      'canonical' (accepted: English | Chinese)
+    so operators know exactly which name to add to the Notion database.
+    """
     missing: list[str] = []
-    for name in EXPECTED_PROPERTIES:
-        if name not in schema:
-            missing.append(name)
+    for canonical, aliases in PROPERTY_ALIASES.items():
+        if not any(a in schema for a in aliases):
+            accepted = " | ".join(aliases)
+            missing.append(f"{canonical!r} (accepted: {accepted})")
     return missing
+
+
+def resolve_schema_names(schema: dict[str, dict]) -> dict[str, str]:
+    """Return {canonical: actual_name_in_schema} for every PROPERTY_ALIASES entry.
+
+    For each canonical name all accepted aliases are checked; Chinese aliases are
+    preferred over English when both exist.  If neither alias is present in the
+    schema the canonical name maps to itself (will surface as missing later).
+    """
+    resolved: dict[str, str] = {}
+    for canonical, aliases in PROPERTY_ALIASES.items():
+        found: str | None = None
+        # Prefer Chinese (last alias) over English (first alias).
+        for alias in reversed(aliases):
+            if alias in schema:
+                found = alias
+                break
+        resolved[canonical] = found if found is not None else canonical
+    return resolved
 
 
 def find_existing_page(
@@ -429,14 +484,20 @@ def find_existing_page(
     record: dict[str, Any],
     schema: dict[str, dict],
 ) -> str | None:
-    """Return page_id of an existing row matching Date, or None."""
-    date_prop = schema.get("Date", {})
-    ptype = date_prop.get("type")
+    """Return page_id of an existing row matching Date (or 日期), or None.
+
+    Resolves the date property name via PROPERTY_ALIASES so Chinese-named
+    databases are queried with the correct property name.
+    """
+    resolved  = resolve_schema_names(schema)
+    date_actual = resolved.get("Date", "Date")
+    date_prop   = schema.get(date_actual, {})
+    ptype       = date_prop.get("type")
     body: dict
     if ptype == "title":
         body = {
             "filter": {
-                "property": "Date",
+                "property": date_actual,
                 "title": {"equals": record["date_yyyymmdd"]},
             },
             "page_size": 1,
@@ -447,7 +508,7 @@ def find_existing_page(
             return None
         body = {
             "filter": {
-                "property": "Date",
+                "property": date_actual,
                 "date": {"equals": iso},
             },
             "page_size": 1,
@@ -455,7 +516,7 @@ def find_existing_page(
     elif ptype == "rich_text":
         body = {
             "filter": {
-                "property": "Date",
+                "property": date_actual,
                 "rich_text": {"equals": record["date_yyyymmdd"]},
             },
             "page_size": 1,
@@ -528,9 +589,12 @@ def main() -> int:
     print(f"  validation_day: {record['validation_day']}")
     print(f"  days_remaining: {record['days_remaining']}")
 
+
     # Dry-run path -- never reaches the network
     if dry_run:
-        # Build payload against a synthetic full schema so we can preview
+        # Build payload against a synthetic full schema so we can preview.
+        # Uses English canonical names; Chinese aliases are also accepted at
+        # runtime -- see PROPERTY_ALIASES for the full bilingual mapping.
         synthetic_schema = {
             "Date": {"type": "date"},
             "Validation Day": {"type": "rich_text"},
@@ -551,7 +615,7 @@ def main() -> int:
         }
         props = build_property_payload(record, synthetic_schema)
         print()
-        print("  === PAYLOAD PREVIEW (synthetic schema) ===")
+        print("  === PAYLOAD PREVIEW (synthetic English schema) ===")
         for k, v in props.items():
             try:
                 preview = json.dumps(v, ensure_ascii=False)
@@ -559,6 +623,9 @@ def main() -> int:
                 preview = str(v)
             print(f"  {k}: {preview}")
         print("  === END PREVIEW ===")
+        print()
+        print("  alias_support: ENABLED (Chinese property names accepted)")
+        print("  example_aliases: Date/\u65e5\u671f, \u9a57\u8b49\u65e5, \u5269\u9918\u5929\u6578, \u57f7\u884c\u72c0\u614b ...")
         print()
         print("  NOTION_SYNC=DRY_RUN (no API call attempted)")
         print()

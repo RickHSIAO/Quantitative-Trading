@@ -21,6 +21,60 @@ Notes:
 
 ---
 
+### 2026-05-19（TASK-009B — Support Chinese Notion Database Properties）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction（TASK-009B Support Chinese Notion Database Properties）
+Task: Add PROPERTY_ALIASES + resolve_schema_names() to sync_forward_validation_to_notion.py
+      so the script works with English, Chinese, or mixed Notion database property names.
+      Property name resolution: Chinese preferred over English when both present.
+Status before: TASK-009 script only accepted English property names
+Status after:  All 16 properties accept English or Traditional Chinese equivalents
+
+Files changed:
+  scripts/sync_forward_validation_to_notion.py  -- PROPERTY_ALIASES, resolve_schema_names(),
+                                                   updated check_required_properties(),
+                                                   build_property_payload(), find_existing_page()
+  tests/forward_record/test_notion_sync.py      -- +23 tests (total 64); added _full_schema_zh(),
+                                                   _full_schema_mixed(), TestPropertyAliases,
+                                                   TestResolveSchemaNames, TestCheckRequiredPropertiesBilingual,
+                                                   TestBuildPropertyPayloadBilingual, TestFindExistingPageFilter
+  docs/research/commands/COMMAND_LOG.md         (this entry)
+  docs/research/commands/NEXT_ACTION.md         (TASK-009B status)
+
+Chinese property name mapping (16 properties):
+  Date -> 日期                       Validation Day -> 驗證日
+  Days Remaining -> 剩餘天數          Runner Status -> 執行狀態
+  Data Source -> 資料來源             Safety Scan -> 安全掃描
+  Dry Run -> 模擬執行                 Paper Execution Status -> 紙上執行狀態
+  Live Trading Status -> 真實交易狀態  Signal Count -> 訊號數
+  Daily PnL % -> 當日 PnL %          Cumulative PnL % -> 累計 PnL %
+  Max DD % -> 最大回撤 %              Alerts Triggered -> 觸發警報數
+  Review Ready -> 可檢視             Notes -> 備註
+
+Resolution rules:
+  1. Chinese alias present in schema -> use Chinese
+  2. English alias present in schema -> use English
+  3. Both present -> Chinese wins
+  4. Neither present -> NOTION_SYNC=FAIL with "accepted: En | Zh" diagnostic
+
+Upsert query filter also uses resolved date property name (Date or 日期).
+
+Validation (5/5 PASS):
+  1. py_compile sync_forward_validation_to_notion.py: PASS
+  2. --dry-run (alias_support: ENABLED shown): PASS
+  3. pytest test_notion_sync.py: 64 passed (was 41; +23 new bilingual tests)
+  4. pytest test_discord_summary.py: 29 passed (regression PASS)
+  5. bash -n run_forward_record_daily.sh: PASS
+
+Safety invariants (unchanged):
+  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
+  order_endpoint_called=False  bybit_write_called=False
+  main.py NOT modified  strategy core NOT modified  signals NOT modified
+  NOTION_SYNC tokens unchanged: SKIP/DRY_RUN/PASS/FAIL
+
+---
+
 ### 2026-05-19（TASK-008E — Fix Discord Escaped Underscore SyntaxWarning）
 
 Agent: Claude Sonnet
@@ -632,48 +686,4 @@ Bugs fixed before final run:
   2. Script file corrupted by repeated bash appends（NTFS→Linux mount truncation の累積）→ Write tool で完全再書き込み後 null-byte truncate
 Gate results（safe boolean summary only）:
   W-0  webhook_config_present=true  webhook_config_non_empty=true  secret_value_observed=false  PASS
-  G-1  status=DRY_RUN  dry_run=true  external_post_attempted=false  load_channel_secrets_called=false  PASS
-  G-2  real_url_removed=true  discordapp_url_removed=true  redacted_marker_present=true  PASS
-  G-3  status=DRY_RUN  external_post_attempted=false  secret_value_observed=false  PASS
-  G-4  scan_status=PASS  violations=[]  PASS
-  G-5  dry_run=true  FORBIDDEN_live_trading=NOT_ATTEMPTED  FORBIDDEN_order_endpoint=NOT_ATTEMPTED  FORBIDDEN_bybit_write=NOT_ATTEMPTED  PASS
-Report-level safety fields:
-  overall_result=PASS  clock_started=false  paper_execution_status=FORBIDDEN  live_trading_status=FORBIDDEN
-  external_post_attempted=false  secret_value_observed=false  secret_leak_violations=[]
-  FORBIDDEN_live_trading=NOT_ATTEMPTED  FORBIDDEN_discord_real_post=NOT_ATTEMPTED  FORBIDDEN_live_alerts=NOT_ATTEMPTED
-Artifact:
-  outputs/forward_record/discord_webhook_vps_dry_run/20260518/validation_result.json
-Files changed:
-- `scripts/validate_discord_webhook_vps_dryrun.py` (G-5 clock_started fix + full rewrite to clear corruption)
-- `outputs/forward_record/discord_webhook_vps_dry_run/20260518/validation_result.json` (PASS result written)
-- `docs/research/commands/COMMAND_LOG.md` (this entry)
-- `docs/research/commands/NEXT_ACTION.md` (prerequisite 更新)
-
----
-
-### 2026-05-18（Discord webhook VPS dry-run validation — script + sandbox）
-
-Agent: Claude Sonnet
-Command source: Rick direct chat instruction（VPS-side Discord webhook dry-run drill with strict guards）
-Task: strict monkeypatch guard 付き VPS 専用 validation script 作成；sandbox で G-2/G-4 実行確認；VPS 実行待ち
-Status before: Discord webhook dry-run code analysis DONE；VPS 実行未済
-Status after: VPS validation script（strict guards）作成；G-2/G-4 sandbox 実行 PASS；G-1/G-3/G-5/W-0 は VPS 実行待ち
-Sandbox executed gates:
-- G-2 PASS（sandbox 実行）：`redact_text()` が discord.com / discordapp.com webhook URL を `<redacted>` に置換；no_leak_in_output=True
-- G-4 PASS（sandbox 実行）：`scan_no_order_endpoints` → violations=[]（validate_discord_webhook_vps_dryrun.py / alerting.py / discord.py）
-Sandbox blocked gates（apps/monitor/config.py truncated on Linux mount）:
-- W-0（webhook config presence）：VPS 実行必須
-- G-1（dry_run strict monkeypatch guard）：VPS 実行必須
-- G-3（no secret in ChannelResult — real env）：VPS 実行必須
-- G-5（triple dry_run gate via run_forward_alerting）：VPS 実行必須
-Strict guards implemented in script:
-- `DefaultHttpClient.post_json` monkeypatch → AssertionError if real HTTP POST attempted
-- `load_channel_secrets` call tracker → FAIL if called during dry_run dispatch
-- `_LEAK_PATTERNS` scan on all output strings → FAIL if webhook URL pattern detected
-- W-0 records only boolean（webhook_config_present / webhook_config_non_empty / secret_value_observed=false）
-VPS run command:
-  export MONITOR_DISCORD_WEBHOOK_URL="<real-webhook-url>"
-  python scripts/validate_discord_webhook_vps_dryrun.py
-Safety gates:
-- Discord 真実 POST：NOT_ATTEMPTED
-- --live-alerts：N
+  G-1  status=DRY_RUN  dry_run=true  external_post_attempted=false  load_channel_s

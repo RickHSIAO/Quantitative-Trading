@@ -97,6 +97,46 @@ Rick must run `bash scripts/install_cron_daily_runner.sh` on VPS to activate dai
 | How to test manually (VPS) | bash scripts/run_forward_record_daily.sh |
 | Standalone dashboard rebuild | python3 scripts/build_forward_validation_dashboard.py |
 
+## TASK-009B Support Chinese Notion Database Properties Status
+
+| item | status |
+|---|---|
+| scripts/sync_forward_validation_to_notion.py | UPDATED — PROPERTY_ALIASES + resolve_schema_names() |
+| PROPERTY_ALIASES | DONE (16 properties, each with English + Chinese alias) |
+| resolve_schema_names() | DONE (prefers Chinese over English when both present) |
+| check_required_properties() | UPDATED (reports canonical + accepted aliases on missing) |
+| build_property_payload() | UPDATED (uses resolved prop names as Notion payload keys) |
+| find_existing_page() | UPDATED (query filter uses resolved date property name) |
+| English schema compatibility | PASS (all 41 original tests pass) |
+| Chinese schema support | PASS (新增 23 tests, all pass) |
+| Mixed schema support | PASS |
+| "both present → Chinese wins" | PASS |
+| Missing prop error shows both aliases | PASS |
+| pytest 64/64 | PASS |
+| NOTION_SYNC tokens | UNCHANGED (SKIP/DRY_RUN/PASS/FAIL) |
+| dry-run alias_support output | ENABLED (shown in --dry-run preview) |
+
+### Chinese property name mapping
+
+| English (canonical) | Chinese |
+|---|---|
+| Date | 日期 |
+| Validation Day | 驗證日 |
+| Days Remaining | 剩餘天數 |
+| Runner Status | 執行狀態 |
+| Data Source | 資料來源 |
+| Safety Scan | 安全掃描 |
+| Dry Run | 模擬執行 |
+| Paper Execution Status | 紙上執行狀態 |
+| Live Trading Status | 真實交易狀態 |
+| Signal Count | 訊號數 |
+| Daily PnL % | 當日 PnL % |
+| Cumulative PnL % | 累計 PnL % |
+| Max DD % | 最大回撤 % |
+| Alerts Triggered | 觸發警報數 |
+| Review Ready | 可檢視 |
+| Notes | 備註 |
+
 ## TASK-008E Fix Discord Escaped Underscore SyntaxWarning Status
 
 | item | status |
@@ -219,55 +259,4 @@ emits `NOTION_SYNC=FAIL`; it never alters the database schema automatically.
 | Daily PnL %            | number         | daily_pnl_pct                       |
 | Cumulative PnL %       | number         | cumulative_pnl_pct                  |
 | Max DD %               | number         | max_dd_pct                          |
-| Alerts Triggered       | number         | alerts_triggered                    |
-| Review Ready           | checkbox       | review_006b_ready                   |
-| Notes                  | rich_text      | derived (FORBIDDEN tokens summary)  |
-
-## VPS One-time Setup (Rick action required)
-
-On instance-20260506-0945:
-  cd ~/quant
-  git pull
-  bash scripts/install_cron_daily_runner.sh
-  crontab -l   # verify entry
-
-## Daily Runner Spec
-
-| parameter | value |
-|---|---|
-| scheduler | cron |
-| schedule (UTC) | 10 10 * * * |
-| schedule (Taipei) | 18:10 CST daily |
-| runner script | scripts/run_forward_record_daily.sh |
-| log dir | outputs/forward_record/daily_logs/ |
-| next run (Day 2) | 2026-05-19T10:10Z / 18:10 CST |
-| safety_flag | --dry-run MANDATORY (aborts if missing) |
-| paper_execution_status | FORBIDDEN |
-| live_trading_status | FORBIDDEN |
-
-## Day 1 Run Summary (2026-05-18)
-
-status=REVIEW_READY  signal_date=2026-04-30  positions=50  alerts=0/7
-Artifacts: outputs/forward_record/prev3y_crypto/20260518_*
-
-## Daily Action (each day on VPS)
-
-Cron runs automatically at 18:10 CST once cron is installed.
-Manual run: bash ~/quant/scripts/run_forward_record_daily.sh
-
-## Paper Execution Gate 現況（5/7）
-- TASK-007b DONE
-- TASK-005 DONE
-- TASK-005a DONE
-- TASK-006 三補件 DONE
-- Rick test-send DONE
-- 30-day forward paper record（Day 1 done; 29 remaining）
-- REVIEW-006b + Rick 批准（after day 30）
-
-## Do Not
-- 不得啟動 live trading
-- 不得啟動 paper execution（FORBIDDEN）
-- 不得把 discord dry_run 改為 false
-- 不得送真實 Discord alert
-- 不得使用 --live-alerts
-- 不得連接 Bybit w
+| Alerts 
