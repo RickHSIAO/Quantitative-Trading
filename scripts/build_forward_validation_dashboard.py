@@ -44,6 +44,8 @@ ALERT_DIR   = ROOT / "outputs" / "forward_record" / "alerts"
 LOG_DIR     = ROOT / "outputs" / "logs" / "prev3y_crypto"
 DASHBOARD   = ROOT / "outputs" / "forward_record" / "dashboard"
 
+PAPER_DIR   = ROOT / "outputs" / "forward_record" / "paper_portfolio"
+
 CLOCK_START = "20260518"   # authorised by Rick 2026-05-18
 STRATEGY    = "prev3y_crypto / combined_paper_safe_variant"
 
@@ -177,6 +179,14 @@ def collect_days(lookback: int = 30) -> tuple[list[dict[str, Any]], int]:
             "alerts_triggered":        len(alert.get("alerts_sent", [])),
             "alert_dry_run":           alert.get("dry_run", True),
         }
+        # TASK-010: overlay paper portfolio PnL when available
+        paper_pnl = _read_json(PAPER_DIR / f"{date}_paper_pnl.json")
+        if paper_pnl:
+            row["daily_pnl_pct"]      = paper_pnl.get("daily_pnl_pct",      row["daily_pnl_pct"])
+            row["cumulative_pnl_pct"] = paper_pnl.get("cumulative_pnl_pct", row["cumulative_pnl_pct"])
+            row["max_dd_pct"]         = paper_pnl.get("max_dd_pct",         row["max_dd_pct"])
+            row["nav_usd"]            = paper_pnl.get("nav_usd",            row["nav_usd"])
+
         rows.append(row)
 
     return rows, skipped_pre_clock

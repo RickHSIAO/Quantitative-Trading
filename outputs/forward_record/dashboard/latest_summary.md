@@ -1,6 +1,6 @@
 # 30-Day Forward Validation — Dashboard Summary
 
-Generated: 2026-05-18T14:33:44Z
+Generated: 2026-05-25T04:05:00Z
 
 ## Clock
 
@@ -36,7 +36,7 @@ Generated: 2026-05-18T14:33:44Z
 | signal_count | 50.0 |
 | daily_pnl_pct | 0.0000% |
 | cumulative_pnl_pct | 0.0000% |
-| max_dd_pct | 0.0000% |
+| max_dd_pct | -0.0000% |
 | sharpe_cumulative | N/A |
 | alerts_triggered | 0.0 |
 | review_006b_ready | False |
@@ -53,4 +53,4 @@ Generated: 2026-05-18T14:33:44Z
 
 | date | status | signals | daily_pnl | cum_pnl | max_dd | alerts |
 |---|---|---|---|---|---|---|
-| 20260518 | REVIEW_READY | 50.0 | 0.0000% | 0.0000% | 0.0000% | 0.0 |
+| 20260518 | REVIEW_READY | 50.0 | 0.0000% | 0.0000% | -0.0000% | 0.0 |

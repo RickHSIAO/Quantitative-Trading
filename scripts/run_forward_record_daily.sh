@@ -109,6 +109,47 @@ fi
 echo "DONE: ${DATE_TAIPEI} forward record complete → ${RUN_LOG}"
 
 # ---------------------------------------------------------------------------
+# TASK-010: Paper Portfolio PnL engine (runs BEFORE dashboard so dashboard
+#           can overlay daily_pnl_pct / cumulative_pnl_pct / max_dd_pct)
+#
+# Safety: runs in isolation (set +e). A failure MUST NOT affect forward
+# record data, dashboard, Discord, or Notion.
+# Tokens: PAPER_PNL=DRY_RUN | PAPER_PNL=SKIP | PAPER_PNL=PASS | PAPER_PNL=FAIL
+# ---------------------------------------------------------------------------
+echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
+echo "PAPER_PNL: starting paper_portfolio_engine.py" | tee -a "${RUN_LOG}"
+
+PAPER_SCRIPT="${PROJECT_ROOT}/scripts/paper_portfolio_engine.py"
+
+if [[ ! -f "${PAPER_SCRIPT}" ]]; then
+    echo "PAPER_PNL=SKIP (script not found: ${PAPER_SCRIPT})" | tee -a "${RUN_LOG}"
+else
+    set +e
+    PAPER_OUTPUT="$( cd "${PROJECT_ROOT}" && "${PYTHON}" "${PAPER_SCRIPT}" --dry-run 2>&1 )"
+    PAPER_EXIT=$?
+    set -e
+
+    if [[ "${PAPER_EXIT}" -eq 0 ]]; then
+        {
+        echo "PAPER_PNL_OUTPUT_BEGIN"
+        echo "${PAPER_OUTPUT}"
+        echo "PAPER_PNL_OUTPUT_END"
+        } | tee -a "${RUN_LOG}"
+        PAPER_STATUS="$(echo "${PAPER_OUTPUT}" | grep "PAPER_PNL=" | tail -1)"
+        echo "${PAPER_STATUS:-PAPER_PNL=PASS}"
+    else
+        {
+        echo "PAPER_PNL=FAIL (exit_code=${PAPER_EXIT})"
+        echo "PAPER_PNL_ERROR_BEGIN"
+        echo "${PAPER_OUTPUT}"
+        echo "PAPER_PNL_ERROR_END"
+        } | tee -a "${RUN_LOG}" >&2
+        echo "WARNING: paper portfolio engine failed — forward record data is intact" >&2
+        # NOTE: paper failure is non-fatal. Runner continues.
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # TASK-007B: Build dashboard after successful forward record
 #
 # Safety: dashboard build runs in isolation (set +e).
@@ -240,4 +281,4 @@ else
 fi
 
 echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
-echo "ALL_DONE: ${DATE_TAIPEI} forward record + dashboard + discord + notion complete → ${RUN_LOG}"
+echo "ALL_DONE: ${DATE_TAIPEI} forward record + paper_pnl + dashboard + discord + notion complete → ${RUN_LOG}"
