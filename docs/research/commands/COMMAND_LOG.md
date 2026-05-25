@@ -687,3 +687,37 @@ Bugs fixed before final run:
 Gate results（safe boolean summary only）:
   W-0  webhook_config_present=true  webhook_config_non_empty=true  secret_value_observed=false  PASS
   G-1  status=DRY_RUN  dry_run=true  external_post_attempted=false  load_channel_s
+---
+
+### 2026-05-25（TASK-010: Paper Portfolio PnL Simulation）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction
+Task: Build paper portfolio MTM PnL simulation to populate daily_pnl_pct / cumulative_pnl_pct / max_dd_pct in the 30-day forward validation dashboard (previously all 0%)
+Status before: dashboard PnL fields all 0% (no engine); forward record running on VPS
+Status after: DONE (commit 98380a4)
+Commands run:
+  python3 -m py_compile scripts/paper_portfolio_engine.py           # PASS
+  python3 scripts/paper_portfolio_engine.py --dry-run               # PAPER_PNL=DRY_RUN
+  python3 scripts/paper_portfolio_engine.py --rebuild               # PAPER_PNL=PASS (20260518)
+  python3 scripts/build_forward_validation_dashboard.py             # dashboard overlay verified
+  bash -n scripts/run_forward_record_daily.sh                       # PASS
+  python3 -m pytest tests/forward_record/ -q                       # 194/194 PASS
+Key design decisions:
+  - MTM formula: daily_pnl_usd = position_usd * (today_px / prev_px - 1)
+  - Works for long (position_usd > 0) and short (position_usd < 0)
+  - Entry day: PnL = 0 (no prev price)
+  - TP_PCT = SL_PCT = None (disabled; momentum uses signal-based exits)
+  - paper_execution_status = FORBIDDEN (hardcoded, never relaxed)
+  - live_trading_status = FORBIDDEN (hardcoded, never relaxed)
+  - Prices in dev = frozen cache_fallback → PnL = 0; on VPS prices update daily → non-zero
+Files changed:
+  NEW  scripts/paper_portfolio_engine.py          (624 lines; safety_self_check, compute_daily_mtm, update_state, write_paper_pnl_json)
+  NEW  tests/forward_record/test_paper_portfolio.py (539 lines; 48 tests: MTM long/short, max_dd, TP/SL, exposure cap, safety_self_check)
+  MOD  scripts/build_forward_validation_dashboard.py  (PAPER_DIR + overlay in collect_days())
+  MOD  scripts/run_forward_record_daily.sh            (TASK-010 PAPER_PNL section before dashboard build)
+Output files (gitignored, generated):
+  outputs/forward_record/paper_portfolio/state.json
+  outputs/forward_record/paper_portfolio/daily_pnl.csv
+  outputs/forward_record/paper_portfolio/20260518_paper_pnl.json
+PAPER_PNL tokens: DRY_RUN | SKIP | PASS | FAIL
