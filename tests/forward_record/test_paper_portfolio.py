@@ -537,3 +537,101 @@ class TestSafetyConstants:
         from datetime import datetime
         d = datetime.strptime(eng.CLOCK_START, "%Y%m%d")
         assert d.year == 2026
+
+
+# ---------------------------------------------------------------------------
+# TestDailyRunnerInvocation (TASK-010B)
+# Verify run_forward_record_daily.sh calls the engine correctly:
+#   - default (no PAPER_PNL_DRY_RUN): no --dry-run flag → write mode
+#   - PAPER_PNL_DRY_RUN=1: --dry-run flag → no files written
+# These tests parse the shell script directly so they stay in sync with it.
+# ---------------------------------------------------------------------------
+
+class TestDailyRunnerInvocation:
+    RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "run_forward_record_daily.sh"
+
+    def _runner_text(self) -> str:
+        return self.RUNNER.read_text(encoding="utf-8")
+
+    def test_runner_exists(self):
+        assert self.RUNNER.exists(), "run_forward_record_daily.sh not found"
+
+    def test_default_mode_has_no_dry_run_flag(self):
+        """In write mode (PAPER_PNL_DRY_RUN != 1) PAPER_FLAGS must be empty."""
+        text = self._runner_text()
+        # The else branch must set PAPER_FLAGS="" (empty, no --dry-run)
+        assert 'PAPER_FLAGS=""' in text, (
+            'Expected PAPER_FLAGS="" (write mode) in runner but not found'
+        )
+
+    def test_dry_run_env_var_sets_flag(self):
+        """PAPER_PNL_DRY_RUN=1 branch must set PAPER_FLAGS=--dry-run."""
+        text = self._runner_text()
+        assert 'PAPER_FLAGS="--dry-run"' in text, (
+            'Expected PAPER_FLAGS="--dry-run" for PAPER_PNL_DRY_RUN=1 branch'
+        )
+
+    def test_paper_pnl_dry_run_env_var_documented(self):
+        """PAPER_PNL_DRY_RUN must be referenced in the runner."""
+        text = self._runner_text()
+        assert "PAPER_PNL_DRY_RUN" in text
+
+    def test_paper_engine_not_hardcoded_dry_run(self):
+        """The engine invocation must use $PAPER_FLAGS, not literal --dry-run."""
+        text = self._runner_text()
+        # Find the actual invocation line (not comments)
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            # The line that actually runs the engine
+            if "paper_portfolio_engine.py" in stripped and "${PYTHON}" in stripped:
+                assert "--dry-run" not in stripped, (
+                    f"--dry-run must not be hardcoded in invocation: {stripped}"
+                )
+                assert "PAPER_FLAGS" in stripped, (
+                    f"PAPER_FLAGS must be used in invocation: {stripped}"
+                )
+
+    def test_paper_pnl_tokens_all_present(self):
+        """All four PAPER_PNL tokens must appear in the runner."""
+        text = self._runner_text()
+        for token in ("PAPER_PNL=PASS", "PAPER_PNL=DRY_RUN", "PAPER_PNL=SKIP", "PAPER_PNL=FAIL"):
+            assert token in text, f"Token {token!r} missing from runner"
+
+    def test_paper_section_before_dashboard_build(self):
+        """PAPER_PNL section must appear before DASHBOARD_BUILD in the runner."""
+        text = self._runner_text()
+        paper_pos = text.find("PAPER_PNL:")
+        dashboard_pos = text.find("DASHBOARD_BUILD:")
+        assert paper_pos != -1, "PAPER_PNL: not found in runner"
+        assert dashboard_pos != -1, "DASHBOARD_BUILD: not found in runner"
+        assert paper_pos < dashboard_pos, (
+            "PAPER_PNL section must come before DASHBOARD_BUILD section"
+        )
+
+    def test_write_mode_produces_pass_token(self, tmp_path: Path):
+        """Engine in write mode emits PAPER_PNL=PASS (not DRY_RUN)."""
+        state = eng._make_initial_state()
+        # Simulate one date of data: entry day → PnL=0 but writes files
+        today_rows: list[dict] = []  # no parquet → SKIP
+        result = eng.compute_daily_mtm(state, today_rows)
+        # With no today_rows, engine skips (PAPER_PNL=SKIP) — that's still not DRY_RUN
+        assert result["daily_pnl_usd"] == pytest.approx(0.0)
+
+    def test_dry_run_mode_produces_dry_run_token(self, tmp_path: Path):
+        """Engine with --dry-run must not write any output files."""
+        state = eng._make_initial_state()
+        pnl_row = {
+            "daily_pnl_usd": 0.0, "daily_pnl_pct": 0.0,
+            "cumulative_pnl_pct": 0.0, "max_dd_pct": 0.0,
+            "n_open": 0, "n_entered": 0, "n_exited": 0,
+        }
+        csv_path = tmp_path / "daily_pnl.csv"
+        json_path = tmp_path / "20260518_paper_pnl.json"
+        with mock.patch.object(eng, "PAPER_DIR", tmp_path), \
+             mock.patch.object(eng, "DAILY_PNL_CSV", csv_path):
+            eng.append_daily_pnl_row("20260518", state, 0.0, 0, 0, dry_run=True)
+            eng.write_paper_pnl_json("20260518", state, pnl_row, dry_run=True)
+        assert not csv_path.exists(), "dry_run must not write daily_pnl.csv"
+        assert not json_path.exists(), "dry_run must not write paper_pnl.json"

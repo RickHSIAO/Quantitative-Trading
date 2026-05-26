@@ -109,23 +109,40 @@ fi
 echo "DONE: ${DATE_TAIPEI} forward record complete → ${RUN_LOG}"
 
 # ---------------------------------------------------------------------------
-# TASK-010: Paper Portfolio PnL engine (runs BEFORE dashboard so dashboard
-#           can overlay daily_pnl_pct / cumulative_pnl_pct / max_dd_pct)
+# TASK-010 / TASK-010B: Paper Portfolio PnL engine
+#   Runs BEFORE dashboard so dashboard can overlay daily_pnl_pct /
+#   cumulative_pnl_pct / max_dd_pct from the paper portfolio JSON.
 #
-# Safety: runs in isolation (set +e). A failure MUST NOT affect forward
-# record data, dashboard, Discord, or Notion.
-# Tokens: PAPER_PNL=DRY_RUN | PAPER_PNL=SKIP | PAPER_PNL=PASS | PAPER_PNL=FAIL
+# DEFAULT (cron): write mode — produces state.json, daily_pnl.csv,
+#   {date}_paper_pnl.json under outputs/forward_record/paper_portfolio/.
+#
+# MANUAL dry-run (testing): set PAPER_PNL_DRY_RUN=1 before invoking this
+#   script to pass --dry-run to the engine (no files written).
+#   Example: PAPER_PNL_DRY_RUN=1 bash scripts/run_forward_record_daily.sh
+#
+# Safety: runs in isolation (set +e). Failure is non-fatal.
+# Tokens: PAPER_PNL=PASS | PAPER_PNL=DRY_RUN | PAPER_PNL=SKIP | PAPER_PNL=FAIL
 # ---------------------------------------------------------------------------
 echo "--------------------------------------------------" | tee -a "${RUN_LOG}"
 echo "PAPER_PNL: starting paper_portfolio_engine.py" | tee -a "${RUN_LOG}"
 
 PAPER_SCRIPT="${PROJECT_ROOT}/scripts/paper_portfolio_engine.py"
 
+# Honour optional env var for manual dry-run testing (default: write mode)
+if [[ "${PAPER_PNL_DRY_RUN:-0}" == "1" ]]; then
+    PAPER_FLAGS="--dry-run"
+    echo "PAPER_PNL: dry-run mode (PAPER_PNL_DRY_RUN=1)" | tee -a "${RUN_LOG}"
+else
+    PAPER_FLAGS=""
+    echo "PAPER_PNL: write mode (outputs/forward_record/paper_portfolio/)" | tee -a "${RUN_LOG}"
+fi
+
 if [[ ! -f "${PAPER_SCRIPT}" ]]; then
     echo "PAPER_PNL=SKIP (script not found: ${PAPER_SCRIPT})" | tee -a "${RUN_LOG}"
 else
     set +e
-    PAPER_OUTPUT="$( cd "${PROJECT_ROOT}" && "${PYTHON}" "${PAPER_SCRIPT}" --dry-run 2>&1 )"
+    # shellcheck disable=SC2086
+    PAPER_OUTPUT="$( cd "${PROJECT_ROOT}" && "${PYTHON}" "${PAPER_SCRIPT}" ${PAPER_FLAGS} 2>&1 )"
     PAPER_EXIT=$?
     set -e
 

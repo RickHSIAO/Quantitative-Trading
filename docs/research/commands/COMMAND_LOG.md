@@ -721,3 +721,37 @@ Output files (gitignored, generated):
   outputs/forward_record/paper_portfolio/daily_pnl.csv
   outputs/forward_record/paper_portfolio/20260518_paper_pnl.json
 PAPER_PNL tokens: DRY_RUN | SKIP | PASS | FAIL
+
+---
+
+### 2026-05-26（TASK-010B: Enable Paper Portfolio Write Mode in Daily Runner）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction
+Task: Remove --dry-run hardcode from run_forward_record_daily.sh PAPER_PNL section so daily cron
+actually writes paper portfolio outputs (state.json, daily_pnl.csv, {date}_paper_pnl.json).
+Preserve PAPER_PNL_DRY_RUN=1 env var for manual testing.
+Status before: PAPER_PNL=DRY_RUN (no files written); dashboard PnL = 0 always
+Status after: DONE — default write mode; PAPER_PNL_DRY_RUN=1 forces dry-run
+Commands run:
+  bash -n scripts/run_forward_record_daily.sh                           # PASS
+  python3 -m py_compile scripts/paper_portfolio_engine.py               # PASS
+  python3 -m pytest tests/forward_record/test_paper_portfolio.py -q    # 57/57 PASS
+  python3 -m pytest tests/forward_record/ -q                           # 203/203 PASS
+Key change:
+  PAPER_SECTION in run_forward_record_daily.sh:
+    Before: "${PYTHON}" "${PAPER_SCRIPT}" --dry-run
+    After:  PAPER_FLAGS="" (default) or PAPER_FLAGS="--dry-run" if PAPER_PNL_DRY_RUN=1
+            "${PYTHON}" "${PAPER_SCRIPT}" ${PAPER_FLAGS}
+Manual dry-run usage: PAPER_PNL_DRY_RUN=1 bash scripts/run_forward_record_daily.sh
+PAPER_PNL tokens: PASS (write ok) | DRY_RUN (PAPER_PNL_DRY_RUN=1) | SKIP (no parquet) | FAIL (error)
+Safety confirmed:
+  paper_execution_status = FORBIDDEN (hardcoded in engine)
+  live_trading_status    = FORBIDDEN (hardcoded in engine)
+  order endpoint         = NOT called
+  bybit write API        = NOT called
+Files changed:
+  MOD  scripts/run_forward_record_daily.sh       (PAPER_PNL section: write mode + PAPER_PNL_DRY_RUN env var)
+  MOD  tests/forward_record/test_paper_portfolio.py (9 new tests: TestDailyRunnerInvocation)
+  MOD  docs/research/commands/COMMAND_LOG.md     (this entry)
+  MOD  docs/research/commands/NEXT_ACTION.md     (updated status)
