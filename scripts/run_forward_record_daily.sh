@@ -53,6 +53,7 @@ echo "run_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 echo "project_root=${PROJECT_ROOT}"
 echo "python=${PYTHON}"
 echo "safety_flag=${SAFETY_FLAG}"
+echo "data_source=${DATA_SOURCE:-live_read_only}"
 echo "paper_execution_status=FORBIDDEN"
 echo "live_trading_status=FORBIDDEN"
 echo "bybit_connection=NOT_ATTEMPTED"
@@ -60,12 +61,18 @@ echo "=================================================="
 } | tee "${RUN_LOG}"
 
 # --- Safety check: verify --dry-run is present in our command ---------------
+# TASK-011A: default to live_read_only so hypothetical_fill_px uses today's
+# Bybit public tickers instead of the frozen 2026-04-30 cache.
+# Override: DATA_SOURCE=cache_fallback bash run_forward_record_daily.sh
+DATA_SOURCE="${DATA_SOURCE:-live_read_only}"
+
 CMD=(
     "${PYTHON}"
     "scripts/run_forward_record.py"
     "--date" "${DATE_TAIPEI}"
     "--config" "${CONFIG}"
     "--output-dir" "${OUTPUT_DIR}"
+    "--data-source" "${DATA_SOURCE}"
     "${SAFETY_FLAG}"
 )
 

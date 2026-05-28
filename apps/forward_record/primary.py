@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 
 from apps.forward_record.config import ForwardRecordConfig
-from apps.forward_record.market_data import MarketDataProvider, latest_prices_by_symbol
+from apps.forward_record.market_data import MarketDataProvider, latest_prices_by_symbol, check_price_freshness
 from apps.forward_record.signal_loader import load_latest_positions
 from apps.paper_trading.overlay import apply_variant_overlay
 
@@ -25,7 +25,12 @@ def build_primary_record(config: ForwardRecordConfig, provider: MarketDataProvid
     record_ts = pd.Timestamp(config.output_date).normalize()
     loaded = load_latest_positions(config, record_ts)
     funding = provider.load_funding(loaded.signal_date)
-    prices = provider.load_prices(loaded.signal_date)
+    # TASK-011A: load prices at record_ts (today) so hypothetical_fill_px
+    # reflects current market price, not the frozen signal-date open price.
+    prices = provider.load_prices(record_ts)
+    freshness = check_price_freshness(prices, record_ts,
+                                      symbols=loaded.positions["symbol"].tolist())
+    print(f"  data_freshness: {freshness}")
     overlay = apply_variant_overlay(
         loaded.positions,
         funding,
@@ -35,7 +40,7 @@ def build_primary_record(config: ForwardRecordConfig, provider: MarketDataProvid
     )
     positions = _decorate_positions(
         overlay.positions,
-        latest_prices_by_symbol(prices, loaded.signal_date),
+        latest_prices_by_symbol(prices, record_ts),
         config,
         config.primary_variant,
         record_ts,

@@ -755,3 +755,70 @@ Files changed:
   MOD  tests/forward_record/test_paper_portfolio.py (9 new tests: TestDailyRunnerInvocation)
   MOD  docs/research/commands/COMMAND_LOG.md     (this entry)
   MOD  docs/research/commands/NEXT_ACTION.md     (updated status)
+
+---
+
+### 2026-05-28（TASK-011A: Verify and Fix Forward Record Market Data Freshness）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction
+Task: Diagnose why hypothetical_fill_px is frozen across all days (2026-05-17 → 2026-05-28);
+fix so daily runner uses live read-only market prices from Bybit public tickers.
+Status before: hypothetical_fill_px = 75750.0 (BTCUSDT open 2026-04-30) every day; PnL = 0
+Status after: DONE — LiveReadOnlyMarketDataProvider + price-date fix; commit pending push
+
+Root cause (full chain):
+  1. data/crypto/prices_daily.parquet ends at 2026-04-30 (cache cutoff)
+  2. signal_loader.py → signal_date = 2026-04-30 (last row in backtest positions)
+  3. primary.py called provider.load_prices(loaded.signal_date) + latest_prices_by_symbol(prices, loaded.signal_date)
+     → hypothetical_fill_px = open price on 2026-04-30 = frozen for every record day
+  4. run_forward_record.py --data-source only had choices=["cache_fallback"]
+  5. BybitReadOnlyMarketDataProvider existed but was allow_network=False and not wired in
+
+Fixes implemented:
+  A. apps/forward_record/primary.py
+       provider.load_prices(record_ts)               # was: loaded.signal_date
+       latest_prices_by_symbol(prices, record_ts)    # was: loaded.signal_date
+       + check_price_freshness() diagnostic output
+
+  B. apps/forward_record/market_data.py
+       + LiveReadOnlyMarketDataProvider (cache + Bybit /v5/market/tickers GET)
+       + _bybit_symbol_to_internal() / _internal_to_bybit_symbol()
+       + _fetch_bybit_tickers() (public GET only, no auth)
+       + check_price_freshness() diagnostic
+
+  C. scripts/run_forward_record.py
+       --data-source choices: ["cache_fallback", "live_read_only"]
+       live_read_only → LiveReadOnlyMarketDataProvider
+
+  D. scripts/run_forward_record_daily.sh
+       DATA_SOURCE="${DATA_SOURCE:-live_read_only}"
+       CMD += "--data-source" "${DATA_SOURCE}"
+
+Commands run:
+  python3 -m py_compile apps/forward_record/market_data.py primary.py scripts/run_forward_record.py  # PASS
+  bash -n scripts/run_forward_record_daily.sh                                                         # PASS
+  python3 -m pytest tests/forward_record/ -q                                                         # 242/242 PASS
+
+Safety confirmed:
+  data source: /v5/market/tickers?category=linear (public GET, no API key)
+  method: GET only — no POST/PUT/DELETE
+  no order endpoint, no bybit write API, no private endpoint
+  paper_execution_status = FORBIDDEN (hardcoded)
+  live_trading_status    = FORBIDDEN (hardcoded)
+  fallback: if Bybit network unavailable → cache prices silently (no crash)
+
+On VPS after git pull:
+  - Cron will run with --data-source live_read_only by default
+  - hypothetical_fill_px will use today's Bybit lastPrice instead of 2026-04-30 open
+  - paper portfolio engine will see different prices day-to-day → non-zero MTM PnL
+  - Override: DATA_SOURCE=cache_fallback bash scripts/run_forward_record_daily.sh
+
+Files changed:
+  MOD  apps/forward_record/market_data.py          (+LiveReadOnlyMarketDataProvider, freshness helpers)
+  MOD  apps/forward_record/primary.py              (price lookup date: record_ts not signal_date)
+  MOD  scripts/run_forward_record.py               (+live_read_only choice, provider selection)
+  MOD  scripts/run_forward_record_daily.sh         (DATA_SOURCE=live_read_only default)
+  NEW  tests/forward_record/test_market_data_freshness.py  (39 tests: symbol mapping, live provider, freshness, safety)
+  MOD  docs/research/commands/COMMAND_LOG.md       (this entry)
+  MOD  docs/research/commands/NEXT_ACTION.md       (updated)

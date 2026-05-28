@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
 
 from apps.forward_record.config import ForwardRecordConfig
 from apps.forward_record.alerting import run_forward_alerting
-from apps.forward_record.market_data import CacheMarketDataProvider
+from apps.forward_record.market_data import CacheMarketDataProvider, LiveReadOnlyMarketDataProvider
 from apps.forward_record.pnl_calculator import build_pnl_payload
 from apps.forward_record.primary import build_primary_record
 from apps.forward_record.report_writer import write_log, write_review_artifacts, write_track_outputs
@@ -26,7 +26,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default="outputs/forward_record/prev3y_crypto", help="Primary output directory")
     parser.add_argument("--dry-run", action="store_true", default=False, help="Force alert dry-run mode")
     parser.add_argument("--shadow-track", action="store_true", help="Generate A_roll12_share20_exclude shadow track")
-    parser.add_argument("--data-source", choices=["cache_fallback"], default="cache_fallback")
+    parser.add_argument("--data-source",
+                        choices=["cache_fallback", "live_read_only"],
+                        default="cache_fallback",
+                        help="cache_fallback=historical cache only; live_read_only=cache+Bybit public tickers (no auth)")
     parser.add_argument("--live-alerts", action="store_true", help="Allow live Discord alerts only if monitor config dry_run is false")
     return parser.parse_args()
 
@@ -40,7 +43,12 @@ def main() -> int:
         shadow_track=bool(args.shadow_track),
         data_source=args.data_source,
     )
-    provider = CacheMarketDataProvider(config.prices_path, config.funding_path)
+    if args.data_source == "live_read_only":
+        provider = LiveReadOnlyMarketDataProvider(config.prices_path, config.funding_path)
+        print(f"  data_source=live_read_only (Bybit public tickers + cache fallback)")
+    else:
+        provider = CacheMarketDataProvider(config.prices_path, config.funding_path)
+        print(f"  data_source=cache_fallback (prices_daily.parquet only)")
 
     primary = build_primary_record(config, provider)
     primary_pnl = build_pnl_payload(config, primary.positions, primary.variant, day_number=0)

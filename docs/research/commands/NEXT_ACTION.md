@@ -1,46 +1,54 @@
 # Next Action
 
-## Next Rick Action (set by 2026-05-26 TASK-010B)
+## Next Rick Action (set by 2026-05-28 TASK-011A)
 
 1. Verify working tree has uncommitted TASK-010B files:
      git status
      -> expect: modified scripts/run_forward_record_daily.sh,
                 modified tests/forward_record/test_paper_portfolio.py,
                 modified docs/research/commands/{COMMAND_LOG,NEXT_ACTION}.md
-2. Stage and commit all pending TASK-010 + TASK-010B work:
+2. Stage and commit all pending TASK-010 + TASK-010B + TASK-011A work:
      git add scripts/paper_portfolio_engine.py \
              scripts/build_forward_validation_dashboard.py \
              scripts/run_forward_record_daily.sh \
+             scripts/run_forward_record.py \
              tests/forward_record/test_paper_portfolio.py \
+             tests/forward_record/test_market_data_freshness.py \
+             apps/forward_record/market_data.py \
+             apps/forward_record/primary.py \
              docs/research/commands/COMMAND_LOG.md \
              docs/research/commands/NEXT_ACTION.md
-     git commit -m "TASK-010B: enable paper portfolio write mode in daily runner"
-3. Push (delivers TASK-008D, TASK-009, TASK-009B, TASK-010, TASK-010B):
+     git commit -m "TASK-011A: fix forward record market data freshness (live read-only prices)"
+3. Push (delivers TASK-008D through TASK-011A):
      git push origin main
 4. On the VPS:
      cd ~/quant && git pull
-     # Back-fill all existing dates with paper PnL:
+     # Smoke-check the new live provider (no files written):
+     python3 scripts/run_forward_record.py --date $(date +%Y%m%d) --data-source live_read_only --dry-run
+     # Confirm freshness_status=FRESH in the output
+     # Back-fill paper PnL with any newly-generated positions parquets:
      python3 scripts/paper_portfolio_engine.py --rebuild
-     # Rebuild dashboard to show non-zero PnL:
+     # Rebuild dashboard:
      python3 scripts/build_forward_validation_dashboard.py
-     # Confirm tomorrow's cron will run in write mode (no PAPER_PNL_DRY_RUN env var):
-     grep PAPER_PNL_DRY_RUN scripts/run_forward_record_daily.sh
+     # Tomorrow's cron will automatically use --data-source live_read_only
 
 Sandbox committed files via git commit-tree (HEAD.lock workaround).
 The Windows-side working tree on F:\RickHSIAO\Python\量化交易 has all
 new files written correctly (verified by pytest 194/194 + bash -n PASS).
 
 ## Status
-WAITING (Rick action: commit TASK-010B changes + push origin main + VPS pull + run --rebuild)
+WAITING (Rick action: commit TASK-011A changes + push origin main + VPS pull)
 
 ## Owner
 Rick
 
 ## Task
-30-day forward validation clock RUNNING（Day 9 done, 2026-05-26）。
+30-day forward validation clock RUNNING（Day 10 done, 2026-05-28）。
 VPS daily runner script ACTIVE（cron 10:10 UTC daily）。
 Paper portfolio PnL engine DONE (write mode enabled via TASK-010B).
-On VPS: run `python3 scripts/paper_portfolio_engine.py --rebuild` after git pull to back-fill.
+TASK-011A: live read-only prices fix DONE — VPS cron will now use Bybit public
+tickers for today's price; hypothetical_fill_px will change daily; PnL will be non-zero.
+On VPS after git pull: cron auto-uses live_read_only. Run --rebuild to back-fill older dates.
 
 ## 30-day Clock Status
 
@@ -98,6 +106,46 @@ to reprocess all existing dates and populate `paper_portfolio/` output files.
 | outputs/forward_record/paper_portfolio/trades.csv | exited positions log (gitignored) |
 | outputs/forward_record/paper_portfolio/{date}_paper_pnl.json | per-day JSON read by dashboard |
 
+
+
+## TASK-011A Market Data Freshness Fix Status
+
+| item | status |
+|---|---|
+| Root cause identified | DONE (price lookup used signal_date 2026-04-30, not record_ts) |
+| apps/forward_record/market_data.py | UPDATED — LiveReadOnlyMarketDataProvider + freshness helpers |
+| apps/forward_record/primary.py | UPDATED — load_prices(record_ts); latest_prices_by_symbol(prices, record_ts) |
+| scripts/run_forward_record.py | UPDATED — --data-source live_read_only added |
+| scripts/run_forward_record_daily.sh | UPDATED — DATA_SOURCE=live_read_only default |
+| tests/forward_record/test_market_data_freshness.py | NEW — 39 tests |
+| pytest 242/242 (all forward_record tests) | PASS |
+| bash -n run_forward_record_daily.sh | PASS |
+| py_compile all modified files | PASS |
+| local commits | PENDING (Rick must git push) |
+| VPS: git pull then cron will auto-use live prices | PENDING |
+
+### What changes on VPS after git pull
+
+| before (frozen) | after (live) |
+|---|---|
+| data_source = cache_fallback | data_source = bybit_read_only_live |
+| hypothetical_fill_px = 75750.0 every day | hypothetical_fill_px = Bybit lastPrice today |
+| daily_pnl_pct = 0 always | daily_pnl_pct = real MTM change |
+| freshness_status = STALE_OLD | freshness_status = FRESH |
+
+### Override to force cache (testing)
+
+```bash
+DATA_SOURCE=cache_fallback bash scripts/run_forward_record_daily.sh
+```
+
+### Bybit public endpoint used
+
+```
+GET https://api.bybit.com/v5/market/tickers?category=linear
+```
+No authentication. Read-only. Returns lastPrice for all linear perpetuals.
+Falls back silently to cache if network unavailable.
 
 ## TASK-010B Paper Portfolio Write Mode Status
 
