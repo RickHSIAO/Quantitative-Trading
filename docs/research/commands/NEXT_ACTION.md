@@ -1,13 +1,13 @@
 # Next Action
 
-## Next Rick Action (set by 2026-06-04 TASK-012)
+## Next Rick Action (set by 2026-06-04 TASK-013)
 
 1. Verify working tree has uncommitted TASK-010B files:
      git status
      -> expect: modified scripts/run_forward_record_daily.sh,
                 modified tests/forward_record/test_paper_portfolio.py,
                 modified docs/research/commands/{COMMAND_LOG,NEXT_ACTION}.md
-2. Stage and commit all pending TASK-010 through TASK-012 work:
+2. Stage and commit all pending TASK-010 through TASK-013 work:
      git add scripts/paper_portfolio_engine.py \
              scripts/build_forward_validation_dashboard.py \
              scripts/run_forward_record_daily.sh \
@@ -18,26 +18,27 @@
              apps/forward_record/primary.py \
              docs/research/commands/COMMAND_LOG.md \
              docs/research/commands/NEXT_ACTION.md
-     git commit -m "TASK-012: add paper portfolio exposure guard"
-3. Push (delivers TASK-008D through TASK-012):
+     git commit -m "TASK-013: add Notion historical backfill sync"
+3. Push (delivers TASK-008D through TASK-013):
      git push origin main
 4. On the VPS:
      cd ~/quant && git pull
      # Reprocess all dates with guard fix:
      python3 scripts/paper_portfolio_engine.py --rebuild
-     # Run exposure audit (shows guard_status per day):
+     # Run exposure audit:
      python3 scripts/audit_paper_portfolio_exposure.py
-     # Rebuild dashboard (shows guard_status in latest_summary.md):
+     # Rebuild dashboard:
      python3 scripts/build_forward_validation_dashboard.py
-     # Confirm guard constants:
-     grep GUARD_ scripts/paper_portfolio_engine.py
+     # Backfill corrected PnL to Notion:
+     python3 scripts/sync_forward_validation_to_notion.py --all --dry-run
+     python3 scripts/sync_forward_validation_to_notion.py --all
 
 Sandbox committed files via git commit-tree (HEAD.lock workaround).
 The Windows-side working tree on F:\RickHSIAO\Python\量化交易 has all
 new files written correctly (verified by pytest 194/194 + bash -n PASS).
 
 ## Status
-WAITING (Rick action: commit TASK-012 changes + push origin main + VPS --rebuild)
+WAITING (Rick action: commit TASK-013 changes + push origin main + VPS backfill)
 
 ## Owner
 Rick
@@ -48,8 +49,9 @@ VPS daily runner script ACTIVE（cron 10:10 UTC daily）。
 Paper portfolio PnL engine DONE (write mode enabled via TASK-010B).
 TASK-011A: live read-only prices fix DONE.
 TASK-011B: stale-state-reset fix DONE.
-TASK-012: exposure guard DONE — apply_exposure_guard() enforced; guard_summary in JSON/CSV/dashboard.
-On VPS: run --rebuild after git pull to reprocess all dates.
+TASK-012: exposure guard DONE.
+TASK-013: Notion historical backfill DONE — --date / --all / default(latest) supported.
+On VPS: after git pull, run --all --dry-run to preview, then --all to backfill corrected PnL.
 
 ## 30-day Clock Status
 
@@ -110,6 +112,41 @@ to reprocess all existing dates and populate `paper_portfolio/` output files.
 
 
 
+
+
+## TASK-013 Notion Historical Backfill Status
+
+| item | status |
+|---|---|
+| load_all_rows() | DONE |
+| load_row_by_date(date) | DONE |
+| _parse_cli() | DONE |
+| _select_rows() | DONE |
+| multi-row upsert loop in main() | DONE |
+| --date YYYYMMDD single backfill | DONE |
+| --all full history backfill | DONE |
+| default (no args) → latest row only | PRESERVED |
+| Chinese alias schema (TASK-009B) | PRESERVED |
+| NOTION_TOKEN never printed | VERIFIED |
+| output: selected_rows / processed_rows / created_count / updated_count | DONE |
+| tests/forward_record/test_notion_sync.py | +27 tests (91 total) |
+| pytest 330/330 | PASS |
+| local commit | PENDING (Rick must git push) |
+| VPS: git pull + --all --dry-run to preview | PENDING |
+| VPS: --all to backfill corrected 20260528 row | PENDING |
+
+### Backfill commands (run on VPS after git pull)
+
+```bash
+# Preview what will be synced
+python3 scripts/sync_forward_validation_to_notion.py --all --dry-run
+
+# Backfill specific date (e.g. corrected 20260528)
+python3 scripts/sync_forward_validation_to_notion.py --date 20260528
+
+# Full history backfill (all rows in validation_30d.csv)
+python3 scripts/sync_forward_validation_to_notion.py --all
+```
 
 ## TASK-012 Portfolio Exposure Guard Status
 

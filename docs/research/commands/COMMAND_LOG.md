@@ -945,3 +945,62 @@ Files changed:
                                                              CSV fields, audit integration, safety)
   MOD  docs/research/commands/COMMAND_LOG.md   (this entry)
   MOD  docs/research/commands/NEXT_ACTION.md   (updated)
+
+---
+
+### 2026-06-04（TASK-013: Notion Historical Backfill / Re-sync corrected rows）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction
+Task: Add --date / --all CLI args to sync_forward_validation_to_notion.py so historical
+dates can be re-upserted to Notion after PnL corrections (e.g. TASK-011B stale-state fix).
+Status before: sync only supported latest row; no way to backfill corrected history
+Status after: DONE — --date / --all / default (latest) all implemented; 91/91 tests pass
+
+New CLI usage:
+  python3 scripts/sync_forward_validation_to_notion.py                     # default: latest row
+  python3 scripts/sync_forward_validation_to_notion.py --date 20260528     # single date backfill
+  python3 scripts/sync_forward_validation_to_notion.py --all               # full history backfill
+  python3 scripts/sync_forward_validation_to_notion.py --all --dry-run     # preview all rows
+
+Key implementation:
+  load_all_rows()        — returns all rows from validation_30d.csv
+  load_row_by_date(d)    — returns single row by YYYYMMDD, or None
+  _parse_cli()           — returns (dry_run, sync_all, date_arg)
+  _select_rows()         — returns (rows, mode_description)
+  _preview_dry_run()     — previews payload for each selected row
+  main()                 — multi-row upsert loop with progress + summary
+
+Output fields:
+  selected_rows, processed_rows, created_count, updated_count, failed_count
+  NOTION_SYNC=PASS | DRY_RUN | SKIP | FAIL  (unchanged)
+
+Preserved:
+  - Default (no args) → only latest row (original behaviour)
+  - Chinese alias schema support (TASK-009B) intact
+  - NOTION_TOKEN never printed
+  - upsert reuses find_existing_page() → no duplicate Notion pages
+  - Schema fetched once; reused across all rows in --all mode
+
+Commands run:
+  python3 -m py_compile scripts/sync_forward_validation_to_notion.py   # PASS
+  python3 scripts/sync_forward_validation_to_notion.py --dry-run        # NOTION_SYNC=DRY_RUN
+  python3 scripts/sync_forward_validation_to_notion.py --all --dry-run  # NOTION_SYNC=DRY_RUN
+  python3 -m pytest tests/forward_record/ -q                            # 330/330 PASS
+
+Safety confirmed:
+  paper_execution_status = FORBIDDEN, live_trading_status = FORBIDDEN
+  NOTION_TOKEN not printed in any code path
+  No order/private API calls
+
+Files changed:
+  MOD  scripts/sync_forward_validation_to_notion.py   (+load_all_rows, +load_row_by_date,
+                                                        +_parse_cli, +_select_rows,
+                                                        +_preview_dry_run, +_SYNTHETIC_SCHEMA,
+                                                        refactored main() with multi-row loop)
+  MOD  tests/forward_record/test_notion_sync.py        (+mock import; +27 new tests:
+                                                        TestLoadHelpers, TestParseCli,
+                                                        TestSelectRows, TestMainBehaviourTask013;
+                                                        updated TestSubprocessBehaviour assertion)
+  MOD  docs/research/commands/COMMAND_LOG.md           (this entry)
+  MOD  docs/research/commands/NEXT_ACTION.md           (updated)

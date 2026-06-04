@@ -19,6 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from unittest import mock
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -307,7 +308,7 @@ class TestSubprocessBehaviour:
     def test_dry_run_prints_payload_preview(self):
         result = self._run(["--dry-run"])
         assert result.returncode == 0
-        assert "PAYLOAD PREVIEW" in result.stdout
+        assert "ROW" in result.stdout  # preview section header (TASK-013: was "PAYLOAD PREVIEW")
         assert "Runner Status" in result.stdout
 
     def test_dry_run_safety_self_check_pass(self):
@@ -556,3 +557,274 @@ class TestFindExistingPageFilter:
         schema = _full_schema_mixed()
         body = self._run(schema, "日期")
         assert body["filter"]["property"] == "日期"
+
+
+# ===========================================================================
+# TASK-013: Historical backfill tests
+# ===========================================================================
+
+def _make_csv(tmp_path, rows: list[dict]) -> Path:
+    """Write a minimal validation_30d.csv to tmp_path."""
+    import csv as _csv
+    fields = ["date", "runner_status", "data_source", "safety_scan", "dry_run",
+              "paper_execution_status", "live_trading_status", "signal_count",
+              "daily_pnl_pct", "cumulative_pnl_pct", "max_dd_pct",
+              "FORBIDDEN_order_endpoint", "FORBIDDEN_bybit_write",
+              "alerts_triggered", "review_006b_ready", "n_longs", "n_shorts",
+              "overlay_pass"]
+    p = tmp_path / "validation_30d.csv"
+    with open(p, "w", newline="", encoding="utf-8") as f:
+        w = _csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        w.writeheader()
+        for row in rows:
+            w.writerow({**{k: "" for k in fields}, **row})
+    return p
+
+
+_ROWS_3 = [
+    {"date": "20260520", "runner_status": "REVIEW_READY", "daily_pnl_pct": "1.23",
+     "paper_execution_status": "FORBIDDEN", "live_trading_status": "FORBIDDEN"},
+    {"date": "20260519", "runner_status": "REVIEW_READY", "daily_pnl_pct": "0.50",
+     "paper_execution_status": "FORBIDDEN", "live_trading_status": "FORBIDDEN"},
+    {"date": "20260518", "runner_status": "REVIEW_READY", "daily_pnl_pct": "0.00",
+     "paper_execution_status": "FORBIDDEN", "live_trading_status": "FORBIDDEN"},
+]
+
+
+class TestLoadHelpers:
+    """Test load_all_rows() and load_row_by_date() (TASK-013)."""
+
+    def test_load_all_rows_returns_all(self, tmp_path):
+        csv_p = _make_csv(tmp_path, _ROWS_3)
+        with mock.patch.object(sync, "CSV_PATH", csv_p):
+            rows = sync.load_all_rows()
+        assert len(rows) == 3
+
+    def test_load_all_rows_empty_csv(self, tmp_path):
+        csv_p = _make_csv(tmp_path, [])
+        with mock.patch.object(sync, "CSV_PATH", csv_p):
+            rows = sync.load_all_rows()
+        assert rows == []
+
+    def test_load_all_rows_missing_file(self, tmp_path):
+        with mock.patch.object(sync, "CSV_PATH", tmp_path / "no_such.csv"):
+            rows = sync.load_all_rows()
+        assert rows == []
+
+    def test_load_row_by_date_found(self, tmp_path):
+        csv_p = _make_csv(tmp_path, _ROWS_3)
+        with mock.patch.object(sync, "CSV_PATH", csv_p):
+            row = sync.load_row_by_date("20260519")
+        assert row is not None
+        assert row["date"] == "20260519"
+        assert row["daily_pnl_pct"] == "0.50"
+
+    def test_load_row_by_date_not_found(self, tmp_path):
+        csv_p = _make_csv(tmp_path, _ROWS_3)
+        with mock.patch.object(sync, "CSV_PATH", csv_p):
+            row = sync.load_row_by_date("20260528")
+        assert row is None
+
+    def test_load_row_by_date_missing_file(self, tmp_path):
+        with mock.patch.object(sync, "CSV_PATH", tmp_path / "no_such.csv"):
+            row = sync.load_row_by_date("20260518")
+        assert row is None
+
+
+class TestParseCli:
+    """Test _parse_cli() argument parsing (TASK-013)."""
+
+    def _run(self, argv):
+        with mock.patch("sys.argv", ["script.py"] + argv):
+            return sync._parse_cli()
+
+    def test_no_args_defaults(self):
+        dry_run, sync_all, date_arg = self._run([])
+        assert dry_run is False
+        assert sync_all is False
+        assert date_arg is None
+
+    def test_dry_run_flag(self):
+        dry_run, _, _ = self._run(["--dry-run"])
+        assert dry_run is True
+
+    def test_all_flag(self):
+        _, sync_all, _ = self._run(["--all"])
+        assert sync_all is True
+
+    def test_date_space_form(self):
+        _, _, date_arg = self._run(["--date", "20260528"])
+        assert date_arg == "20260528"
+
+    def test_date_equals_form(self):
+        _, _, date_arg = self._run(["--date=20260528"])
+        assert date_arg == "20260528"
+
+    def test_date_plus_dry_run(self):
+        dry_run, _, date_arg = self._run(["--date", "20260528", "--dry-run"])
+        assert dry_run is True
+        assert date_arg == "20260528"
+
+    def test_all_plus_dry_run(self):
+        dry_run, sync_all, _ = self._run(["--all", "--dry-run"])
+        assert dry_run is True
+        assert sync_all is True
+
+
+class TestSelectRows:
+    """Test _select_rows() row selection logic (TASK-013)."""
+
+    def _patch(self, tmp_path):
+        return _make_csv(tmp_path, _ROWS_3)
+
+    def test_default_returns_latest_row(self, tmp_path):
+        csv_p = self._patch(tmp_path)
+        with mock.patch.object(sync, "CSV_PATH", csv_p):
+            rows, mode = sync._select_rows(sync_all=False, date_arg=None)
+        assert len(rows) == 1
+        assert rows[0]["date"] == "20260520"   # first row in CSV = newest
+        assert mode == "latest"
+
+    def test_all_returns_all_rows(self, tmp_path):
+        csv_p = self._patch(tmp_path)
+        with mock.patch.object(sync, "CSV_PATH", csv_p):
+            rows, mode = sync._select_rows(sync_all=True, date_arg=None)
+        assert len(rows) == 3
+        assert mode == "all"
+
+    def test_date_returns_specific_row(self, tmp_path):
+        csv_p = self._patch(tmp_path)
+        with mock.patch.object(sync, "CSV_PATH", csv_p):
+            rows, mode = sync._select_rows(sync_all=False, date_arg="20260519")
+        assert len(rows) == 1
+        assert rows[0]["date"] == "20260519"
+        assert "20260519" in mode
+
+    def test_date_not_found_returns_empty(self, tmp_path):
+        csv_p = self._patch(tmp_path)
+        with mock.patch.object(sync, "CSV_PATH", csv_p):
+            rows, mode = sync._select_rows(sync_all=False, date_arg="20260599")
+        assert rows == []
+        assert "20260599" in mode
+
+    def test_date_takes_priority_over_all(self, tmp_path):
+        """When both --date and --all given, --date wins (checked via _parse_cli priority)."""
+        csv_p = self._patch(tmp_path)
+        with mock.patch.object(sync, "CSV_PATH", csv_p):
+            rows, mode = sync._select_rows(sync_all=True, date_arg="20260518")
+        assert len(rows) == 1
+        assert rows[0]["date"] == "20260518"
+
+
+class TestMainBehaviourTask013:
+    """Integration-level tests for main() with new CLI args (TASK-013)."""
+
+    # Full synthetic schema (all 16 required English properties)
+    _FULL_SCHEMA = {k: {"type": v} for k, v in {
+        "Date": "date", "Validation Day": "rich_text", "Days Remaining": "number",
+        "Runner Status": "select", "Data Source": "rich_text", "Safety Scan": "select",
+        "Dry Run": "checkbox", "Paper Execution Status": "select",
+        "Live Trading Status": "select", "Signal Count": "number",
+        "Daily PnL %": "number", "Cumulative PnL %": "number",
+        "Max DD %": "number", "Alerts Triggered": "number",
+        "Review Ready": "checkbox", "Notes": "rich_text",
+    }.items()}
+
+    def _run_main(self, argv, tmp_path, rows=None):
+        csv_p = _make_csv(tmp_path, rows or _ROWS_3)
+        captured = []
+
+        def fake_upsert(token, db_id, record, schema):
+            captured.append(record["date_yyyymmdd"])
+            return ("updated", "page-id-123")
+
+        with (mock.patch("sys.argv", ["script.py"] + argv),
+              mock.patch.object(sync, "CSV_PATH", csv_p),
+              mock.patch.object(sync, "fetch_database_schema",
+                                return_value=self._FULL_SCHEMA),
+              mock.patch.object(sync, "upsert_page", side_effect=fake_upsert),
+              mock.patch.dict("os.environ", {
+                  sync.NOTION_TOKEN_ENV: "secret_test_token_xxx",
+                  sync.NOTION_DB_ID_ENV: "db-test-id",
+              })):
+            rc = sync.main()
+        return rc, captured
+
+    def test_default_syncs_only_latest(self, tmp_path):
+        rc, upserted = self._run_main([], tmp_path)
+        assert rc == 0
+        assert len(upserted) == 1
+        assert upserted[0] == "20260520"  # first CSV row = latest
+
+    def test_all_syncs_all_rows(self, tmp_path):
+        rc, upserted = self._run_main(["--all"], tmp_path)
+        assert rc == 0
+        assert len(upserted) == 3
+
+    def test_date_syncs_only_that_date(self, tmp_path):
+        rc, upserted = self._run_main(["--date", "20260519"], tmp_path)
+        assert rc == 0
+        assert upserted == ["20260519"]
+
+    def test_date_not_in_csv_returns_skip(self, tmp_path, capsys):
+        csv_p = _make_csv(tmp_path, _ROWS_3)
+        with (mock.patch("sys.argv", ["script.py", "--date", "20260599"]),
+              mock.patch.object(sync, "CSV_PATH", csv_p)):
+            rc = sync.main()
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "NOTION_SYNC=SKIP" in out
+
+    def test_dry_run_does_not_call_upsert(self, tmp_path):
+        csv_p = _make_csv(tmp_path, _ROWS_3)
+        called = []
+        with (mock.patch("sys.argv", ["script.py", "--dry-run"]),
+              mock.patch.object(sync, "CSV_PATH", csv_p),
+              mock.patch.object(sync, "upsert_page", side_effect=lambda *a, **k: called.append(1))):
+            sync.main()
+        assert called == [], "dry_run must not call upsert_page"
+
+    def test_all_dry_run_previews_all_rows(self, tmp_path, capsys):
+        csv_p = _make_csv(tmp_path, _ROWS_3)
+        with (mock.patch("sys.argv", ["script.py", "--all", "--dry-run"]),
+              mock.patch.object(sync, "CSV_PATH", csv_p)):
+            rc = sync.main()
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "NOTION_SYNC=DRY_RUN" in out
+        assert "selected_rows=3" in out
+
+    def test_no_token_leak_in_output(self, tmp_path, capsys):
+        csv_p = _make_csv(tmp_path, _ROWS_3)
+        secret = "secret_very_secret_token_xyz"
+        with (mock.patch("sys.argv", ["script.py", "--dry-run"]),
+              mock.patch.object(sync, "CSV_PATH", csv_p),
+              mock.patch.dict("os.environ", {sync.NOTION_TOKEN_ENV: secret})):
+            sync.main()
+        out = capsys.readouterr().out
+        assert secret not in out, "NOTION_TOKEN must not appear in stdout"
+
+    def test_output_shows_selected_processed_counts(self, tmp_path, capsys):
+        rc, _ = self._run_main(["--all"], tmp_path)
+        out = capsys.readouterr().out
+        assert "selected_rows=3" in out
+        assert "processed_rows=3" in out
+        assert "created_count=" in out
+        assert "updated_count=" in out
+
+    def test_chinese_alias_schema_still_accepted(self, tmp_path):
+        """TASK-009B Chinese alias support must survive TASK-013 refactor."""
+        schema_zh = {
+            "日期": {"type": "date"}, "驗證日": {"type": "rich_text"},
+            "剩餘天數": {"type": "number"}, "執行狀態": {"type": "select"},
+            "資料來源": {"type": "rich_text"}, "安全掃描": {"type": "select"},
+            "模擬執行": {"type": "checkbox"}, "紙上執行狀態": {"type": "select"},
+            "真實交易狀態": {"type": "select"}, "訊號數": {"type": "number"},
+            "當日 PnL %": {"type": "number"}, "累計 PnL %": {"type": "number"},
+            "最大回撤 %": {"type": "number"}, "觸發警報數": {"type": "number"},
+            "可檢視": {"type": "checkbox"}, "備註": {"type": "rich_text"},
+        }
+        resolved = sync.resolve_schema_names(schema_zh)
+        assert resolved["Date"]            == "日期"
+        assert resolved["Validation Day"]  == "驗證日"
+        assert resolved["Days Remaining"]  == "剩餘天數"

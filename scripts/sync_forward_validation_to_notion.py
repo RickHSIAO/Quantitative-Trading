@@ -217,6 +217,22 @@ def load_latest_row() -> dict[str, str] | None:
     return None
 
 
+def load_all_rows() -> list[dict[str, str]]:
+    """Return all rows from CSV, newest-first (as written by dashboard builder)."""
+    if not CSV_PATH.exists():
+        return []
+    with open(CSV_PATH, newline="", encoding="utf-8") as f:
+        return [dict(r) for r in csv.DictReader(f)]
+
+
+def load_row_by_date(date: str) -> dict[str, str] | None:
+    """Return the CSV row whose 'date' column equals `date` (YYYYMMDD), or None."""
+    for row in load_all_rows():
+        if row.get("date", "").strip() == date.strip():
+            return row
+    return None
+
+
 def _to_number(value: str | None) -> float | None:
     if value is None or value == "" or value == "N/A" or value == "None":
         return None
@@ -569,72 +585,125 @@ def _redact_token(s: str, token: str) -> str:
     return s
 
 
-def main() -> int:
-    dry_run = "--dry-run" in sys.argv
-    print("sync_forward_validation_to_notion.py")
-    print(f"  dry_run={dry_run}")
-    print()
+# ---------------------------------------------------------------------------
+# Row selection helpers (TASK-013)
+# ---------------------------------------------------------------------------
 
-    safety_self_check()
+_SYNTHETIC_SCHEMA: dict[str, dict] = {
+    "Date": {"type": "date"},
+    "Validation Day": {"type": "rich_text"},
+    "Days Remaining": {"type": "number"},
+    "Runner Status": {"type": "select"},
+    "Data Source": {"type": "rich_text"},
+    "Safety Scan": {"type": "select"},
+    "Dry Run": {"type": "checkbox"},
+    "Paper Execution Status": {"type": "select"},
+    "Live Trading Status": {"type": "select"},
+    "Signal Count": {"type": "number"},
+    "Daily PnL %": {"type": "number"},
+    "Cumulative PnL %": {"type": "number"},
+    "Max DD %": {"type": "number"},
+    "Alerts Triggered": {"type": "number"},
+    "Review Ready": {"type": "checkbox"},
+    "Notes": {"type": "rich_text"},
+}
 
-    # Load data
+
+def _parse_cli() -> tuple[bool, bool, str | None]:
+    """
+    Parse CLI args. Returns (dry_run, sync_all, date_arg).
+    Priority: --date > --all > default (latest row).
+    """
+    args = sys.argv[1:]
+    dry_run  = "--dry-run" in args
+    sync_all = "--all"     in args
+    date_arg: str | None = None
+    for i, a in enumerate(args):
+        if a == "--date" and i + 1 < len(args):
+            date_arg = args[i + 1]
+            break
+        if a.startswith("--date="):
+            date_arg = a.split("=", 1)[1]
+            break
+    return dry_run, sync_all, date_arg
+
+
+def _select_rows(sync_all: bool, date_arg: str | None) -> tuple[list[dict[str, str]], str]:
+    """Return (rows, mode_description). mode: latest | date:<YYYYMMDD> | all."""
+    if date_arg:
+        row = load_row_by_date(date_arg)
+        return ([row], f"date:{date_arg}") if row is not None else ([], f"date:{date_arg}")
+    if sync_all:
+        return load_all_rows(), "all"
     row = load_latest_row()
-    if row is None:
-        print(f"  WARNING: {CSV_PATH} not found or empty")
-        print("  NOTION_SYNC=SKIP (no data)")
-        return 0
-
-    record = build_record(row)
-    print(f"  latest row: date={record['date_yyyymmdd']}")
-    print(f"  validation_day: {record['validation_day']}")
-    print(f"  days_remaining: {record['days_remaining']}")
+    return ([row], "latest") if row is not None else ([], "latest")
 
 
-    # Dry-run path -- never reaches the network
-    if dry_run:
-        # Build payload against a synthetic full schema so we can preview.
-        # Uses English canonical names; Chinese aliases are also accepted at
-        # runtime -- see PROPERTY_ALIASES for the full bilingual mapping.
-        synthetic_schema = {
-            "Date": {"type": "date"},
-            "Validation Day": {"type": "rich_text"},
-            "Days Remaining": {"type": "number"},
-            "Runner Status": {"type": "select"},
-            "Data Source": {"type": "rich_text"},
-            "Safety Scan": {"type": "select"},
-            "Dry Run": {"type": "checkbox"},
-            "Paper Execution Status": {"type": "select"},
-            "Live Trading Status": {"type": "select"},
-            "Signal Count": {"type": "number"},
-            "Daily PnL %": {"type": "number"},
-            "Cumulative PnL %": {"type": "number"},
-            "Max DD %": {"type": "number"},
-            "Alerts Triggered": {"type": "number"},
-            "Review Ready": {"type": "checkbox"},
-            "Notes": {"type": "rich_text"},
-        }
-        props = build_property_payload(record, synthetic_schema)
-        print()
-        print("  === PAYLOAD PREVIEW (synthetic English schema) ===")
+def _preview_dry_run(rows: list[dict[str, str]]) -> None:
+    for i, row in enumerate(rows):
+        record = build_record(row)
+        props  = build_property_payload(record, _SYNTHETIC_SCHEMA)
+        print(f"  === ROW {i+1}/{len(rows)}: date={record['date_yyyymmdd']} ===")
         for k, v in props.items():
             try:
                 preview = json.dumps(v, ensure_ascii=False)
             except (TypeError, ValueError):
                 preview = str(v)
-            print(f"  {k}: {preview}")
-        print("  === END PREVIEW ===")
-        print()
-        print("  alias_support: ENABLED (Chinese property names accepted)")
-        print("  example_aliases: Date/\u65e5\u671f, \u9a57\u8b49\u65e5, \u5269\u9918\u5929\u6578, \u57f7\u884c\u72c0\u614b ...")
+            print(f"    {k}: {preview}")
+    print()
+    print("  alias_support: ENABLED (Chinese property names accepted)")
+    print("  example_aliases: Date/\u65e5\u671f, \u9a57\u8b49\u65e5, \u5269\u9918\u5929\u6578 ...")
+
+
+def main() -> int:
+    dry_run, sync_all, date_arg = _parse_cli()
+
+    print("sync_forward_validation_to_notion.py")
+    print(f"  dry_run={dry_run}")
+    if date_arg:
+        print(f"  mode=date:{date_arg}")
+    elif sync_all:
+        print("  mode=all")
+    else:
+        print("  mode=latest")
+    print()
+
+    safety_self_check()
+
+    # ── Row selection ────────────────────────────────────────────────────
+    rows, mode = _select_rows(sync_all, date_arg)
+    selected_rows = len(rows)
+
+    if selected_rows == 0:
+        if date_arg:
+            print(f"  WARNING: date {date_arg} not found in {CSV_PATH}")
+            print("  NOTION_SYNC=SKIP (date not in CSV)")
+        else:
+            print(f"  WARNING: {CSV_PATH} not found or empty")
+            print("  NOTION_SYNC=SKIP (no data)")
+        return 0
+
+    print(f"  selected_rows={selected_rows}  mode={mode}")
+    if selected_rows <= 3:
+        for r in rows:
+            print(f"    date={r.get('date','?')}  runner_status={r.get('runner_status','?')}"
+                  f"  daily_pnl_pct={r.get('daily_pnl_pct','?')}%")
+    print()
+
+    # ── Dry-run path ─────────────────────────────────────────────────────
+    if dry_run:
+        _preview_dry_run(rows)
         print()
         print("  NOTION_SYNC=DRY_RUN (no API call attempted)")
+        print(f"  selected_rows={selected_rows}  processed_rows=0")
+        print("  created_count=0  updated_count=0")
         print()
         print("  safety gates:")
         for k, v in SAFETY.items():
             print(f"    {k} = {v}")
         return 0
 
-    # Live path: require env vars
+    # ── Live path ────────────────────────────────────────────────────────
     token = os.environ.get(NOTION_TOKEN_ENV, "").strip()
     db_id = os.environ.get(NOTION_DB_ID_ENV, "").strip()
     if not token or not db_id:
@@ -645,7 +714,7 @@ def main() -> int:
         print("  NOTION_SYNC=SKIP")
         return 0
 
-    # Discover schema
+    # Discover schema (once; reused across all rows)
     try:
         schema = fetch_database_schema(token, db_id)
     except NotionAPIError as exc:
@@ -657,32 +726,57 @@ def main() -> int:
 
     missing = check_required_properties(schema)
     if missing:
-        print(
-            f"  ERROR: Notion database missing required properties: {missing}",
-            file=sys.stderr,
-        )
+        print(f"  ERROR: Notion database missing required properties: {missing}",
+              file=sys.stderr)
         print("  NOTION_SYNC=FAIL", file=sys.stderr)
         print("  NOTION_SYNC=FAIL")
         return 1
 
-    # Upsert
-    try:
-        action, page_id = upsert_page(token, db_id, record, schema)
-    except NotionAPIError as exc:
-        msg = _redact_token(str(exc), token)
-        print(f"  ERROR during upsert: {msg}", file=sys.stderr)
-        print("  NOTION_SYNC=FAIL", file=sys.stderr)
-        print("  NOTION_SYNC=FAIL")
-        return 1
-    except Exception as exc:
-        msg = _redact_token(f"{exc.__class__.__name__}: {exc}", token)
-        print(f"  ERROR during upsert: {msg}", file=sys.stderr)
-        print("  NOTION_SYNC=FAIL", file=sys.stderr)
-        print("  NOTION_SYNC=FAIL")
-        return 1
+    # ── Multi-row upsert loop ─────────────────────────────────────────────
+    created_count  = 0
+    updated_count  = 0
+    failed_count   = 0
+    processed_rows = 0
 
-    print(f"  upsert action: {action}")
-    print(f"  NOTION_SYNC=PASS ({action})")
+    for i, row in enumerate(rows):
+        record     = build_record(row)
+        date_label = record["date_yyyymmdd"]
+        print(f"  [{i+1}/{selected_rows}] upserting date={date_label} ...")
+        try:
+            action, _ = upsert_page(token, db_id, record, schema)
+            if action == "created":
+                created_count += 1
+            else:
+                updated_count += 1
+            processed_rows += 1
+            print(f"    {action}: {date_label}")
+        except NotionAPIError as exc:
+            msg = _redact_token(str(exc), token)
+            print(f"    ERROR: {msg}", file=sys.stderr)
+            print(f"    NOTION_SYNC_ROW=FAIL date={date_label}")
+            failed_count += 1
+        except Exception as exc:
+            msg = _redact_token(f"{exc.__class__.__name__}: {exc}", token)
+            print(f"    ERROR: {msg}", file=sys.stderr)
+            print(f"    NOTION_SYNC_ROW=FAIL date={date_label}")
+            failed_count += 1
+
+    # ── Summary ───────────────────────────────────────────────────────────
+    print()
+    print(f"  selected_rows={selected_rows}")
+    print(f"  processed_rows={processed_rows}")
+    print(f"  created_count={created_count}")
+    print(f"  updated_count={updated_count}")
+    print(f"  failed_count={failed_count}")
+
+    if failed_count > 0 and processed_rows == 0:
+        print("  NOTION_SYNC=FAIL")
+        return 1
+    elif failed_count > 0:
+        print(f"  NOTION_SYNC=PASS (partial: {failed_count} rows failed)")
+    else:
+        print(f"  NOTION_SYNC=PASS ({processed_rows} rows upserted)")
+
     print()
     print("  safety gates:")
     for k, v in SAFETY.items():
