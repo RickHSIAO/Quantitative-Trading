@@ -1,13 +1,13 @@
 # Next Action
 
-## Next Rick Action (set by 2026-05-28 TASK-011A)
+## Next Rick Action (set by 2026-06-04 TASK-011B)
 
 1. Verify working tree has uncommitted TASK-010B files:
      git status
      -> expect: modified scripts/run_forward_record_daily.sh,
                 modified tests/forward_record/test_paper_portfolio.py,
                 modified docs/research/commands/{COMMAND_LOG,NEXT_ACTION}.md
-2. Stage and commit all pending TASK-010 + TASK-010B + TASK-011A work:
+2. Stage and commit all pending TASK-010 through TASK-011B work:
      git add scripts/paper_portfolio_engine.py \
              scripts/build_forward_validation_dashboard.py \
              scripts/run_forward_record_daily.sh \
@@ -18,37 +18,37 @@
              apps/forward_record/primary.py \
              docs/research/commands/COMMAND_LOG.md \
              docs/research/commands/NEXT_ACTION.md
-     git commit -m "TASK-011A: fix forward record market data freshness (live read-only prices)"
-3. Push (delivers TASK-008D through TASK-011A):
+     git commit -m "TASK-011B: paper portfolio exposure audit + stale-state-reset fix"
+3. Push (delivers TASK-008D through TASK-011B):
      git push origin main
 4. On the VPS:
      cd ~/quant && git pull
-     # Smoke-check the new live provider (no files written):
-     python3 scripts/run_forward_record.py --date $(date +%Y%m%d) --data-source live_read_only --dry-run
-     # Confirm freshness_status=FRESH in the output
-     # Back-fill paper PnL with any newly-generated positions parquets:
+     # Reprocess all dates with the stale-state-reset fix:
      python3 scripts/paper_portfolio_engine.py --rebuild
+     # Run exposure audit to confirm metrics are sane:
+     python3 scripts/audit_paper_portfolio_exposure.py
      # Rebuild dashboard:
      python3 scripts/build_forward_validation_dashboard.py
-     # Tomorrow's cron will automatically use --data-source live_read_only
+     # Confirm tomorrow's cron will use live_read_only + stale-reset guard:
+     grep STALE_RESET_DAYS scripts/paper_portfolio_engine.py
 
 Sandbox committed files via git commit-tree (HEAD.lock workaround).
 The Windows-side working tree on F:\RickHSIAO\Python\量化交易 has all
 new files written correctly (verified by pytest 194/194 + bash -n PASS).
 
 ## Status
-WAITING (Rick action: commit TASK-011A changes + push origin main + VPS pull)
+WAITING (Rick action: commit TASK-011B changes + push origin main + VPS --rebuild)
 
 ## Owner
 Rick
 
 ## Task
-30-day forward validation clock RUNNING（Day 10 done, 2026-05-28）。
+30-day forward validation clock RUNNING（Day 17 done, 2026-06-04）。
 VPS daily runner script ACTIVE（cron 10:10 UTC daily）。
 Paper portfolio PnL engine DONE (write mode enabled via TASK-010B).
-TASK-011A: live read-only prices fix DONE — VPS cron will now use Bybit public
-tickers for today's price; hypothetical_fill_px will change daily; PnL will be non-zero.
-On VPS after git pull: cron auto-uses live_read_only. Run --rebuild to back-fill older dates.
+TASK-011A: live read-only prices fix DONE.
+TASK-011B: stale-state-reset fix DONE — +460%/+139% spike was 28-day cache-to-live transition artifact.
+On VPS: run --rebuild after git pull to reprocess all dates with the stale-reset fix applied.
 
 ## 30-day Clock Status
 
@@ -107,6 +107,45 @@ to reprocess all existing dates and populate `paper_portfolio/` output files.
 | outputs/forward_record/paper_portfolio/{date}_paper_pnl.json | per-day JSON read by dashboard |
 
 
+
+
+## TASK-011B Paper Portfolio Sanity Check / Exposure Audit Status
+
+| item | status |
+|---|---|
+| Root cause of +460% PnL identified | DONE — STATE_STALENESS bug |
+| Bug description | state.json prev_px from cache era (Apr 30); first live-price day computed 28-day accumulated move as 1 day |
+| PnL formula correct | YES (pnl = position_usd × (today/prev - 1) is correct) |
+| Position sizing normal | YES (gross_exposure = 1.0x, each position = 2% NAV) |
+| scripts/audit_paper_portfolio_exposure.py | NEW — exposure metrics, PnL sanity, MD/JSON audit report |
+| scripts/paper_portfolio_engine.py | UPDATED — _maybe_reset_stale_state(), STALE_RESET_DAYS=3 |
+| tests/forward_record/test_paper_portfolio_audit.py | NEW — 27 tests |
+| pytest 269/269 | PASS |
+| local commit | PENDING (Rick must git push) |
+| VPS: --rebuild after git pull | PENDING (to reprocess all dates with fix) |
+
+### Stale-State Reset Fix
+
+When `gap(today, state.last_processed_date) > STALE_RESET_DAYS (3 days)`:
+- All positions treated as **new entries** → PnL = 0 on transition day
+- `last_px` seeded from today's live prices → correct day-2 MTM
+- NAV / peak / max_dd preserved (not reset)
+
+```bash
+# After git pull on VPS — reprocess all dates with the fix:
+python3 scripts/paper_portfolio_engine.py --rebuild
+
+# Run exposure audit:
+python3 scripts/audit_paper_portfolio_exposure.py
+```
+
+### Exposure Thresholds
+
+| metric | WARNING | HIGH_RISK |
+|---|---|---|
+| gross_exposure_ratio | > 1.0x | > 3.0x |
+| max_single_pos_pct_nav | > 10% | — |
+| abs(daily_pnl_pct) | > 20% | — |
 
 ## TASK-011A Market Data Freshness Fix Status
 

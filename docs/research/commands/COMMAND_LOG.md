@@ -822,3 +822,60 @@ Files changed:
   NEW  tests/forward_record/test_market_data_freshness.py  (39 tests: symbol mapping, live provider, freshness, safety)
   MOD  docs/research/commands/COMMAND_LOG.md       (this entry)
   MOD  docs/research/commands/NEXT_ACTION.md       (updated)
+
+---
+
+### 2026-06-04（TASK-011B: Paper Portfolio Sanity Check / Exposure Audit）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction
+Task: Diagnose +460% Day 11 PnL and +139% Day 12 PnL; audit exposure; fix root cause.
+Status before: PAPER_PNL=PASS but daily_pnl_pct showing +460% / +139% (unrealistic)
+Status after: DONE — root cause diagnosed + stale-state-reset fix + audit script; commit pending
+
+Root cause:
+  BUG: STATE_STALENESS
+  paper_portfolio_engine.py did not detect when state.json prev_px values were stale.
+  When TASK-011A deployed live_read_only prices on VPS:
+    state.json had last_processed_date=20260518, positions with last_px=April_30_cache_price
+    On 20260528 (first live run): compute_daily_mtm used prev_px=April_30 vs today_px=May_28_live
+    Gap = 28 days of accumulated price movement booked as ONE day PnL
+    Momentum strategy longs (3yr winners) went up 200-800%; shorts (3yr losers) fell
+    Net effect: huge asymmetric PnL spike (+460% on Day 11, +139% on Day 12)
+  PnL formula itself is CORRECT: pnl = position_usd * (today_px / prev_px - 1)
+  Position sizing is NORMAL: 25 long × $200 + 25 short × -$200 = gross_exposure_ratio = 1.0x
+
+Exposure audit results (sandbox data — VPS has live results):
+  gross_exposure_ratio = 1.00x (NORMAL, <= 1.0x threshold)
+  net_exposure_ratio   = 0.00x (perfectly balanced long-short)
+  max_single_pos_pct   = 2.0% of NAV (NORMAL, < 10% threshold)
+  no position sizing bug found
+
+Fix implemented:
+  paper_portfolio_engine.py: _maybe_reset_stale_state()
+    If gap between state.last_processed_date and today > STALE_RESET_DAYS (3):
+      Clear positions list → all positions treated as NEW ENTRIES (PnL=0)
+      Seed last_px from today live prices for correct day-2 MTM
+    NAV / peak / max_dd are preserved (not reset)
+  STALE_RESET_DAYS = 3 (configurable constant)
+
+Commands run:
+  python3 -m py_compile scripts/audit_paper_portfolio_exposure.py   # PASS
+  python3 -m py_compile scripts/paper_portfolio_engine.py           # PASS
+  python3 scripts/audit_paper_portfolio_exposure.py                 # AUDIT_DONE
+  python3 -m pytest tests/forward_record/ -q                        # 269/269 PASS
+
+On VPS after git pull:
+  python3 scripts/paper_portfolio_engine.py --rebuild  (re-processes all dates with stale-reset fix)
+  python3 scripts/audit_paper_portfolio_exposure.py    (generates audit report with live data)
+
+Files changed:
+  NEW  scripts/audit_paper_portfolio_exposure.py       (474 lines; exposure metrics, PnL sanity, MD/JSON report)
+  MOD  scripts/paper_portfolio_engine.py               (_maybe_reset_stale_state, STALE_RESET_DAYS constant)
+  NEW  tests/forward_record/test_paper_portfolio_audit.py  (262 lines; 27 tests)
+  MOD  docs/research/commands/COMMAND_LOG.md           (this entry)
+  MOD  docs/research/commands/NEXT_ACTION.md           (updated)
+Safety confirmed:
+  audit script: read-only, no order endpoint, safety_self_check PASS
+  engine fix: only clears positions[], preserves NAV, no trading API calls
+  paper_execution_status = FORBIDDEN, live_trading_status = FORBIDDEN

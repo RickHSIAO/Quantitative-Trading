@@ -53,6 +53,7 @@ TRADES_CSV      = PAPER_DIR / "trades.csv"
 # ---------------------------------------------------------------------------
 PAPER_EQUITY_INIT   = 10_000.0   # USDT
 CLOCK_START         = "20260518"  # Day 1 of 30-day validation
+STALE_RESET_DAYS    = 3            # gap (days) between last_processed and today that triggers stale-state reset
 
 # Exposure caps (generous; strategy actually uses 25/25/50)
 MAX_LONG_POSITIONS  = 30
@@ -481,6 +482,32 @@ def list_available_dates() -> list[str]:
 # Process one date
 # ---------------------------------------------------------------------------
 
+def _maybe_reset_stale_state(state: dict[str, Any], date: str) -> dict[str, Any]:
+    """
+    TASK-011B: If state.last_processed_date is more than STALE_RESET_DAYS before
+    `date`, the prev_px values in state are stale (e.g. cache-era April 30 prices).
+    Reset positions list to empty so compute_daily_mtm treats all today's positions
+    as new entries (PnL=0, entry_px=today_live_price).
+    The NAV, peak, and max_dd are preserved — only prev_px is invalidated.
+    """
+    last_proc = state.get("last_processed_date")
+    if not last_proc:
+        return state
+    try:
+        from datetime import datetime as _dt
+        d_last = _dt.strptime(str(last_proc), "%Y%m%d")
+        d_now  = _dt.strptime(str(date),      "%Y%m%d")
+        gap    = (d_now - d_last).days
+    except Exception:
+        return state
+    if gap > STALE_RESET_DAYS:
+        print(f"  STALE_STATE_RESET: gap={gap}d > {STALE_RESET_DAYS}d — "
+              f"clearing prev_px to avoid {gap}-day catch-up PnL spike")
+        state = dict(state)
+        state["positions"] = []   # forces all positions to be treated as new entries
+    return state
+
+
 def process_date(date: str, state: dict, dry_run: bool) -> dict[str, Any]:
     """
     Process one date: load parquet, compute MTM, update state, write outputs.
@@ -489,6 +516,12 @@ def process_date(date: str, state: dict, dry_run: bool) -> dict[str, Any]:
     rows = load_positions_parquet(date)
     if rows is None:
         return {"status": "SKIP", "reason": f"no parquet for {date}"}
+
+    # TASK-011B: detect stale state (cache-era prev_px used against live prices).
+    # If the gap between state.last_processed_date and today exceeds STALE_RESET_DAYS,
+    # treat ALL positions as new entries (PnL=0) and reseed last_px from today's data.
+    # This prevents the "28-day catch-up" spike on the first live-price run.
+    state = _maybe_reset_stale_state(state, date)
 
     mtm = compute_daily_mtm(state, rows)
     state = update_state(state, mtm["daily_pnl_usd"], mtm["new_positions"], date)
