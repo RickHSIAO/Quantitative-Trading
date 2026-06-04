@@ -179,13 +179,18 @@ def collect_days(lookback: int = 30) -> tuple[list[dict[str, Any]], int]:
             "alerts_triggered":        len(alert.get("alerts_sent", [])),
             "alert_dry_run":           alert.get("dry_run", True),
         }
-        # TASK-010: overlay paper portfolio PnL when available
+        # TASK-010 / TASK-012: overlay paper portfolio PnL + guard summary
         paper_pnl = _read_json(PAPER_DIR / f"{date}_paper_pnl.json")
         if paper_pnl:
             row["daily_pnl_pct"]      = paper_pnl.get("daily_pnl_pct",      row["daily_pnl_pct"])
             row["cumulative_pnl_pct"] = paper_pnl.get("cumulative_pnl_pct", row["cumulative_pnl_pct"])
             row["max_dd_pct"]         = paper_pnl.get("max_dd_pct",         row["max_dd_pct"])
             row["nav_usd"]            = paper_pnl.get("nav_usd",            row["nav_usd"])
+            gs = paper_pnl.get("guard_summary", {})
+            row["guard_status"]         = gs.get("guard_status", "PASS")
+            row["gross_exposure_ratio"] = gs.get("gross_exposure_ratio", "")
+            row["net_exposure_ratio"]   = gs.get("net_exposure_ratio", "")
+            row["n_skipped"]            = gs.get("n_skipped", 0)
 
         rows.append(row)
 
@@ -268,6 +273,10 @@ Generated: {now_utc}
 | daily_pnl_pct | {_fmt_pct(latest.get("daily_pnl_pct"))} |
 | cumulative_pnl_pct | {_fmt_pct(latest.get("cumulative_pnl_pct"))} |
 | max_dd_pct | {_fmt_pct(latest.get("max_dd_pct"))} |
+| guard_status | {latest.get("guard_status", "N/A")} |
+| gross_exposure_ratio | {_na(latest.get("gross_exposure_ratio"))} |
+| net_exposure_ratio | {_na(latest.get("net_exposure_ratio"))} |
+| signals_skipped | {_na(latest.get("n_skipped"))} |
 | sharpe_cumulative | {_na(latest.get("sharpe_cumulative"))} |
 | alerts_triggered | {_na(latest.get("alerts_triggered"))} |
 | review_006b_ready | {latest.get("review_006b_ready", "N/A")} |

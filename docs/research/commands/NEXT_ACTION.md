@@ -1,13 +1,13 @@
 # Next Action
 
-## Next Rick Action (set by 2026-06-04 TASK-011B)
+## Next Rick Action (set by 2026-06-04 TASK-012)
 
 1. Verify working tree has uncommitted TASK-010B files:
      git status
      -> expect: modified scripts/run_forward_record_daily.sh,
                 modified tests/forward_record/test_paper_portfolio.py,
                 modified docs/research/commands/{COMMAND_LOG,NEXT_ACTION}.md
-2. Stage and commit all pending TASK-010 through TASK-011B work:
+2. Stage and commit all pending TASK-010 through TASK-012 work:
      git add scripts/paper_portfolio_engine.py \
              scripts/build_forward_validation_dashboard.py \
              scripts/run_forward_record_daily.sh \
@@ -18,37 +18,38 @@
              apps/forward_record/primary.py \
              docs/research/commands/COMMAND_LOG.md \
              docs/research/commands/NEXT_ACTION.md
-     git commit -m "TASK-011B: paper portfolio exposure audit + stale-state-reset fix"
-3. Push (delivers TASK-008D through TASK-011B):
+     git commit -m "TASK-012: add paper portfolio exposure guard"
+3. Push (delivers TASK-008D through TASK-012):
      git push origin main
 4. On the VPS:
      cd ~/quant && git pull
-     # Reprocess all dates with the stale-state-reset fix:
+     # Reprocess all dates with guard fix:
      python3 scripts/paper_portfolio_engine.py --rebuild
-     # Run exposure audit to confirm metrics are sane:
+     # Run exposure audit (shows guard_status per day):
      python3 scripts/audit_paper_portfolio_exposure.py
-     # Rebuild dashboard:
+     # Rebuild dashboard (shows guard_status in latest_summary.md):
      python3 scripts/build_forward_validation_dashboard.py
-     # Confirm tomorrow's cron will use live_read_only + stale-reset guard:
-     grep STALE_RESET_DAYS scripts/paper_portfolio_engine.py
+     # Confirm guard constants:
+     grep GUARD_ scripts/paper_portfolio_engine.py
 
 Sandbox committed files via git commit-tree (HEAD.lock workaround).
 The Windows-side working tree on F:\RickHSIAO\Python\量化交易 has all
 new files written correctly (verified by pytest 194/194 + bash -n PASS).
 
 ## Status
-WAITING (Rick action: commit TASK-011B changes + push origin main + VPS --rebuild)
+WAITING (Rick action: commit TASK-012 changes + push origin main + VPS --rebuild)
 
 ## Owner
 Rick
 
 ## Task
-30-day forward validation clock RUNNING（Day 17 done, 2026-06-04）。
+30-day forward validation clock RUNNING（Day 17 done, 2026-06-04, Day 18 in progress）。
 VPS daily runner script ACTIVE（cron 10:10 UTC daily）。
 Paper portfolio PnL engine DONE (write mode enabled via TASK-010B).
 TASK-011A: live read-only prices fix DONE.
-TASK-011B: stale-state-reset fix DONE — +460%/+139% spike was 28-day cache-to-live transition artifact.
-On VPS: run --rebuild after git pull to reprocess all dates with the stale-reset fix applied.
+TASK-011B: stale-state-reset fix DONE.
+TASK-012: exposure guard DONE — apply_exposure_guard() enforced; guard_summary in JSON/CSV/dashboard.
+On VPS: run --rebuild after git pull to reprocess all dates.
 
 ## 30-day Clock Status
 
@@ -108,6 +109,37 @@ to reprocess all existing dates and populate `paper_portfolio/` output files.
 
 
 
+
+
+## TASK-012 Portfolio Exposure Guard Status
+
+| item | status |
+|---|---|
+| GUARD_MAX_OPEN_POSITIONS | 50 |
+| GUARD_MAX_LONG_POSITIONS | 25 |
+| GUARD_MAX_SHORT_POSITIONS | 25 |
+| GUARD_MAX_GROSS_EXPOSURE_RATIO | 1.0x |
+| GUARD_MAX_NET_EXPOSURE_RATIO | 0.5x |
+| GUARD_MAX_SINGLE_POSITION_PCT | 2.0% |
+| apply_exposure_guard() in paper_portfolio_engine.py | DONE |
+| guard_summary in {date}_paper_pnl.json | DONE |
+| n_skipped / gross_exposure_ratio / net_exposure_ratio / guard_status in daily_pnl.csv | DONE |
+| guard_status / gross / net / signals_skipped in dashboard latest_summary.md | DONE |
+| audit reads guard_summary + warns on threshold violations | DONE |
+| tests/forward_record/test_paper_portfolio_guard.py | NEW — 34 tests |
+| pytest 303/303 | PASS |
+| bash -n run_forward_record_daily.sh | PASS |
+| py_compile all scripts | PASS |
+| local commits | PENDING (Rick must git push) |
+| VPS: --rebuild after git pull | PENDING |
+
+### guard_status tokens
+
+| token | meaning |
+|---|---|
+| PASS | no new entries blocked |
+| WARNING | some new entries skipped, some entered |
+| BLOCKED | all new entries blocked (e.g. portfolio already full) |
 
 ## TASK-011B Paper Portfolio Sanity Check / Exposure Audit Status
 

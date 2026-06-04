@@ -879,3 +879,69 @@ Safety confirmed:
   audit script: read-only, no order endpoint, safety_self_check PASS
   engine fix: only clears positions[], preserves NAV, no trading API calls
   paper_execution_status = FORBIDDEN, live_trading_status = FORBIDDEN
+
+---
+
+### 2026-06-04（TASK-012: Paper Portfolio Exposure Guard）
+
+Agent: Claude Sonnet
+Command source: Rick direct chat instruction
+Task: Add formal exposure guard to paper_portfolio_engine.py; filter new-entry positions
+against 6 rules; record skip reasons; expose guard_summary in JSON + CSV + dashboard + audit.
+Status before: no enforcement of exposure limits; guard was check_exposure() warning-only
+Status after: DONE — apply_exposure_guard() enforced; guard_summary in all outputs; commit pending
+
+Guard constants (enforced, not just warning):
+  GUARD_MAX_OPEN_POSITIONS      = 50
+  GUARD_MAX_LONG_POSITIONS      = 25
+  GUARD_MAX_SHORT_POSITIONS     = 25
+  GUARD_MAX_GROSS_EXPOSURE_RATIO = 1.0  (gross_notional / nav)
+  GUARD_MAX_NET_EXPOSURE_RATIO   = 0.5  (abs(long+short) / nav)
+  GUARD_MAX_SINGLE_POSITION_PCT  = 0.02 (abs(pos_usd) / nav)
+
+Guard check priority (applied to new entries only; continuing positions never dropped):
+  1. max_open_positions
+  2. max_long_positions / max_short_positions
+  3. max_single_position
+  4. max_gross_exposure
+  5. max_net_exposure
+
+guard_status tokens: PASS (0 skipped) | WARNING (some skipped, some entered) | BLOCKED (all new entries skipped)
+
+New paper_pnl.json guard_summary block:
+  n_signals_seen, n_entered, n_skipped, skip_reasons (dict),
+  gross_exposure_ratio, net_exposure_ratio, max_single_position_pct_nav, guard_status
+
+New daily_pnl.csv columns: n_skipped, gross_exposure_ratio, net_exposure_ratio, guard_status
+
+Dashboard latest_summary.md: guard_status, gross_exposure_ratio, net_exposure_ratio, signals_skipped
+
+Audit script: reads guard_summary from paper_pnl.json; shows guard_status + skip_reasons per day;
+warns if gross > 1.0x / net > 0.5x / max_single > 2%
+
+Commands run:
+  python3 scripts/paper_portfolio_engine.py --rebuild  # PAPER_PNL=PASS, guard_status=PASS
+  python3 scripts/audit_paper_portfolio_exposure.py    # AUDIT_DONE
+  python3 scripts/build_forward_validation_dashboard.py # Done
+  bash -n scripts/run_forward_record_daily.sh           # PASS
+  python3 -m py_compile scripts/{engine,audit,dashboard} # PASS
+  python3 -m pytest tests/forward_record/ -q            # 303/303 PASS
+
+Safety confirmed:
+  apply_exposure_guard() only filters simulation entries — no order API called
+  paper_execution_status = FORBIDDEN, live_trading_status = FORBIDDEN
+  safety_self_check PASS
+
+Files changed:
+  MOD  scripts/paper_portfolio_engine.py      (GUARD_* constants, _state_nav, _guard_compute_ratios,
+                                               _guard_status, apply_exposure_guard, updated
+                                               compute_daily_mtm, append_daily_pnl_row,
+                                               write_paper_pnl_json, process_date)
+  MOD  scripts/audit_paper_portfolio_exposure.py  (reads guard_summary; warns on ratio thresholds)
+  MOD  scripts/build_forward_validation_dashboard.py (overlays guard fields from paper_pnl.json;
+                                                       shows in latest_summary.md)
+  NEW  tests/forward_record/test_paper_portfolio_guard.py  (34 tests; all six guard rules,
+                                                             skip reason aggregation, JSON fields,
+                                                             CSV fields, audit integration, safety)
+  MOD  docs/research/commands/COMMAND_LOG.md   (this entry)
+  MOD  docs/research/commands/NEXT_ACTION.md   (updated)

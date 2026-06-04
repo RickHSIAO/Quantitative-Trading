@@ -55,10 +55,18 @@ PAPER_EQUITY_INIT   = 10_000.0   # USDT
 CLOCK_START         = "20260518"  # Day 1 of 30-day validation
 STALE_RESET_DAYS    = 3            # gap (days) between last_processed and today that triggers stale-state reset
 
-# Exposure caps (generous; strategy actually uses 25/25/50)
+# Legacy check_exposure() caps (warning-only, not enforced)
 MAX_LONG_POSITIONS  = 30
 MAX_SHORT_POSITIONS = 30
 MAX_POSITIONS_TOTAL = 60
+
+# TASK-012: Exposure guard — enforced limits applied during new-position entry
+GUARD_MAX_OPEN_POSITIONS      = 50     # total simultaneous positions
+GUARD_MAX_LONG_POSITIONS      = 25     # long-side cap
+GUARD_MAX_SHORT_POSITIONS     = 25     # short-side cap
+GUARD_MAX_GROSS_EXPOSURE_RATIO = 1.0   # gross_notional / nav
+GUARD_MAX_NET_EXPOSURE_RATIO   = 0.5   # abs(long+short) / nav
+GUARD_MAX_SINGLE_POSITION_PCT  = 0.02  # abs(pos_usd) / nav per position
 
 # TP / SL as percentage of entry (None = disabled)
 # Momentum strategy typically uses signal-based exits, not fixed TP/SL.
@@ -75,6 +83,8 @@ SAFETY = {
 DAILY_PNL_FIELDS = [
     "date", "nav_usd", "daily_pnl_usd", "daily_pnl_pct",
     "cumulative_pnl_pct", "max_dd_pct", "n_open", "n_entered", "n_exited",
+    # TASK-012 guard columns (added; old CSVs missing these will get empty strings)
+    "n_skipped", "gross_exposure_ratio", "net_exposure_ratio", "guard_status",
 ]
 TRADES_FIELDS = [
     "symbol", "side", "entry_date", "entry_px",
@@ -195,6 +205,96 @@ def _pos_key(row: dict) -> str:
     return f"{row['symbol']}|{row['side']}"
 
 
+def _state_nav(state: dict[str, Any]) -> float:
+    """Return current NAV from state, or PAPER_EQUITY_INIT if not set."""
+    return float(state.get("nav_usd", PAPER_EQUITY_INIT))
+
+
+# ---------------------------------------------------------------------------
+# TASK-012: Exposure guard
+# ---------------------------------------------------------------------------
+
+def _guard_compute_ratios(positions: list[dict], nav: float) -> tuple[float, float, float]:
+    """Return (gross_ratio, net_ratio, max_single_pct) for a position list."""
+    if nav <= 0:
+        return 0.0, 0.0, 0.0
+    long_n  = sum(float(p.get("position_usd", 0)) for p in positions if float(p.get("position_usd", 0)) > 0)
+    short_n = sum(float(p.get("position_usd", 0)) for p in positions if float(p.get("position_usd", 0)) < 0)
+    gross   = (long_n + abs(short_n)) / nav
+    net     = abs(long_n + short_n) / nav
+    max_s   = max((abs(float(p.get("position_usd", 0))) / nav for p in positions), default=0.0)
+    return gross, net, max_s
+
+
+def _guard_status(n_skipped: int, n_entered: int) -> str:
+    if n_skipped == 0:
+        return "PASS"
+    if n_entered > 0:
+        return "WARNING"
+    return "BLOCKED"
+
+
+def apply_exposure_guard(
+    entered: list[dict],
+    continuing: list[dict],
+    nav: float,
+) -> tuple[list[dict], list[dict]]:
+    """
+    TASK-012: Filter new-entry positions against exposure guard rules.
+    Already-continuing positions are never dropped.
+
+    Returns:
+        approved: new entries that passed all guard checks
+        skipped:  new entries that were blocked, each with a "skip_reason" key
+    """
+    approved: list[dict] = []
+    skipped:  list[dict] = []
+
+    # Running totals: start from continuing positions
+    n_long_cont  = sum(1 for p in continuing if p.get("side") == "long")
+    n_short_cont = sum(1 for p in continuing if p.get("side") == "short")
+    gross_cont   = sum(abs(float(p.get("position_usd", 0))) for p in continuing)
+    net_cont     = sum(float(p.get("position_usd", 0)) for p in continuing)
+
+    n_long_app  = 0
+    n_short_app = 0
+    gross_app   = 0.0
+    net_app     = 0.0
+
+    for pos in entered:
+        side    = pos.get("side", "flat")
+        pos_usd = float(pos.get("position_usd", 0))
+        abs_usd = abs(pos_usd)
+        skip_reason: str | None = None
+
+        total_open = len(continuing) + len(approved)
+        if total_open >= GUARD_MAX_OPEN_POSITIONS:
+            skip_reason = "max_open_positions"
+        elif side == "long" and (n_long_cont + n_long_app) >= GUARD_MAX_LONG_POSITIONS:
+            skip_reason = "max_long_positions"
+        elif side == "short" and (n_short_cont + n_short_app) >= GUARD_MAX_SHORT_POSITIONS:
+            skip_reason = "max_short_positions"
+        elif nav > 0 and abs_usd / nav > GUARD_MAX_SINGLE_POSITION_PCT:
+            skip_reason = "max_single_position"
+        elif nav > 0 and (gross_cont + gross_app + abs_usd) / nav > GUARD_MAX_GROSS_EXPOSURE_RATIO:
+            skip_reason = "max_gross_exposure"
+        elif nav > 0 and abs(net_cont + net_app + pos_usd) / nav > GUARD_MAX_NET_EXPOSURE_RATIO:
+            skip_reason = "max_net_exposure"
+
+        if skip_reason:
+            skipped.append({**pos, "skip_reason": skip_reason})
+        else:
+            approved.append(pos)
+            if side == "long":
+                n_long_app  += 1
+            elif side == "short":
+                n_short_app += 1
+            gross_app += abs_usd
+            net_app   += pos_usd
+
+    return approved, skipped
+
+
 def compute_daily_mtm(
     state: dict[str, Any],
     today_rows: list[dict[str, Any]],
@@ -264,7 +364,7 @@ def compute_daily_mtm(
                     "weight":      today_row["weight"],
                 })
         else:
-            # New position: entry day, no PnL
+            # New position: entry day, no PnL — collect for guard filtering
             entered.append({
                 "symbol":      today_row["symbol"],
                 "side":        today_row["side"],
@@ -274,7 +374,7 @@ def compute_daily_mtm(
                 "position_usd": today_row["position_usd"],
                 "weight":      today_row["weight"],
             })
-            new_positions.append(entered[-1])
+            # NOTE: not added to new_positions yet — guard runs after this loop
 
     # --- Positions in yesterday but not today: exited (no TP/SL, just dropped)
     for key, prev in prev_pos.items():
@@ -294,11 +394,30 @@ def compute_daily_mtm(
                 "pnl_usd":     pnl_usd,
             })
 
+    # TASK-012: apply exposure guard to new entries
+    # continuing positions (new_positions built so far) are never dropped
+    nav = _state_nav(state)
+    approved_entries, skipped_entries = apply_exposure_guard(entered, new_positions, nav)
+    new_positions.extend(approved_entries)
+
+    # Aggregate skip reasons
+    skip_reasons: dict[str, int] = {}
+    for sp in skipped_entries:
+        r = sp.get("skip_reason", "unknown")
+        skip_reasons[r] = skip_reasons.get(r, 0) + 1
+
+    if skipped_entries:
+        print(f"  GUARD: {len(skipped_entries)} new entries skipped: {skip_reasons}")
+
     return {
-        "daily_pnl_usd": daily_pnl_usd,
-        "new_positions":  new_positions,
-        "entered":        entered,
-        "exited":         exited,
+        "daily_pnl_usd":   daily_pnl_usd,
+        "new_positions":    new_positions,
+        "entered":          approved_entries,
+        "entered_all":      entered,           # before guard
+        "skipped":          skipped_entries,
+        "skip_reasons":     skip_reasons,
+        "exited":           exited,
+        "guard_nav":        nav,
     }
 
 
@@ -385,6 +504,7 @@ def append_daily_pnl_row(
     n_entered: int,
     n_exited: int,
     dry_run: bool = False,
+    guard_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build and optionally write the daily_pnl.csv row. Returns the row dict."""
     init   = state["paper_equity_init"]
@@ -392,21 +512,27 @@ def append_daily_pnl_row(
     pct_d  = daily_pnl_usd / init * 100.0 if init > 0 else 0.0
     cum    = (nav - init) / init * 100.0   if init > 0 else 0.0
     max_dd = state.get("max_dd_pct", 0.0)
+    gs     = guard_summary or {}
     row = {
-        "date":             date,
-        "nav_usd":          round(nav, 4),
-        "daily_pnl_usd":    round(daily_pnl_usd, 4),
-        "daily_pnl_pct":    round(pct_d, 6),
-        "cumulative_pnl_pct": round(cum, 6),
-        "max_dd_pct":       round(-abs(max_dd), 6),
-        "n_open":           len(state["positions"]),
-        "n_entered":        n_entered,
-        "n_exited":         n_exited,
+        "date":                date,
+        "nav_usd":             round(nav, 4),
+        "daily_pnl_usd":       round(daily_pnl_usd, 4),
+        "daily_pnl_pct":       round(pct_d, 6),
+        "cumulative_pnl_pct":  round(cum, 6),
+        "max_dd_pct":          round(-abs(max_dd), 6),
+        "n_open":              len(state["positions"]),
+        "n_entered":           n_entered,
+        "n_exited":            n_exited,
+        # TASK-012 guard columns
+        "n_skipped":           gs.get("n_skipped", 0),
+        "gross_exposure_ratio":gs.get("gross_exposure_ratio", ""),
+        "net_exposure_ratio":  gs.get("net_exposure_ratio", ""),
+        "guard_status":        gs.get("guard_status", "PASS"),
     }
     if not dry_run:
         _ensure_csv(DAILY_PNL_CSV, DAILY_PNL_FIELDS)
         with open(DAILY_PNL_CSV, "a", newline="", encoding="utf-8") as f:
-            csv.DictWriter(f, fieldnames=DAILY_PNL_FIELDS).writerow(row)
+            csv.DictWriter(f, fieldnames=DAILY_PNL_FIELDS, extrasaction="ignore").writerow(row)
     return row
 
 
@@ -440,8 +566,10 @@ def write_paper_pnl_json(
     state: dict[str, Any],
     pnl_row: dict[str, Any],
     dry_run: bool = False,
+    guard_summary: dict[str, Any] | None = None,
 ) -> None:
     """Write outputs/forward_record/paper_portfolio/{date}_paper_pnl.json."""
+    gs = guard_summary or {}
     payload = {
         "date":                date,
         "nav_usd":             state["nav_usd"],
@@ -455,6 +583,17 @@ def write_paper_pnl_json(
         "paper_equity_init":   state["paper_equity_init"],
         "paper_execution_status": "FORBIDDEN",
         "live_trading_status":    "FORBIDDEN",
+        # TASK-012: guard summary
+        "guard_summary": {
+            "n_signals_seen":          gs.get("n_signals_seen", pnl_row["n_entered"]),
+            "n_entered":               pnl_row["n_entered"],
+            "n_skipped":               gs.get("n_skipped", 0),
+            "skip_reasons":            gs.get("skip_reasons", {}),
+            "gross_exposure_ratio":    gs.get("gross_exposure_ratio", 0.0),
+            "net_exposure_ratio":      gs.get("net_exposure_ratio", 0.0),
+            "max_single_position_pct_nav": gs.get("max_single_position_pct_nav", 0.0),
+            "guard_status":            gs.get("guard_status", "PASS"),
+        },
     }
     if not dry_run:
         PAPER_DIR.mkdir(parents=True, exist_ok=True)
@@ -510,32 +649,52 @@ def _maybe_reset_stale_state(state: dict[str, Any], date: str) -> dict[str, Any]
 
 def process_date(date: str, state: dict, dry_run: bool) -> dict[str, Any]:
     """
-    Process one date: load parquet, compute MTM, update state, write outputs.
-    Returns result dict with status info.
+    Process one date: load parquet, compute MTM, apply exposure guard,
+    update state, write outputs. Returns result dict with status info.
     """
     rows = load_positions_parquet(date)
     if rows is None:
         return {"status": "SKIP", "reason": f"no parquet for {date}"}
 
     # TASK-011B: detect stale state (cache-era prev_px used against live prices).
-    # If the gap between state.last_processed_date and today exceeds STALE_RESET_DAYS,
-    # treat ALL positions as new entries (PnL=0) and reseed last_px from today's data.
-    # This prevents the "28-day catch-up" spike on the first live-price run.
     state = _maybe_reset_stale_state(state, date)
 
-    mtm = compute_daily_mtm(state, rows)
+    mtm   = compute_daily_mtm(state, rows)
     state = update_state(state, mtm["daily_pnl_usd"], mtm["new_positions"], date)
+
+    # TASK-012: build guard_summary from MTM result
+    nav                = mtm["guard_nav"]
+    gross_r, net_r, max_s = _guard_compute_ratios(state["positions"], nav)
+    n_skipped          = len(mtm["skipped"])
+    n_entered_approved = len(mtm["entered"])
+    n_signals_seen     = len(mtm["entered_all"]) + len(mtm["exited"])  # rough total
+    guard_summary = {
+        "n_signals_seen":              n_signals_seen,
+        "n_skipped":                   n_skipped,
+        "skip_reasons":                mtm["skip_reasons"],
+        "gross_exposure_ratio":        round(gross_r, 4),
+        "net_exposure_ratio":          round(net_r, 4),
+        "max_single_position_pct_nav": round(max_s * 100, 4),
+        "guard_status":                _guard_status(n_skipped, n_entered_approved),
+    }
 
     pnl_row = append_daily_pnl_row(
         date, state, mtm["daily_pnl_usd"],
-        len(mtm["entered"]), len(mtm["exited"]), dry_run
+        n_entered_approved, len(mtm["exited"]), dry_run,
+        guard_summary=guard_summary,
     )
     append_trades(mtm["exited"], date, dry_run)
-    write_paper_pnl_json(date, state, pnl_row, dry_run)
+    write_paper_pnl_json(date, state, pnl_row, dry_run, guard_summary=guard_summary)
 
+    # Legacy warning check
     warnings = check_exposure(state["positions"])
     for w in warnings:
         print(f"  WARNING: {w}")
+
+    print(f"  guard_status={guard_summary['guard_status']}"
+          f"  gross={guard_summary['gross_exposure_ratio']:.3f}x"
+          f"  net={guard_summary['net_exposure_ratio']:.3f}x"
+          f"  skipped={n_skipped}")
 
     return {
         "status":             "PASS",
@@ -546,8 +705,10 @@ def process_date(date: str, state: dict, dry_run: bool) -> dict[str, Any]:
         "cumulative_pnl_pct": pnl_row["cumulative_pnl_pct"],
         "max_dd_pct":         pnl_row["max_dd_pct"],
         "n_open":             pnl_row["n_open"],
-        "n_entered":          len(mtm["entered"]),
+        "n_entered":          n_entered_approved,
+        "n_skipped":          n_skipped,
         "n_exited":           len(mtm["exited"]),
+        "guard_summary":      guard_summary,
         "state":              state,
     }
 
@@ -576,12 +737,19 @@ def main() -> int:
         # Reset state for a clean rebuild
         state = _make_initial_state()
         # Clear existing paper_portfolio outputs
+        # Use write_bytes(b'') instead of unlink() — NTFS mounts disallow unlink
         if not dry_run:
             for f in [STATE_PATH, DAILY_PNL_CSV, TRADES_CSV]:
                 if f.exists():
-                    f.unlink()
+                    try:
+                        f.unlink()
+                    except OSError:
+                        f.write_bytes(b"")   # truncate if unlink not permitted
             for f in PAPER_DIR.glob("*_paper_pnl.json"):
-                f.unlink()
+                try:
+                    f.unlink()
+                except OSError:
+                    f.write_bytes(b"")
     else:
         # Single-date mode
         date_arg = None

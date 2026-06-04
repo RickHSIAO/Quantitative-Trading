@@ -252,6 +252,48 @@ def run_audit(lookback_days: int = 14, dry_run: bool = False) -> dict[str, Any]:
             pnl_warnings.append(msg)
             sanity_warnings.append(msg)
 
+        # Read guard_summary from {date}_paper_pnl.json if available
+        pnl_json_path = PAPER_DIR / f"{date}_paper_pnl.json"
+        guard_summary: dict = {}
+        if pnl_json_path.exists():
+            try:
+                pnl_json = json.loads(pnl_json_path.read_text(encoding="utf-8"))
+                guard_summary = pnl_json.get("guard_summary", {})
+            except Exception:
+                pass
+
+        guard_status       = guard_summary.get("guard_status", "PASS")
+        n_skipped          = int(guard_summary.get("n_skipped", 0))
+        skip_reasons       = guard_summary.get("skip_reasons", {})
+        guard_gross        = guard_summary.get("gross_exposure_ratio",
+                                               exposure["gross_exposure_ratio"])
+        guard_net          = guard_summary.get("net_exposure_ratio",
+                                               exposure["net_exposure_ratio"])
+        guard_max_single   = guard_summary.get("max_single_position_pct_nav",
+                                               exposure["max_single_pos_pct_nav"])
+
+        # Guard-specific warnings
+        if guard_status == "WARNING":
+            pnl_warnings.append(
+                f"GUARD_WARNING: {n_skipped} signals skipped ({skip_reasons})"
+            )
+        elif guard_status == "BLOCKED":
+            pnl_warnings.append(
+                f"GUARD_BLOCKED: all new entries blocked ({skip_reasons})"
+            )
+        if guard_gross > WARN_GROSS_EXPOSURE:
+            pnl_warnings.append(
+                f"GUARD_RATIO_WARNING: gross_exposure={guard_gross:.3f}x > {WARN_GROSS_EXPOSURE}x"
+            )
+        if guard_net > 0.5:
+            pnl_warnings.append(
+                f"GUARD_RATIO_WARNING: net_exposure={guard_net:.3f}x > 0.5x"
+            )
+        if guard_max_single > 2.0:
+            pnl_warnings.append(
+                f"GUARD_RATIO_WARNING: max_single_position={guard_max_single:.2f}% > 2.0%"
+            )
+
         day_record: dict[str, Any] = {
             "date":                    date,
             "data_source":             data_source,
@@ -259,18 +301,21 @@ def run_audit(lookback_days: int = 14, dry_run: bool = False) -> dict[str, Any]:
             "n_open":                  exposure["n_positions"],
             "n_entered":               n_entered,
             "n_exited":                n_exited,
+            "n_skipped":               n_skipped,
             "long_notional_usd":       exposure["long_notional_usd"],
             "short_notional_usd":      exposure["short_notional_usd"],
             "total_notional_usd":      exposure["total_notional_usd"],
-            "gross_exposure_ratio":    exposure["gross_exposure_ratio"],
-            "net_exposure_ratio":      exposure["net_exposure_ratio"],
+            "gross_exposure_ratio":    guard_gross,
+            "net_exposure_ratio":      guard_net,
+            "max_single_pos_pct_nav":  guard_max_single,
             "max_single_pos_notional": exposure["max_single_pos_notional"],
-            "max_single_pos_pct_nav":  exposure["max_single_pos_pct_nav"],
             "top10_positions":         exposure["top10_positions"],
             "daily_pnl_usd":           round(daily_pnl_usd, 4),
             "daily_pnl_pct":           round(daily_pnl_pct, 4),
             "cumulative_pnl_pct":      round(cum_pnl_pct, 4),
             "max_dd_pct":              round(max_dd_pct, 4),
+            "guard_status":            guard_status,
+            "skip_reasons":            skip_reasons,
             "warnings":                pnl_warnings,
             "stale_state":             stale_check,
         }
@@ -278,9 +323,10 @@ def run_audit(lookback_days: int = 14, dry_run: bool = False) -> dict[str, Any]:
 
         # Console summary
         w_tag = f"  ⚠ {len(pnl_warnings)} warning(s)" if pnl_warnings else ""
-        print(f"  {date}: gross={exposure['gross_exposure_ratio']:.2f}x  "
-              f"daily_pnl={daily_pnl_pct:+.2f}%  cum_pnl={cum_pnl_pct:+.2f}%  "
-              f"src={data_source}{w_tag}")
+        print(f"  {date}: gross={guard_gross:.2f}x  net={guard_net:.2f}x"
+              f"  guard={guard_status}  skipped={n_skipped}"
+              f"  daily_pnl={daily_pnl_pct:+.2f}%  cum_pnl={cum_pnl_pct:+.2f}%"
+              f"  src={data_source}{w_tag}")
 
     # --- Diagnosis summary ---
     diagnosis = _build_diagnosis(state, days, nav_init)
@@ -427,13 +473,14 @@ def _build_markdown(r: dict[str, Any]) -> str:
     lines += [
         "## Daily Exposure Summary",
         "",
-        "| date | data_source | gross_exp | net_exp | daily_pnl% | cum_pnl% | max_dd% | max_pos% | warnings |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| date | guard | skipped | gross_exp | net_exp | daily_pnl% | cum_pnl% | max_dd% | max_pos% | warnings |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for d in r["days"]:
         w_count = len(d["warnings"])
         lines.append(
-            f"| {d['date']} | {d['data_source']} | {d['gross_exposure_ratio']:.2f}x"
+            f"| {d['date']} | {d.get('guard_status','PASS')} | {d.get('n_skipped',0)}"
+            f" | {d['gross_exposure_ratio']:.2f}x"
             f" | {d['net_exposure_ratio']:.2f}x | {d['daily_pnl_pct']:+.2f}%"
             f" | {d['cumulative_pnl_pct']:+.2f}% | {d['max_dd_pct']:.2f}%"
             f" | {d['max_single_pos_pct_nav']:.1f}% | {w_count} |"
