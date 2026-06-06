@@ -1,5 +1,20 @@
 # Next Action
 
+## TASK-014C Status (2026-06-06)
+
+| item | status |
+|---|---|
+| src/demo_readonly_client.py | DONE — fixture + real mode, HMAC signing, no secrets in output |
+| src/demo_runtime_adapter.py | DONE — adapts wallet/positions/instruments/proof to Phase 2 input |
+| scripts/preview_demo_readonly_runtime.py | DONE — fixture dry-run preview, --real-readonly flag |
+| tests/demo_trading/test_demo_readonly_client.py | DONE — 41 tests PASS |
+| tests/demo_trading/test_demo_runtime_adapter.py | DONE — 73 tests PASS |
+| pytest tests/demo_trading/ | 291/291 PASS |
+| py_compile all new files | PASS |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| No orders sent / no secrets / no API calls (fixture mode) | CONFIRMED |
+| local commit | PENDING (Rick must git push) |
+
 ## TASK-014B Status (2026-06-06)
 
 | item | status |
@@ -61,7 +76,7 @@ TASK-014B local commit 815003c is done. Remaining steps:
      python3 scripts/sync_forward_validation_to_notion.py --all
 
 ## Status
-WAITING (Rick action: commit forward_record bundle + git push origin main + VPS backfill)
+WAITING (Rick action: commit TASK-014C changes + commit forward_record bundle + git push origin main + VPS backfill)
 
 ## Owner
 Rick

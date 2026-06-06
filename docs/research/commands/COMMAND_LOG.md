@@ -21,6 +21,63 @@ Notes:
 
 ---
 
+### 2026-06-06（TASK-014C — Bybit Demo Read-only Runtime Probe）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014C)
+Task: Bybit Demo read-only runtime probe — fixture-safe client, adapter converting
+      account snapshots to Phase 2 planner input, integrated dry-run preview.
+      Real-API mode gated behind --real-readonly flag. Fail-closed on missing stop,
+      unknown endpoint family, or live endpoint fallback. Secrets never printed.
+Status before: TASK-014B complete (177 tests PASS)
+Status after:  TASK-014C complete (291 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_readonly_client.py                        -- NEW (DemoReadOnlyClient, fixture + real modes)
+  src/demo_runtime_adapter.py                        -- NEW (adapt wallet/positions/instruments/proof)
+  scripts/preview_demo_readonly_runtime.py           -- NEW (dry-run preview, --real-readonly flag)
+  tests/demo_trading/test_demo_readonly_client.py    -- NEW (41 tests)
+  tests/demo_trading/test_demo_runtime_adapter.py    -- NEW (73 tests)
+  docs/research/commands/COMMAND_LOG.md             (this entry)
+  docs/research/commands/NEXT_ACTION.md             (TASK-014C status)
+
+Validation:
+  python -m py_compile src/demo_readonly_client.py       PASS
+  python -m py_compile src/demo_runtime_adapter.py       PASS
+  python -m py_compile scripts/preview_demo_readonly_runtime.py  PASS
+  pytest tests/demo_trading/ -q                          291 passed
+  preview_demo_readonly_runtime.py (fixture mode)        PASS + 4/6 accepted + All invariants PASS
+  exit code fixture mode                                 0
+  exit code unverified (monkeypatched)                   1
+  main.py / src/risk.py / BybitExecutor                  NOT MODIFIED
+  No secrets loaded, no API calls, no orders sent        CONFIRMED
+
+Design highlights:
+  demo_readonly_client:
+    - Default fixture mode: zero network, zero secrets, zero API calls
+    - Real mode: HMAC-signed GET to api-demo.bybit.com only; never api.bybit.com
+    - _ALLOWED_PATHS enforced in _get(); any non-listed path raises ValueError
+    - secret_value_observed=False and order_endpoint_called=False in every snapshot
+    - API secret from BYBIT_DEMO_API_SECRET env var; never printed
+  demo_runtime_adapter:
+    - PositionSnapshot -> DemoOpenPosition; stop_price=None -> stop=0.0 + fail_closed
+    - InstrumentSnapshot -> InstrumentRules (passes is_valid() after conversion)
+    - RuntimeProofSnapshot -> DemoRuntimeProof | None (None if endpoint unknown/live)
+    - adapt_all() orchestrates all four conversions; fail_reasons list populated
+  preview script:
+    - run_preview(use_real_network=False) -> int (0=OK, 1=fail-closed)
+    - Phase 2 compute_demo_portfolio_sizing + apply_instrument_rules_to_proposal
+    - Prints DRY RUN header, all required fields, invariant check
+
+Safety scan:
+  No place_order / create_order / submit_order / cancel_order / private_post
+  No set_leverage / set_trading_stop in new files
+  No pybit / BybitExecutor in any new file
+  No API_KEY / API_SECRET values in any output
+  No network calls in fixture mode
+
+---
+
 ### 2026-06-06（TASK-014B — Demo Runtime Probe + Instrument Step Rounding）
 
 Agent: Claude Sonnet 4.6
