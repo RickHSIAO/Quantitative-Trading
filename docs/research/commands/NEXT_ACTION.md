@@ -1,5 +1,50 @@
 # Next Action
 
+## TASK-014F Status (2026-06-06)
+
+| item | status |
+|---|---|
+| src/demo_close_only_cleanup.py — plan_cleanup() pure computation | DONE |
+| src/demo_close_only_cleanup.py — CleanupPlan, ClosePayloadPreview, CloseCandidate | DONE |
+| scripts/preview_demo_close_only_cleanup.py — fixture + --from-latest-reconciliation | DONE |
+| scripts/preview_demo_close_only_cleanup.py — --confirm-token + --write-report | DONE |
+| tests/demo_trading/test_demo_close_only_cleanup.py — 89 tests (E1-E19) | DONE |
+| pytest tests/demo_trading/ | 494/494 PASS |
+| py_compile all new files | PASS |
+| .gitignore — outputs/demo_trading/close_only_cleanup/ | DONE |
+| execute_ready gate: all 6 conditions enforced | CONFIRMED |
+| no_orders_sent=True always | CONFIRMED |
+| no_position_modified=True always | CONFIRMED |
+| order_endpoint_called=False always | CONFIRMED |
+| close side: Buy=close short, Sell=close long (Bybit derivatives) | CONFIRMED |
+| deterministic sort: stop_risk DESC → notional DESC → symbol ASC | CONFIRMED |
+| confirmation token expires daily: CONFIRM_DEMO_CLOSE_ONLY_YYYYMMDD | CONFIRMED |
+| main.py / src/risk.py / exchange executors | NOT MODIFIED |
+| local commit | PENDING (Rick must git push) |
+
+## Next Rick Action (set by 2026-06-06 TASK-014F)
+
+1. git push origin main (delivers TASK-014D through TASK-014F)
+2. On VPS after git pull:
+     source .env.demo
+     python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+     python3 scripts/preview_demo_position_reconcile.py --from-latest-readonly-smoke --write-report
+     python3 scripts/preview_demo_close_only_cleanup.py --from-latest-reconciliation
+3. If short_count > 5 or available_balance = 0, generate close confirmation token:
+     python3 scripts/preview_demo_close_only_cleanup.py \
+       --from-latest-reconciliation \
+       --confirm-token CONFIRM_DEMO_CLOSE_ONLY_$(date +%Y%m%d) \
+       --write-report
+4. Review outputs/demo_trading/close_only_cleanup/latest_cleanup_plan.md
+5. Execute closes manually on Bybit Demo (close-only, reduce_only=True, review each)
+6. Commit forward_record bundle (MM files) — see TASK-013 section below
+
+## Status
+READY (Rick action: git push + VPS smoke + reconcile + close-only preview + manual closes if needed)
+
+## Owner
+Rick
+
 ## TASK-014E Status (2026-06-06)
 
 | item | status |
@@ -136,12 +181,6 @@ Suggested actions:
      # Backfill corrected PnL to Notion:
      python3 scripts/sync_forward_validation_to_notion.py --all --dry-run
      python3 scripts/sync_forward_validation_to_notion.py --all
-
-## Status
-WAITING (Rick action: commit TASK-014E changes + git push origin main + VPS smoke + VPS reconciliation + decide on TASK-014F)
-
-## Owner
-Rick
 
 ## Task
 30-day forward validation clock RUNNING（Day 17 done, 2026-06-04, Day 18 in progress）。

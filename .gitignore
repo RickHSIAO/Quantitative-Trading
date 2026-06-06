@@ -57,3 +57,4 @@ data/*.malformed_*
 .env.demo
 outputs/demo_trading/readonly_smoke/
 outputs/demo_trading/reconciliation/
+outputs/demo_trading/close_only_cleanup/

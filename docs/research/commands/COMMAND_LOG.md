@@ -21,6 +21,41 @@ Notes:
 
 ---
 
+### 2026-06-06（TASK-014F — Demo Close-only Manual Confirmed Cleanup）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014F)
+Task: Build Demo close-only cleanup preview with human confirmation gate.
+      Deterministic candidate selection (stop_risk DESC, notional DESC, symbol ASC).
+      Generates close-only payload previews (reduce_only=True always).
+      Human token: CONFIRM_DEMO_CLOSE_ONLY_YYYYMMDD (expires daily).
+      execute_ready=True only when ALL gates pass; no_orders_sent=True always.
+Status before: TASK-014E complete (405 tests PASS)
+Status after:  TASK-014F complete (494 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_close_only_cleanup.py                       -- NEW (plan_cleanup() pure computation, CleanupPlan, ClosePayloadPreview)
+  scripts/preview_demo_close_only_cleanup.py           -- NEW (fixture + --from-latest-reconciliation + --confirm-token + --write-report)
+  tests/demo_trading/test_demo_close_only_cleanup.py   -- NEW (89 tests, E1-E19 + TestReportArtifacts)
+  .gitignore                                           -- UPDATED (outputs/demo_trading/close_only_cleanup/)
+  docs/research/commands/COMMAND_LOG.md               (this entry)
+  docs/research/commands/NEXT_ACTION.md               (TASK-014F status)
+
+Validation:
+  python -m py_compile src/demo_close_only_cleanup.py                  PASS
+  python -m py_compile scripts/preview_demo_close_only_cleanup.py      PASS
+  python -m py_compile tests/demo_trading/test_demo_close_only_cleanup.py  PASS
+  pytest tests/demo_trading/ -q                                        494 passed
+  execute_ready=True only with valid token + fresh snapshot + verified runtime    CONFIRMED
+  no_orders_sent=True always (all plans)                                          CONFIRMED
+  no_position_modified=True always                                                CONFIRMED
+  order_endpoint_called=False always                                              CONFIRMED
+  close_order_side=Buy for short, Sell for long (Bybit derivatives)               CONFIRMED
+  deterministic sort: ETHUSDT (stop_risk=100) before BNBUSDT (stop_risk=80)      CONFIRMED
+  main.py / src/risk.py / exchange executors                                      NOT MODIFIED
+
+---
+
 ### 2026-06-06（TASK-014E — Demo Position Reconciliation Preview）
 
 Agent: Claude Sonnet 4.6
