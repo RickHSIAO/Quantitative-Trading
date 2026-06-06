@@ -1,27 +1,54 @@
 # Next Action
 
-## Next Rick Action (set by 2026-06-04 TASK-013)
+## TASK-014B Status (2026-06-06)
 
-1. Verify working tree has uncommitted TASK-010B files:
-     git status
-     -> expect: modified scripts/run_forward_record_daily.sh,
-                modified tests/forward_record/test_paper_portfolio.py,
-                modified docs/research/commands/{COMMAND_LOG,NEXT_ACTION}.md
-2. Stage and commit all pending TASK-010 through TASK-013 work:
-     git add scripts/paper_portfolio_engine.py \
+| item | status |
+|---|---|
+| src/demo_runtime_probe.py | DONE — 6-check fail-closed probe, no API calls |
+| src/demo_instrument_rules.py | DONE — qty_step / tick_size / min_qty / min_notional rounding |
+| src/demo_portfolio_risk.py | DONE — Phase 2 batch fractional-Kelly sizer |
+| apps/demo_trading/ (config + kelly_sizer) | DONE |
+| scripts/preview_demo_runtime_and_rounding.py | DONE — integrated dry-run preview |
+| scripts/preview_demo_portfolio_sizing.py | DONE |
+| scripts/demo_trading_preview.py | DONE |
+| tests/demo_trading/test_demo_runtime_probe.py | DONE — 55 tests PASS |
+| tests/demo_trading/test_demo_instrument_rules.py | DONE — 64 tests PASS |
+| tests/demo_trading/test_demo_portfolio_risk.py | DONE — 58 tests PASS |
+| pytest tests/demo_trading/ | 177/177 PASS |
+| py_compile all new files | PASS |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| No orders sent / no secrets / no API calls | CONFIRMED |
+| local commit 815003c | DONE |
+| pushed to origin/main | PENDING (Rick must git push) |
+
+## Next Rick Action (set by 2026-06-06 TASK-014B)
+
+TASK-014B local commit 815003c is done. Remaining steps:
+
+1. Stage and commit remaining forward_record TASK-009..013 files
+   (these have MM or untracked status after the TASK-014B commit):
+
+     git add apps/forward_record/market_data.py \
+             apps/forward_record/primary.py \
+             scripts/paper_portfolio_engine.py \
              scripts/build_forward_validation_dashboard.py \
-             scripts/run_forward_record_daily.sh \
              scripts/run_forward_record.py \
+             scripts/run_forward_record_daily.sh \
+             scripts/sync_forward_validation_to_notion.py \
+             scripts/audit_paper_portfolio_exposure.py \
              tests/forward_record/test_paper_portfolio.py \
              tests/forward_record/test_market_data_freshness.py \
-             apps/forward_record/market_data.py \
-             apps/forward_record/primary.py \
+             tests/forward_record/test_paper_portfolio_audit.py \
+             tests/forward_record/test_paper_portfolio_guard.py \
+             tests/forward_record/test_notion_sync.py \
              docs/research/commands/COMMAND_LOG.md \
              docs/research/commands/NEXT_ACTION.md
-     git commit -m "TASK-013: add Notion historical backfill sync"
-3. Push (delivers TASK-008D through TASK-013):
+     git commit -m "TASK-013: add Notion historical backfill sync (TASK-009..013 bundle)"
+
+2. Push (delivers TASK-008D through TASK-014B):
      git push origin main
-4. On the VPS:
+
+3. On the VPS:
      cd ~/quant && git pull
      # Reprocess all dates with guard fix:
      python3 scripts/paper_portfolio_engine.py --rebuild
@@ -33,12 +60,8 @@
      python3 scripts/sync_forward_validation_to_notion.py --all --dry-run
      python3 scripts/sync_forward_validation_to_notion.py --all
 
-Sandbox committed files via git commit-tree (HEAD.lock workaround).
-The Windows-side working tree on F:\RickHSIAO\Python\量化交易 has all
-new files written correctly (verified by pytest 194/194 + bash -n PASS).
-
 ## Status
-WAITING (Rick action: commit TASK-013 changes + push origin main + VPS backfill)
+WAITING (Rick action: commit forward_record bundle + git push origin main + VPS backfill)
 
 ## Owner
 Rick

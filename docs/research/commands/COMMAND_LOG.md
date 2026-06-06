@@ -21,6 +21,58 @@ Notes:
 
 ---
 
+### 2026-06-06（TASK-014B — Demo Runtime Probe + Instrument Step Rounding）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014B)
+Task: Add demo runtime probe (fail-closed, no API calls) and instrument
+      rounding layer (qty_step / tick_size / min_qty / min_notional).
+      Integrated dry-run preview combining Phase-2 Kelly sizer with
+      runtime verification and exchange-compatible rounding.
+Status before: TASK-014 Phase 2 complete (58 tests PASS)
+Status after:  TASK-014B complete (177 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_runtime_probe.py                         -- NEW
+  src/demo_instrument_rules.py                      -- NEW
+  scripts/preview_demo_runtime_and_rounding.py      -- NEW
+  tests/demo_trading/test_demo_runtime_probe.py     -- NEW (55 tests)
+  tests/demo_trading/test_demo_instrument_rules.py  -- NEW (64 tests)
+  docs/research/commands/COMMAND_LOG.md             (this entry)
+  docs/research/commands/NEXT_ACTION.md             (TASK-014B status)
+
+Validation:
+  python -m py_compile src/demo_runtime_probe.py         PASS
+  python -m py_compile src/demo_instrument_rules.py      PASS
+  python -m py_compile scripts/preview_demo_runtime_and_rounding.py  PASS
+  pytest tests/demo_trading/ -q                          177 passed
+  preview_demo_runtime_and_rounding.py (verified)        PASS + all invariants OK
+  preview_demo_runtime_and_rounding.py --unverified       FAIL CLOSED exit=1
+  main.py / src/risk.py / BybitExecutor                  NOT MODIFIED
+  No secrets loaded, no API calls, no orders sent        CONFIRMED
+
+Design highlights:
+  demo_runtime_probe:
+    - 6-check fail-closed chain: config -> proof != None -> fields valid
+      -> demo_flag -> account_mode contains "demo" -> endpoint_family recognised
+    - config=True is necessary but not sufficient (prevents misconfiguration)
+    - make_fixture_proof() for tests/dry-run only
+  demo_instrument_rules:
+    - round_qty_down uses floor + 1e-9 epsilon (absorbs IEEE 754 FP errors)
+    - apply_instrument_rules_to_proposal: duck-typed, no import of Phase-2 module
+    - Invariants enforced: rounded_qty <= orig_qty, stop_risk_after <= orig_risk + 0.01
+  preview script:
+    - run_preview(use_fixture_proof, ...) returns int (0=OK, 1=fail-closed)
+    - --unverified flag shows fail-closed path without secrets
+
+Safety scan:
+  No place_order / create_order / submit_order / cancel_order / private_post
+  No pybit / BybitExecutor in any new file
+  No API_KEY / API_SECRET / dotenv in any new file
+  No network calls in any new file
+
+---
+
 ### 2026-05-19（TASK-009B — Support Chinese Notion Database Properties）
 
 Agent: Claude Sonnet
