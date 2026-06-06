@@ -1,5 +1,49 @@
 # Next Action
 
+## TASK-014E Status (2026-06-06)
+
+| item | status |
+|---|---|
+| src/demo_position_reconcile.py | DONE — reconcile() pure computation, 9 violation types |
+| scripts/preview_demo_position_reconcile.py | DONE — fixture + --from-latest-readonly-smoke + --write-report |
+| tests/demo_trading/test_demo_position_reconcile.py | DONE — 84 tests PASS (F1-F16) |
+| pytest tests/demo_trading/ | 405/405 PASS |
+| py_compile all new files | PASS |
+| .gitignore — outputs/demo_trading/reconciliation/ | DONE |
+| main.py / src/risk.py / exchange executors | NOT MODIFIED |
+| No orders sent / no positions modified / no secrets | CONFIRMED |
+| local commit | PENDING (Rick must git push) |
+
+## Real Demo Account Reconciliation Conclusions
+
+| metric | value | status |
+|---|---|---|
+| equity_usd | ~11,404.01 | — |
+| available_balance_usd | 0.00 | VIOLATION |
+| open_positions_count | 8 | within limit (max 10) |
+| short_count (estimated) | 7 | VIOLATION (max 5) |
+| new_entry_allowed | False | BLOCKED |
+| cannot_proceed_to_order_smoke | True | YES |
+
+Suggested actions:
+1. pause_new_entries
+2. review_legacy_short_positions
+3. reduce_short_count_to_max_5_manually (or via TASK-014F close-only task)
+4. restore_available_balance_before_enabling_new_entries
+
+→ TASK-014F Demo Close-only Manual Confirmed Cleanup needed if manual reduction required.
+
+## Next Rick Action (set by 2026-06-06 TASK-014E)
+
+1. git push origin main (delivers TASK-014D through TASK-014E)
+2. On VPS after git pull:
+     source .env.demo
+     python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+     python3 scripts/preview_demo_position_reconcile.py --from-latest-readonly-smoke --write-report
+3. Review reconciliation report: outputs/demo_trading/reconciliation/latest_reconciliation.md
+4. Decide if TASK-014F (close-only confirmed cleanup) is needed
+5. Commit forward_record bundle (MM files) — see TASK-013 section below
+
 ## TASK-014D Status (2026-06-06)
 
 | item | status |
@@ -54,9 +98,9 @@
 | local commit 815003c | DONE |
 | pushed to origin/main | PENDING (Rick must git push) |
 
-## Next Rick Action (set by 2026-06-06 TASK-014D)
+## (superseded — see TASK-014E section above for current actions)
 
-TASK-014D local commit PENDING. Steps to complete:
+### TASK-014D→E Forward Record Bundle (still pending)
 
 1. Stage and commit remaining forward_record TASK-009..013 files
    (these have MM or untracked status after the TASK-014B commit):
@@ -94,7 +138,7 @@ TASK-014D local commit PENDING. Steps to complete:
      python3 scripts/sync_forward_validation_to_notion.py --all
 
 ## Status
-WAITING (Rick action: commit TASK-014D changes + commit forward_record bundle + git push origin main + VPS smoke + VPS backfill)
+WAITING (Rick action: commit TASK-014E changes + git push origin main + VPS smoke + VPS reconciliation + decide on TASK-014F)
 
 ## Owner
 Rick

@@ -53,6 +53,7 @@ data/*.malformed_*
 # zip archives (local deploy/data bundles)
 *.zip
 
-# TASK-014D: Demo API credentials and smoke reports (never committed)
+# TASK-014D/E: Demo API credentials and smoke/reconciliation reports (never committed)
 .env.demo
 outputs/demo_trading/readonly_smoke/
+outputs/demo_trading/reconciliation/

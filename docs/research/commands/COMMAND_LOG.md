@@ -21,6 +21,71 @@ Notes:
 
 ---
 
+### 2026-06-06（TASK-014E — Demo Position Reconciliation Preview）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014E)
+Task: Read-only Demo position reconciliation and legacy position cleanup plan.
+      Audits current Demo account positions against new portfolio-level Kelly /
+      10-slot risk rules, detects violations, and outputs human-readable cleanup
+      plan. Does NOT auto-close, does NOT send orders.
+Status before: TASK-014D complete (321 tests PASS)
+Status after:  TASK-014E complete (405 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_position_reconcile.py                      -- NEW (reconcile() pure computation, violation detection, cleanup plan)
+  scripts/preview_demo_position_reconcile.py          -- NEW (fixture + --from-latest-readonly-smoke + --write-report)
+  tests/demo_trading/test_demo_position_reconcile.py  -- NEW (84 tests, F1-F16 + metrics correctness)
+  .gitignore                                          -- UPDATED (outputs/demo_trading/reconciliation/)
+  docs/research/commands/COMMAND_LOG.md              (this entry)
+  docs/research/commands/NEXT_ACTION.md              (TASK-014E status)
+
+Validation:
+  python -m py_compile src/demo_position_reconcile.py                  PASS
+  python -m py_compile scripts/preview_demo_position_reconcile.py      PASS
+  pytest tests/demo_trading/ -q                                        405 passed
+  preview (fixture mode)                                               exit 0, no violations
+  preview (legacy fixture: short_count=7, available=0)                 exit 1, violations flagged
+  main.py / src/risk.py / exchange executors                           NOT MODIFIED
+  No orders sent / no positions modified / no secrets                  CONFIRMED
+
+Real Demo account conclusions (based on confirmed real account state):
+  equity_usd           ≈ 11,404.01
+  available_balance_usd = 0.00       → VIOLATION: available_balance_zero_or_negative
+  open_positions_count  = 8
+  short_count           = 7 (approx) → VIOLATION: short_count_exceeded (max 5)
+  new_entry_allowed     = False
+  cannot_proceed_to_order_smoke = True
+
+  suggested_actions:
+    - pause_new_entries
+    - review_legacy_short_positions
+    - reduce_short_count_to_max_5_manually_or_via_future_confirmed_close_only_task
+    - restore_available_balance_before_enabling_new_entries
+
+  Next step if manual close is needed: TASK-014F Demo Close-only Manual Confirmed Cleanup
+
+Design highlights:
+  demo_position_reconcile.reconcile():
+    - MAX_OPEN_POSITIONS=10, MAX_LONG=5, MAX_SHORT=5
+    - MAX_GROSS_EXPOSURE_RATIO=1.0, MAX_NET_EXPOSURE_RATIO=0.5
+    - Conservative stop risk: missing stop → count full notional (not 0)
+    - 9 violation types, all hard (block new entries)
+    - Cleanup plan: suggested_actions list, blocked_reasons list
+    - Safety: no_orders_sent=True, no_position_modified=True always
+  preview script:
+    - fixture mode: clean 2-position fixture, no violations, exit 0
+    - --from-latest-readonly-smoke: gates on demo_runtime_verified in smoke JSON;
+      uses equity/available from smoke, fixture positions for per-symbol detail
+    - --write-report: timestamped + latest JSON/MD to outputs/demo_trading/reconciliation/
+  Output dir: outputs/demo_trading/reconciliation/ (gitignored)
+
+VPS usage (after git pull + source .env.demo):
+  python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+  python3 scripts/preview_demo_position_reconcile.py --from-latest-readonly-smoke --write-report
+
+---
+
 ### 2026-06-06（TASK-014D — Bybit Demo Real Read-only Smoke）
 
 Agent: Claude Sonnet 4.6
