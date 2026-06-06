@@ -16,7 +16,7 @@
 | .gitignore — .env.demo + outputs/demo_trading/readonly_smoke/ | DONE |
 | main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
 | No orders sent / no secrets / no API calls (fixture mode) | CONFIRMED |
-| local commit | PENDING (Rick must git push) |
+| local commit bb511f0 | DONE |
 
 ## TASK-014C Status (2026-06-06)
 
