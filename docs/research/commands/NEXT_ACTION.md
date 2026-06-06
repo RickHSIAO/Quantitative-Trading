@@ -1,5 +1,62 @@
 # Next Action
 
+## TASK-014G Status (2026-06-06)
+
+| item | status |
+|---|---|
+| src/demo_close_only_sender.py — DemoCloseOnlySender, CloseOrderResult | DONE |
+| src/demo_close_only_sender.py — layered gate checks + pre-send refresh | DONE |
+| scripts/execute_demo_close_only_cleanup.py — CLI gate + one-order limit | DONE |
+| tests/demo_trading/test_demo_close_only_sender.py — 90 tests (G1-G23) | DONE |
+| pytest tests/demo_trading/ | 584/584 PASS |
+| py_compile all new files | PASS |
+| .gitignore — outputs/demo_trading/close_only_execution/ | DONE |
+| dry-run default: no send | CONFIRMED |
+| execute_close_only=True: pre-send refresh + Demo endpoint only | CONFIRMED |
+| one-order-per-invocation limit enforced in CLI | CONFIRMED |
+| reduce_only=True enforced at gate | CONFIRMED |
+| close_side: Buy=close short, Sell=close long | CONFIRMED |
+| secret_value_observed=False always | CONFIRMED |
+| no_live_endpoint=True always | CONFIRMED |
+| source scan: no live hostname, no leverage/stop/fund-movement ops | PASS |
+| main.py / src/risk.py / exchange executors | NOT MODIFIED |
+| local commit | PENDING (Rick must git push) |
+
+## Next Rick Action (set by 2026-06-06 TASK-014G)
+
+1. git push origin main (delivers TASK-014D through TASK-014G)
+2. On VPS after git pull — refresh pipeline (in order):
+     source .env.demo
+     python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+     python3 scripts/preview_demo_position_reconcile.py --from-latest-readonly-smoke --write-report
+     python3 scripts/preview_demo_close_only_cleanup.py --from-latest-reconciliation \\
+         --confirm-token CONFIRM_DEMO_CLOSE_ONLY_$(date +%Y%m%d) --write-report
+3. Dry-run single close (review before executing):
+     python3 scripts/execute_demo_close_only_cleanup.py \\
+         --from-latest-cleanup \\
+         --symbol ETHUSDT \\
+         --confirm-token CONFIRM_DEMO_CLOSE_ONLY_$(date +%Y%m%d) \\
+         --write-report
+4. Review outputs/demo_trading/close_only_execution/latest_close_only_execution.md
+5. If dry-run passes all gates (execute_allowed=True), Rick manually decides:
+     python3 scripts/execute_demo_close_only_cleanup.py \\
+         --from-latest-cleanup \\
+         --symbol ETHUSDT \\
+         --confirm-token CONFIRM_DEMO_CLOSE_ONLY_$(date +%Y%m%d) \\
+         --execute-close-only \\
+         --write-report
+6. Repeat for BNBUSDT if needed.
+7. Commit forward_record bundle (MM files) — see TASK-013 section below.
+
+NOTE: Step 5 is Rick's decision. Claude has not sent any orders.
+      TASK-014G is a gate, not an auto-executer.
+
+## Status
+READY (Rick action: git push + VPS pipeline + dry-run review + manual execute decision)
+
+## Owner
+Rick
+
 ## TASK-014F Status (2026-06-06)
 
 | item | status |

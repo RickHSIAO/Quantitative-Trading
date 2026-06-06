@@ -21,6 +21,45 @@ Notes:
 
 ---
 
+### 2026-06-06（TASK-014G — Demo Close-only Sender Gate）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014G)
+Task: Build Demo close-only sender with layered safety gates and human confirmation.
+      DemoCloseOnlySender enforces: TASK-014F plan gates, symbol uniqueness,
+      reduce_only=True, close_side correctness, pre-send read-only refresh,
+      one-order-per-invocation limit, Demo endpoint only.
+      execute_close_only=True required; default is dry-run. No batch submission.
+Status before: TASK-014F complete (494 tests PASS)
+Status after:  TASK-014G complete (584 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_close_only_sender.py                          -- NEW (DemoCloseOnlySender, CloseOrderResult)
+  scripts/execute_demo_close_only_cleanup.py             -- NEW (CLI gate + confirmation)
+  tests/demo_trading/test_demo_close_only_sender.py      -- NEW (90 tests, G1-G23)
+  .gitignore                                             -- UPDATED (outputs/demo_trading/close_only_execution/)
+  docs/research/commands/COMMAND_LOG.md                 (this entry)
+  docs/research/commands/NEXT_ACTION.md                 (TASK-014G status)
+
+Validation:
+  python -m py_compile src/demo_close_only_sender.py                 PASS
+  python -m py_compile scripts/execute_demo_close_only_cleanup.py    PASS
+  python -m py_compile tests/demo_trading/test_demo_close_only_sender.py  PASS
+  pytest tests/demo_trading/ -q                                      584 passed
+  dry-run default: order_sent=False, order_endpoint_called=False               CONFIRMED
+  execute_close_only=True: pre-send refresh → Demo endpoint only               CONFIRMED
+  one-order limit: CLI fails closed when multi-candidate and no --symbol       CONFIRMED
+  reduce_only=True enforced at gate level                                       CONFIRMED
+  close_side Buy=close short, Sell=close long                                   CONFIRMED
+  secret_value_observed=False always                                            CONFIRMED
+  no_live_endpoint=True always                                                  CONFIRMED
+  api.bybit.com not in sender source                                            CONFIRMED
+  set_leverage / tradingStop / transfer / withdraw / deposit not in source      CONFIRMED
+  main.py / src/risk.py / exchange executors                                    NOT MODIFIED
+  No orders auto-sent; sender ready for Rick manual VPS smoke test              CONFIRMED
+
+---
+
 ### 2026-06-06（TASK-014F — Demo Close-only Manual Confirmed Cleanup）
 
 Agent: Claude Sonnet 4.6
