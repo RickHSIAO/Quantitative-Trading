@@ -1,12 +1,16 @@
 """
 scripts/preview_demo_readonly_runtime.py
-TASK-014C: Dry-run preview of Bybit Demo read-only runtime probe.
+TASK-014C/D: Dry-run preview of Bybit Demo read-only runtime probe.
 
 Default mode (fixture): zero network calls, zero secrets loaded.
   python scripts/preview_demo_readonly_runtime.py
 
-Real read-only mode: calls api-demo.bybit.com; requires BYBIT_DEMO_API_KEY env var.
+Real read-only mode: calls api-demo.bybit.com; requires BYBIT_DEMO_API_KEY and
+  BYBIT_DEMO_API_SECRET env vars.
   python scripts/preview_demo_readonly_runtime.py --real-readonly
+
+Write report mode (optional, can combine with --real-readonly):
+  python scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
 
 SAFETY GUARANTEES (both modes):
   DRY RUN / NO ORDERS SENT — no order endpoint is ever called.
@@ -15,12 +19,15 @@ SAFETY GUARANTEES (both modes):
 
 Exit codes:
   0  demo_runtime_verified=True and no fail_closed conditions
-  1  fail_closed=True or demo_runtime_verified=False
+  1  fail_closed=True or demo_runtime_verified=False or missing credentials (real mode)
 """
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +47,7 @@ from src.demo_runtime_adapter import adapt_all
 from src.demo_runtime_probe import probe_demo_runtime
 
 _SEP = "-" * 72
+_OUTPUT_DIR = ROOT / "outputs" / "demo_trading" / "readonly_smoke"
 
 
 def _hdr(title: str) -> None:
@@ -68,10 +76,75 @@ _FIXTURE_FULL_KELLY = 0.60   # illustrative; real value comes from strategy conf
 
 
 # ---------------------------------------------------------------------------
+# Report writer
+# ---------------------------------------------------------------------------
+
+def _write_report(data: dict, output_dir: Path) -> None:
+    """Write timestamped + latest JSON and Markdown report to output_dir."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = data.get("run_timestamp_utc", datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    ts_safe = ts.replace(":", "").replace("-", "")
+
+    json_path    = output_dir / f"{ts_safe}_smoke.json"
+    json_latest  = output_dir / "latest_smoke.json"
+    md_path      = output_dir / f"{ts_safe}_smoke.md"
+    md_latest    = output_dir / "latest_smoke.md"
+
+    json_text = json.dumps(data, indent=2, default=str)
+    json_path.write_text(json_text, encoding="utf-8")
+    json_latest.write_text(json_text, encoding="utf-8")
+
+    proof = data.get("proof_strength", "")
+    verified = data.get("demo_runtime_verified", False)
+    fail_closed = data.get("fail_closed", True)
+    status_line = "PASS" if verified and not fail_closed else "FAIL"
+
+    md_lines = [
+        f"# Demo Read-only Smoke Report",
+        f"",
+        f"run_timestamp_utc: `{ts}`  ",
+        f"source: `{data.get('source', 'unknown')}`  ",
+        f"proof_strength: **{proof}**  ",
+        f"demo_runtime_verified: `{verified}`  ",
+        f"fail_closed: `{fail_closed}`  ",
+        f"",
+        f"## Status: {status_line}",
+        f"",
+        f"| field | value |",
+        f"|---|---|",
+        f"| api_key_present | {data.get('api_key_present', False)} |",
+        f"| api_secret_present | {data.get('api_secret_present', False)} |",
+        f"| order_endpoint_called | {data.get('order_endpoint_called', False)} |",
+        f"| secret_value_observed | {data.get('secret_value_observed', False)} |",
+        f"| equity_usd | {data.get('equity_usd', 0):.2f} |",
+        f"| available_balance_usd | {data.get('available_balance_usd', 0):.2f} |",
+        f"| open_positions_count | {data.get('open_positions_count', 0)} |",
+        f"| proposals_accepted | {data.get('proposals_accepted', 0)} |",
+        f"",
+    ]
+    fail_reasons = data.get("fail_reasons", [])
+    if fail_reasons:
+        md_lines += ["## Fail Reasons", ""]
+        for r in fail_reasons:
+            md_lines.append(f"- {r}")
+        md_lines.append("")
+
+    md_text = "\n".join(md_lines)
+    md_path.write_text(md_text, encoding="utf-8")
+    md_latest.write_text(md_text, encoding="utf-8")
+
+    print(f"  report written: {json_path.name}")
+    print(f"  report written: {md_path.name}")
+    print(f"  latest  : {json_latest}")
+    print(f"  latest  : {md_latest}")
+
+
+# ---------------------------------------------------------------------------
 # Preview runner
 # ---------------------------------------------------------------------------
 
-def run_preview(use_real_network: bool = False) -> int:
+def run_preview(use_real_network: bool = False, write_report: bool = False) -> int:
     """
     Run the read-only probe dry-run preview.
 
@@ -80,8 +153,23 @@ def run_preview(use_real_network: bool = False) -> int:
     """
     print(_SEP)
     print("DRY RUN / NO ORDERS SENT")
-    print("TASK-014C: Bybit Demo Read-only Runtime Probe Preview")
+    print("TASK-014C/D: Bybit Demo Read-only Runtime Probe Preview")
     print(_SEP)
+
+    # Early exit when real mode but missing credentials
+    if use_real_network:
+        api_key    = os.environ.get("BYBIT_DEMO_API_KEY",    "")
+        api_secret = os.environ.get("BYBIT_DEMO_API_SECRET", "")
+        if not api_key or not api_secret:
+            missing = []
+            if not api_key:
+                missing.append("BYBIT_DEMO_API_KEY")
+            if not api_secret:
+                missing.append("BYBIT_DEMO_API_SECRET")
+            print(f"\n[ERROR] --real-readonly requires: {', '.join(missing)}")
+            print("  Set env vars (e.g. source .env.demo) and retry.")
+            print(_SEP)
+            return 1
 
     # 1. Read-only data
     client      = DemoReadOnlyClient(allow_real_network=use_real_network)
@@ -106,6 +194,7 @@ def run_preview(use_real_network: bool = False) -> int:
     print(f"  failure_reason          : {probe.failure_reason or 'none'}")
     print(f"  endpoint_family         : {probe.endpoint_family}")
     print(f"  account_mode            : {probe.account_mode}")
+    print(f"  proof_strength          : {proof_snap.proof_strength}")
     print(f"  no_orders_sent          : {probe.no_orders_sent}")
     print(f"  order_endpoint_called   : {probe.private_order_endpoint_called}")
     print(f"  secrets_loaded          : {probe.secrets_loaded}")
@@ -117,6 +206,7 @@ def run_preview(use_real_network: bool = False) -> int:
     print(f"  open_positions_count    : {len(planner.open_positions)}")
     print(f"  instrument_rules_count  : {len(planner.instrument_rules)}")
     print(f"  api_key_present         : {wallet.api_key_present}")
+    print(f"  api_secret_present      : {proof_snap.api_secret_present}")
     print(f"  secret_value_observed   : {wallet.secret_value_observed}")
     print(f"  order_endpoint_called   : {wallet.order_endpoint_called}")
 
@@ -129,12 +219,30 @@ def run_preview(use_real_network: bool = False) -> int:
             print(f"  positions_with_missing_stop: {planner.positions_with_missing_stop}")
 
     # 7. Early exit on fail-closed
-    if planner.fail_closed or not probe.demo_runtime_verified:
+    overall_fail_closed = planner.fail_closed or probe.fail_closed
+    if overall_fail_closed or not probe.demo_runtime_verified:
         _hdr("FAIL CLOSED")
         print("  demo runtime NOT verified — no proposals generated")
         if probe.failure_reason:
             print(f"  reason: {probe.failure_reason}")
         print(_SEP)
+        if write_report:
+            _write_report({
+                "run_timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "source": proof_snap.source,
+                "proof_strength": proof_snap.proof_strength,
+                "demo_runtime_verified": probe.demo_runtime_verified,
+                "fail_closed": overall_fail_closed,
+                "fail_reasons": planner.fail_reasons,
+                "api_key_present": wallet.api_key_present,
+                "api_secret_present": proof_snap.api_secret_present,
+                "order_endpoint_called": False,
+                "secret_value_observed": False,
+                "equity_usd": planner.equity_usd,
+                "available_balance_usd": planner.available_balance_usd,
+                "open_positions_count": len(planner.open_positions),
+                "proposals_accepted": 0,
+            }, _OUTPUT_DIR)
         return 1
 
     # 8. Open positions summary
@@ -171,6 +279,7 @@ def run_preview(use_real_network: bool = False) -> int:
     # 10. Instrument rounding for accepted proposals
     _hdr("Instrument Rounding (accepted proposals)")
     accepted = [p for p in sizing.proposals if p.accepted]
+    n_accepted_after_rounding = 0
     if not accepted:
         print("  (no accepted proposals)")
     else:
@@ -189,6 +298,8 @@ def run_preview(use_real_network: bool = False) -> int:
             if rp.accepted and rp.rounded_quantity > prop.quantity + 1e-9:
                 status = "INVARIANT_FAIL: qty rounded UP"
                 all_invariants_pass = False
+            if rp.accepted:
+                n_accepted_after_rounding += 1
             print(
                 f"  {rp.symbol:<14} {rp.side:<6} {rp.rounded_quantity:>8.4f}"
                 f" {rp.rounded_entry_price:>9.2f} {rp.rounded_stop_price:>9.2f}"
@@ -204,6 +315,25 @@ def run_preview(use_real_network: bool = False) -> int:
     print("  secret_value_observed    : False")
     print("  secret_leak_violations   : []")
     print(_SEP)
+
+    if write_report:
+        _write_report({
+            "run_timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "source": proof_snap.source,
+            "proof_strength": proof_snap.proof_strength,
+            "demo_runtime_verified": probe.demo_runtime_verified,
+            "fail_closed": overall_fail_closed,
+            "fail_reasons": planner.fail_reasons,
+            "api_key_present": wallet.api_key_present,
+            "api_secret_present": proof_snap.api_secret_present,
+            "order_endpoint_called": False,
+            "secret_value_observed": False,
+            "equity_usd": planner.equity_usd,
+            "available_balance_usd": planner.available_balance_usd,
+            "open_positions_count": len(planner.open_positions),
+            "proposals_accepted": n_accepted_after_rounding,
+        }, _OUTPUT_DIR)
+
     return 0
 
 
@@ -215,12 +345,23 @@ def main() -> None:
         "--real-readonly",
         action="store_true",
         help=(
-            "Use real Bybit Demo API (requires BYBIT_DEMO_API_KEY env var). "
+            "Use real Bybit Demo API (requires BYBIT_DEMO_API_KEY + BYBIT_DEMO_API_SECRET). "
             "Never sends orders."
         ),
     )
+    parser.add_argument(
+        "--write-report",
+        action="store_true",
+        help=(
+            "Write JSON + Markdown report to "
+            "outputs/demo_trading/readonly_smoke/."
+        ),
+    )
     args = parser.parse_args()
-    sys.exit(run_preview(use_real_network=args.real_readonly))
+    sys.exit(run_preview(
+        use_real_network=args.real_readonly,
+        write_report=args.write_report,
+    ))
 
 
 if __name__ == "__main__":

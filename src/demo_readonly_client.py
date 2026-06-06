@@ -62,6 +62,15 @@ _ALLOWED_PATHS: frozenset[str] = frozenset({
 
 
 # ---------------------------------------------------------------------------
+# Proof strength constants
+# ---------------------------------------------------------------------------
+
+PROOF_STRONG  = "STRONG"    # demo URL confirmed + retCode==0 + valid response structure
+PROOF_WEAK    = "WEAK"      # retCode==0 but response lacks expected identity fields
+PROOF_MISSING = "MISSING"   # no API key, connection error, or retCode != 0
+
+
+# ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
 
@@ -112,6 +121,8 @@ class RuntimeProofSnapshot:
     api_key_present:                 bool  = False
     secret_value_observed:           bool  = False
     secret_leak_violations:          list[str] = field(default_factory=list)
+    proof_strength:                  str   = ""     # PROOF_STRONG / PROOF_WEAK / PROOF_MISSING
+    api_secret_present:              bool  = False
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +177,8 @@ FIXTURE_RUNTIME_PROOF = RuntimeProofSnapshot(
     api_key_present=False,
     secret_value_observed=False,
     secret_leak_violations=[],
+    proof_strength=PROOF_STRONG,
+    api_secret_present=False,
 )
 
 
@@ -189,14 +202,16 @@ class DemoReadOnlyClient:
 
     def __init__(self, allow_real_network: bool = False) -> None:
         self._allow_real  = allow_real_network
-        self._api_key     = ""
-        self._api_secret  = ""
-        self._key_present = False
+        self._api_key        = ""
+        self._api_secret     = ""
+        self._key_present    = False
+        self._secret_present = False
 
         if allow_real_network:
-            self._api_key    = os.environ.get("BYBIT_DEMO_API_KEY",    "")
-            self._api_secret = os.environ.get("BYBIT_DEMO_API_SECRET", "")
-            self._key_present = bool(self._api_key)
+            self._api_key        = os.environ.get("BYBIT_DEMO_API_KEY",    "")
+            self._api_secret     = os.environ.get("BYBIT_DEMO_API_SECRET", "")
+            self._key_present    = bool(self._api_key)
+            self._secret_present = bool(self._api_secret)
 
     # ------------------------------------------------------------------
     # Public API
@@ -244,6 +259,8 @@ class DemoReadOnlyClient:
                 api_key_present=self._key_present,
                 secret_value_observed=False,
                 secret_leak_violations=[],
+                proof_strength=PROOF_STRONG,
+                api_secret_present=self._secret_present,
             )
         return self._proof_real()
 
@@ -380,19 +397,46 @@ class DemoReadOnlyClient:
         return out
 
     def _proof_real(self) -> RuntimeProofSnapshot:
-        data = self._get(_EP_QUERY_API, {}, signed=True)
-        connected = (data.get("retCode", -1) == 0)
+        if not self._api_key:
+            return RuntimeProofSnapshot(
+                account_mode="unknown", demo_flag=False,
+                endpoint_family="unknown", source="bybit_readonly_api",
+                base_url_used=DEMO_BASE_URL, live_endpoint_fallback_detected=False,
+                order_endpoint_called=False,
+                api_key_present=False, api_secret_present=self._secret_present,
+                proof_strength=PROOF_MISSING,
+            )
+        data     = self._get(_EP_QUERY_API, {}, signed=True)
+        ret_code = data.get("retCode", -1)
+        result   = data.get("result", {}) or {}
+        if ret_code != 0:
+            return RuntimeProofSnapshot(
+                account_mode="unknown", demo_flag=False,
+                endpoint_family="unknown", source="bybit_readonly_api",
+                base_url_used=DEMO_BASE_URL, live_endpoint_fallback_detected=False,
+                order_endpoint_called=False,
+                api_key_present=self._key_present, api_secret_present=self._secret_present,
+                proof_strength=PROOF_MISSING,
+            )
+        has_uid     = bool(result.get("userID") or result.get("uid") or result.get("id"))
+        has_api_key = bool(result.get("apiKey") or result.get("note"))
+        if has_uid and has_api_key:
+            proof_strength  = PROOF_STRONG
+            account_mode    = "demo"
+            demo_flag       = True
+            endpoint_family = "bybit_demo"
+        else:
+            proof_strength  = PROOF_WEAK
+            account_mode    = "unknown"
+            demo_flag       = False
+            endpoint_family = "unknown"
         return RuntimeProofSnapshot(
-            account_mode="demo"       if connected else "unknown",
-            demo_flag=connected,
-            endpoint_family="bybit_demo" if connected else "unknown",
-            source="bybit_readonly_api",
-            base_url_used=DEMO_BASE_URL,
-            live_endpoint_fallback_detected=False,
+            account_mode=account_mode, demo_flag=demo_flag,
+            endpoint_family=endpoint_family, source="bybit_readonly_api",
+            base_url_used=DEMO_BASE_URL, live_endpoint_fallback_detected=False,
             order_endpoint_called=False,
-            api_key_present=self._key_present,
-            secret_value_observed=False,
-            secret_leak_violations=[],
+            api_key_present=self._key_present, api_secret_present=self._secret_present,
+            proof_strength=proof_strength,
         )
 
 

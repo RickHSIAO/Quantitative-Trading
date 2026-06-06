@@ -519,3 +519,108 @@ class TestRegressionScopeNotModified:
     def test_req23_demo_runtime_adapter_does_not_import_risk(self):
         src = (ROOT / "src" / "demo_runtime_adapter.py").read_text(encoding="utf-8")
         assert "src.risk" not in src
+
+
+# ---------------------------------------------------------------------------
+# TASK-014D: Proof strength in adapter
+# ---------------------------------------------------------------------------
+
+from src.demo_readonly_client import PROOF_MISSING, PROOF_STRONG, PROOF_WEAK
+
+
+class TestProofStrengthInAdapter:
+    """PROOF_WEAK / PROOF_MISSING both cause adapt_runtime_proof to return None."""
+
+    def test_proof_weak_returns_none(self):
+        snap = _good_proof(proof_strength=PROOF_WEAK)
+        assert adapt_runtime_proof(snap) is None
+
+    def test_proof_missing_returns_none(self):
+        snap = _good_proof(proof_strength=PROOF_MISSING, demo_flag=False,
+                           endpoint_family="bybit_demo", account_mode="demo")
+        assert adapt_runtime_proof(snap) is None
+
+    def test_proof_strong_returns_not_none(self):
+        snap = _good_proof(proof_strength=PROOF_STRONG)
+        assert adapt_runtime_proof(snap) is not None
+
+    def test_proof_empty_strength_still_passes_endpoint_check(self):
+        """Backward compat: proof_strength="" with valid endpoint_family → not None."""
+        snap = _good_proof(proof_strength="")
+        assert adapt_runtime_proof(snap) is not None
+
+    def test_proof_weak_sets_fail_closed_in_adapt_all(self):
+        snap = _good_proof(proof_strength=PROOF_WEAK)
+        result = adapt_all(_wallet(), [], {}, snap)
+        assert result.fail_closed is True
+        assert "cannot_construct_runtime_proof" in result.fail_reasons
+
+    def test_proof_missing_sets_fail_closed_in_adapt_all(self):
+        snap = _good_proof(proof_strength=PROOF_MISSING, demo_flag=False,
+                           endpoint_family="bybit_demo", account_mode="demo")
+        result = adapt_all(_wallet(), [], {}, snap)
+        assert result.fail_closed is True
+
+    def test_proof_strong_does_not_set_fail_closed(self):
+        snap = _good_proof(proof_strength=PROOF_STRONG)
+        result = adapt_all(_wallet(), [], {}, snap)
+        assert result.fail_closed is False
+
+    def test_adapter_imports_proof_constants(self):
+        """Ensure PROOF_MISSING and PROOF_WEAK are importable from adapter module."""
+        import src.demo_runtime_adapter as mod
+        src_text = (ROOT / "src" / "demo_runtime_adapter.py").read_text(encoding="utf-8")
+        assert "PROOF_MISSING" in src_text
+        assert "PROOF_WEAK" in src_text
+
+
+# ---------------------------------------------------------------------------
+# TASK-014D: Real read-only safety (early exit)
+# ---------------------------------------------------------------------------
+
+class TestRealReadonlySafety:
+    """F12-F13: preview script exits 1 when --real-readonly but missing credentials."""
+
+    def test_missing_api_key_exits_one(self, monkeypatch):
+        monkeypatch.delenv("BYBIT_DEMO_API_KEY",    raising=False)
+        monkeypatch.delenv("BYBIT_DEMO_API_SECRET", raising=False)
+        from scripts.preview_demo_readonly_runtime import run_preview
+        rc = run_preview(use_real_network=True)
+        assert rc == 1
+
+    def test_missing_api_secret_exits_one(self, monkeypatch):
+        monkeypatch.setenv("BYBIT_DEMO_API_KEY", "FAKE_KEY")
+        monkeypatch.delenv("BYBIT_DEMO_API_SECRET", raising=False)
+        from scripts.preview_demo_readonly_runtime import run_preview
+        rc = run_preview(use_real_network=True)
+        assert rc == 1
+
+    def test_missing_api_key_message_shown(self, monkeypatch, capsys):
+        monkeypatch.delenv("BYBIT_DEMO_API_KEY",    raising=False)
+        monkeypatch.delenv("BYBIT_DEMO_API_SECRET", raising=False)
+        from scripts.preview_demo_readonly_runtime import run_preview
+        run_preview(use_real_network=True)
+        out = capsys.readouterr().out
+        assert "BYBIT_DEMO_API_KEY" in out
+
+    def test_fixture_mode_with_no_env_vars_exits_zero(self, monkeypatch):
+        """Fixture mode should not require credentials."""
+        monkeypatch.delenv("BYBIT_DEMO_API_KEY",    raising=False)
+        monkeypatch.delenv("BYBIT_DEMO_API_SECRET", raising=False)
+        from scripts.preview_demo_readonly_runtime import run_preview
+        rc = run_preview(use_real_network=False)
+        assert rc == 0
+
+    def test_proof_strength_shown_in_output(self, capsys):
+        """F15: proof_strength is shown in preview output."""
+        from scripts.preview_demo_readonly_runtime import run_preview
+        run_preview(use_real_network=False)
+        out = capsys.readouterr().out
+        assert "proof_strength" in out
+
+    def test_api_secret_present_shown_in_output(self, capsys):
+        """api_secret_present shown in Account Snapshot."""
+        from scripts.preview_demo_readonly_runtime import run_preview
+        run_preview(use_real_network=False)
+        out = capsys.readouterr().out
+        assert "api_secret_present" in out

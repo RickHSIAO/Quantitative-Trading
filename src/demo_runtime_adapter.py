@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from src.demo_instrument_rules import InstrumentRules
 from src.demo_portfolio_risk import DemoOpenPosition
 from src.demo_readonly_client import (
+    PROOF_MISSING,
+    PROOF_WEAK,
     InstrumentSnapshot,
     PositionSnapshot,
     RuntimeProofSnapshot,
@@ -126,6 +128,8 @@ def adapt_runtime_proof(
       - endpoint_family is not in DEMO_ENDPOINT_FAMILIES (e.g. "unknown")
     """
     if snap.live_endpoint_fallback_detected:
+        return None
+    if snap.proof_strength in (PROOF_WEAK, PROOF_MISSING):
         return None
     if not snap.account_mode or not snap.endpoint_family:
         return None

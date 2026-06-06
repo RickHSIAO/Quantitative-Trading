@@ -338,3 +338,244 @@ class TestAllowedPathsEnforcement:
         client = DemoReadOnlyClient(allow_real_network=True)
         with pytest.raises(ValueError):
             client._get("/v5/order/cancel", {})
+
+
+# ---------------------------------------------------------------------------
+# TASK-014D: Proof strength classification
+# ---------------------------------------------------------------------------
+
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock
+
+from src.demo_readonly_client import PROOF_MISSING, PROOF_STRONG, PROOF_WEAK
+
+
+class TestProofStrengthClassification:
+    """F2-F5: STRONG / WEAK / MISSING classification in build_runtime_proof."""
+
+    def test_fixture_proof_strength_is_strong(self):
+        """F2: fixture mode always returns PROOF_STRONG."""
+        p = _fixture_client().build_runtime_proof()
+        assert p.proof_strength == PROOF_STRONG
+
+    def test_real_mode_no_key_returns_proof_missing(self, monkeypatch):
+        """F3: real mode with no api_key → PROOF_MISSING."""
+        monkeypatch.delenv("BYBIT_DEMO_API_KEY",    raising=False)
+        monkeypatch.delenv("BYBIT_DEMO_API_SECRET",  raising=False)
+        client = DemoReadOnlyClient(allow_real_network=True)
+        p = client.build_runtime_proof()
+        assert p.proof_strength == PROOF_MISSING
+        assert p.demo_flag is False
+
+    def test_real_mode_retcode_nonzero_returns_proof_missing(self, monkeypatch):
+        """F3 variant: retCode != 0 → PROOF_MISSING."""
+        monkeypatch.setenv("BYBIT_DEMO_API_KEY",    "FAKE_KEY")
+        monkeypatch.setenv("BYBIT_DEMO_API_SECRET", "FAKE_SECRET")
+        client = DemoReadOnlyClient(allow_real_network=True)
+        with patch.object(client, "_get", return_value={"retCode": 10004, "result": {}}):
+            p = client.build_runtime_proof()
+        assert p.proof_strength == PROOF_MISSING
+        assert p.demo_flag is False
+
+    def test_real_mode_retcode_zero_no_uid_returns_proof_weak(self, monkeypatch):
+        """F4: retCode==0 but response lacks uid/apiKey → PROOF_WEAK."""
+        monkeypatch.setenv("BYBIT_DEMO_API_KEY",    "FAKE_KEY")
+        monkeypatch.setenv("BYBIT_DEMO_API_SECRET", "FAKE_SECRET")
+        client = DemoReadOnlyClient(allow_real_network=True)
+        with patch.object(client, "_get", return_value={"retCode": 0, "result": {}}):
+            p = client.build_runtime_proof()
+        assert p.proof_strength == PROOF_WEAK
+        assert p.demo_flag is False
+
+    def test_real_mode_retcode_zero_with_uid_and_apikey_returns_proof_strong(self, monkeypatch):
+        """F5: retCode==0 + result has userID + apiKey → PROOF_STRONG."""
+        monkeypatch.setenv("BYBIT_DEMO_API_KEY",    "FAKE_KEY")
+        monkeypatch.setenv("BYBIT_DEMO_API_SECRET", "FAKE_SECRET")
+        client = DemoReadOnlyClient(allow_real_network=True)
+        fake_result = {"retCode": 0, "result": {"userID": "123", "apiKey": "FAKE_KEY"}}
+        with patch.object(client, "_get", return_value=fake_result):
+            p = client.build_runtime_proof()
+        assert p.proof_strength == PROOF_STRONG
+        assert p.demo_flag is True
+
+    def test_real_mode_uid_variant_uid_field(self, monkeypatch):
+        """F5 variant: uid (not userID) also qualifies."""
+        monkeypatch.setenv("BYBIT_DEMO_API_KEY",    "FAKE_KEY")
+        monkeypatch.setenv("BYBIT_DEMO_API_SECRET", "FAKE_SECRET")
+        client = DemoReadOnlyClient(allow_real_network=True)
+        fake_result = {"retCode": 0, "result": {"uid": "456", "note": "mykey"}}
+        with patch.object(client, "_get", return_value=fake_result):
+            p = client.build_runtime_proof()
+        assert p.proof_strength == PROOF_STRONG
+
+    def test_proof_strength_field_exists_on_snapshot(self):
+        """proof_strength field is present and non-empty in fixture mode."""
+        p = _fixture_client().build_runtime_proof()
+        assert hasattr(p, "proof_strength")
+        assert p.proof_strength != ""
+
+
+# ---------------------------------------------------------------------------
+# TASK-014D: api_secret_present tracking
+# ---------------------------------------------------------------------------
+
+class TestApiSecretPresent:
+    """F9-F11: api_secret_present propagation."""
+
+    def test_fixture_mode_api_secret_present_is_false(self, monkeypatch):
+        """F10: fixture mode — api_secret_present always False."""
+        monkeypatch.setenv("BYBIT_DEMO_API_SECRET", "SOME_SECRET")
+        p = DemoReadOnlyClient(allow_real_network=False).build_runtime_proof()
+        assert p.api_secret_present is False
+
+    def test_real_mode_with_secret_api_secret_present_true(self, monkeypatch):
+        """F9: real mode + secret set → api_secret_present True."""
+        monkeypatch.setenv("BYBIT_DEMO_API_KEY",    "FAKE_KEY")
+        monkeypatch.setenv("BYBIT_DEMO_API_SECRET", "FAKE_SECRET")
+        client = DemoReadOnlyClient(allow_real_network=True)
+        # no_key early exit: api_key is set, so it will try _get; mock it
+        with patch.object(client, "_get", return_value={"retCode": 0, "result": {"userID": "1", "apiKey": "k"}}):
+            p = client.build_runtime_proof()
+        assert p.api_secret_present is True
+
+    def test_real_mode_no_secret_api_secret_present_false(self, monkeypatch):
+        """F9: real mode + no secret → api_secret_present False."""
+        monkeypatch.setenv("BYBIT_DEMO_API_KEY", "FAKE_KEY")
+        monkeypatch.delenv("BYBIT_DEMO_API_SECRET", raising=False)
+        client = DemoReadOnlyClient(allow_real_network=True)
+        with patch.object(client, "_get", return_value={"retCode": 0, "result": {"userID": "1", "apiKey": "k"}}):
+            p = client.build_runtime_proof()
+        assert p.api_secret_present is False
+
+    def test_api_secret_present_field_on_fixture_runtime_proof_constant(self):
+        """FIXTURE_RUNTIME_PROOF constant has api_secret_present field."""
+        from src.demo_readonly_client import FIXTURE_RUNTIME_PROOF
+        assert hasattr(FIXTURE_RUNTIME_PROOF, "api_secret_present")
+        assert FIXTURE_RUNTIME_PROOF.api_secret_present is False
+
+    def test_secret_value_never_in_proof_output(self, monkeypatch):
+        """F11: secret value never appears in proof output regardless of mode."""
+        monkeypatch.setenv("BYBIT_DEMO_API_KEY",    "SUPER_SECRET_KEY_VALUE")
+        monkeypatch.setenv("BYBIT_DEMO_API_SECRET", "SUPER_SECRET_VALUE_XYZ")
+        client = DemoReadOnlyClient(allow_real_network=True)
+        with patch.object(client, "_get", return_value={"retCode": 0, "result": {"userID": "1", "apiKey": "k"}}):
+            p = client.build_runtime_proof()
+        proof_str = str(p)
+        assert "SUPER_SECRET_VALUE_XYZ" not in proof_str
+        assert p.secret_value_observed is False
+
+
+# ---------------------------------------------------------------------------
+# TASK-014D: write_report
+# ---------------------------------------------------------------------------
+
+class TestWriteReport:
+    """F14: --write-report creates JSON and MD files."""
+
+    def test_write_report_creates_json_and_md(self):
+        from scripts.preview_demo_readonly_runtime import _write_report
+        data = {
+            "run_timestamp_utc": "2026-06-06T12:00:00Z",
+            "source": "fixture",
+            "proof_strength": PROOF_STRONG,
+            "demo_runtime_verified": True,
+            "fail_closed": False,
+            "fail_reasons": [],
+            "api_key_present": False,
+            "api_secret_present": False,
+            "order_endpoint_called": False,
+            "secret_value_observed": False,
+            "equity_usd": 10000.0,
+            "available_balance_usd": 8500.0,
+            "open_positions_count": 2,
+            "proposals_accepted": 3,
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            _write_report(data, output_dir)
+            files = list(output_dir.iterdir())
+            names = {f.name for f in files}
+            assert "latest_smoke.json" in names
+            assert "latest_smoke.md" in names
+            # Also a timestamped pair
+            json_files = [n for n in names if n.endswith("_smoke.json") and n != "latest_smoke.json"]
+            md_files   = [n for n in names if n.endswith("_smoke.md")   and n != "latest_smoke.md"]
+            assert len(json_files) == 1
+            assert len(md_files)   == 1
+
+    def test_write_report_json_content(self):
+        from scripts.preview_demo_readonly_runtime import _write_report
+        data = {
+            "run_timestamp_utc": "2026-06-06T12:00:00Z",
+            "source": "fixture",
+            "proof_strength": PROOF_STRONG,
+            "demo_runtime_verified": True,
+            "fail_closed": False,
+            "fail_reasons": [],
+            "api_key_present": False,
+            "api_secret_present": False,
+            "order_endpoint_called": False,
+            "secret_value_observed": False,
+            "equity_usd": 10000.0,
+            "available_balance_usd": 8500.0,
+            "open_positions_count": 2,
+            "proposals_accepted": 3,
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            _write_report(data, output_dir)
+            latest = output_dir / "latest_smoke.json"
+            loaded = json.loads(latest.read_text(encoding="utf-8"))
+            assert loaded["proof_strength"] == PROOF_STRONG
+            assert loaded["demo_runtime_verified"] is True
+            assert loaded["secret_value_observed"] is False
+
+    def test_write_report_md_contains_status_pass(self):
+        from scripts.preview_demo_readonly_runtime import _write_report
+        data = {
+            "run_timestamp_utc": "2026-06-06T12:00:00Z",
+            "source": "fixture",
+            "proof_strength": PROOF_STRONG,
+            "demo_runtime_verified": True,
+            "fail_closed": False,
+            "fail_reasons": [],
+            "api_key_present": False,
+            "api_secret_present": False,
+            "order_endpoint_called": False,
+            "secret_value_observed": False,
+            "equity_usd": 10000.0,
+            "available_balance_usd": 8500.0,
+            "open_positions_count": 2,
+            "proposals_accepted": 3,
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            _write_report(data, output_dir)
+            md = (output_dir / "latest_smoke.md").read_text(encoding="utf-8")
+            assert "PASS" in md
+
+    def test_write_report_md_contains_status_fail_when_fail_closed(self):
+        from scripts.preview_demo_readonly_runtime import _write_report
+        data = {
+            "run_timestamp_utc": "2026-06-06T12:00:00Z",
+            "source": "bybit_readonly_api",
+            "proof_strength": PROOF_MISSING,
+            "demo_runtime_verified": False,
+            "fail_closed": True,
+            "fail_reasons": ["cannot_construct_runtime_proof"],
+            "api_key_present": False,
+            "api_secret_present": False,
+            "order_endpoint_called": False,
+            "secret_value_observed": False,
+            "equity_usd": 0.0,
+            "available_balance_usd": 0.0,
+            "open_positions_count": 0,
+            "proposals_accepted": 0,
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            _write_report(data, output_dir)
+            md = (output_dir / "latest_smoke.md").read_text(encoding="utf-8")
+            assert "FAIL" in md

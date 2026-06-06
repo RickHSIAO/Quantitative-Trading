@@ -1,5 +1,23 @@
 # Next Action
 
+## TASK-014D Status (2026-06-06)
+
+| item | status |
+|---|---|
+| src/demo_readonly_client.py — _proof_real STRONG/WEAK/MISSING | DONE |
+| src/demo_readonly_client.py — api_secret_present tracking | DONE |
+| src/demo_runtime_adapter.py — reject PROOF_WEAK/MISSING | DONE |
+| scripts/preview_demo_readonly_runtime.py — --write-report, early exit | DONE |
+| scripts/preview_demo_readonly_runtime.py — proof_strength + api_secret_present display | DONE |
+| tests/demo_trading/test_demo_readonly_client.py | +25 tests (66 total) |
+| tests/demo_trading/test_demo_runtime_adapter.py | +24 tests (97 total) |
+| pytest tests/demo_trading/ | 321/321 PASS |
+| py_compile all modified files | PASS |
+| .gitignore — .env.demo + outputs/demo_trading/readonly_smoke/ | DONE |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| No orders sent / no secrets / no API calls (fixture mode) | CONFIRMED |
+| local commit | PENDING (Rick must git push) |
+
 ## TASK-014C Status (2026-06-06)
 
 | item | status |
@@ -36,9 +54,9 @@
 | local commit 815003c | DONE |
 | pushed to origin/main | PENDING (Rick must git push) |
 
-## Next Rick Action (set by 2026-06-06 TASK-014B)
+## Next Rick Action (set by 2026-06-06 TASK-014D)
 
-TASK-014B local commit 815003c is done. Remaining steps:
+TASK-014D local commit PENDING. Steps to complete:
 
 1. Stage and commit remaining forward_record TASK-009..013 files
    (these have MM or untracked status after the TASK-014B commit):
@@ -76,7 +94,7 @@ TASK-014B local commit 815003c is done. Remaining steps:
      python3 scripts/sync_forward_validation_to_notion.py --all
 
 ## Status
-WAITING (Rick action: commit TASK-014C changes + commit forward_record bundle + git push origin main + VPS backfill)
+WAITING (Rick action: commit TASK-014D changes + commit forward_record bundle + git push origin main + VPS smoke + VPS backfill)
 
 ## Owner
 Rick

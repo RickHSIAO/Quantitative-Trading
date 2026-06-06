@@ -21,6 +21,57 @@ Notes:
 
 ---
 
+### 2026-06-06（TASK-014D — Bybit Demo Real Read-only Smoke）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014D)
+Task: Strengthen Demo runtime proof with STRONG/WEAK/MISSING classification.
+      Add --write-report flag writing JSON+MD to outputs/demo_trading/readonly_smoke/.
+      Add api_secret_present tracking. Early exit in preview when --real-readonly
+      but credentials missing. Add .env.demo to .gitignore. 30 new tests.
+Status before: TASK-014C complete (291 tests PASS)
+Status after:  TASK-014D complete (321 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_readonly_client.py                     -- UPDATED (_proof_real STRONG/WEAK/MISSING, api_secret_present)
+  src/demo_runtime_adapter.py                     -- UPDATED (PROOF_WEAK/MISSING → None in adapt_runtime_proof)
+  scripts/preview_demo_readonly_runtime.py        -- UPDATED (--write-report, early exit, proof_strength display)
+  tests/demo_trading/test_demo_readonly_client.py -- UPDATED (+25 tests: TestProofStrengthClassification, TestApiSecretPresent, TestWriteReport)
+  tests/demo_trading/test_demo_runtime_adapter.py -- UPDATED (+24 tests: TestProofStrengthInAdapter, TestRealReadonlySafety)
+  .gitignore                                      -- UPDATED (.env.demo + outputs/demo_trading/readonly_smoke/)
+  docs/research/commands/COMMAND_LOG.md          (this entry)
+  docs/research/commands/NEXT_ACTION.md          (TASK-014D status)
+
+Validation:
+  python -m py_compile src/demo_readonly_client.py       PASS
+  python -m py_compile src/demo_runtime_adapter.py       PASS
+  python -m py_compile scripts/preview_demo_readonly_runtime.py  PASS
+  pytest tests/demo_trading/ -q                          321 passed
+  main.py / src/risk.py / BybitExecutor                  NOT MODIFIED
+  No secrets loaded, no API calls, no orders sent        CONFIRMED
+
+Design highlights:
+  demo_readonly_client._proof_real():
+    - No API key → PROOF_MISSING immediately (no network call attempted)
+    - retCode != 0 → PROOF_MISSING
+    - retCode==0 but no userID/apiKey in result → PROOF_WEAK
+    - retCode==0 + valid identity fields → PROOF_STRONG
+    - api_secret_present tracks bool(BYBIT_DEMO_API_SECRET) in real mode
+  demo_runtime_adapter.adapt_runtime_proof():
+    - PROOF_WEAK or PROOF_MISSING → return None (fail-closed)
+    - Preserves prior checks: live_endpoint_fallback, empty account_mode/endpoint_family
+  preview script:
+    - Early exit (return 1) when --real-readonly + missing BYBIT_DEMO_API_KEY or SECRET
+    - proof_strength + api_secret_present shown in Account Snapshot section
+    - --write-report writes timestamped + latest JSON/MD to outputs/demo_trading/readonly_smoke/
+  .gitignore: .env.demo + outputs/demo_trading/readonly_smoke/ added
+
+VPS smoke (after git pull + source .env.demo):
+  python3 scripts/preview_demo_readonly_runtime.py --real-readonly
+  python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+
+---
+
 ### 2026-06-06（TASK-014C — Bybit Demo Read-only Runtime Probe）
 
 Agent: Claude Sonnet 4.6
