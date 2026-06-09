@@ -1,5 +1,96 @@
 # Next Action
 
+## TASK-014N Status (2026-06-09)
+
+| item | status |
+|---|---|
+| src/demo_emergency_close_sender.py — EmergencyCloseOrderResult dataclass | DONE |
+| src/demo_emergency_close_sender.py — DemoEmergencyCloseSender (15 static gates + token gate + pre-send refresh + single reduce-only Market POST) | DONE |
+| src/demo_emergency_close_sender.py — order body: category=linear, Market, reduceOnly=True, closeOnTrigger=False, side=Buy/Sell, qty>0, timeInForce=IOC, positionIdx=0, no leverage/TP/SL/triggerPrice/transfer | DONE |
+| src/demo_emergency_close_sender.py — endpoint: only api-demo.bybit.com + /v5/order/create (one order per invocation) | DONE |
+| scripts/execute_demo_emergency_close.py — CLI (--from-latest-postfill --symbol --confirm-token --dry-run --execute-emergency-close --write-report) | DONE |
+| tests/demo_trading/test_demo_emergency_close_sender.py — 59 tests (N1-N25 + structural invariants + CLI integration) | DONE |
+| .gitignore — outputs/demo_trading/emergency_close_execution/ | DONE |
+| pytest tests/demo_trading | 988/988 PASS (929 prior + 59 new) |
+| py_compile new files | PASS |
+| postfill gates: postfill_not_fail_closed / recommended_action_not_emergency_close_preview / emergency_close_preview_missing | CONFIRMED |
+| preview-shape gates: preview_reason_not_missing_stop_price / preview_only_must_be_true / preview_reduce_only_must_be_true / preview_order_sent_must_be_false / preview_order_endpoint_called_must_be_false / preview_order_type_not_market | CONFIRMED |
+| confirm-token gates: missing_confirm_token / invalid_confirm_token_format / confirm_token_date_mismatch (today UTC) | CONFIRMED |
+| symbol gates: missing_symbol / symbol_mismatch_vs_preview | CONFIRMED |
+| side/qty gates: close_order_side_mismatch_vs_position_side / invalid_close_order_side_in_preview / invalid_position_side_in_preview / invalid_qty_not_positive | CONFIRMED |
+| pre-send refresh: proof_strong + endpoint_demo + account_mode_demo + target_position_present + side_match + live_qty_positive + preview_qty<=live_qty + stop_still_missing + close_side_consistent_with_live | CONFIRMED |
+| short-circuit refresh: stop_restored_no_emergency_close_needed (live stop_price > 0) blocks send | CONFIRMED |
+| dry-run default: order_sent=False / order_endpoint_called=False / no_position_modified=True | CONFIRMED |
+| execute path: signed Bybit V5 HMAC POST to api-demo.bybit.com + /v5/order/create only; reduceOnly=True always; live host never contacted | CONFIRMED |
+| mocked retCode==0 → order_id set / order_sent=True / no_position_modified=False; no secrets in result | CONFIRMED |
+| mocked retCode!=0 → fail_closed=True / order_sent=False (best-effort even if exchange responded) | CONFIRMED |
+| structural invariants: no_live_endpoint=True / no_batch_order=True / no_new_entry_path=True / no_close_only_sender_reused=True / reduce_only=True (always) / secret_value_observed=False | CONFIRMED |
+| no env secret values written into JSON or MD reports | CONFIRMED |
+| AST imports (module + CLI): no main / src.risk / BybitExecutor / pybit / demo_close_only_sender / demo_new_entry_sender / demo_new_entry_postfill_verify / execute_demo_close_only_cleanup / execute_demo_new_entry / verify_demo_new_entry_postfill | CONFIRMED |
+| source scan: no api.bybit.com / api.bytick.com / /v5/order/create-batch / set-trading-stop / set-leverage / transfer / withdraw / deposit / triggerPrice / takeProfit / stopLoss / tpslMode in emergency-close module or CLI | CONFIRMED |
+| one-order limit: exactly one /v5/order/create POST per submit_one_emergency_close() invocation | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor / demo_close_only_sender / demo_new_entry_sender / demo_new_entry_postfill_verify | NOT MODIFIED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-09 TASK-014N)
+
+1. Update VPS git pull and inspect the new emergency-close sender + CLI:
+       src/demo_emergency_close_sender.py
+       scripts/execute_demo_emergency_close.py
+       tests/demo_trading/test_demo_emergency_close_sender.py
+
+2. VPS emergency-close DRY-RUN preview (no order will be sent):
+       source .env.demo
+       # 1) read-only proof refresh
+       python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+       # 2) re-run post-fill verification with emergency preview enabled
+       python3 scripts/verify_demo_new_entry_postfill.py \
+           --from-latest-execution --from-latest-readonly-smoke \
+           --with-emergency-close-preview --write-report
+       # 3) DRY-RUN the emergency close sender (no order sent)
+       python3 scripts/execute_demo_emergency_close.py \
+           --from-latest-postfill --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_EMERGENCY_CLOSE_$(date -u +%Y%m%d) \
+           --dry-run --write-report
+       cat outputs/demo_trading/emergency_close_execution/latest_emergency_close.md
+
+   Expected (DRY-RUN): order_sent=False, order_endpoint_called=False,
+   no_position_modified=True, all 15 static gates pass, pre-send refresh either
+   confirms SOLUSDT still has stop_price=0 (proceeding to execute would be
+   allowed) OR fires stop_restored_no_emergency_close_needed (manual UI added
+   stop in the meantime — execute path becomes blocked, which is the desired
+   fail-closed outcome).
+
+3. Manual decision point — Rick decides whether to escalate from DRY-RUN to
+   --execute-emergency-close for the SOLUSDT missing-stop position.  This commit
+   does NOT auto-escalate.  Suggested escalation, only after Rick explicitly
+   approves:
+       python3 scripts/execute_demo_emergency_close.py \
+           --from-latest-postfill --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_EMERGENCY_CLOSE_$(date -u +%Y%m%d) \
+           --execute-emergency-close --write-report
+
+   This will send EXACTLY ONE reduce-only Market order (side=Sell for the long
+   SOLUSDT) to api-demo.bybit.com /v5/order/create and write the execution
+   report under outputs/demo_trading/emergency_close_execution/.  Reduce-only
+   is hard-coded True; closeOnTrigger=False; positionIdx=0; timeInForce=IOC;
+   no TP/SL/triggerPrice/leverage/transfer fields are present in the body.
+
+4. Alternative manual path: Bybit Demo UI — add a stop on SOLUSDT manually,
+   then re-run the DRY-RUN; pre-send refresh will fire
+   `stop_restored_no_emergency_close_needed` and the sender will fail closed
+   without any further action.
+
+## Status
+READY (Rick action: VPS DRY-RUN of the emergency close sender for the SOLUSDT
+        missing-stop position, then manual decision whether to escalate with
+        --execute-emergency-close OR resolve the missing stop via the Demo
+        UI).  No order was sent, no position was modified, no secret was
+        observed, no live endpoint was contacted by this commit.
+
+## Owner
+Rick
+
 ## TASK-014M Status (2026-06-09)
 
 | item | status |

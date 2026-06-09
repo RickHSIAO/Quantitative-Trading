@@ -63,3 +63,4 @@ outputs/demo_trading/wallet_audit/
 outputs/demo_trading/new_entry_review/
 outputs/demo_trading/new_entry_execution/
 outputs/demo_trading/new_entry_postfill/
+outputs/demo_trading/emergency_close_execution/

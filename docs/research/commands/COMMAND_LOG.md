@@ -21,6 +21,87 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014N — Add Demo Emergency Missing-stop Close-only Sender / Single-position Gate）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014N)
+Task: Build a fail-closed, layered-gate, single-order Demo emergency
+      close-only sender for the SOLUSDT missing-stop position whose
+      emergency_close_preview was emitted by TASK-014M (positionId
+      missing stop_price=0, qty=4.0, side=long).  Deliverables:
+        A. src/demo_emergency_close_sender.py — new module independent
+           of demo_close_only_sender / demo_new_entry_sender / BybitExecutor
+           / src/risk / main, exposing EmergencyCloseOrderResult dataclass
+           and DemoEmergencyCloseSender with 15 static gates, a confirm-
+           token gate (CONFIRM_DEMO_EMERGENCY_CLOSE_YYYYMMDD, today UTC),
+           a pre-send refresh against a live DemoReadOnlyClient, and at
+           most ONE reduce-only Market POST to api-demo.bybit.com
+           /v5/order/create per invocation;
+        B. scripts/execute_demo_emergency_close.py — DRY-RUN-default CLI
+           that consumes the latest post-fill JSON
+           (outputs/demo_trading/new_entry_postfill/) and produces a JSON
+           + MD report under
+           outputs/demo_trading/emergency_close_execution/.  --execute-
+           emergency-close is required to leave dry-run; --confirm-token
+           is required either way;
+        C. tests/demo_trading/test_demo_emergency_close_sender.py — 25
+           requirement classes (N1-N25) plus structural invariant + CLI
+           integration tests covering: dry-run default, all 15 static
+           gate failure modes, confirm-token shape & date equality, close
+           side mapping (long→Sell, short→Buy), pre-send refresh side /
+           qty / stop-restored / target-missing, signed Bybit V5 POST
+           against api-demo.bybit.com only, mocked retCode==0 and !=0
+           paths, structural invariants, secret hygiene, no live endpoint
+           fallback, no forbidden tokens, no forbidden imports, and one-
+           order limit per invocation.
+
+Status before: READY — TASK-014M committed (2287e8b); VPS holds a real Demo
+               SOLUSDT position with stop_price=0; emergency_close_preview
+               available via verify_demo_new_entry_postfill.py
+               --with-emergency-close-preview; no sender path existed yet
+               to escalate that preview into an actual reduce-only close.
+Status after:  READY — TASK-014N complete on local main; module / CLI /
+               tests in place; 988/988 demo_trading tests pass (929 prior
+               + 59 new); no orders sent, no positions modified, no
+               secrets observed, no live endpoint contacted, no close-only
+               sender or new-entry sender reused.
+
+Files changed:
+  - src/demo_emergency_close_sender.py            (CREATED)
+  - scripts/execute_demo_emergency_close.py       (CREATED)
+  - tests/demo_trading/test_demo_emergency_close_sender.py (CREATED — 59 tests)
+  - .gitignore                                    (MODIFIED — outputs/demo_trading/emergency_close_execution/)
+  - docs/research/commands/NEXT_ACTION.md         (MODIFIED — TASK-014N block prepended)
+  - docs/research/commands/COMMAND_LOG.md         (MODIFIED — this entry prepended)
+
+Validation:
+  - python -m py_compile src/demo_emergency_close_sender.py            → PASS
+  - python -m py_compile scripts/execute_demo_emergency_close.py       → PASS
+  - python -m pytest tests/demo_trading -q                             → 988 passed
+  - Static gates verified by tests N3..N16
+  - Pre-send refresh gates verified by tests N17..N20
+  - DRY-RUN default verified by tests N1, N2
+  - Signed POST to api-demo.bybit.com /v5/order/create verified by N17, N21
+  - reduceOnly=True invariant verified by structural invariant test
+  - No forbidden imports / no forbidden tokens verified by N22, N24, N25
+
+Outputs:
+  - outputs/demo_trading/emergency_close_execution/ (git-ignored;
+    populated only when CLI is run with --write-report on the VPS)
+
+Notes:
+  - This commit is LOCAL ONLY.  No git push.  No Demo emergency close
+    order has been sent.  --execute-emergency-close has NOT been invoked
+    against any environment by this commit.
+  - The sender is structurally independent of TASK-014K (close-only
+    cleanup sender) and TASK-014L (new-entry sender); no module-level
+    import or function reuse between them.  Module-level AST scans in the
+    test suite enforce this isolation.
+  - Decision to escalate from DRY-RUN to --execute-emergency-close for the
+    SOLUSDT missing-stop position is reserved for Rick.
+
+---
+
 ### 2026-06-09（TASK-014M — Add Demo New-entry Post-fill Verification / Missing-stop Protection / Real-price Guard）
 
 Agent: Claude Opus 4.7
