@@ -1,5 +1,98 @@
 # Next Action
 
+## TASK-014S Status (2026-06-10)
+
+| item | status |
+|---|---|
+| src/demo_protected_new_entry_orchestrator.py — NEW pure-computation / mock-safe orchestrator; DemoProtectedNewEntryOrchestrator + ProtectedEntryChainResult dataclass; submit_chain() validates 24+ gates (review-level + protection-level + stop direction + token + TASK-014R sender promotion) and builds the TASK-014R stop payload preview; under --mock-chain synthesizes an entry + post-fill (stop_price=0) + stop-attach (TASK-014R mock_execute_stop) envelope chain with all-or-fail semantics; failure path -> MOCK_PROTECTED_ENTRY_FAIL_CLOSED + recommended_action="emergency_close_preview" (no real emergency close invoked) | DONE |
+| src/demo_protected_new_entry_orchestrator.py — NO urlopen / urllib / requests / httpx / socket / http.client / hmac / X-BAPI-SIGN / os.environ / getenv / dotenv; NO import of main / src.risk / BybitExecutor / pybit / src.bybit_executor / src.demo_new_entry_sender / src.demo_close_only_sender / src.demo_emergency_close_sender; ORDER_CREATE_ENDPOINT="/v5/order/create" and STOP_ATTACH_ENDPOINT="/v5/position/trading-stop" recorded but NEVER invoked; --mock-chain emits synthetic MOCK-ENTRY-{symbol}-{x} + MOCK-STOP-{symbol}-{x} envelopes without opening a socket | CONFIRMED |
+| scripts/execute_demo_protected_new_entry_mock.py — NEW CLI: --from-latest-review / --from-latest-protection / --symbol / --confirm-token / --dry-run (default) / --mock-chain / --write-report; reads outputs/demo_trading/new_entry_review/latest_new_entry_review.json + outputs/demo_trading/new_entry_protection/latest_new_entry_protection.json; writes JSON + Markdown to outputs/demo_trading/protected_new_entry/; NO --execute-protected-entry flag (real chain execution reserved for TASK-014T+) | DONE |
+| tests/demo_trading/test_demo_protected_new_entry_orchestrator.py — 57 tests S1-S28 + extras: missing review / protection / symbol mismatch / review missing realtime guard / protection missing realtime guard / missing stop_price / long stop above-or-equal entry / short stop below-or-equal entry / valid dry-run SOLUSDT / mock-chain invalid token / mock-chain valid token MOCK_PROTECTED_ENTRY_SUCCESS / mock_entry_order_sent=True with order_endpoint_called=False / mock_stop_attached=True with stop_endpoint_called=False / final mock position stop_price>0 / missing_stop_price=False after attach / _simulate_stop_attach_failure -> MOCK_PROTECTED_ENTRY_FAIL_CLOSED + recommended_action=emergency_close_preview / report artifacts / no live endpoint / no secrets / no forbidden imports / no close-only / emergency-close / new-entry-sender reuse / no network at import time / payload excludes takeProfit + leverage + transfer + withdraw + deposit / TASK-014L sender G20 still blocks --execute-new-entry / urlopen sentinel scan in module + CLI / dataclass to_dict round-trip / synth stop-attach token format / short side dry-run / CLI missing-review or missing-token returns 1 | DONE |
+| pytest tests/demo_trading | 1317/1317 PASS (1260 prior + 57 new S-series) |
+| py_compile new files | PASS |
+| SOLUSDT dry-run (entry=64.76 / stop=61.52 / long / qty=12.3): status=DRY_RUN_PROTECTED_ENTRY_CHAIN_ALLOWED, protected_entry_status=DRY_RUN_PREVIEW, mock_entry_order_sent=False, mock_stop_attached=False, stop_payload_preview_only=True, stop_endpoint_called=False, order_endpoint_called=False, no_orders_sent=True, no_position_modified=True, no_live_endpoint=True, blocked_gates=[] | CONFIRMED |
+| SOLUSDT --mock-chain with CONFIRM_DEMO_PROTECTED_ENTRY_20260610: status=MOCK_PROTECTED_ENTRY_SUCCESS, protected_entry_status=MOCK_PROTECTED, mock_entry_order_sent=True, mock_order_id="MOCK-ENTRY-SOLUSDT-6476", mock_stop_attached=True, mock_stop_attach_id="MOCK-STOP-SOLUSDT-6152", mock_final_position_stop_price=61.52, missing_stop_price=False, fail_closed=False, stop_endpoint_called=False, order_endpoint_called=False, no_position_modified=True, no_live_endpoint=True, emergency_close_invoked=False, blocked_gates=[] | CONFIRMED |
+| failure path (synthetic _simulate_stop_attach_failure=True): status=MOCK_PROTECTED_ENTRY_FAIL_CLOSED, protected_entry_status=FAIL_CLOSED, fail_closed=True, recommended_action="emergency_close_preview", blocked_gates=[stop_attach_mock_failed], emergency_close_invoked=False (recommendation only), no real emergency close invoked | CONFIRMED |
+| no live hostname (api.bybit.com / api-testnet.bybit.com / api-demo.bybit.com) in orchestrator module or CLI | CONFIRMED |
+| AST scan: no import of main / src.risk / BybitExecutor / pybit / src.bybit_executor / src.demo_new_entry_sender / src.demo_close_only_sender / src.demo_emergency_close_sender / scripts.execute_*; no import of urllib / requests / httpx / socket / http.client | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| no orders sent / no positions modified / no stop endpoint called / no order endpoint called / no secrets observed / no emergency close invoked | CONFIRMED |
+| TASK-014L sender G20 (protected_entry_policy_missing) | STILL IN PLACE (deliberately not lifted by TASK-014S) |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014S)
+
+1. Update VPS git pull and inspect the new orchestrator + CLI + tests:
+       src/demo_protected_new_entry_orchestrator.py
+       scripts/execute_demo_protected_new_entry_mock.py
+       tests/demo_trading/test_demo_protected_new_entry_orchestrator.py
+
+2. VPS dry-run protected new-entry chain (no network at all from this
+   orchestrator; the upstream read-only / market-price steps still hit
+   api-demo.bybit.com via the existing readonly + market-price clients):
+       source .env.demo
+       # 1) read-only proof refresh
+       python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+       # 2) wallet audit
+       python3 scripts/preview_demo_wallet_audit.py --real-readonly --write-report
+       # 3) position reconciliation
+       python3 scripts/preview_demo_position_reconcile.py --from-latest-readonly-smoke --write-report
+       # 4) market-backed new-entry review with realtime price guard
+       python3 scripts/preview_demo_new_entry_review.py \
+           --from-latest-reconciliation \
+           --allow-real-market-network \
+           --with-realtime-price-guard \
+           --write-report
+       # 5) protected-entry preview (TASK-014Q)
+       python3 scripts/preview_demo_new_entry_protection.py \
+           --from-latest-review --symbol SOLUSDT --write-report
+       # 6) protected new-entry orchestrator DRY-RUN (TASK-014S — no network)
+       python3 scripts/execute_demo_protected_new_entry_mock.py \
+           --from-latest-review --from-latest-protection \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/protected_new_entry/latest_protected_new_entry.md
+
+   Expected dry-run:
+     status=DRY_RUN_PROTECTED_ENTRY_CHAIN_ALLOWED;
+     protected_entry_status=DRY_RUN_PREVIEW;
+     mock_entry_order_sent=False; mock_stop_attached=False;
+     stop_payload_preview_only=True;
+     stop_endpoint_called=False; order_endpoint_called=False;
+     no_orders_sent=True; no_position_modified=True;
+     no_live_endpoint=True; blocked_gates=[].
+
+3. Optional mock-chain step (still no network, synthetic entry +
+   stop-attach envelope chain):
+       python3 scripts/execute_demo_protected_new_entry_mock.py \
+           --from-latest-review --from-latest-protection \
+           --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_PROTECTED_ENTRY_$(date -u +%Y%m%d) \
+           --mock-chain --write-report
+
+   Expected:
+     status=MOCK_PROTECTED_ENTRY_SUCCESS;
+     protected_entry_status=MOCK_PROTECTED;
+     mock_entry_order_sent=True; mock_order_id starts MOCK-ENTRY-SOLUSDT-;
+     mock_stop_attached=True; mock_stop_attach_id starts MOCK-STOP-SOLUSDT-;
+     mock_final_position_stop_price>0; missing_stop_price=False;
+     fail_closed=False; stop_endpoint_called=False;
+     order_endpoint_called=False; no_position_modified=True;
+     emergency_close_invoked=False.
+
+4. Confirm TASK-014L sender remains blocked on actual --execute-new-entry
+   (TASK-014S deliberately does NOT lift G20):
+       python3 scripts/execute_demo_new_entry.py \
+           --from-latest-review --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_NEW_ENTRY_$(date -u +%Y%m%d) \
+           --execute-new-entry --write-report
+   Expected: blocked_gates contains "protected_entry_policy_missing";
+   execute_allowed=False; order_sent=False.
+
+5. Human decision gate: TASK-014T (Real /v5/position/trading-stop
+   Endpoint Probe + Permission Gate) is the next authorized step.
+   Only after a documented contract probe + permission decision should
+   G20 be considered for lifting.
+
 ## TASK-014R Status (2026-06-09)
 
 | item | status |

@@ -21,6 +21,88 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014S — Add Demo Protected New-entry Mock Orchestrator）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014S)
+Task: Chain TASK-014P market-backed review + TASK-014Q protected-entry
+      policy plan + TASK-014R stop-loss attachment into a single
+      dry-run + mock-only orchestrator with all-or-fail semantics, so
+      that a protected new-entry flow can be exercised in mock without
+      lifting TASK-014L sender G20 or contacting any live endpoint.
+Status before: TASK-014P / Q / R complete; G20 (protected_entry_policy_missing)
+      still blocks --execute-new-entry; no chained mock flow.
+Status after: TASK-014S DONE; G20 still in place (deliberately not lifted).
+
+Files changed:
+  - NEW src/demo_protected_new_entry_orchestrator.py
+        DemoProtectedNewEntryOrchestrator + ProtectedEntryChainResult
+        dataclass; submit_chain() validates 24+ review / protection /
+        stop-direction / token gates, builds a TASK-014R stop payload
+        preview, and (under --mock-chain) synthesizes an entry +
+        post-fill + stop-attach envelope chain.  All-or-fail: mock
+        stop-attach failure -> MOCK_PROTECTED_ENTRY_FAIL_CLOSED with
+        recommended_action="emergency_close_preview" (no real emergency
+        close invoked).  Safety invariants
+        (no_orders_sent, order_endpoint_called=False,
+         stop_endpoint_called=False, no_position_modified,
+         no_live_endpoint, no_batch_order, no_close_only_path,
+         emergency_close_invoked=False, secret_value_observed=False)
+        always True.  No urllib / requests / httpx / socket / hmac /
+        os.environ / main / src.risk / BybitExecutor / pybit /
+        demo_new_entry_sender / demo_close_only_sender /
+        demo_emergency_close_sender / scripts.execute_*.
+  - NEW scripts/execute_demo_protected_new_entry_mock.py
+        CLI: --from-latest-review --from-latest-protection --symbol
+        --confirm-token --dry-run (default) --mock-chain --write-report.
+        NO --execute-protected-entry flag (real execution reserved for
+        TASK-014T+).  Reads
+        outputs/demo_trading/new_entry_review/latest_new_entry_review.json
+        outputs/demo_trading/new_entry_protection/latest_new_entry_protection.json
+        Writes JSON + Markdown to
+        outputs/demo_trading/protected_new_entry/.
+  - NEW tests/demo_trading/test_demo_protected_new_entry_orchestrator.py
+        57 tests S1-S28 + extras: missing review/protection, symbol
+        mismatch, review/protection realtime guard, missing/wrong-direction
+        stop_price, valid dry-run SOLUSDT, mock-chain invalid/valid token,
+        MOCK_PROTECTED_ENTRY_SUCCESS, mock_entry_order_sent +
+        order_endpoint_called=False, mock_stop_attached +
+        stop_endpoint_called=False, final stop_price>0,
+        missing_stop_price=False after attach,
+        _simulate_stop_attach_failure -> MOCK_PROTECTED_ENTRY_FAIL_CLOSED
+        + recommended_action=emergency_close_preview (no real emergency
+        close), report artifacts (JSON + MD ts + latest), no live endpoint
+        recorded but not invoked, no secrets / env reads / signing,
+        no forbidden imports, no close-only / emergency-close /
+        new-entry-sender reuse, no urlopen at import time, source scan
+        excludes urllib/urlopen/httpx/requests./http.client/socket.,
+        payload excludes takeProfit/leverage/transfer/withdraw/deposit,
+        TASK-014L sender G20 still blocks --execute-new-entry,
+        urlopen sentinel scan in module + CLI, dataclass to_dict
+        round-trip, synth stop-attach token format, short side dry-run,
+        CLI missing-review/missing-token returns 1.
+  - UPDATED .gitignore: + outputs/demo_trading/protected_new_entry/
+
+Validation:
+  - py_compile src + scripts + tests => PASS
+  - pytest tests/demo_trading => 1317/1317 PASS (1260 prior + 57 new S-series)
+
+Outputs (local only, gitignored):
+  - outputs/demo_trading/protected_new_entry/{ts}_protected_new_entry.{json,md}
+  - outputs/demo_trading/protected_new_entry/latest_protected_new_entry.{json,md}
+
+Notes:
+  - TASK-014L sender G20 (protected_entry_policy_missing) NOT lifted.
+    G20 lifting is reserved for TASK-014T+ (after a real
+    /v5/position/trading-stop contract probe and permission gate).
+  - main.py / src/risk.py / BybitExecutor NOT modified.
+  - --mock-chain produces synthetic envelopes; no socket opened, no
+    /v5/order/create or /v5/position/trading-stop invocation.
+  - recommended_action=emergency_close_preview on mock attach failure is
+    a recommendation only; no DemoEmergencyCloseSender is invoked.
+
+---
+
 ### 2026-06-09（TASK-014R — Add Demo Stop-loss Attachment Sender Dry-run / Mock）
 
 Agent: Claude Opus 4.7
