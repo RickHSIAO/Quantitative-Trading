@@ -21,6 +21,92 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014T — Add Demo Trading-stop Endpoint Contract Probe / Permission Gate）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014T)
+Task: Document the Bybit V5 /v5/position/trading-stop endpoint contract
+      and add a permission-gate probe that is preview-only by default,
+      can emit a synthetic mock-permission envelope, and deliberately
+      returns REAL_PROBE_NOT_IMPLEMENTED under --allow-real-stop-probe.
+      A no-op real probe design is the subject of TASK-014U; lifting
+      TASK-014L sender G20 is reserved for an explicit later task.
+Status before: TASK-014S done; protected new-entry mock chain PASS in
+      both dry-run and mock-chain modes; G20 still blocks
+      --execute-new-entry; no documented trading-stop endpoint contract
+      module.
+Status after: TASK-014T DONE; G20 still in place.
+
+Files changed:
+  - NEW src/demo_trading_stop_contract_probe.py
+        DemoTradingStopContractProbe + TradingStopContractResult
+        dataclass; submit_contract_probe() validates protection /
+        symbol / stop-loss, builds the documented
+        /v5/position/trading-stop payload preview, validates it via
+        validate_payload() and routes to one of:
+          * preview         -> TRADING_STOP_CONTRACT_PREVIEW_OK
+          * mock-permission -> MOCK_TRADING_STOP_PERMISSION_OK
+                               (synthetic retCode=0 envelope, no socket)
+          * --allow-real-stop-probe -> REAL_PROBE_NOT_IMPLEMENTED
+                                       (gate blocks; no socket).
+        Safety invariants
+        (stop_endpoint_called=False, order_endpoint_called=False,
+         no_position_modified=True, no_live_endpoint=True,
+         no_orders_sent=True, no_batch_order=True,
+         no_close_only_path=True, emergency_close_invoked=False,
+         secret_value_observed=False) always honored.  No urllib /
+         requests / httpx / socket / hmac / os.environ / main /
+         src.risk / BybitExecutor / pybit / src.demo_new_entry_sender /
+         src.demo_close_only_sender / src.demo_emergency_close_sender /
+         src.demo_protected_new_entry_orchestrator / scripts.execute_*.
+  - NEW scripts/preview_demo_trading_stop_contract.py
+        CLI: --from-latest-protection --symbol --confirm-token
+        --mock-permission --allow-real-stop-probe --write-report.
+        Reads
+        outputs/demo_trading/new_entry_protection/latest_new_entry_protection.json
+        Writes JSON + Markdown to
+        outputs/demo_trading/trading_stop_contract/.
+  - NEW tests/demo_trading/test_demo_trading_stop_contract_probe.py
+        68 tests T1-T28 + extras: valid SOLUSDT preview, missing
+        protection / symbol mismatch / missing stopLoss /
+        non-positive stopLoss / invalid tpslMode / invalid
+        slTriggerBy (LastPrice accepted) / invalid positionIdx /
+        payload excludes takeProfit / leverage /
+        transfer-withdraw-deposit / side-qty-orderType /
+        order-create path leak / live hostname leak,
+        no secrets in report, no forbidden imports, no close-only /
+        emergency-close / new-entry-sender reuse, no network at
+        import time, no network tokens in module + CLI,
+        mock-permission -> MOCK_TRADING_STOP_PERMISSION_OK,
+        --allow-real-stop-probe -> REAL_PROBE_NOT_IMPLEMENTED,
+        invalid confirm token blocks real probe + mock permission,
+        report artifacts (ts + latest pair), TASK-014L G20
+        still blocks --execute-new-entry, payload keys/values match
+        TASK-014R stop attachment payload, dataclass to_dict round-trip,
+        CLI exit codes for missing protection / symbol / token,
+        real-probe report artifact.
+  - UPDATED .gitignore: + outputs/demo_trading/trading_stop_contract/
+
+Validation:
+  - py_compile src + scripts + tests => PASS
+  - pytest tests/demo_trading => 1385/1385 PASS (1317 prior + 68 new T-series)
+
+Outputs (local only, gitignored):
+  - outputs/demo_trading/trading_stop_contract/{ts}_trading_stop_contract.{json,md}
+  - outputs/demo_trading/trading_stop_contract/latest_trading_stop_contract.{json,md}
+
+Notes:
+  - Real probe deliberately NOT implemented in this task.  A no-op real
+    probe that provably cannot modify any existing position's stop must
+    be designed in TASK-014U (e.g. tiny isolated position plan, or a
+    read-only contract probe API).
+  - TASK-014L sender G20 (protected_entry_policy_missing) NOT lifted.
+  - main.py / src/risk.py / BybitExecutor NOT modified.
+  - No /v5/order/create or /v5/position/trading-stop invocation.
+  - The 5 existing demo short positions are NOT touched.
+
+---
+
 ### 2026-06-10（TASK-014S — Add Demo Protected New-entry Mock Orchestrator）
 
 Agent: Claude Opus 4.7

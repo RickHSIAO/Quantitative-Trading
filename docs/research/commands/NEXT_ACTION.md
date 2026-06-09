@@ -1,5 +1,112 @@
 # Next Action
 
+## TASK-014T Status (2026-06-10)
+
+| item | status |
+|---|---|
+| src/demo_trading_stop_contract_probe.py — NEW pure-computation / mock-safe module; DemoTradingStopContractProbe + TradingStopContractResult dataclass; documents Bybit V5 /v5/position/trading-stop endpoint contract (endpoint_family=bybit_demo, base_url=https://api-demo.bybit.com (informational only), path=/v5/position/trading-stop, method=POST, category=linear, tpslMode=Full, slTriggerBy=MarkPrice/LastPrice, positionIdx=0); build_payload_preview() emits the documented body (symbol/stopLoss/category/tpslMode/slTriggerBy/positionIdx) and validate_payload() rejects takeProfit/leverage/transfer/withdraw/deposit/side/qty/orderType/price/timeInForce/reduceOnly/live hostname/order-create path | DONE |
+| src/demo_trading_stop_contract_probe.py — NO urlopen / urllib / requests / httpx / socket / http.client / hmac / X-BAPI-SIGN / os.environ / getenv / dotenv; NO import of main / src.risk / BybitExecutor / pybit / src.bybit_executor / src.demo_new_entry_sender / src.demo_close_only_sender / src.demo_emergency_close_sender / src.demo_protected_new_entry_orchestrator; TRADING_STOP_PATH and ORDER_CREATE_PATH stored as strings only and never invoked | CONFIRMED |
+| scripts/preview_demo_trading_stop_contract.py — NEW CLI: --from-latest-protection / --symbol / --confirm-token / --mock-permission / --allow-real-stop-probe / --write-report; reads outputs/demo_trading/new_entry_protection/latest_new_entry_protection.json; writes JSON + Markdown to outputs/demo_trading/trading_stop_contract/; NO real trading-stop send and NO --execute-trading-stop flag (real probe returns REAL_PROBE_NOT_IMPLEMENTED) | DONE |
+| tests/demo_trading/test_demo_trading_stop_contract_probe.py — 68 tests T1-T28 + extras: valid SOLUSDT preview / missing protection / symbol mismatch / missing stopLoss / non-positive stopLoss / invalid tpslMode / invalid slTriggerBy (LastPrice accepted) / invalid positionIdx / invalid category / payload excludes takeProfit / leverage / transfer-withdraw-deposit / side-qty-orderType / order-create path leak in payload value / live hostname leak in payload value / no secrets in JSON+Markdown report / no forbidden imports / no close-only/emergency-close/new-entry-sender reuse / no urlopen at import time / mock-permission MOCK_TRADING_STOP_PERMISSION_OK / mock-permission still no socket / --allow-real-stop-probe -> REAL_PROBE_NOT_IMPLEMENTED + gate / invalid confirm token blocks real probe + mock permission / report artifacts (ts + latest pair) / TASK-014L G20 still blocks --execute-new-entry / source scan confirms no urllib/requests/httpx/http.client/socket. in module + CLI / payload keys+values match TASK-014R stop attachment payload exactly / dataclass to_dict round-trip / CLI missing protection/symbol/token returns 1 / real-probe report artifact | DONE |
+| pytest tests/demo_trading | 1385/1385 PASS (1317 prior + 68 new T-series) |
+| py_compile new files | PASS |
+| SOLUSDT contract preview (stop=61.63 / long / qty=12.3): status=TRADING_STOP_CONTRACT_PREVIEW_OK, mode=preview, payload_preview={category:linear, symbol:SOLUSDT, stopLoss:"61.63", tpslMode:Full, slTriggerBy:MarkPrice, positionIdx:0}, real_probe_allowed=False, real_probe_implemented=False, mock_permission_status=False, stop_endpoint_called=False, order_endpoint_called=False, no_position_modified=True, no_live_endpoint=True, blocked_gates=[] | CONFIRMED |
+| SOLUSDT --mock-permission with CONFIRM_DEMO_TRADING_STOP_PROBE_20260610: status=MOCK_TRADING_STOP_PERMISSION_OK, mode=mock_permission, mock_permission_status=True, mock_response={retCode:0, retMsg:OK, mock:True, result:{symbol:SOLUSDT, stopLoss:"61.63", tpslMode:Full, slTriggerBy:MarkPrice, positionIdx:0, mock:True}}, stop_endpoint_called=False, order_endpoint_called=False, no_position_modified=True | CONFIRMED |
+| SOLUSDT --allow-real-stop-probe with CONFIRM_DEMO_TRADING_STOP_PROBE_20260610: status=REAL_PROBE_NOT_IMPLEMENTED, mode=real_permission_probe, real_probe_allowed=True, real_probe_implemented=False, blocked_gates=[real_probe_not_implemented], stop_endpoint_called=False, order_endpoint_called=False, no_position_modified=True, no_live_endpoint=True | CONFIRMED |
+| no live hostname (api.bybit.com / api-testnet.bybit.com) in payload values; base_url=https://api-demo.bybit.com recorded as informational string only and never used as a client target | CONFIRMED |
+| AST scan: no import of main / src.risk / BybitExecutor / pybit / src.bybit_executor / src.demo_new_entry_sender / src.demo_close_only_sender / src.demo_emergency_close_sender / src.demo_protected_new_entry_orchestrator / scripts.execute_*; no import of urllib / requests / httpx / socket / http.client | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| 5 existing demo short positions | NOT TOUCHED (no trading-stop call) |
+| no orders sent / no positions modified / no stop endpoint called / no order endpoint called / no secrets observed / no emergency close invoked | CONFIRMED |
+| TASK-014L sender G20 (protected_entry_policy_missing) | STILL IN PLACE (deliberately not lifted by TASK-014T) |
+| TASK-014T real probe | DELIBERATELY NOT IMPLEMENTED (returns REAL_PROBE_NOT_IMPLEMENTED) |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014T)
+
+1. Update VPS git pull and inspect the new probe + CLI + tests:
+       src/demo_trading_stop_contract_probe.py
+       scripts/preview_demo_trading_stop_contract.py
+       tests/demo_trading/test_demo_trading_stop_contract_probe.py
+
+2. VPS contract preview (no network at all from this probe; the
+   upstream read-only / market-price steps still hit api-demo.bybit.com):
+       source .env.demo
+       # 1) read-only proof refresh
+       python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+       # 2) wallet audit
+       python3 scripts/preview_demo_wallet_audit.py --real-readonly --write-report
+       # 3) position reconciliation
+       python3 scripts/preview_demo_position_reconcile.py --from-latest-readonly-smoke --write-report
+       # 4) market-backed new-entry review
+       python3 scripts/preview_demo_new_entry_review.py \
+           --from-latest-reconciliation --allow-real-market-network --write-report
+       # 5) protected-entry preview (TASK-014Q)
+       python3 scripts/preview_demo_new_entry_protection.py \
+           --from-latest-review --symbol SOLUSDT --write-report
+       # 6) stop-loss attachment mock (TASK-014R)
+       python3 scripts/execute_demo_stop_loss_attachment.py \
+           --from-latest-protection --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_STOP_ATTACH_$(date -u +%Y%m%d) \
+           --mock-execute-stop --write-report
+       # 7) protected new-entry mock chain (TASK-014S)
+       python3 scripts/execute_demo_protected_new_entry_mock.py \
+           --from-latest-review --from-latest-protection \
+           --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_PROTECTED_ENTRY_$(date -u +%Y%m%d) \
+           --mock-chain --write-report
+       # 8) trading-stop contract preview (TASK-014T — no network)
+       python3 scripts/preview_demo_trading_stop_contract.py \
+           --from-latest-protection --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/trading_stop_contract/latest_trading_stop_contract.md
+
+   Expected preview:
+     status=TRADING_STOP_CONTRACT_PREVIEW_OK;
+     mode=preview; path=/v5/position/trading-stop (NOT invoked);
+     payload_preview contains stopLoss equal to latest protection
+     stop_price; stop_endpoint_called=False; order_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True; blocked_gates=[].
+
+3. Optional mock-permission step (still no network):
+       python3 scripts/preview_demo_trading_stop_contract.py \
+           --from-latest-protection --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_TRADING_STOP_PROBE_$(date -u +%Y%m%d) \
+           --mock-permission --write-report
+
+   Expected:
+     status=MOCK_TRADING_STOP_PERMISSION_OK; mock_permission_status=True;
+     mock_response.retCode=0; mock_response.mock=True;
+     stop_endpoint_called=False; order_endpoint_called=False;
+     no_position_modified=True.
+
+4. Real-probe guard sanity check (returns REAL_PROBE_NOT_IMPLEMENTED;
+   still no socket opened):
+       python3 scripts/preview_demo_trading_stop_contract.py \
+           --from-latest-protection --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_TRADING_STOP_PROBE_$(date -u +%Y%m%d) \
+           --allow-real-stop-probe --write-report
+
+   Expected:
+     status=REAL_PROBE_NOT_IMPLEMENTED;
+     blocked_gates contains "real_probe_not_implemented";
+     real_probe_allowed=True; real_probe_implemented=False;
+     stop_endpoint_called=False; no_position_modified=True.
+
+5. Confirm TASK-014L sender still blocks --execute-new-entry
+   (TASK-014T does NOT lift G20):
+       python3 scripts/execute_demo_new_entry.py \
+           --from-latest-review --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_NEW_ENTRY_$(date -u +%Y%m%d) \
+           --execute-new-entry --write-report
+   Expected: blocked_gates contains "protected_entry_policy_missing";
+   execute_allowed=False; order_sent=False.
+
+6. Human decision gate: TASK-014U (Real Demo Trading-stop No-op Probe
+   Design / Tiny Isolated Position Plan) is the next authorized step.
+   Until TASK-014U produces a documented no-op real probe that provably
+   cannot modify any existing position's stop_price, the real probe
+   stays REAL_PROBE_NOT_IMPLEMENTED and G20 stays in place.
+
 ## TASK-014S Status (2026-06-10)
 
 | item | status |

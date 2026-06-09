@@ -67,3 +67,4 @@ outputs/demo_trading/emergency_close_execution/
 outputs/demo_trading/new_entry_protection/
 outputs/demo_trading/stop_loss_attachment/
 outputs/demo_trading/protected_new_entry/
+outputs/demo_trading/trading_stop_contract/
