@@ -21,6 +21,139 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014P — Add Market-backed Demo New-entry Candidates）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014P)
+Task: Eliminate stale-fixture candidate prices in the Demo new-entry
+      pipeline by introducing a market-backed candidate builder.  The
+      TASK-014O guard correctly rejected SOLUSDT (fixture 160 vs real
+      ~65.92, ~143% deviation) and AAVEUSDT (fixture 120 vs real ~62.14,
+      ~93% deviation), but the only reason the pipeline produced
+      candidates at all is that scripts/preview_demo_new_entry_review.py
+      still hard-coded fixture entry_reference_price / stop_price.
+      Deliverables:
+        A. src/demo_new_entry_candidate_builder.py — NEW pure-computation
+           module exposing NewEntryIntent (pre-pricing) + CandidateBuildResult
+           dataclasses, build_market_backed_candidate() and batch helper.
+           Stop model: long stop = realtime * (1 - long_stop_pct);
+           short stop = realtime * (1 + short_stop_pct); default
+           stop_pct = 5%; entry / stop rounded to instrument tick.
+           entry_reference_price = raw realtime (unrounded — guard sees
+           the exact reading).  Validates requested_risk_usd, market
+           price usability, side, instrument rule, stop_pct range
+           (0 < pct < 1) and post-rounding stop on protective side.
+           No HTTP, no env reads, no HMAC, no order endpoint, no live
+           host, no forbidden imports.
+        B. scripts/preview_demo_new_entry_review.py — replaces fixture
+           candidates with an intent pool (SOLUSDT long risk=40,
+           AAVEUSDT long risk=30, AVAXUSDT short risk=25, LINKUSDT short
+           risk=20) when mode=from_latest_reconciliation; fetches
+           realtime prices via the TASK-014O guard, builds candidates
+           via build_market_backed_candidates(), then runs the existing
+           guard pipeline.  Report MD now includes a "Market-backed
+           Candidate Builder (TASK-014P)" section (Symbol / Side /
+           Status / Realtime / Entry / Stop / Reason).  Fixture mode
+           preserved verbatim (legacy 160 / 120 candidates still flow
+           through the TASK-014O guard and get rejected as stale —
+           correct posture).
+        C. Fail-closed semantics: missing or unusable realtime price
+           => SKIP_NO_REALTIME_PRICE / SKIP_INVALID_REALTIME_PRICE;
+           skipped CandidateBuildResult NEVER carries a price; no
+           fallback to fixture price; resulting reviews emit no
+           payloads when all intents skipped, and top-level
+           realtime_price_guard_verified stays False.
+        D. tests/demo_trading/test_demo_new_entry_candidate_builder.py
+           — 54 tests covering P1 SOLUSDT 65.92 → entry=65.92, stop=62.62;
+           P2 long stop < entry; P3 short stop > entry (AVAXUSDT 6.696
+           → stop ~7.03); P4 stop_distance > 0 parametrized for
+           SOL/AAVE/AVAX/LINK/BTC; P5 missing / zero / fetch_error
+           realtime price → skipped, no fixture leak; P6 skipped
+           candidate never carries 160 / 120; P7 AAVEUSDT 62.14 ≠ 120;
+           P8 invalid stop_pct (0, neg, ≥1, inf, nan); P9 invalid
+           requested_risk_usd; P10 missing instrument rule; invalid
+           side; tick-collapse → SKIP_INVALID_STOP_PRICE /
+           SKIP_INVALID_STOP_DISTANCE; P11 batch helper preserves order
+           and skips missing prices; P12 to_dict() round-trip; module
+           source cleanliness (no live host, no order endpoint tokens,
+           no HTTP imports, no env reads); forbidden-imports guard.
+           tests/demo_trading/test_demo_new_entry_review.py — extended
+           with 6 TASK-014P integration tests (SOLUSDT realtime payload
+           verified and notional anchored to 65.92; AAVEUSDT 62.14
+           replaces 120 fixture; missing market price → no payloads /
+           top-level guard False / next_required_task=no_payload_to_send;
+           sender G19 passes for market-backed verified review; sender
+           G19 still blocks legacy AAVE 120/110 with
+           missing_realtime_price_guard; pipeline-level safety
+           invariants: no order endpoint, no secrets, no forbidden
+           imports through market-backed path).
+
+Status before: READY — TASK-014O committed (9b73262); local main clean;
+               guard correctly rejects fixture candidates but the
+               candidate source itself still hard-codes stale prices.
+Status after:  READY — TASK-014P complete on local main; new builder
+               module + intent pool CLI wiring + 54 builder tests + 6
+               review integration tests; 1125/1125 demo_trading tests
+               pass (1065 prior + 54 builder + 6 review integration);
+               builder is pure computation (no HTTP / no env / no
+               secrets / no order endpoint / no live host); SOLUSDT
+               candidate now built at realtime 65.92 with stop ~62.62;
+               AAVEUSDT candidate now built at realtime 62.14 with
+               stop ~59.03; sender G19 still enforces
+               realtime_price_guard_verified=True before any dry-run;
+               main.py / src/risk.py / BybitExecutor unchanged.
+
+Files changed:
+  - src/demo_new_entry_candidate_builder.py                  (CREATED)
+  - scripts/preview_demo_new_entry_review.py                 (MODIFIED — intent pool + builder wiring + report section)
+  - tests/demo_trading/test_demo_new_entry_candidate_builder.py (CREATED — 54 tests)
+  - tests/demo_trading/test_demo_new_entry_review.py         (MODIFIED — 6 TASK-014P integration tests)
+  - docs/research/commands/NEXT_ACTION.md                    (MODIFIED — TASK-014P block prepended)
+  - docs/research/commands/COMMAND_LOG.md                    (MODIFIED — this entry prepended)
+
+Validation:
+  - python -m py_compile src/demo_new_entry_candidate_builder.py     → PASS
+  - python -m py_compile src/demo_new_entry_review.py                → PASS
+  - python -m py_compile scripts/preview_demo_new_entry_review.py    → PASS
+  - python -m pytest tests/demo_trading -q                           → 1125 passed
+  - P1 SOLUSDT 65.92 → entry=65.92, rounded_stop=62.62, stop_pct=5%,
+    no 160 fixture leakage
+  - P7 AAVEUSDT 62.14 → entry=62.14, rounded_stop=59.03, no 120
+    fixture leakage
+  - Integration: SOLUSDT realtime payload notional/stop_risk anchored
+    to 65.92 NOT 160; sender G19 passes dry-run for market-backed
+    verified review; legacy 120/110 review still blocked with
+    missing_realtime_price_guard
+  - Fixture-mode CLI smoke: python scripts/preview_demo_new_entry_review.py
+    still produces report; SOLUSDT and AAVEUSDT fixture candidates
+    are correctly rejected by TASK-014O guard as
+    stale_entry_reference_price (correct posture)
+
+Outputs:
+  - None.  No orders sent.  No emergency closes triggered.  No
+    new-entry orders placed.  Dry-run / pure-computation builder only.
+
+Notes:
+  - Design separates NewEntryIntent (pre-pricing) from NewEntryCandidate
+    (post-pricing).  The builder is the ONLY place where realtime price
+    and intent merge into a priced candidate, enforcing the invariant
+    that no fixture price ever leaks into a market-backed candidate.
+  - Fixture mode unchanged: legacy K-series review tests (47) still
+    use NewEntryCandidate directly; the builder is opt-in via the
+    from_latest_reconciliation CLI mode.
+  - Tick-collapse edge case: for very small prices, 5% stop_pct can
+    round to the same tick as entry; builder explicitly checks
+    rounded_stop strictly on protective side of rounded_entry and
+    emits SKIP_INVALID_STOP_PRICE / SKIP_INVALID_STOP_DISTANCE
+    otherwise.
+  - Commit: local commit only; no push (per feedback_git_push.md).
+  - Next step gate: with realtime-backed candidates flowing through
+    the TASK-014O guard, Demo new-entry dry-run review may now produce
+    verified payloads that satisfy sender G19.  Human approval still
+    required before actual order send.
+
+---
+
 ### 2026-06-09（TASK-014O — Add Demo New-entry Realtime Price Guard）
 
 Agent: Claude Opus 4.7

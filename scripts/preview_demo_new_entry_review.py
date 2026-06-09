@@ -51,6 +51,13 @@ from src.demo_market_price_guard import (
     RealtimeMarketPrice,
     evaluate_price_guard,
 )
+from src.demo_new_entry_candidate_builder import (
+    DEFAULT_LONG_STOP_PCT,
+    DEFAULT_SHORT_STOP_PCT,
+    CandidateBuildResult,
+    NewEntryIntent,
+    build_market_backed_candidates,
+)
 from src.demo_new_entry_review import (
     NewEntryCandidate,
     NewEntryReviewResult,
@@ -233,26 +240,34 @@ def _reconciliation_from_json(rec: dict) -> ReconciliationResult:
     return result
 
 
-def _candidates_for_real(rec: ReconciliationResult) -> list[NewEntryCandidate]:
+def _intents_for_real(rec: ReconciliationResult) -> list[NewEntryIntent]:
     """
-    Pick demo candidates that avoid existing symbols so the duplicate gate is
-    not the one that rejects.  Caller still applies all per-candidate gates.
+    TASK-014P: pre-pricing intents for real-reconciliation mode.  Entry and
+    stop prices are NOT supplied here — they will be derived from the
+    realtime market price by the TASK-014P market-backed candidate builder.
+    Intents that collide with existing positions are filtered.
     """
     existing = {p.symbol for p in rec.positions}
     pool = [
-        NewEntryCandidate("SOLUSDT",  "long",  160.0, 150.0, 40.0, score=1.0),
-        NewEntryCandidate("AAVEUSDT", "long",  120.0, 110.0, 30.0, score=0.9),
-        NewEntryCandidate("AVAXUSDT", "short",  30.0,  33.0, 25.0, score=0.8),
-        NewEntryCandidate("LINKUSDT", "short",  15.0,  16.5, 20.0, score=0.7),
+        NewEntryIntent("SOLUSDT",  "long",  requested_risk_usd=40.0, score=1.0),
+        NewEntryIntent("AAVEUSDT", "long",  requested_risk_usd=30.0, score=0.9),
+        NewEntryIntent("AVAXUSDT", "short", requested_risk_usd=25.0, score=0.8),
+        NewEntryIntent("LINKUSDT", "short", requested_risk_usd=20.0, score=0.7),
     ]
-    return [c for c in pool if c.symbol not in existing][:4] or pool
+    filtered = [i for i in pool if i.symbol not in existing]
+    return filtered if filtered else list(pool)
 
 
 # ---------------------------------------------------------------------------
 # Report writer
 # ---------------------------------------------------------------------------
 
-def _write_report(result: NewEntryReviewResult, output_dir: Path, ts_utc: str) -> None:
+def _write_report(
+    result: NewEntryReviewResult,
+    output_dir: Path,
+    ts_utc: str,
+    builder_results: list[CandidateBuildResult] | None = None,
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     ts_safe = ts_utc.replace(":", "").replace("-", "").replace("T", "_").replace("Z", "")
 
@@ -317,6 +332,28 @@ def _write_report(result: NewEntryReviewResult, output_dir: Path, ts_utc: str) -
             reason = ev.reject_reason if not ev.accepted else "—"
             md_lines.append(
                 f"| {ev.symbol} | {ev.side} | {ev.accepted} | `{reason}` |"
+            )
+        md_lines.append("")
+
+    if builder_results:
+        md_lines += [
+            "## Market-backed Candidate Builder (TASK-014P)",
+            "",
+            f"- long_stop_pct: `{DEFAULT_LONG_STOP_PCT}`",
+            f"- short_stop_pct: `{DEFAULT_SHORT_STOP_PCT}`",
+            "",
+            "| Symbol | Side | Status | Realtime | Entry | Stop | Reason |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for br in builder_results:
+            status = "SKIP" if br.skipped else "BUILT"
+            entry  = br.candidate.entry_reference_price if br.candidate else 0.0
+            stop   = br.candidate.stop_price if br.candidate else 0.0
+            reason = br.skip_reason if br.skipped else "—"
+            md_lines.append(
+                f"| {br.intent.symbol} | {br.intent.side} | {status} "
+                f"| {br.realtime_market_price} | {entry} | {stop} "
+                f"| `{reason}` |"
             )
         md_lines.append("")
 
@@ -568,7 +605,8 @@ def run_preview(
             return 1
 
         recon      = _reconciliation_from_json(rec_json)
-        candidates = _candidates_for_real(recon)
+        intents    = _intents_for_real(recon)
+        candidates = []  # built from realtime market price (TASK-014P) below
         avail_src  = "account.totalAvailableBalance"
         print(f"  [recon] equity_usd={recon.equity_usd:.2f}")
         print(f"  [recon] available_balance_usd={recon.available_balance_usd:.2f}")
@@ -578,18 +616,53 @@ def run_preview(
     else:
         recon      = _fixture_clean_reconciliation()
         candidates = _fixture_candidates_clean()
+        intents    = []
         avail_src  = "fixture_clean"
 
-    instrument_rules = _build_rules_for(
-        sorted({c.symbol for c in candidates}
-               | {p.symbol for p in recon.positions})
-    )
+    # In real-reconciliation mode, TASK-014P builds market-backed candidates
+    # whose entry_reference_price equals the realtime market price (no
+    # fallback to fixture).  Builder skips an intent when no realtime price
+    # is available — those intents never become executable candidates.
+    builder_results: list[CandidateBuildResult] = []
+    if mode == "from_latest_reconciliation":
+        sym_union = sorted({i.symbol for i in intents}
+                           | {p.symbol for p in recon.positions})
+        instrument_rules = _build_rules_for(sym_union)
+        real_market_net = allow_real_market_network
+        client = DemoMarketPriceGuard(allow_real_network=real_market_net)
+        market_prices = client.fetch_market_prices(
+            sorted({i.symbol for i in intents})
+        )
+        builder_results = build_market_backed_candidates(
+            intents=intents,
+            market_prices=market_prices,
+            instrument_rules=instrument_rules,
+            long_stop_pct=DEFAULT_LONG_STOP_PCT,
+            short_stop_pct=DEFAULT_SHORT_STOP_PCT,
+        )
+        candidates = [br.candidate for br in builder_results
+                      if br.candidate is not None]
+        for br in builder_results:
+            if br.skipped:
+                print(f"  [builder] SKIP {br.intent.symbol} "
+                      f"({br.intent.side}) — {br.skip_reason}")
+            else:
+                c = br.candidate
+                print(f"  [builder] BUILT {c.symbol} {c.side} "
+                      f"entry={c.entry_reference_price} stop={c.stop_price}")
+    else:
+        instrument_rules = _build_rules_for(
+            sorted({c.symbol for c in candidates}
+                   | {p.symbol for p in recon.positions})
+        )
 
     price_guard_evals: dict[str, PriceGuardEvaluation] | None = None
     if with_realtime_price_guard:
         # In real-reconciliation mode, fetch live ticker prices from the demo
         # public market endpoint; in fixture mode, use the deterministic
-        # FIXTURE_MARKET_PRICES dict (no I/O).
+        # FIXTURE_MARKET_PRICES dict (no I/O).  When the builder has already
+        # been run, each candidate's entry_reference_price equals the realtime
+        # price — so the guard will verify them within threshold.
         real_market_net = allow_real_market_network and (mode == "from_latest_reconciliation")
         price_guard_evals = _build_price_guard_evaluations(
             candidates=candidates,
@@ -613,7 +686,8 @@ def run_preview(
 
     if write_report:
         ts_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        _write_report(result, _review_dir, ts_utc)
+        _write_report(result, _review_dir, ts_utc,
+                      builder_results=builder_results)
 
     if result.fail_closed:
         return 1

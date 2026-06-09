@@ -1,5 +1,64 @@
 # Next Action
 
+## TASK-014P Status (2026-06-09)
+
+| item | status |
+|---|---|
+| src/demo_new_entry_candidate_builder.py — NEW pure-computation module; NewEntryIntent + CandidateBuildResult dataclasses; build_market_backed_candidate() + batch helper; stop model long stop = rt*(1-pct) / short stop = rt*(1+pct), default 5%, rounded to instrument tick | DONE |
+| src/demo_new_entry_candidate_builder.py — fail-closed: missing/unusable realtime price → SKIP_NO_REALTIME_PRICE / SKIP_INVALID_REALTIME_PRICE; skipped result NEVER carries a price; no fixture fallback; validates risk / side / instrument rule / stop_pct range / rounded stop on protective side | DONE |
+| src/demo_new_entry_candidate_builder.py — no HTTP / urllib / requests / httpx / hmac / api-*.bybit.com / X-BAPI-SIGN / /v5/order / env reads / forbidden imports (main / src.risk / BybitExecutor / pybit / demo_close_only_sender / demo_new_entry_sender / demo_emergency_close_sender) | CONFIRMED |
+| scripts/preview_demo_new_entry_review.py — intent pool (SOLUSDT/AAVEUSDT long, AVAXUSDT/LINKUSDT short) when mode=from_latest_reconciliation; realtime fetch via TASK-014O guard; build_market_backed_candidates() pipes priced candidates into existing guard pipeline; report adds "Market-backed Candidate Builder (TASK-014P)" section | DONE |
+| scripts/preview_demo_new_entry_review.py — fixture mode preserved verbatim; legacy 160 / 120 candidates still flow through TASK-014O guard and get rejected as stale_entry_reference_price (correct posture) | CONFIRMED |
+| tests/demo_trading/test_demo_new_entry_candidate_builder.py — 54 tests P1–P12 covering SOL 65.92 / AAVE 62.14 builds, stop model long/short, parametrized stop_distance, missing/zero/error realtime, no fixture leak, invalid stop_pct / risk / side / instrument rule, tick-collapse, batch helper, to_dict round-trip, module source cleanliness, forbidden-imports | DONE |
+| tests/demo_trading/test_demo_new_entry_review.py — 6 TASK-014P integration tests: SOLUSDT realtime payload verified + notional anchored to 65.92; AAVEUSDT 62.14 replaces 120 fixture; missing market price → no payloads + top-level guard False + no_payload_to_send; sender G19 passes market-backed verified review; sender G19 still blocks legacy AAVE 120/110; pipeline-level safety invariants | DONE |
+| pytest tests/demo_trading | 1125/1125 PASS (1065 prior + 54 builder + 6 integration) |
+| py_compile new + modified files | PASS |
+| SOLUSDT / AAVEUSDT no longer use fixture 160 / 120 in market-backed mode; builder produces SOL entry=65.92 stop=62.62, AAVE entry=62.14 stop=59.03 | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| no orders sent / no positions modified / no order endpoint called / no secrets observed via market-backed pipeline | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-09 TASK-014P)
+
+1. Update VPS git pull and inspect the new builder + extended CLI:
+       src/demo_new_entry_candidate_builder.py
+       scripts/preview_demo_new_entry_review.py
+       tests/demo_trading/test_demo_new_entry_candidate_builder.py
+       tests/demo_trading/test_demo_new_entry_review.py
+
+2. VPS market-backed DRY-RUN (no orders sent):
+       source .env.demo
+       # 1) read-only proof refresh
+       python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+       # 2) preview new-entry review with market-backed candidate builder + guard
+       python3 scripts/preview_demo_new_entry_review.py \
+           --from-latest-reconciliation \
+           --allow-real-market-network \
+           --with-realtime-price-guard \
+           --write-report
+       cat outputs/demo_trading/new_entry_review/latest_new_entry_review.md
+
+   Expected: "Market-backed Candidate Builder (TASK-014P)" section lists per-symbol
+             realtime price and builder output (entry / stop); SOLUSDT entry shows
+             current realtime market price (NOT 160); AAVEUSDT entry shows current
+             realtime market price (NOT 120); any intent without a realtime price
+             is skipped — never falls back to fixture; guard section now reports
+             0% deviation for builder-priced candidates; review-level
+             realtime_price_guard_verified=True only if all accepted payloads
+             are verified.
+
+3. Re-run TASK-014L Demo new-entry dry-run sender against a market-backed review:
+       python3 scripts/execute_demo_new_entry.py \
+           --from-latest-review --symbol <verified-symbol> \
+           --confirm-token CONFIRM_DEMO_NEW_ENTRY_$(date -u +%Y%m%d) \
+           --dry-run --write-report
+
+   Expected (DRY-RUN): G19 missing_realtime_price_guard NOT present;
+   gates pass; no order sent.
+
+4. Human decision gate: review the dry-run report and decide whether to
+   proceed to actual order send (separate authorized step).
+
 ## TASK-014O Status (2026-06-09)
 
 | item | status |

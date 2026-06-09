@@ -1339,3 +1339,296 @@ class TestO13ReviewLevelGuardVerifiedSemantics:
         assert r.realtime_price_guard_verified is False
         for p in r.payload_previews:
             assert p.realtime_price_guard_verified is False
+
+
+# ===========================================================================
+# TASK-014P — Market-backed candidate builder integration tests
+# ===========================================================================
+
+from src.demo_new_entry_candidate_builder import (
+    DEFAULT_LONG_STOP_PCT,
+    DEFAULT_SHORT_STOP_PCT,
+    NewEntryIntent,
+    build_market_backed_candidates,
+)
+
+
+def _full_market_prices(prices: dict[str, float]) -> dict[str, RealtimeMarketPrice]:
+    return {
+        sym: RealtimeMarketPrice(
+            symbol=sym,
+            realtime_market_price=p,
+            price_source=PRICE_SOURCE_BYBIT_DEMO_TICKER,
+            price_timestamp_utc="2026-06-09T12:00:00Z",
+            fetch_error_reason="",
+        )
+        for sym, p in prices.items()
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pipeline 1 — SOLUSDT market-backed candidate passes price guard end-to-end
+# ---------------------------------------------------------------------------
+
+class TestPipelineSolusdtMarketBacked:
+    def test_solusdt_realtime_candidate_accepted_and_payload_verified(self):
+        """End-to-end: realtime market price 65.92 drives both the builder
+        and the price guard.  Candidate must be accepted; payload must carry
+        realtime_price_guard_verified=True; top-level review must be
+        verified."""
+        rec = _clean_recon()
+        intent = NewEntryIntent(
+            symbol="SOLUSDT", side="long",
+            requested_risk_usd=10.0, score=1.0,
+        )
+        market_prices = _full_market_prices({"SOLUSDT": 65.92})
+        builder_results = build_market_backed_candidates(
+            intents=[intent],
+            market_prices=market_prices,
+            instrument_rules=_RULES_CLEAN,
+            long_stop_pct=DEFAULT_LONG_STOP_PCT,
+            short_stop_pct=DEFAULT_SHORT_STOP_PCT,
+        )
+        candidates = [br.candidate for br in builder_results if br.candidate]
+        assert candidates
+        cand = candidates[0]
+        assert cand.entry_reference_price == pytest.approx(65.92)
+        # The legacy stale fixture price 160 MUST NOT appear anywhere.
+        assert cand.entry_reference_price != pytest.approx(160.0)
+
+        # Now run the price guard with the same realtime prices.  Because the
+        # candidate price came from the realtime price, deviation is 0%.
+        guard_evals = {
+            cand.symbol: evaluate_price_guard(
+                symbol=cand.symbol,
+                candidate_entry_reference_price=cand.entry_reference_price,
+                market_price=market_prices[cand.symbol],
+            )
+        }
+        assert guard_evals[cand.symbol].realtime_price_guard_verified is True
+        assert guard_evals[cand.symbol].price_deviation_pct == pytest.approx(0.0)
+
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=candidates,
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations=guard_evals,
+        )
+        sol = next(e for e in r.evaluations if e.symbol == "SOLUSDT")
+        assert sol.accepted is True
+        assert sol.reject_reason == ""
+        assert r.realtime_price_guard_verified is True
+        assert r.payload_previews
+        p = r.payload_previews[0]
+        assert p.realtime_price_guard_verified is True
+        assert p.realtime_market_price == pytest.approx(65.92)
+        assert p.price_source == PRICE_SOURCE_BYBIT_DEMO_TICKER
+        # Notional anchored to realtime price, not 160
+        assert p.rounded_entry_price == pytest.approx(65.92)
+        assert p.estimated_notional_usd == pytest.approx(
+            p.qty * p.rounded_entry_price, rel=1e-9
+        )
+        # Stop risk uses the realtime-derived stop
+        expected_stop_risk = abs(p.rounded_entry_price - p.rounded_stop_price) * p.qty
+        assert p.estimated_stop_risk_usd == pytest.approx(expected_stop_risk, rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline 2 — AAVEUSDT market-backed candidate replaces 120 fixture
+# ---------------------------------------------------------------------------
+
+class TestPipelineAaveusdtMarketBacked:
+    def test_aave_realtime_candidate_replaces_120_fixture(self):
+        rec = _clean_recon()
+        intent = NewEntryIntent(
+            symbol="AAVEUSDT", side="long",
+            requested_risk_usd=10.0, score=0.9,
+        )
+        market_prices = _full_market_prices({"AAVEUSDT": 62.14})
+        builder_results = build_market_backed_candidates(
+            intents=[intent],
+            market_prices=market_prices,
+            instrument_rules=_RULES_CLEAN,
+        )
+        candidates = [br.candidate for br in builder_results if br.candidate]
+        assert candidates
+        cand = candidates[0]
+        assert cand.entry_reference_price == pytest.approx(62.14)
+        assert cand.entry_reference_price != pytest.approx(120.0)
+
+        guard_evals = {
+            cand.symbol: evaluate_price_guard(
+                symbol=cand.symbol,
+                candidate_entry_reference_price=cand.entry_reference_price,
+                market_price=market_prices[cand.symbol],
+            )
+        }
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=candidates,
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations=guard_evals,
+        )
+        aave = next(e for e in r.evaluations if e.symbol == "AAVEUSDT")
+        assert aave.accepted is True
+        assert r.realtime_price_guard_verified is True
+        assert r.payload_previews[0].realtime_price_guard_verified is True
+
+
+# ---------------------------------------------------------------------------
+# Pipeline 3 — no realtime price -> no executable candidate (fail-closed)
+# ---------------------------------------------------------------------------
+
+class TestPipelineNoRealtimeFailClosed:
+    def test_missing_price_yields_no_candidates_no_payloads(self):
+        rec = _clean_recon()
+        intents = [
+            NewEntryIntent("SOLUSDT",  "long",  10.0, 1.0),
+            NewEntryIntent("AAVEUSDT", "long",  10.0, 0.9),
+        ]
+        # Both symbols are missing from market_prices
+        builder_results = build_market_backed_candidates(
+            intents=intents, market_prices={},
+            instrument_rules=_RULES_CLEAN,
+        )
+        for br in builder_results:
+            assert br.skipped is True
+            assert br.skip_reason == "no_realtime_price"
+            assert br.candidate is None
+
+        candidates = [br.candidate for br in builder_results if br.candidate]
+        assert candidates == []
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=candidates,
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={},
+        )
+        # Zero accepted payloads -> top-level guard is False (TASK-014O
+        # invariant — sender G19 will refuse).
+        assert r.payload_previews == []
+        assert r.realtime_price_guard_verified is False
+        assert r.next_required_task == "no_payload_to_send"
+
+
+# ---------------------------------------------------------------------------
+# Pipeline 4 — TASK-014L sender G19 contract through market-backed pipeline
+# ---------------------------------------------------------------------------
+
+class TestPipelineSenderG19Contract:
+    """Sender G19 must:
+      - PASS dry-run for a market-backed verified review;
+      - REFUSE a legacy stale-price review with missing_realtime_price_guard.
+    """
+
+    def _build_review_dict(self, candidates, guard_evals, recon):
+        review_obj = review_new_entry_candidates(
+            reconciliation=recon, candidates=candidates,
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations=guard_evals,
+        )
+        return review_obj, review_obj.to_dict(
+            timestamp_utc="2026-06-09T12:00:00Z"
+        )
+
+    def test_sender_dry_run_passes_g19_for_market_backed_review(self):
+        from datetime import datetime, timezone
+        from src.demo_new_entry_sender import (
+            DemoNewEntrySender, _expected_token,
+        )
+
+        rec = _clean_recon()
+        intent = NewEntryIntent("SOLUSDT", "long", 10.0, 1.0)
+        market_prices = _full_market_prices({"SOLUSDT": 65.92})
+        candidates = [
+            br.candidate for br in build_market_backed_candidates(
+                intents=[intent], market_prices=market_prices,
+                instrument_rules=_RULES_CLEAN,
+            ) if br.candidate
+        ]
+        guard_evals = {
+            "SOLUSDT": evaluate_price_guard(
+                symbol="SOLUSDT",
+                candidate_entry_reference_price=candidates[0].entry_reference_price,
+                market_price=market_prices["SOLUSDT"],
+            )
+        }
+        _, review_dict = self._build_review_dict(candidates, guard_evals, rec)
+        assert review_dict["realtime_price_guard_verified"] is True
+
+        now    = datetime(2026, 6, 9, 12, 0, 0, tzinfo=timezone.utc)
+        token  = _expected_token(now)
+        sender = DemoNewEntrySender(allow_real_network=False)
+        r = sender.submit_one_new_entry(
+            review=review_dict, symbol="SOLUSDT",
+            confirm_token=token, execute_new_entry=False, _now=now,
+        )
+        assert "missing_realtime_price_guard" not in r.blocked_gates
+        assert r.order_sent is False
+        assert r.execute_allowed is True
+        assert r.mode == "dry_run"
+
+    def test_sender_blocks_legacy_stale_review(self):
+        from datetime import datetime, timezone
+        from src.demo_new_entry_sender import (
+            DemoNewEntrySender, _expected_token,
+        )
+
+        rec = _clean_recon()
+        # Legacy review: NO guard wiring -> top-level verified=False.
+        legacy = NewEntryCandidate(
+            symbol="AAVEUSDT", side="long",
+            entry_reference_price=120.0, stop_price=110.0,
+            requested_risk_usd=30.0, score=1.0,
+        )
+        review_obj = review_new_entry_candidates(
+            reconciliation=rec, candidates=[legacy],
+            instrument_rules=_RULES_CLEAN,
+        )
+        review_dict = review_obj.to_dict(timestamp_utc="2026-06-09T12:00:00Z")
+        assert review_dict["realtime_price_guard_verified"] is False
+
+        now    = datetime(2026, 6, 9, 12, 0, 0, tzinfo=timezone.utc)
+        token  = _expected_token(now)
+        sender = DemoNewEntrySender(allow_real_network=False)
+        r = sender.submit_one_new_entry(
+            review=review_dict, symbol="AAVEUSDT",
+            confirm_token=token, execute_new_entry=False, _now=now,
+        )
+        assert "missing_realtime_price_guard" in r.blocked_gates
+        assert r.order_sent is False
+        assert r.execute_allowed is False
+
+
+# ---------------------------------------------------------------------------
+# Pipeline 5 — no order endpoint / no secrets through the market-backed path
+# ---------------------------------------------------------------------------
+
+class TestPipelineSafetyInvariants:
+    def test_no_order_endpoint_no_secrets_via_market_backed_pipeline(self):
+        rec = _clean_recon()
+        intent = NewEntryIntent("SOLUSDT", "long", 10.0, 1.0)
+        market_prices = _full_market_prices({"SOLUSDT": 65.92})
+        candidates = [
+            br.candidate for br in build_market_backed_candidates(
+                intents=[intent], market_prices=market_prices,
+                instrument_rules=_RULES_CLEAN,
+            ) if br.candidate
+        ]
+        guard_evals = {
+            "SOLUSDT": evaluate_price_guard(
+                symbol="SOLUSDT",
+                candidate_entry_reference_price=candidates[0].entry_reference_price,
+                market_price=market_prices["SOLUSDT"],
+            )
+        }
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=candidates,
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations=guard_evals,
+        )
+        assert r.no_orders_sent is True
+        assert r.order_endpoint_called is False
+        assert r.secret_value_observed is False
+        d = r.to_dict(timestamp_utc="2026-06-09T12:00:00Z")
+        flat = repr(d).lower()
+        for tok in ("api_key", "api_secret", "x-bapi-sign",
+                    "private_key", "bapi_sign"):
+            assert tok not in flat
