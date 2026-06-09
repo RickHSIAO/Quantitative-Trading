@@ -1,5 +1,81 @@
 # Next Action
 
+## TASK-014M Status (2026-06-09)
+
+| item | status |
+|---|---|
+| src/demo_new_entry_postfill_verify.py — PostFillVerificationResult dataclass + verify_postfill() | DONE |
+| src/demo_new_entry_postfill_verify.py — make_emergency_close_preview() (long→Sell, short→Buy, reduce_only=True, preview_only=True) | DONE |
+| scripts/verify_demo_new_entry_postfill.py — CLI (--from-latest-execution --from-latest-readonly-smoke --from-latest-review --write-report --with-emergency-close-preview) | DONE |
+| src/demo_new_entry_sender.py — G19 missing_realtime_price_guard gate (review.realtime_price_guard_verified must be True) | DONE |
+| tests/demo_trading/test_demo_new_entry_postfill_verify.py — 62 tests (M1-M17 + helpers + structural invariants + production-incident replay + CLI integration) | DONE |
+| tests/demo_trading/test_demo_new_entry_sender.py — TestRealtimePriceGuard (verified/false/missing) + _build_review helper updated | DONE |
+| .gitignore — outputs/demo_trading/new_entry_postfill/ | DONE |
+| pytest tests/demo_trading | 929/929 PASS (864 prior + 62 new postfill + 3 new guard) |
+| py_compile new files | PASS |
+| post-fill ORDER_SENT detection + position_found gate + side/qty/entry checks | CONFIRMED |
+| missing_stop_price gate (stop_price<=0) → fail_closed | CONFIRMED |
+| stale_price_mismatch gate (|actual-expected|/expected > 5%) → fail_closed | CONFIRMED |
+| production-incident replay (SOLUSDT: actual=66.47, expected=160, stop=0) catches both gates | CONFIRMED |
+| recommended_action ladder: ACTION_EMERGENCY_PREV (emit+missing_stop+found) / ACTION_MANUAL_UI / ACTION_NONE_REQUIRED | CONFIRMED |
+| emergency close preview: long→Sell, short→Buy, reduce_only=True, preview_only=True, order_sent=False, confirmation_required=True | CONFIRMED |
+| structural invariants: no_orders_sent=True / order_endpoint_called=False / no_position_modified=True / secret_value_observed=False / no_live_endpoint=True / no_batch_order=True / no_close_only_path=True (always) | CONFIRMED |
+| no env secret values written into JSON or MD reports | CONFIRMED |
+| AST imports (module + CLI): no main / src.risk / BybitExecutor / demo_close_only_sender / demo_new_entry_sender / execute_demo_close_only_cleanup / execute_demo_new_entry | CONFIRMED |
+| source scan: no api.bybit.com / api.bytick.com / /v5/order/create / /v5/order/create-batch in postfill verify module or CLI | CONFIRMED |
+| sender G19: missing_realtime_price_guard blocks send when review.realtime_price_guard_verified is not True | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor / demo_close_only_sender | NOT MODIFIED |
+| local commit | PENDING |
+
+## Next Rick Action (set by 2026-06-09 TASK-014M)
+
+1. Update VPS git pull and inspect the new modules.
+
+2. VPS post-fill verification flow (after a real execute_new_entry run):
+     source .env.demo
+     python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+     python3 scripts/verify_demo_new_entry_postfill.py \
+         --from-latest-execution --from-latest-readonly-smoke --write-report
+     cat outputs/demo_trading/new_entry_postfill/latest_new_entry_postfill.md
+
+   Expected for the SOLUSDT incident (order_id aae978ed-...):
+     selected_symbol             : SOLUSDT
+     position_found              : True
+     actual_entry_price          : 66.47
+     expected_entry_reference    : 160.0  (from latest_new_entry_review.json)
+     actual_stop_price           : 0.0
+     missing_stop_price          : True
+     stale_price_mismatch        : True
+     entry_price_deviation_pct   : ~58.45
+     fail_closed                 : True
+     no_orders_sent              : True
+     order_endpoint_called       : False
+     recommended_action          : manual_close_or_add_stop_in_bybit_demo_ui
+     (or "emergency_close_preview" if --with-emergency-close-preview is set)
+
+3. If --with-emergency-close-preview is included, the report carries a preview
+   dict (symbol=SOLUSDT, position_side=long, close_order_side=Sell,
+   reduce_only=True, preview_only=True, order_sent=False).  THIS IS A PREVIEW
+   ONLY.  Actual emergency close execution is reserved for a future
+   TASK-014N and is NOT performed by this commit.
+
+4. Sender hardening (TASK-014M G19): preview_demo_new_entry_review.py output
+   is presently missing `realtime_price_guard_verified=True`, so any future
+   execute_demo_new_entry.py run will now hard-fail with
+   `missing_realtime_price_guard`.  This is intentional fail-closed behaviour
+   until the upstream review pipeline is updated to assert that the
+   entry_reference_price was sourced from a live market reading.
+
+## Status
+READY (Rick action: VPS post-fill verification, then plan TASK-014N for the
+        upstream realtime-price refresh and for the optional emergency
+        close-only sender).  No order was sent, no position was modified,
+        no secret was observed, no live endpoint was contacted by this
+        commit.
+
+## Owner
+Rick
+
 ## TASK-014L Status (2026-06-09)
 
 | item | status |

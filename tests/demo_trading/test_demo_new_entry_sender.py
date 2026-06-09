@@ -136,6 +136,7 @@ def _build_review(
     account_mode:             str   = "demo",
     available_balance_source: str   = "account.totalAvailableBalance",
     timestamp_utc:            str   = "2026-06-09T12:00:00Z",
+    realtime_price_guard_verified: bool = True,
 ) -> dict[str, Any]:
     """Build a valid review dict via review_new_entry_candidates(...).to_dict()."""
     rec = reconcile(
@@ -158,7 +159,11 @@ def _build_review(
         account_mode=account_mode,
         available_balance_usd_source=available_balance_source,
     )
-    return review.to_dict(timestamp_utc=timestamp_utc)
+    d = review.to_dict(timestamp_utc=timestamp_utc)
+    # TASK-014M: real-time price guard — explicitly assert that the preview's
+    # entry_reference_price was sourced from a live market reading.
+    d["realtime_price_guard_verified"] = realtime_price_guard_verified
+    return d
 
 
 def _valid_token(now: datetime | None = None) -> str:
@@ -1481,3 +1486,51 @@ class TestValidDryRunPreview:
 
     def test_preview_only_source_true(self):
         assert self._result().preview_only_source is True
+
+
+# ---------------------------------------------------------------------------
+# TASK-014M: realtime_price_guard_verified gate
+# ---------------------------------------------------------------------------
+
+class TestRealtimePriceGuard:
+    """
+    TASK-014M production incident (SOLUSDT, 2026-06-09): a stale preview
+    entry_reference_price (160) produced a ~58% deviation against the actual
+    fill (66.47).  The sender must now hard-fail when the review file does
+    NOT explicitly assert `realtime_price_guard_verified=True`.
+    """
+
+    def _send(
+        self,
+        guard_verified: bool,
+        *,
+        explicit_field: bool = True,
+    ) -> NewEntryOrderResult:
+        if explicit_field:
+            review = _build_review(realtime_price_guard_verified=guard_verified)
+        else:
+            review = _build_review()
+            review.pop("realtime_price_guard_verified", None)
+        symbol = _accepted_symbol(review)
+        now    = _fixed_now()
+        token  = _token_for(now)
+        return DemoNewEntrySender().submit_one_new_entry(
+            review=review, symbol=symbol, confirm_token=token,
+            execute_new_entry=False, _now=now,
+        )
+
+    def test_passes_when_verified_true(self):
+        r = self._send(guard_verified=True)
+        assert "missing_realtime_price_guard" not in r.blocked_gates
+
+    def test_fails_when_verified_false(self):
+        r = self._send(guard_verified=False)
+        assert "missing_realtime_price_guard" in r.blocked_gates
+        assert r.execute_allowed is False
+        assert r.order_sent is False
+        assert r.order_endpoint_called is False
+
+    def test_fails_when_field_missing(self):
+        r = self._send(guard_verified=False, explicit_field=False)
+        assert "missing_realtime_price_guard" in r.blocked_gates
+        assert r.execute_allowed is False

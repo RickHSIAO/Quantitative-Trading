@@ -25,6 +25,8 @@ Enforces layered safety gates before any new-entry order submission:
     15. payload.order_sent must be False (came from TASK-014K)
     16. payload.order_endpoint_called must be False (came from TASK-014K)
     17. order side string consistency: Buy for long, Sell for short
+    19. (TASK-014M) review.realtime_price_guard_verified must be True
+        — protects against stale entry_reference_price values being trusted.
 
   Token gate:
     18. caller-supplied confirm_token must equal CONFIRM_DEMO_NEW_ENTRY_YYYYMMDD
@@ -361,6 +363,17 @@ class DemoNewEntrySender:
             open_count = 0
         if open_count >= _MAX_OPEN_POSITIONS_REFRESH:
             gates.append("open_positions_full")
+
+        # G19 (TASK-014M): real-time price guard.
+        # The review file MUST carry realtime_price_guard_verified=True, asserting
+        # that the entry_reference_price used in the preview was sourced from a
+        # live market reading rather than a stale cached value.  Production
+        # incident (SOLUSDT, 2026-06-09) showed that a stale 160.0 reference
+        # against an actual fill of 66.47 produced a ~58% deviation; this guard
+        # blocks future sends until the upstream review explicitly asserts a
+        # real-time price was used.
+        if not bool(review.get("realtime_price_guard_verified", False)):
+            gates.append("missing_realtime_price_guard")
 
         # G18: confirm token
         if not confirm_token:

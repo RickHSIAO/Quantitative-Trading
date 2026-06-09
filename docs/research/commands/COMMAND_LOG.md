@@ -21,6 +21,103 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014M — Add Demo New-entry Post-fill Verification / Missing-stop Protection / Real-price Guard）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014M)
+Task: After the VPS first real Demo new-entry (SOLUSDT, order_id
+      aae978ed-98f7-47cd-90ad-1f0c16b29213) revealed (a) missing stop_price=0
+      on the resulting position and (b) a stale preview entry_reference_price
+      of 160 vs actual 66.47 (~58% deviation), build:
+        A. read-only post-fill verification module + CLI + tests that detects
+           missing_stop_price and stale_price_mismatch and fails closed;
+        B. a real-time price guard in the new-entry sender so future sends
+           refuse to proceed when the review file does not assert
+           realtime_price_guard_verified=True;
+        C. a preview-only emergency close-only dict for missing-stop positions
+           (no actual execution; reserved for TASK-014N);
+        D. M1-M17 tests covering ORDER_SENT detection, position presence,
+           missing-stop, qty/side/entry deviation, fail-closed propagation,
+           secret hygiene, structural invariants, no order endpoint, no live
+           endpoint, no forbidden imports, and the SOLUSDT production-incident
+           replay.
+
+Status before: READY — TASK-014L committed (82172c0); VPS executed first Demo
+               new-entry but produced a position with stop=0 and entry-price
+               deviation ~58% vs preview.
+Status after:  READY — TASK-014M complete on local main; module / CLI / tests
+               in place; sender gate G19 active; 929/929 demo_trading tests
+               pass; no orders sent, no positions modified, no secrets
+               observed, no live endpoint contacted.
+
+Files changed:
+  - src/demo_new_entry_postfill_verify.py        (CREATED)
+  - scripts/verify_demo_new_entry_postfill.py    (CREATED)
+  - tests/demo_trading/test_demo_new_entry_postfill_verify.py (CREATED — 62 tests)
+  - src/demo_new_entry_sender.py                 (MODIFIED — G19 gate + docstring)
+  - tests/demo_trading/test_demo_new_entry_sender.py (MODIFIED — _build_review helper + TestRealtimePriceGuard)
+  - .gitignore                                   (MODIFIED — outputs/demo_trading/new_entry_postfill/)
+  - docs/research/commands/NEXT_ACTION.md        (MODIFIED — TASK-014M block prepended)
+  - docs/research/commands/COMMAND_LOG.md        (MODIFIED — this entry)
+
+Validation:
+  - python -m py_compile src/demo_new_entry_postfill_verify.py
+        scripts/verify_demo_new_entry_postfill.py src/demo_new_entry_sender.py  -> PASS
+  - python -m pytest tests/demo_trading/test_demo_new_entry_postfill_verify.py -q  -> 62/62 PASS
+  - python -m pytest tests/demo_trading -q  -> 929/929 PASS (864 prior + 65 new)
+  - M1  ORDER_SENT detection (PASS path)                                   CONFIRMED
+  - M2  position presence (missing -> fail_closed=True)                    CONFIRMED
+  - M3  missing_stop_price (stop<=0) -> flag + reason                      CONFIRMED
+  - M4  qty mismatch (>1% relative)                                        CONFIRMED
+  - M5  side mismatch                                                      CONFIRMED
+  - M6  stale_price_mismatch (>5%)                                         CONFIRMED
+  - M7  missing_stop_price -> fail_closed=True                             CONFIRMED
+  - M8  stale_price_mismatch -> fail_closed=True                           CONFIRMED
+  - M9  missing execution file -> fail_closed + CLI exit 1                 CONFIRMED
+  - M10 missing readonly file -> fail_closed + CLI exit 1                  CONFIRMED
+  - M11 no env secret value written into JSON or MD reports                CONFIRMED
+  - M12 order_endpoint_called=False (structural)                           CONFIRMED
+  - M13 no_orders_sent=True / no_position_modified=True (structural)       CONFIRMED
+  - M14 emergency_close_preview: long->Sell, short->Buy, reduce_only=True  CONFIRMED
+  - M15 preview_only=True / order_sent=False / next_required_task=TASK-014N CONFIRMED
+  - M16 AST imports clean (no main/src.risk/BybitExecutor/close-only/sender/CLIs) CONFIRMED
+  - M17 source scan: no api.bybit.com / api.bytick.com / /v5/order/create / -batch  CONFIRMED
+  - production-incident replay (SOLUSDT, actual=66.47, expected=160, stop=0)
+        catches both missing_stop_price AND stale_price_mismatch in one pass  CONFIRMED
+  - sender G19 (missing_realtime_price_guard) blocks send when review file does
+        not carry realtime_price_guard_verified=True (false / missing field)   CONFIRMED
+  - structural invariants on PostFillVerificationResult: no_orders_sent=True,
+        order_endpoint_called=False, no_position_modified=True,
+        secret_value_observed=False, no_live_endpoint=True, no_batch_order=True,
+        no_close_only_path=True, new_entry_allowed=False (always)              CONFIRMED
+
+Outputs:
+  - outputs/demo_trading/new_entry_postfill/        (gitignored runtime dir;
+        populated by --write-report on VPS).  Files:
+          latest_new_entry_postfill.json  (machine-readable)
+          latest_new_entry_postfill.md    (human review)
+          {ts}_new_entry_postfill.json / .md  (timestamped copies)
+  - No data was written to live endpoints.  No order was sent.
+
+Notes:
+  - This task is READ-ONLY for the exchange.  No POST to /v5/order/create or
+    any other order path occurs in either the postfill verify module or its CLI.
+  - The optional --with-emergency-close-preview flag attaches a preview dict
+    with close_order_side computed from the *position* side (long->Sell,
+    short->Buy) and reduce_only=True, preview_only=True.  Actual execution of
+    such a close is intentionally NOT performed here; the next_required_task
+    field embeds "TASK-014N" as a forward pointer.
+  - G19 (missing_realtime_price_guard) is enforced at the static-gate level
+    of demo_new_entry_sender.  Future review files emitted by
+    scripts/preview_demo_new_entry_review.py must set
+    realtime_price_guard_verified=True for the sender to proceed.  Production
+    review files written before this commit do NOT carry that field -- this is
+    intentional fail-closed behaviour until TASK-014N updates the upstream
+    pipeline to fetch a real-time market price.
+  - Local commit only (no git push); Rick must explicitly authorise push.
+
+---
+
 ### 2026-06-09（TASK-014L — Add Demo New-entry Sender Gate / Manual Confirmed Single-order）
 
 Agent: Claude Opus 4.7
