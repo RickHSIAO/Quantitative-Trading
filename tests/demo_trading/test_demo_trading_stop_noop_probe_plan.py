@@ -546,7 +546,7 @@ class TestU21ReportArtifactsPlan:
             prot_d  = base / "protection";   prot_d.mkdir()
             con_d   = base / "contract";     con_d.mkdir()
             plan_d  = base / "plan"
-            (ro_d    / "latest_readonly_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
+            (ro_d    / "latest_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
             (recon_d / "latest_reconciliation.json").write_text(json.dumps(_valid_reconciliation()), encoding="utf-8")
             (prot_d  / "latest_new_entry_protection.json").write_text(json.dumps(_valid_protection()), encoding="utf-8")
             (con_d   / "latest_trading_stop_contract.json").write_text(json.dumps(_valid_contract()), encoding="utf-8")
@@ -585,7 +585,7 @@ class TestU22ReportArtifactsRealGuard:
             prot_d  = base / "protection";   prot_d.mkdir()
             con_d   = base / "contract";     con_d.mkdir()
             plan_d  = base / "plan"
-            (ro_d    / "latest_readonly_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
+            (ro_d    / "latest_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
             (recon_d / "latest_reconciliation.json").write_text(json.dumps(_valid_reconciliation()), encoding="utf-8")
             (prot_d  / "latest_new_entry_protection.json").write_text(json.dumps(_valid_protection()), encoding="utf-8")
             (con_d   / "latest_trading_stop_contract.json").write_text(json.dumps(_valid_contract()), encoding="utf-8")
@@ -619,7 +619,7 @@ class TestU23NoSecretsInReport:
             prot_d  = base / "protection";   prot_d.mkdir()
             con_d   = base / "contract";     con_d.mkdir()
             plan_d  = base / "plan"
-            (ro_d    / "latest_readonly_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
+            (ro_d    / "latest_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
             (recon_d / "latest_reconciliation.json").write_text(json.dumps(_valid_reconciliation()), encoding="utf-8")
             (prot_d  / "latest_new_entry_protection.json").write_text(json.dumps(_valid_protection()), encoding="utf-8")
             (con_d   / "latest_trading_stop_contract.json").write_text(json.dumps(_valid_contract()), encoding="utf-8")
@@ -847,7 +847,8 @@ class TestU31CLIExitCodes:
         return ro_d, recon_d, prot_d, con_d, plan_d
 
     def _populate_all(self, ro_d, recon_d, prot_d, con_d):
-        (ro_d    / "latest_readonly_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
+        # Primary readonly filename (matches TASK-014C/D VPS output).
+        (ro_d    / "latest_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
         (recon_d / "latest_reconciliation.json").write_text(json.dumps(_valid_reconciliation()), encoding="utf-8")
         (prot_d  / "latest_new_entry_protection.json").write_text(json.dumps(_valid_protection()), encoding="utf-8")
         (con_d   / "latest_trading_stop_contract.json").write_text(json.dumps(_valid_contract()), encoding="utf-8")
@@ -942,6 +943,95 @@ class TestU32PathRefMatchesContractProbe:
         # because tokenize() strips STRING tokens; the module-level
         # references survive only as identifier text in code.  That's
         # fine — the test simply ensures no call expression appears.
+
+
+# ===========================================================================
+# FIX1: readonly smoke latest filename resolution
+# (TASK-014U-FIX1 — VPS produces latest_smoke.json, not
+#  latest_readonly_smoke.json)
+# ===========================================================================
+
+class TestFix1ReadonlyFilenameResolution:
+    """Verify that the CLI resolves `latest_smoke.json` as the primary
+    readonly artifact and falls back to `latest_readonly_smoke.json`."""
+
+    def test_primary_latest_smoke_resolves(self):
+        """latest_smoke.json present (no legacy file) -> rc=0."""
+        from scripts.preview_demo_trading_stop_noop_probe_plan import run_execute
+        with tempfile.TemporaryDirectory() as td:
+            base    = Path(td)
+            ro_d    = base / "readonly";     ro_d.mkdir()
+            recon_d = base / "recon";        recon_d.mkdir()
+            prot_d  = base / "protection";   prot_d.mkdir()
+            con_d   = base / "contract";     con_d.mkdir()
+            plan_d  = base / "plan"
+            # Write primary file only — no legacy file.
+            (ro_d    / "latest_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
+            (recon_d / "latest_reconciliation.json").write_text(json.dumps(_valid_reconciliation()), encoding="utf-8")
+            (prot_d  / "latest_new_entry_protection.json").write_text(json.dumps(_valid_protection()), encoding="utf-8")
+            (con_d   / "latest_trading_stop_contract.json").write_text(json.dumps(_valid_contract()), encoding="utf-8")
+            rc = run_execute(
+                symbol="SOLUSDT", allow_real_noop_probe=False, write_report=True,
+                readonly_dir=ro_d, reconciliation_dir=recon_d,
+                protection_dir=prot_d, contract_dir=con_d, plan_dir=plan_d,
+                _now=_TEST_NOW,
+            )
+            assert rc == 0
+            data = json.loads((plan_d / "latest_noop_probe_plan.json").read_text(encoding="utf-8"))
+            assert data["status"] == STATUS_PLAN_READY
+            assert data["stop_endpoint_called"]  is False
+            assert data["order_endpoint_called"] is False
+            assert data["no_position_modified"]  is True
+
+    def test_legacy_fallback_resolves_when_primary_absent(self):
+        """latest_readonly_smoke.json present but latest_smoke.json absent -> rc=0."""
+        from scripts.preview_demo_trading_stop_noop_probe_plan import run_execute
+        with tempfile.TemporaryDirectory() as td:
+            base    = Path(td)
+            ro_d    = base / "readonly";     ro_d.mkdir()
+            recon_d = base / "recon";        recon_d.mkdir()
+            prot_d  = base / "protection";   prot_d.mkdir()
+            con_d   = base / "contract";     con_d.mkdir()
+            plan_d  = base / "plan"
+            # Write legacy file only — no primary.
+            (ro_d    / "latest_readonly_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
+            (recon_d / "latest_reconciliation.json").write_text(json.dumps(_valid_reconciliation()), encoding="utf-8")
+            (prot_d  / "latest_new_entry_protection.json").write_text(json.dumps(_valid_protection()), encoding="utf-8")
+            (con_d   / "latest_trading_stop_contract.json").write_text(json.dumps(_valid_contract()), encoding="utf-8")
+            rc = run_execute(
+                symbol="SOLUSDT", allow_real_noop_probe=False, write_report=True,
+                readonly_dir=ro_d, reconciliation_dir=recon_d,
+                protection_dir=prot_d, contract_dir=con_d, plan_dir=plan_d,
+                _now=_TEST_NOW,
+            )
+            assert rc == 0
+            data = json.loads((plan_d / "latest_noop_probe_plan.json").read_text(encoding="utf-8"))
+            assert data["status"] == STATUS_PLAN_READY
+            assert data["stop_endpoint_called"]  is False
+            assert data["order_endpoint_called"] is False
+            assert data["no_position_modified"]  is True
+
+    def test_both_absent_fail_closed(self):
+        """Neither latest_smoke.json nor latest_readonly_smoke.json present -> rc=1."""
+        from scripts.preview_demo_trading_stop_noop_probe_plan import run_execute
+        with tempfile.TemporaryDirectory() as td:
+            base    = Path(td)
+            ro_d    = base / "readonly";     ro_d.mkdir()
+            recon_d = base / "recon";        recon_d.mkdir()
+            prot_d  = base / "protection";   prot_d.mkdir()
+            con_d   = base / "contract";     con_d.mkdir()
+            plan_d  = base / "plan"
+            # No readonly file at all.
+            (recon_d / "latest_reconciliation.json").write_text(json.dumps(_valid_reconciliation()), encoding="utf-8")
+            (prot_d  / "latest_new_entry_protection.json").write_text(json.dumps(_valid_protection()), encoding="utf-8")
+            (con_d   / "latest_trading_stop_contract.json").write_text(json.dumps(_valid_contract()), encoding="utf-8")
+            rc = run_execute(
+                symbol="SOLUSDT", allow_real_noop_probe=False, write_report=False,
+                readonly_dir=ro_d, reconciliation_dir=recon_d,
+                protection_dir=prot_d, contract_dir=con_d, plan_dir=plan_d,
+                _now=_TEST_NOW,
+            )
+            assert rc == 1
 
 
 # ===========================================================================

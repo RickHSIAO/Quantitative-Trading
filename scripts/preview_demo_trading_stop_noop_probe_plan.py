@@ -21,7 +21,8 @@ Usage (REAL NO-OP PROBE GUARD — guarded; returns
     [--write-report]
 
 Reads:
-  outputs/demo_trading/readonly_smoke/latest_readonly_smoke.json
+  outputs/demo_trading/readonly_smoke/latest_smoke.json
+      (legacy fallback: latest_readonly_smoke.json)
   outputs/demo_trading/reconciliation/latest_reconciliation.json
   outputs/demo_trading/new_entry_protection/latest_new_entry_protection.json
   outputs/demo_trading/trading_stop_contract/latest_trading_stop_contract.json
@@ -91,7 +92,16 @@ def _load_json(path: Path) -> dict | None:
 
 
 def load_latest_readonly(readonly_dir: Path) -> dict | None:
-    return _load_json(readonly_dir / "latest_readonly_smoke.json")
+    # Primary filename written by the existing readonly-smoke scripts
+    # (TASK-014C/D): latest_smoke.json.
+    # Legacy fallback: latest_readonly_smoke.json (the name used in the
+    # original TASK-014U spec before VPS verification caught the mismatch).
+    primary  = readonly_dir / "latest_smoke.json"
+    fallback = readonly_dir / "latest_readonly_smoke.json"
+    result   = _load_json(primary)
+    if result is None:
+        result = _load_json(fallback)
+    return result
 
 
 def load_latest_reconciliation(recon_dir: Path) -> dict | None:
@@ -297,7 +307,10 @@ def run_execute(
 
     missing: list[str] = []
     if readonly is None:
-        missing.append(str(_ro_dir / "latest_readonly_smoke.json"))
+        missing.append(
+            str(_ro_dir / "latest_smoke.json")
+            + "  (and fallback latest_readonly_smoke.json)"
+        )
     if reconciliation is None:
         missing.append(str(_recon_dir / "latest_reconciliation.json"))
     if protection is None:
@@ -318,7 +331,7 @@ def run_execute(
         return 1
 
     print(f"\n  symbol             : {symbol}")
-    print(f"  readonly_src       : {_ro_dir / 'latest_readonly_smoke.json'}")
+    print(f"  readonly_src       : {_ro_dir / 'latest_smoke.json'} (primary)")
     print(f"  reconciliation_src : {_recon_dir / 'latest_reconciliation.json'}")
     print(f"  protection_src     : {_protect_dir / 'latest_new_entry_protection.json'}")
     print(f"  contract_src       : {_contract_dir / 'latest_trading_stop_contract.json'}")

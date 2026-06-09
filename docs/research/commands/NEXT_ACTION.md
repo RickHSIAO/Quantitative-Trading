@@ -1,5 +1,45 @@
 # Next Action
 
+## TASK-014U-FIX1 Status (2026-06-10)
+
+| item | status |
+|---|---|
+| root cause: scripts/preview_demo_trading_stop_noop_probe_plan.py load_latest_readonly() was looking for outputs/demo_trading/readonly_smoke/latest_readonly_smoke.json, but TASK-014C/D always writes latest_smoke.json | CONFIRMED |
+| fix: load_latest_readonly() now resolves primary=latest_smoke.json, fallback=latest_readonly_smoke.json; fail-closed only when both absent | DONE |
+| src/demo_trading_stop_noop_probe_plan.py | NOT MODIFIED |
+| 3 new tests: primary-only PASS / fallback-only PASS / both-absent rc=1 | DONE |
+| all existing test helpers updated to write latest_smoke.json | DONE |
+| pytest tests/demo_trading | 1446/1446 PASS (1443 prior + 3 new FIX1) |
+| no order endpoint called / no stop endpoint called / no position modified / G20 unchanged / no secrets | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014U-FIX1)
+
+1. Update VPS git pull:
+       git pull
+       python3 -m pytest tests/demo_trading -q   # expect 1446 PASS
+
+2. Re-run VPS validation from step 7 of TASK-014U Next Rick Action:
+       source .env.demo
+       python3 scripts/preview_demo_trading_stop_noop_probe_plan.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/trading_stop_noop_probe_plan/latest_noop_probe_plan.md
+
+   Expected (same as before):
+     status=NOOP_PROBE_PLAN_READY; mode=plan;
+     recommended_path=tiny_isolated_position_plan;
+     real_probe_allowed=False; real_noop_probe_implemented=False;
+     current_task_real_execution_allowed=False;
+     stop_endpoint_called=False; order_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True;
+     blocked_gates contains the 22 in-task open blockers;
+     g20_policy_still_in_place=True.
+
+3. Remainder of TASK-014U VPS steps are unchanged:
+   see "Next Rick Action (set by 2026-06-10 TASK-014U)" below.
+
 ## TASK-014U Status (2026-06-10)
 
 | item | status |

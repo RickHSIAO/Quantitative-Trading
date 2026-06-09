@@ -21,6 +21,53 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014U-FIX1 — Fix Readonly Smoke Latest Path）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014U-FIX1)
+Task: Fix the readonly-smoke artifact path in the TASK-014U CLI so that
+      --from-latest-readonly resolves latest_smoke.json (the canonical
+      name written by TASK-014C/D) instead of the incorrect name
+      latest_readonly_smoke.json written in the original TASK-014U spec.
+Status before: TASK-014U done; VPS validation failed because
+      preview_demo_trading_stop_noop_probe_plan.py was looking for
+      latest_readonly_smoke.json but the readonly-smoke scripts have
+      always written latest_smoke.json.
+Status after: TASK-014U-FIX1 DONE; VPS validation unblocked.
+
+Files changed:
+  - UPDATED scripts/preview_demo_trading_stop_noop_probe_plan.py
+        load_latest_readonly() now resolves primary=latest_smoke.json,
+        fallback=latest_readonly_smoke.json.  Error message, docstring,
+        and console print updated to match.
+  - UPDATED tests/demo_trading/test_demo_trading_stop_noop_probe_plan.py
+        All three existing test helpers that wrote latest_readonly_smoke.json
+        updated to write latest_smoke.json (primary).
+        Added TestFix1ReadonlyFilenameResolution (3 tests):
+          * test_primary_latest_smoke_resolves:
+            only latest_smoke.json present -> rc=0 STATUS_PLAN_READY
+          * test_legacy_fallback_resolves_when_primary_absent:
+            only latest_readonly_smoke.json present -> rc=0 STATUS_PLAN_READY
+          * test_both_absent_fail_closed:
+            neither file present -> rc=1
+
+Validation:
+  - py_compile src/demo_trading_stop_noop_probe_plan.py PASS
+  - py_compile scripts/preview_demo_trading_stop_noop_probe_plan.py PASS
+  - pytest tests/demo_trading/test_demo_trading_stop_noop_probe_plan.py -q:
+    61 / 61 PASS (58 prior + 3 new FIX1 tests).
+  - pytest tests/demo_trading -q: 1446 / 1446 PASS.
+
+Notes:
+  - src/demo_trading_stop_noop_probe_plan.py NOT modified (accepts
+    whatever dict the CLI passes in; path resolution is purely a CLI
+    concern).
+  - main.py / src/risk.py / BybitExecutor NOT modified.
+  - No order endpoint called, no stop endpoint called, no position
+    modified, G20 still in place, no secrets read or written.
+
+---
+
 ### 2026-06-10（TASK-014U — Add Demo Trading-stop No-op Probe Design / Tiny Isolated Position Plan）
 
 Agent: Claude Opus 4.7
