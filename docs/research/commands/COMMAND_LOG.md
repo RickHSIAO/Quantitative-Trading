@@ -21,6 +21,122 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014R — Add Demo Stop-loss Attachment Sender Dry-run / Mock）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014R)
+Task: Build the first concrete step toward unblocking protected new-entry
+      execution: a Demo-only stop-loss attachment sender restricted to
+      dry-run / mock-execute paths (no real attach).  TASK-014Q's G20
+      gate (protected_entry_policy_missing) remains in place; this task
+      does NOT lift it.  Deliverables:
+        A. src/demo_stop_loss_attachment_sender.py — NEW pure-computation
+           module.  DemoStopLossAttachmentSender.submit_stop_attachment()
+           accepts a TASK-014Q ProtectedEntryPlan dict, validates 18 gates
+           (protection_report_missing / selected_symbol_mismatch /
+           review_fail_closed / missing_realtime_price_guard /
+           stop_loss_attach_not_required / unexpected_stop_loss_endpoint_
+           allowed / unexpected_protected_entry_execute_allowed /
+           protection_preview_only_false / protection_status_not_preview_
+           only / order_endpoint_called_true / stop_endpoint_called_true /
+           invalid_side / invalid_qty / invalid_entry_reference_price /
+           missing_stop_price / long_stop_not_below_entry /
+           short_stop_not_above_entry / invalid_stop_order_side /
+           invalid_confirm_token_for_mock), builds a Bybit V5 trading-
+           stop payload preview (category=linear, symbol, stopLoss,
+           tpslMode=Full, slTriggerBy=MarkPrice, positionIdx=0), and
+           emits a StopAttachmentResult.  Mock-execute path produces a
+           synthetic retCode=0 envelope with a MOCK-STOP-{symbol}-{x}
+           id; NO socket is opened in any path.  Module imports zero
+           network libraries (urllib / requests / httpx / socket / http.
+           client all banned); zero env reads; zero HMAC / signing.
+        B. scripts/execute_demo_stop_loss_attachment.py — NEW CLI.
+           Reads outputs/demo_trading/new_entry_protection/latest_new_
+           entry_protection.json.  Flags: --from-latest-protection /
+           --symbol / --confirm-token / --dry-run (default) /
+           --mock-execute-stop / --write-report.  There is NO
+           --execute-stop-loss flag; real attachment is reserved for
+           TASK-014S onwards.  Confirm token pattern
+           CONFIRM_DEMO_STOP_ATTACH_YYYYMMDD only validated under
+           --mock-execute-stop.  Outputs JSON + Markdown to
+           outputs/demo_trading/stop_loss_attachment/.
+        C. tests/demo_trading/test_demo_stop_loss_attachment_sender.py
+           — 72 tests R1-R25 + extra protection-flag enforcement +
+           result.to_dict round-trip + CLI artifact writer + CLI
+           subprocess smoke (PYTHONIOENCODING=utf-8 to avoid Windows
+           cp950 path).  Source-scan tests use the tokenize-based
+           _read_code_only helper (mirroring the TASK-014Q pattern) so
+           docstring mentions of forbidden words do not produce false
+           failures.  All forbidden-import / forbidden-network /
+           forbidden-secret / forbidden-sender-reuse tests pass.
+        D. .gitignore — outputs/demo_trading/stop_loss_attachment/.
+        E. Doc updates: COMMAND_LOG.md (this entry) +
+           NEXT_ACTION.md (TASK-014R status + Next Rick Action).
+
+Validation:
+  * py_compile src/demo_stop_loss_attachment_sender.py,
+    scripts/execute_demo_stop_loss_attachment.py,
+    tests/demo_trading/test_demo_stop_loss_attachment_sender.py: PASS.
+  * pytest tests/demo_trading: 1260/1260 PASS (1188 prior + 72 new
+    R-series).
+  * SOLUSDT dry-run on test fixture (entry=66.21 / stop=62.7 /
+    side=long / stop_order_side=Sell): status=DRY_RUN_STOP_ATTACH_
+    ALLOWED, payload_preview_only=True, payload includes stopLoss=
+    "62.7" + symbol=SOLUSDT + tpslMode=Full + slTriggerBy=MarkPrice +
+    positionIdx=0; excludes takeProfit / leverage / transfer /
+    withdraw / deposit / orderType / side / qty.  stop_endpoint_called=
+    False, order_endpoint_called=False, no_orders_sent=True,
+    no_position_modified=True, blocked_gates=[].
+  * SOLUSDT --mock-execute-stop with confirm token
+    CONFIRM_DEMO_STOP_ATTACH_20260609: status=MOCK_STOP_ATTACH_SUCCESS,
+    mock_stop_attached=True, mock_response={retCode:0, retMsg:OK,
+    mock:True, result.stop_attach_id="MOCK-STOP-SOLUSDT-6270"},
+    stop_endpoint_called=False, order_endpoint_called=False,
+    no_position_modified=True.
+  * urlopen monkeypatch sentinel: NEVER fires in dry-run OR
+    --mock-execute-stop.
+  * AST scan: no urlopen / urllib / requests / httpx / socket / http.
+    client / Session / urllib3 in module source.
+  * AST scan: no import of main / src.risk / BybitExecutor / pybit /
+    src.bybit_executor / src.demo_close_only_sender /
+    src.demo_new_entry_sender / src.demo_emergency_close_sender /
+    scripts.execute_demo_new_entry / scripts.execute_demo_close_only /
+    scripts.execute_demo_emergency_close.
+  * Code-only scan (tokenize): no os.environ / getenv / dotenv / hmac
+    / X-BAPI-SIGN / X-BAPI-API-KEY in code.
+  * Token in result is prefix-only (first 8 chars + "***"); full token
+    never serialized.
+
+Files changed:
+  - src/demo_stop_loss_attachment_sender.py (NEW)
+  - scripts/execute_demo_stop_loss_attachment.py (NEW)
+  - tests/demo_trading/test_demo_stop_loss_attachment_sender.py (NEW)
+  - .gitignore (added outputs/demo_trading/stop_loss_attachment/)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+  - docs/research/commands/NEXT_ACTION.md (TASK-014R status block)
+
+Notes:
+  * TASK-014L sender G20 (protected_entry_policy_missing) is
+    intentionally NOT lifted in this task.  Real attachment requires
+    TASK-014S (Protected New-entry Orchestrator) which chains entry
+    submit + stop attach + post-fill verification with all-or-fail
+    semantics.
+  * --mock-execute-stop is purely a pipeline-exercise mode: it never
+    opens a socket; the synthetic response is constructed from the
+    plan dict alone.  This lets us validate report-writer / downstream
+    gate behaviour without ever risking a real attach.
+  * mock_stop_attached=True is bookkeeping for the CLI / report; it is
+    NOT a real Bybit attachment.
+
+Status after:  READY — TASK-014R complete on local main; new sender +
+                CLI + tests landed; pytest 1260/1260 PASS; local commit
+                only (no push, per feedback_git_push.md).  Next
+                authorized step toward protected new-entry execution
+                is TASK-014S (Protected New-entry Orchestrator / Entry +
+                Stop Attach Mock Chain).
+
+---
+
 ### 2026-06-09（TASK-014Q — Add Demo Protected Entry / Stop-loss Attachment Policy）
 
 Agent: Claude Opus 4.7

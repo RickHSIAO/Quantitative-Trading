@@ -65,3 +65,4 @@ outputs/demo_trading/new_entry_execution/
 outputs/demo_trading/new_entry_postfill/
 outputs/demo_trading/emergency_close_execution/
 outputs/demo_trading/new_entry_protection/
+outputs/demo_trading/stop_loss_attachment/
