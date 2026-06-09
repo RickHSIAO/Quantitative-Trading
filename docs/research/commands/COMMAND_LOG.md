@@ -21,6 +21,64 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014V — Tiny Isolated Demo Position Lifecycle Mock）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014V)
+Task: Add a pure-computation 7-phase tiny-isolated demo position
+      lifecycle simulator that proves end-to-end (preflight, tiny entry,
+      post-fill audit, stop-attach, protected verify, cleanup, final
+      audit) cannot touch any existing demo position or invoke any
+      live Bybit endpoint. Includes three failure-injection paths
+      (stop-attach failure, cleanup failure, existing stop mismatch)
+      and a guarded --allow-real-tiny-position flag that hard-returns
+      REAL_TINY_POSITION_NOT_IMPLEMENTED.
+Status before: TASK-014U-FIX2 verified; CLI writes primary +
+      legacy alias report names. NEXT_ACTION still pointed at
+      TASK-014V as the only remaining human decision gate.
+Status after: TASK-014V module + CLI + 77 tests landed locally.
+      tests/demo_trading=1529/1529 PASS (1452 prior + 77 new V).
+      No /v5/order/create, /v5/position/trading-stop, or /v5/asset/...
+      invocation; no socket opened at import; no secrets observed.
+      G20 (protected_entry_policy_missing) constant intact and not
+      mentioned in the new module.
+Files changed:
+  - src/demo_tiny_position_lifecycle_mock.py        (new)
+  - scripts/preview_demo_tiny_position_lifecycle_mock.py  (new)
+  - tests/demo_trading/test_demo_tiny_position_lifecycle_mock.py  (new)
+  - .gitignore                                       (output dir)
+  - docs/research/commands/NEXT_ACTION.md            (TASK-014V block)
+  - docs/research/commands/COMMAND_LOG.md            (this entry)
+Validation:
+  python -m py_compile \
+    src/demo_tiny_position_lifecycle_mock.py \
+    scripts/preview_demo_tiny_position_lifecycle_mock.py
+  python -m pytest tests/demo_trading -q
+    -> 1529 passed (1452 prior + 77 new V)
+Outputs (when --write-report on VPS):
+  outputs/demo_trading/tiny_position_lifecycle_mock/
+      latest_tiny_position_lifecycle_mock.json
+      latest_tiny_position_lifecycle_mock.md
+      {ts}_tiny_position_lifecycle_mock.json
+      {ts}_tiny_position_lifecycle_mock.md
+Notes:
+  - 29 gate constants exposed (21 general + 8 lifecycle-specific).
+  - 5 status constants (TINY_LIFECYCLE_PREVIEW_READY /
+    MOCK_TINY_LIFECYCLE_SUCCESS / MOCK_TINY_LIFECYCLE_FAIL_CLOSED /
+    REAL_TINY_POSITION_NOT_IMPLEMENTED / FAIL_CLOSED) + 4 mode
+    constants (preview / mock_lifecycle / real_tiny_position /
+    fail_closed).
+  - Existing 5 demo shorts (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT /
+    EDUUSDT) NEVER touched by any phase; final audit asserts an
+    empty existing_positions_touched list.
+  - Default selected_symbol=SOLUSDT (validated disjoint from the
+    5 existing positions).
+  - next_required_task in result =
+    TASK-014W_tiny_isolated_demo_position_real_execution_permission_gate.
+  - Local commit only; no GitHub push (per memory rule).
+
+---
+
 ### 2026-06-10（TASK-014U-FIX2 — Align No-op Probe Latest Report Filenames）
 
 Agent: Claude Sonnet 4.6

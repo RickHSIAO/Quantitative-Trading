@@ -1,5 +1,77 @@
 # Next Action
 
+## TASK-014V Status (2026-06-10)
+
+| item | status |
+|---|---|
+| new module: src/demo_tiny_position_lifecycle_mock.py (7-phase pure-computation lifecycle) | DONE |
+| new CLI: scripts/preview_demo_tiny_position_lifecycle_mock.py (preview / --mock-lifecycle / --allow-real-tiny-position / 3 simulation flags / --write-report) | DONE |
+| new tests: tests/demo_trading/test_demo_tiny_position_lifecycle_mock.py (V1 - V41+) | DONE |
+| 29 gate constants exposed (21 general + 8 lifecycle) | DONE |
+| 5 status constants + 4 mode constants | DONE |
+| 3 failure injection paths: stop-attach / cleanup / existing-stop-mismatch | DONE |
+| --allow-real-tiny-position returns REAL_TINY_POSITION_NOT_IMPLEMENTED (no socket) | DONE |
+| next_required_task = TASK-014W_tiny_isolated_demo_position_real_execution_permission_gate | DONE |
+| pytest tests/demo_trading | 1529/1529 PASS (1452 prior + 77 new V) |
+| no order endpoint / no stop endpoint / no live endpoint / no position modified | CONFIRMED |
+| 5 existing demo shorts (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT) never touched | CONFIRMED |
+| G20 (protected_entry_policy_missing) constant unchanged and not referenced in new module | CONFIRMED |
+| no secret values in module / CLI / report | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014V)
+
+1. Update VPS git pull:
+       git pull
+       python3 -m pytest tests/demo_trading -q   # expect 1529 PASS
+
+2. VPS Preview (envelope-only):
+       source .env.demo
+       python3 scripts/preview_demo_tiny_position_lifecycle_mock.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_position_lifecycle_mock/latest_tiny_position_lifecycle_mock.md
+
+   Expected:
+     status=TINY_LIFECYCLE_PREVIEW_READY; mode=preview;
+     real_execution_allowed=False; real_tiny_position_implemented=False;
+     current_task_real_execution_allowed=False;
+     stop_endpoint_called=False; order_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True;
+     existing_positions_touched=[]; g20_policy_still_in_place=True.
+
+3. VPS Mock lifecycle (in-memory 7 phases):
+       python3 scripts/preview_demo_tiny_position_lifecycle_mock.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan \
+           --symbol SOLUSDT --mock-lifecycle --write-report
+   Expected: status=MOCK_TINY_LIFECYCLE_SUCCESS; failed_phase=(empty);
+             dangling_tiny_position=False; existing_positions_touched=[].
+
+4. VPS failure-injection checks (each MUST report MOCK_TINY_LIFECYCLE_FAIL_CLOSED):
+       --mock-lifecycle --simulate-stop-attach-failure
+       --mock-lifecycle --simulate-existing-stop-mismatch
+       --mock-lifecycle --simulate-cleanup-failure
+
+5. VPS real-guard sanity:
+       python3 scripts/preview_demo_tiny_position_lifecycle_mock.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan \
+           --symbol SOLUSDT --allow-real-tiny-position --write-report
+   Expected: status=REAL_TINY_POSITION_NOT_IMPLEMENTED;
+             real_execution_allowed=True; real_tiny_position_implemented=False;
+             current_task_real_execution_allowed=False;
+             no Bybit endpoint called.
+
+6. Once the five VPS checks above all match, please decide whether to
+   authorise TASK-014W (Tiny Isolated Demo Position Real Execution
+   Permission Gate). Until then the demo runtime stays in
+   close-only / readonly + envelope-mock mode.
+
 ## TASK-014U-FIX2 Status (2026-06-10)
 
 | item | status |

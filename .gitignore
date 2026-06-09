@@ -69,3 +69,4 @@ outputs/demo_trading/stop_loss_attachment/
 outputs/demo_trading/protected_new_entry/
 outputs/demo_trading/trading_stop_contract/
 outputs/demo_trading/trading_stop_noop_probe_plan/
+outputs/demo_trading/tiny_position_lifecycle_mock/
