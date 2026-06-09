@@ -1,56 +1,58 @@
 # Next Action
 
-## TASK-014I Status (2026-06-09)
+## TASK-014J Status (2026-06-09)
 
 | item | status |
 |---|---|
-| src/demo_wallet_audit.py — extract_wallet_fields, audit_wallet, WalletAuditResult | DONE |
-| scripts/preview_demo_wallet_audit.py — fixture + --real-readonly + --write-report | DONE |
-| tests/demo_trading/test_demo_wallet_audit.py — 45 tests (I1-I10 + integration) | DONE |
-| pytest tests/demo_trading | 659/659 PASS |
-| py_compile all new files | PASS |
-| .gitignore — outputs/demo_trading/wallet_audit/ | DONE |
-| 5 candidate fields captured (totalAvailableBalance, account.availToWithdraw, coin.USDT.availToWithdraw, coin.USDT.free, coin.USDT.walletBalance) | CONFIRMED |
-| mapping_suspect=True when liquidity candidate > current by >10 USD | CONFIRMED |
-| fail_closed on proof != STRONG or endpoint != bybit_demo | CONFIRMED |
-| no order endpoint / no secrets / no new_entry_allowed | CONFIRMED |
+| src/demo_readonly_client.py — WalletSnapshot.available_balance_usd_source field | DONE |
+| src/demo_readonly_client.py — _wallet_real priority cascade (TAB → acc.ATW → coin.ATW → free) | DONE |
+| src/demo_readonly_client.py — FIXTURE_WALLET.available_balance_usd_source updated | DONE |
+| src/demo_wallet_audit.py — CURRENT_MAPPING_FIELD = account.totalAvailableBalance | DONE |
+| scripts/preview_demo_readonly_runtime.py — available_balance_usd_source + wallet_account_type in report | DONE |
+| tests/demo_trading/test_demo_task_014j.py — 40 tests (J1-J12) | DONE |
+| pytest tests/demo_trading | 699/699 PASS |
+| py_compile all modified files | PASS |
+| account.totalAvailableBalance priority 1 → available_balance_usd | CONFIRMED |
+| coin.USDT.walletBalance excluded from available mapping | CONFIRMED |
+| all-candidates-absent → available=0, source=missing | CONFIRMED |
+| wallet audit mapping_suspect=False when current matches TAB | CONFIRMED |
+| no order endpoint / no secrets in output | CONFIRMED |
 | main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
 | local commit | PENDING (Rick must git push) |
 
-## Fixture Audit Findings (deterministic — pre-VPS)
+## Root Cause Fixed
 
-| field | value |
-|---|---|
-| account.totalAvailableBalance | 0.00 |
-| account.availableToWithdraw | 0.00 |
-| coin.USDT.availableToWithdraw | 0.00 (current mapping) |
-| coin.USDT.free | 0.00 |
-| coin.USDT.walletBalance | 11500.00 (includes locked margin — not used for conflict) |
-| available_balance_mapping_suspect (fixture) | False |
-| chosen_available_balance_field | account.totalAvailableBalance |
-| chosen_available_balance_value | 0.00 |
-| recommended_next_action | all candidates agree: 0.00 — genuine state; close positions |
+VPS real read-only audit (TASK-014I) returned:
+  account.totalAvailableBalance = 7169.40 USD
+  coin.USDT.availableToWithdraw = 0.00 USD  ← was being used as available_balance_usd
 
-## Next Rick Action (set by 2026-06-09 TASK-014I)
+Prior mapping used coin.USDT.availableToWithdraw which is 0 when positions are open
+(margin is locked).  New mapping reads account.totalAvailableBalance first, which
+reflects the total cross-margin free balance across all coins.
 
-1. git push origin main (delivers TASK-014D through TASK-014I)
-2. On VPS after git pull — run wallet audit with real credentials:
+## Next Rick Action (set by 2026-06-09 TASK-014J)
+
+1. git push origin main (delivers TASK-014D through TASK-014J)
+2. On VPS after git pull — re-run full smoke + reconciliation pipeline:
      source .env.demo
-     python3 scripts/preview_demo_wallet_audit.py --real-readonly --write-report
-3. Review outputs/demo_trading/wallet_audit/latest_wallet_audit.md
-     - If available_balance_mapping_suspect=False:
-       → Confirmed genuine zero-margin state; must close more positions
-     - If available_balance_mapping_suspect=True:
-       → chosen_available_balance_field shows a better mapping candidate;
-         Rick decides whether to update _wallet_real() in demo_readonly_client.py
-4. If mapping is confirmed correct (0.00 genuine) and more closes are needed:
-     python3 scripts/preview_demo_close_only_cleanup.py \\
-         --from-latest-reconciliation \\
+     python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+     python3 scripts/preview_demo_position_reconcile.py --from-latest-smoke --write-report
+     python3 scripts/preview_demo_close_only_cleanup.py \
+         --from-latest-reconciliation \
          --confirm-token CONFIRM_DEMO_CLOSE_ONLY_$(date +%Y%m%d) --write-report
-     → Then dry-run + execute via execute_demo_close_only_cleanup.py
+3. Check smoke report: available_balance_usd should now show ~7169 (not 0.00)
+   and available_balance_usd_source should read "account.totalAvailableBalance"
+4. If available_balance_usd > 0 and short_count > 5: execute close-only for the
+   highest stop-risk candidates (as before — one per invocation):
+     python3 scripts/execute_demo_close_only_cleanup.py \
+         --from-latest-cleanup \
+         --symbol <REAL_SYMBOL> \
+         --confirm-token CONFIRM_DEMO_CLOSE_ONLY_$(date +%Y%m%d) \
+         --write-report
+   Manual execute decision is Rick's; add --execute-close-only when ready.
 
 ## Status
-READY (Rick action: git push + VPS wallet audit + review mapping suspect flag)
+READY (Rick action: git push + VPS re-smoke + verify available_balance_usd ~7169)
 
 ## Owner
 Rick

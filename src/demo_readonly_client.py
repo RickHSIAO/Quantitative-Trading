@@ -76,14 +76,15 @@ PROOF_MISSING = "MISSING"   # no API key, connection error, or retCode != 0
 
 @dataclass
 class WalletSnapshot:
-    equity_usd:             float
-    available_balance_usd:  float
-    wallet_balance_usd:     float
-    account_type:           str
-    api_key_present:        bool
-    secret_value_observed:  bool       = False
-    secret_leak_violations: list[str]  = field(default_factory=list)
-    order_endpoint_called:  bool       = False
+    equity_usd:                  float
+    available_balance_usd:       float
+    wallet_balance_usd:          float
+    account_type:                str
+    api_key_present:             bool
+    secret_value_observed:       bool       = False
+    secret_leak_violations:      list[str]  = field(default_factory=list)
+    order_endpoint_called:       bool       = False
+    available_balance_usd_source: str       = "unknown"  # TASK-014J: mapping provenance
 
 
 @dataclass
@@ -138,6 +139,7 @@ FIXTURE_WALLET = WalletSnapshot(
     secret_value_observed=False,
     secret_leak_violations=[],
     order_endpoint_called=False,
+    available_balance_usd_source="account.totalAvailableBalance",
 )
 
 FIXTURE_POSITIONS: list[PositionSnapshot] = [
@@ -228,6 +230,7 @@ class DemoReadOnlyClient:
                 secret_value_observed=False,
                 secret_leak_violations=[],
                 order_endpoint_called=False,
+                available_balance_usd_source=FIXTURE_WALLET.available_balance_usd_source,
             )
         return self._wallet_real()
 
@@ -309,7 +312,8 @@ class DemoReadOnlyClient:
     def _wallet_real(self) -> WalletSnapshot:
         data = self._get(_EP_WALLET, {"accountType": "UNIFIED"}, signed=True)
         equity = available = wallet_bal = 0.0
-        account_type = "UNKNOWN"
+        account_type        = "UNKNOWN"
+        available_source    = "missing"
         try:
             acc_list = data["result"]["list"]
             if acc_list:
@@ -317,10 +321,35 @@ class DemoReadOnlyClient:
                 account_type = acc.get("accountType", "UNIFIED")
                 coins        = acc.get("coin", [])
                 usdt = next((c for c in coins if c.get("coin") == "USDT"), {})
-                equity     = float(usdt.get("equity",              0) or 0)
-                available  = float(usdt.get("availableToWithdraw", 0) or 0) or \
-                             float(usdt.get("availableToBorrow",   0) or 0)
-                wallet_bal = float(usdt.get("walletBalance",       0) or 0)
+                equity     = float(usdt.get("equity", 0) or 0)
+                wallet_bal = float(usdt.get("walletBalance", 0) or 0)
+
+                # Available-balance mapping priority (TASK-014J):
+                #   1. account.totalAvailableBalance  — most authoritative for UNIFIED
+                #   2. account.availableToWithdraw
+                #   3. coin.USDT.availableToWithdraw
+                #   4. coin.USDT.free
+                # Explicitly excluded: walletBalance, totalWalletBalance, totalEquity
+                # (those include locked margin and are not free-margin indicators)
+                tab = acc.get("totalAvailableBalance")
+                if tab is not None and str(tab).strip():
+                    available        = float(tab or 0)
+                    available_source = "account.totalAvailableBalance"
+                else:
+                    wab = acc.get("availableToWithdraw")
+                    if wab is not None and str(wab).strip():
+                        available        = float(wab or 0)
+                        available_source = "account.availableToWithdraw"
+                    else:
+                        catw = usdt.get("availableToWithdraw")
+                        if catw is not None and str(catw).strip():
+                            available        = float(catw or 0)
+                            available_source = "coin.USDT.availableToWithdraw"
+                        else:
+                            cfree = usdt.get("free")
+                            if cfree is not None and str(cfree).strip():
+                                available        = float(cfree or 0)
+                                available_source = "coin.USDT.free"
         except (KeyError, IndexError, TypeError, ValueError):
             pass
         return WalletSnapshot(
@@ -332,6 +361,7 @@ class DemoReadOnlyClient:
             secret_value_observed=False,
             secret_leak_violations=[],
             order_endpoint_called=False,
+            available_balance_usd_source=available_source,
         )
 
     def _positions_real(self) -> list[PositionSnapshot]:

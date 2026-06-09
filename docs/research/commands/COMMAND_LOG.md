@@ -21,6 +21,51 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014J — Fix Demo Available Balance Mapping to account.totalAvailableBalance）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014J)
+Task: Fix available_balance_usd mapping in _wallet_real() from coin.USDT.availableToWithdraw
+      (returned 0.00 on VPS) to account.totalAvailableBalance (7169.40 on VPS), eliminating
+      the false available_balance_zero_or_negative violation that was blocking new entries.
+      Add available_balance_usd_source provenance field to WalletSnapshot.  Update
+      CURRENT_MAPPING_FIELD in demo_wallet_audit.py to reflect the new mapping.
+Status before: TASK-014I complete (659 tests PASS); VPS audit showed
+               account.totalAvailableBalance=7169.40 but mapping_suspect=True because
+               coin.USDT.availableToWithdraw=0.00 was being used instead.
+Status after:  TASK-014J complete (699 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_readonly_client.py                            -- MODIFIED (_wallet_real priority cascade, WalletSnapshot.available_balance_usd_source field)
+  src/demo_wallet_audit.py                               -- MODIFIED (CURRENT_MAPPING_FIELD → account.totalAvailableBalance)
+  scripts/preview_demo_readonly_runtime.py               -- MODIFIED (available_balance_usd_source + wallet_account_type in report)
+  tests/demo_trading/test_demo_task_014j.py              -- NEW (40 tests, J1-J12)
+  docs/research/commands/COMMAND_LOG.md                 (this entry)
+  docs/research/commands/NEXT_ACTION.md                 (TASK-014J status)
+
+Validation:
+  python -m py_compile src/demo_readonly_client.py            PASS
+  python -m py_compile src/demo_runtime_adapter.py            PASS
+  python -m py_compile scripts/preview_demo_readonly_runtime.py PASS
+  python -m py_compile scripts/preview_demo_wallet_audit.py   PASS
+  python -m py_compile tests/demo_trading/test_demo_task_014j.py PASS
+  pytest tests/demo_trading -q                                699/699 PASS
+  available_balance_usd_source field present on WalletSnapshot                  CONFIRMED
+  account.totalAvailableBalance priority 1 in cascade                           CONFIRMED
+  account.availableToWithdraw fallback (priority 2)                             CONFIRMED
+  coin.USDT.availableToWithdraw fallback (priority 3)                           CONFIRMED
+  coin.USDT.free fallback (priority 4)                                          CONFIRMED
+  coin.USDT.walletBalance excluded from available mapping                       CONFIRMED
+  totalWalletBalance excluded from available mapping                            CONFIRMED
+  all-candidates-absent → available=0, source="missing"                        CONFIRMED
+  CURRENT_MAPPING_FIELD = account.totalAvailableBalance in demo_wallet_audit    CONFIRMED
+  wallet audit mapping_suspect=False when current matches TAB                  CONFIRMED
+  no order endpoint tokens in modified source                                   CONFIRMED
+  no secrets in output                                                          CONFIRMED
+  main.py / src/risk.py / BybitExecutor not modified                            CONFIRMED
+
+---
+
 ### 2026-06-09（TASK-014I — Demo Wallet Availability Field Audit）
 
 Agent: Claude Sonnet 4.6

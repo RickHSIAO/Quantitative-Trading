@@ -174,6 +174,8 @@ def _write_report(data: dict, output_dir: Path) -> None:
         f"| no_orders_sent | {data.get('no_orders_sent', True)} |",
         f"| equity_usd | {data.get('equity_usd', 0):.2f} |",
         f"| available_balance_usd | {data.get('available_balance_usd', 0):.2f} |",
+        f"| available_balance_usd_source | {data.get('available_balance_usd_source', 'unknown')} |",
+        f"| wallet_account_type | {data.get('wallet_account_type', 'unknown')} |",
         f"| open_positions_count | {data.get('open_positions_count', 0)} |",
         f"| positions_count | {data.get('positions_count', 0)} |",
         f"| position_details_source | {data.get('position_details_source', 'unknown')} |",
@@ -314,6 +316,8 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
                 "no_orders_sent": True,
                 "equity_usd": planner.equity_usd,
                 "available_balance_usd": planner.available_balance_usd,
+                "available_balance_usd_source": wallet.available_balance_usd_source,
+                "wallet_account_type": wallet.account_type,
                 "open_positions_count": len(planner.open_positions),
                 "positions_count": len(planner.open_positions),
                 "positions": _serialize_positions(
@@ -415,6 +419,8 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
             "no_orders_sent": True,
             "equity_usd": planner.equity_usd,
             "available_balance_usd": planner.available_balance_usd,
+            "available_balance_usd_source": wallet.available_balance_usd_source,
+            "wallet_account_type": wallet.account_type,
             "open_positions_count": len(planner.open_positions),
             "positions_count": len(planner.open_positions),
             "positions": _serialize_positions(

@@ -38,7 +38,7 @@ from src.demo_readonly_client import PROOF_STRONG
 # Current mapping label (what demo_readonly_client._wallet_real uses)
 # ---------------------------------------------------------------------------
 
-CURRENT_MAPPING_FIELD = "coin.USDT.availableToWithdraw"
+CURRENT_MAPPING_FIELD = "account.totalAvailableBalance"  # TASK-014J: fixed from coin.USDT.availableToWithdraw
 
 # Tolerance for "significant conflict" between candidates (absolute USD).
 _CONFLICT_THRESHOLD_USD = 10.0
