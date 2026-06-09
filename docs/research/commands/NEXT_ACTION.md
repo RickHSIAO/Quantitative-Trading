@@ -1,5 +1,98 @@
 # Next Action
 
+## TASK-014L Status (2026-06-09)
+
+| item | status |
+|---|---|
+| src/demo_new_entry_sender.py — NewEntryOrderResult dataclass | DONE |
+| src/demo_new_entry_sender.py — DemoNewEntrySender (static gates + token gate + pre-send refresh + single POST) | DONE |
+| src/demo_new_entry_sender.py — order body: category=linear, Market, reduceOnly=False, closeOnTrigger=False, side=Buy/Sell, qty>0, no leverage/TP/SL/triggerPrice/transfer | DONE |
+| src/demo_new_entry_sender.py — endpoint: only api-demo.bybit.com + /v5/order/create | DONE |
+| scripts/execute_demo_new_entry.py — CLI (--from-latest-review --symbol --confirm-token --dry-run --execute-new-entry --write-report) | DONE |
+| tests/demo_trading/test_demo_new_entry_sender.py — 118 tests (F1-F25 + invariants + source scan + report artifacts) | DONE |
+| .gitignore — outputs/demo_trading/new_entry_execution/ | DONE |
+| pytest tests/demo_trading | 864/864 PASS (746 prior + 118 new) |
+| py_compile all new files | PASS |
+| top-level static gates: review.fail_closed / proof / endpoint / account_mode / source / available / new_entry_allowed / open_positions | CONFIRMED |
+| symbol gate: caller --symbol REQUIRED and must be in accepted_candidates | CONFIRMED |
+| token gate: CONFIRM_DEMO_NEW_ENTRY_YYYYMMDD with date equality (today UTC) | CONFIRMED |
+| short_new_entry_not_permitted: every short candidate BLOCKED at static gate | CONFIRMED |
+| payload gates: reduce_only=False / preview_only=True / order_sent=False / order_endpoint_called=False / side label vs payload side / order_type=Market | CONFIRMED |
+| pre-send refresh: proof_strong + endpoint_demo + account_mode_demo + balance>0 + target not already open + live capacity < 10 + long_count<5 (short blocked) + stop_risk<=remaining_budget | CONFIRMED |
+| dry-run default: order_sent=False / order_endpoint_called=False / no_position_modified=True | CONFIRMED |
+| execute path: signed Bybit V5 HMAC POST to api-demo.bybit.com + /v5/order/create only; live host never contacted | CONFIRMED |
+| mocked retCode==0 -> order_id set / order_sent=True / no_position_modified=False; no secrets in result | CONFIRMED |
+| mocked retCode!=0 -> order_sent=False / no_position_modified=True; no secrets in result | CONFIRMED |
+| structural invariants: no_live_endpoint=True / no_batch_order=True / no_close_only_path=True / reduce_only=False / secret_value_observed=False (always) | CONFIRMED |
+| AST imports: no demo_close_only_sender / execute_demo_close_only_cleanup / main / src.risk / BybitExecutor | CONFIRMED |
+| source scan: no api.bybit.com / set_leverage / setLeverage / tradingStop / takeProfit / stopLoss / triggerPrice / tpslMode / /asset/transfer / /withdraw / /deposit / /v5/order/create-batch / pybit | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| local commit | PENDING (Rick must git push) |
+
+## Next Rick Action (set by 2026-06-09 TASK-014L)
+
+1. git push origin main  (delivers TASK-014D through TASK-014L)
+
+2. On VPS after git pull — refresh the full pipeline (in order):
+     source .env.demo
+     python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+     python3 scripts/preview_demo_position_reconcile.py --from-latest-readonly-smoke --write-report
+     python3 scripts/preview_demo_new_entry_review.py --from-latest-reconciliation --write-report
+
+3. Review outputs/demo_trading/new_entry_review/latest_new_entry_review.md
+   - fail_closed must be False
+   - Identify which accepted long candidate to send first
+     (production state currently: short_count=5/5 → all shorts REJECTED;
+      typical accepted longs: SOLUSDT, AAVEUSDT)
+
+4. Dry-run the new-entry sender (no order will be submitted):
+     python3 scripts/execute_demo_new_entry.py \
+         --from-latest-review \
+         --symbol SOLUSDT \
+         --confirm-token CONFIRM_DEMO_NEW_ENTRY_$(date -u +%Y%m%d) \
+         --dry-run --write-report
+
+   Expected on success:
+     mode                     : dry_run
+     selected_symbol          : SOLUSDT
+     selected_side            : long
+     order_side               : Buy
+     order_type               : Market
+     reduce_only              : False
+     execute_requested        : False
+     execute_allowed          : True
+     order_sent               : False
+     order_endpoint_called    : False
+     no_position_modified     : True
+     no_live_endpoint         : True
+     no_batch_order           : True
+     no_close_only_path       : True
+     secret_value_observed    : False
+     blocked_gates            : []
+
+5. If and only if Rick approves, submit the single order:
+     python3 scripts/execute_demo_new_entry.py \
+         --from-latest-review \
+         --symbol SOLUSDT \
+         --confirm-token CONFIRM_DEMO_NEW_ENTRY_$(date -u +%Y%m%d) \
+         --execute-new-entry --write-report
+
+   Pre-send refresh re-checks proof / endpoint / account_mode / balance /
+   open positions / target not already open / long capacity / risk budget.
+   On retCode==0 the report records the order_id and order_sent=True.
+
+6. After any execution attempt: re-run the read-only smoke + reconciliation
+   + new-entry review and inspect the resulting state.
+
+## Status
+READY (Rick action: git push + VPS pipeline refresh + dry-run new-entry sender
+        for the chosen accepted long candidate + decide whether to add
+        --execute-new-entry).  No new-entry order has been submitted by this
+        commit.
+
+## Owner
+Rick
+
 ## TASK-014K Status (2026-06-09)
 
 | item | status |

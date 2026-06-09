@@ -61,3 +61,4 @@ outputs/demo_trading/close_only_cleanup/
 outputs/demo_trading/close_only_execution/
 outputs/demo_trading/wallet_audit/
 outputs/demo_trading/new_entry_review/
+outputs/demo_trading/new_entry_execution/

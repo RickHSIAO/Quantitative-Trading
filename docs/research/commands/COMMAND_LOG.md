@@ -21,6 +21,95 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014L — Add Demo New-entry Sender Gate / Manual Confirmed Single-order）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014L)
+Task: Add a single-order Demo new-entry sender with layered fail-closed gates
+      (top-level static gates from latest_new_entry_review.json + token gate +
+      pre-send read-only refresh), defaulting to dry-run.  Order submission
+      requires --execute-new-entry AND a CONFIRM_DEMO_NEW_ENTRY_YYYYMMDD token
+      matching today's UTC date AND exactly one --symbol from the review's
+      accepted_candidates.  Short new-entries are presently blocked at the
+      static gate.  POSTs only to /v5/order/create on api-demo.bybit.com;
+      no /v5/order/create-batch, no leverage / TP / SL / triggerPrice / transfer
+      / withdraw / deposit.  No reuse of demo_close_only_sender; no imports of
+      main, src.risk, BybitExecutor.  reduce_only is structurally False on the
+      built order body (new entry, not close).  Reports JSON+MD; secrets never
+      observed; no_live_endpoint=True / no_batch_order=True / no_close_only_path=True
+      always.
+Status before: TASK-014K complete (746 tests PASS)
+Status after:  TASK-014L complete (864 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_new_entry_sender.py                            -- NEW (DemoNewEntrySender + NewEntryOrderResult + layered gates)
+  scripts/execute_demo_new_entry.py                       -- NEW (CLI: --from-latest-review --symbol --confirm-token --dry-run --execute-new-entry --write-report)
+  tests/demo_trading/test_demo_new_entry_sender.py        -- NEW (118 tests across F1-F25 + source scan + invariants + report artifacts)
+  .gitignore                                              -- MODIFIED (outputs/demo_trading/new_entry_execution/)
+  docs/research/commands/COMMAND_LOG.md                   (this entry)
+  docs/research/commands/NEXT_ACTION.md                   (TASK-014L status)
+
+Validation:
+  python -m py_compile src/demo_new_entry_sender.py                             PASS
+  python -m py_compile scripts/execute_demo_new_entry.py                        PASS
+  python -m py_compile tests/demo_trading/test_demo_new_entry_sender.py         PASS
+  pytest tests/demo_trading/test_demo_new_entry_sender.py -q                    118/118 PASS
+  pytest tests/demo_trading -q                                                  864/864 PASS (746 prior + 118 new)
+  F1  dry-run default -> order_sent=False / order_endpoint_called=False         CONFIRMED
+  F2  missing latest_new_entry_review.json -> fail closed (exit 1)              CONFIRMED
+  F3  missing confirm token -> fail closed (missing_confirm_token)              CONFIRMED
+  F4  yesterday / tomorrow token -> confirm_token_date_mismatch                 CONFIRMED
+  F5  invalid token format / close-only token / whitespace -> blocked           CONFIRMED
+  F6  CLI missing --symbol -> fail closed (exit 1)                              CONFIRMED
+  F7  symbol not in accepted_candidates -> symbol_not_in_accepted_candidates    CONFIRMED
+  F8  review.fail_closed=True -> review_fail_closed                             CONFIRMED
+  F9  proof_strength != STRONG -> proof_not_strong                              CONFIRMED
+  F10 endpoint_family != bybit_demo -> endpoint_family_not_bybit_demo           CONFIRMED
+  F11 account_mode != demo -> account_mode_not_demo                             CONFIRMED
+  F12 position_details_source != real_readonly -> blocked                       CONFIRMED
+  F13 new_entry_allowed_from_reconciliation=False -> blocked                    CONFIRMED
+  F14 available_balance_usd <= 0 -> available_balance_zero_or_negative          CONFIRMED
+  F15 open_positions_count >= 10 -> open_positions_full                         CONFIRMED
+  F16 forged short in accepted_candidates -> short_new_entry_not_permitted      CONFIRMED
+  F17 payload.reduce_only=True -> payload_reduce_only_must_be_false             CONFIRMED
+  F18 payload.preview_only=False -> payload_preview_only_must_be_true           CONFIRMED
+  F19 payload.order_sent / order_endpoint_called True -> blocked                CONFIRMED
+  F20 qty<=0 / invalid order_side / order_type!=Market -> blocked               CONFIRMED
+  F21 max_long_allowed_remaining=0 -> long_capacity_full                        CONFIRMED
+  F22 payload.side mismatch vs evaluation.side -> order_side_mismatch...        CONFIRMED
+  F23 refresh: target symbol already open / live capacity full -> blocked       CONFIRMED
+  F24 refresh: proof not STRONG / endpoint != bybit_demo / balance<=0 -> blocked CONFIRMED
+  F25 mocked retCode=0 -> order_id set, no_position_modified=False, no secrets  CONFIRMED
+      mocked retCode!=0 -> order_sent=False, no_position_modified=True, no secrets CONFIRMED
+  Execute path URL goes to api-demo.bybit.com + /v5/order/create only           CONFIRMED
+  Order body: category=linear, orderType=Market, reduceOnly=False,              CONFIRMED
+              closeOnTrigger=False, side=Buy for long, no leverage/TP/SL/trigger CONFIRMED
+  Source scan: no "api.bybit.com", no set_leverage / setLeverage / tradingStop  CONFIRMED
+  Source scan: no takeProfit / stopLoss / triggerPrice / tpslMode               CONFIRMED
+  Source scan: no /asset/transfer / /withdraw / /deposit / /v5/order/create-batch CONFIRMED
+  Source scan: no pybit                                                         CONFIRMED
+  AST imports: no demo_close_only_sender / execute_demo_close_only_cleanup      CONFIRMED
+  AST imports: no main / src.risk / BybitExecutor                               CONFIRMED
+  Result invariants: secret_value_observed=False / no_live_endpoint=True /      CONFIRMED
+                     no_batch_order=True / no_close_only_path=True / reduce_only=False
+  main.py / src/risk.py / BybitExecutor                                         NOT MODIFIED
+
+Outputs (when run on VPS after TASK-014K preview):
+  outputs/demo_trading/new_entry_execution/latest_new_entry_execution.json     (dry-run report; not generated by this commit)
+  outputs/demo_trading/new_entry_execution/latest_new_entry_execution.md       (dry-run report; not generated by this commit)
+
+Notes:
+  - No new-entry order has been submitted by this commit.  All execution
+    requires Rick to (1) refresh the read-only/reconciliation/review pipeline
+    on the VPS, (2) decide which accepted long candidate to send, (3) supply
+    CONFIRM_DEMO_NEW_ENTRY_YYYYMMDD matching today's UTC date and
+    --execute-new-entry on the CLI.
+  - Production state (short_count=5/5) means all short candidates are
+    REJECTED at the static gate level; only long candidates can pass.
+  - This commit is local only; Rick must git push.
+
+---
+
 ### 2026-06-09（TASK-014K — Add Demo New-entry Dry-run Proposal Review）
 
 Agent: Claude Opus 4.7
