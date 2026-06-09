@@ -816,3 +816,526 @@ class TestProductionScenario:
         long_evals = [e for e in r.evaluations if e.side == "long"]
         # At least one long should be accepted
         assert any(e.accepted for e in long_evals)
+
+
+# ===========================================================================
+# TASK-014O — Demo new-entry realtime price guard integration tests
+# ===========================================================================
+
+from src.demo_market_price_guard import (
+    DEFAULT_PRICE_GUARD_THRESHOLD_PCT,
+    GUARD_FAIL_STALE_ENTRY_REFERENCE_PRICE,
+    PRICE_SOURCE_BYBIT_DEMO_TICKER,
+    PriceGuardEvaluation,
+    RealtimeMarketPrice,
+    evaluate_price_guard,
+)
+from src.demo_new_entry_review import (
+    REJECT_MISSING_REALTIME_PRICE,
+    REJECT_STALE_ENTRY_REFERENCE_PRICE,
+)
+
+
+def _guard_eval(
+    symbol:                          str,
+    candidate_entry_reference_price: float,
+    realtime_market_price:           float,
+    threshold_pct:                   float = DEFAULT_PRICE_GUARD_THRESHOLD_PCT,
+    timestamp_utc:                   str   = "2026-06-09T12:00:00Z",
+) -> PriceGuardEvaluation:
+    """Build a real PriceGuardEvaluation via the pure evaluator."""
+    mp = RealtimeMarketPrice(
+        symbol=symbol,
+        realtime_market_price=realtime_market_price,
+        price_source=PRICE_SOURCE_BYBIT_DEMO_TICKER,
+        price_timestamp_utc=timestamp_utc,
+        fetch_error_reason="",
+    )
+    return evaluate_price_guard(
+        symbol=symbol,
+        candidate_entry_reference_price=candidate_entry_reference_price,
+        market_price=mp,
+        threshold_pct=threshold_pct,
+    )
+
+
+# ---------------------------------------------------------------------------
+# O1 — missing realtime price => candidate not executable
+# ---------------------------------------------------------------------------
+
+class TestO1MissingRealtimePriceInReview:
+    def test_no_guard_entry_means_candidate_rejected(self):
+        rec = _clean_recon()
+        cand_sol = _good_long("SOLUSDT")
+        # Engage guard pipeline but DO NOT supply a guard entry for SOLUSDT.
+        r = review_new_entry_candidates(
+            reconciliation=rec,
+            candidates=[cand_sol],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={},  # engaged but no entry for SOLUSDT
+        )
+        assert r.fail_closed is False
+        assert r.realtime_price_guard_verified is False
+        sol = next(e for e in r.evaluations if e.symbol == "SOLUSDT")
+        assert sol.accepted is False
+        assert sol.reject_reason == REJECT_MISSING_REALTIME_PRICE
+        assert sol.payload is None
+        assert r.payload_previews == []
+
+    def test_invalid_market_price_treated_as_missing(self):
+        rec = _clean_recon()
+        cand_sol = _good_long("SOLUSDT")
+        # market price 0 => evaluator marks invalid_realtime_price (not verified)
+        bad = RealtimeMarketPrice(
+            symbol="SOLUSDT",
+            realtime_market_price=0.0,
+            price_source=PRICE_SOURCE_BYBIT_DEMO_TICKER,
+            price_timestamp_utc="2026-06-09T12:00:00Z",
+            fetch_error_reason="",
+        )
+        ev = evaluate_price_guard(
+            symbol="SOLUSDT",
+            candidate_entry_reference_price=160.0,
+            market_price=bad,
+        )
+        assert ev.realtime_price_guard_verified is False
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand_sol],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={"SOLUSDT": ev},
+        )
+        sol = next(e for e in r.evaluations if e.symbol == "SOLUSDT")
+        assert sol.accepted is False
+        # invalid_realtime_price falls back to REJECT_MISSING_REALTIME_PRICE
+        assert sol.reject_reason == REJECT_MISSING_REALTIME_PRICE
+
+
+# ---------------------------------------------------------------------------
+# O2 — stale candidate price (>5%) => rejected
+# ---------------------------------------------------------------------------
+
+class TestO2StaleCandidatePriceRejected:
+    def test_aaveusdt_120_vs_90_rejected_as_stale(self):
+        rec = _clean_recon()
+        cand = NewEntryCandidate(
+            symbol="AAVEUSDT", side="long",
+            entry_reference_price=120.0, stop_price=110.0,
+            requested_risk_usd=30.0, score=1.0,
+        )
+        guard = _guard_eval("AAVEUSDT", 120.0, 90.0)
+        assert guard.realtime_price_guard_verified is False
+        assert guard.price_guard_fail_reason == GUARD_FAIL_STALE_ENTRY_REFERENCE_PRICE
+
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={"AAVEUSDT": guard},
+        )
+        ev = next(e for e in r.evaluations if e.symbol == "AAVEUSDT")
+        assert ev.accepted is False
+        assert ev.reject_reason == REJECT_STALE_ENTRY_REFERENCE_PRICE
+        assert ev.payload is None
+        assert r.payload_previews == []
+        assert r.realtime_price_guard_verified is False
+
+
+# ---------------------------------------------------------------------------
+# O3 — SOLUSDT 160 vs 66.47 incident replay
+# ---------------------------------------------------------------------------
+
+class TestO3SolusdtIncidentReplay:
+    """Replays the TASK-014L production incident: candidate
+    entry_reference_price=160 against real market 66.47 (~58% deviation).
+    Must be rejected as stale_entry_reference_price."""
+
+    def test_sol_160_vs_realprice_66_47_rejected(self):
+        rec = _clean_recon()
+        cand = NewEntryCandidate(
+            symbol="SOLUSDT", side="long",
+            entry_reference_price=160.0, stop_price=150.0,
+            requested_risk_usd=40.0, score=1.0,
+        )
+        guard = _guard_eval("SOLUSDT", 160.0, 66.47)
+        # The deviation is far beyond 5% threshold.
+        assert guard.realtime_price_guard_verified is False
+        assert guard.price_guard_fail_reason == GUARD_FAIL_STALE_ENTRY_REFERENCE_PRICE
+        assert guard.price_deviation_pct > 100.0
+
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={"SOLUSDT": guard},
+        )
+        sol = next(e for e in r.evaluations if e.symbol == "SOLUSDT")
+        assert sol.accepted is False
+        assert sol.reject_reason == REJECT_STALE_ENTRY_REFERENCE_PRICE
+        # No payload produced — sender G19 has nothing to consume.
+        assert sol.payload is None
+        assert r.payload_previews == []
+        assert r.realtime_price_guard_verified is False
+
+
+# ---------------------------------------------------------------------------
+# O4 — price within threshold => accepted
+# ---------------------------------------------------------------------------
+
+class TestO4PriceWithinThreshold:
+    def test_within_5pct_accepted(self):
+        rec = _clean_recon()
+        # AAVEUSDT candidate 120.0 against market 118.0 (~1.69% deviation)
+        cand = NewEntryCandidate(
+            symbol="AAVEUSDT", side="long",
+            entry_reference_price=120.0, stop_price=110.0,
+            requested_risk_usd=30.0, score=1.0,
+        )
+        guard = _guard_eval("AAVEUSDT", 120.0, 118.0)
+        assert guard.realtime_price_guard_verified is True
+        assert guard.price_deviation_pct < 5.0
+
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={"AAVEUSDT": guard},
+        )
+        ev = next(e for e in r.evaluations if e.symbol == "AAVEUSDT")
+        assert ev.accepted is True
+        assert ev.reject_reason == ""
+        assert ev.payload is not None
+        # review-level guard verified only when all payloads are verified
+        assert r.realtime_price_guard_verified is True
+
+
+# ---------------------------------------------------------------------------
+# O5 — accepted payload carries realtime_price_guard_verified=True + source
+# ---------------------------------------------------------------------------
+
+class TestO5PayloadCarriesGuardFields:
+    def test_payload_fields_populated_when_verified(self):
+        rec = _clean_recon()
+        cand = NewEntryCandidate(
+            symbol="AAVEUSDT", side="long",
+            entry_reference_price=120.0, stop_price=110.0,
+            requested_risk_usd=30.0, score=1.0,
+        )
+        guard = _guard_eval("AAVEUSDT", 120.0, 118.0)
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={"AAVEUSDT": guard},
+        )
+        assert r.payload_previews
+        p = r.payload_previews[0]
+        assert p.realtime_price_guard_verified is True
+        assert p.price_source == PRICE_SOURCE_BYBIT_DEMO_TICKER
+        assert p.realtime_market_price == pytest.approx(118.0)
+        assert p.price_guard_threshold_pct == pytest.approx(
+            DEFAULT_PRICE_GUARD_THRESHOLD_PCT
+        )
+        assert 0.0 <= p.price_deviation_pct < 5.0
+        d = p.to_dict()
+        assert d["realtime_price_guard_verified"] is True
+        assert d["price_source"] == PRICE_SOURCE_BYBIT_DEMO_TICKER
+        assert d["realtime_market_price"] == pytest.approx(118.0)
+
+
+# ---------------------------------------------------------------------------
+# O6 — accepted payload uses guarded price for qty / notional / stop_risk
+# ---------------------------------------------------------------------------
+
+class TestO6GuardedPriceAnchorsCalculation:
+    def test_qty_uses_market_price_not_stale_candidate_price(self):
+        rec = _clean_recon()
+        # Use SOLUSDT where the candidate carries a high (stale-ish) price
+        # 160, but the real market is 150 (within 5% threshold => verified).
+        # Verified guard should anchor qty/notional to 150, NOT 160.
+        cand = NewEntryCandidate(
+            symbol="SOLUSDT", side="long",
+            entry_reference_price=160.0, stop_price=150.0,
+            requested_risk_usd=20.0, score=1.0,
+        )
+        # 160 vs 153.5 = ~4.23% deviation (< 5% threshold)
+        guard = _guard_eval("SOLUSDT", 160.0, 153.5)
+        assert guard.realtime_price_guard_verified is True
+
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={"SOLUSDT": guard},
+        )
+        assert r.payload_previews
+        p = r.payload_previews[0]
+        # rounded_entry_price must reflect the realtime market price (rounded
+        # to tick=0.1), not the candidate's stale 160.0
+        assert p.rounded_entry_price == pytest.approx(153.5)
+        # notional = qty * rounded_entry — anchored to real market price
+        assert p.estimated_notional_usd == pytest.approx(
+            p.qty * p.rounded_entry_price, rel=1e-9
+        )
+        # stop_risk = (entry - stop) * qty using market price, not 160
+        expected_stop_risk = abs(p.rounded_entry_price - p.rounded_stop_price) * p.qty
+        assert p.estimated_stop_risk_usd == pytest.approx(expected_stop_risk, rel=1e-9)
+        # The original candidate price is still recorded for audit
+        assert p.entry_reference_price == pytest.approx(160.0)
+        assert p.realtime_market_price == pytest.approx(153.5)
+
+
+# ---------------------------------------------------------------------------
+# O7 — no order endpoint called by the review pipeline
+# ---------------------------------------------------------------------------
+
+class TestO7NoOrderEndpointCalled:
+    def test_review_no_orders_sent(self):
+        rec = _clean_recon()
+        cand = NewEntryCandidate(
+            symbol="AAVEUSDT", side="long",
+            entry_reference_price=120.0, stop_price=110.0,
+            requested_risk_usd=30.0, score=1.0,
+        )
+        guard = _guard_eval("AAVEUSDT", 120.0, 118.0)
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={"AAVEUSDT": guard},
+        )
+        assert r.no_orders_sent is True
+        assert r.order_endpoint_called is False
+        assert r.action_type == "PREVIEW_REVIEW_ONLY"
+        # Every payload preview must remain a preview, never a sent order.
+        for p in r.payload_previews:
+            assert p.preview_only is True
+            assert p.order_sent is False
+            assert p.order_endpoint_called is False
+
+
+# ---------------------------------------------------------------------------
+# O8 — no secrets in the report
+# ---------------------------------------------------------------------------
+
+class TestO8NoSecretsInGuardedReport:
+    def test_secret_value_observed_false_with_guard(self):
+        rec = _clean_recon()
+        cand = NewEntryCandidate(
+            symbol="AAVEUSDT", side="long",
+            entry_reference_price=120.0, stop_price=110.0,
+            requested_risk_usd=30.0, score=1.0,
+        )
+        guard = _guard_eval("AAVEUSDT", 120.0, 118.0)
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={"AAVEUSDT": guard},
+        )
+        d = r.to_dict(timestamp_utc="2026-06-09T12:00:00Z")
+        flat = repr(d).lower()
+        for tok in ["api_key", "api_secret", "x-bapi-sign",
+                    "private_key", "bapi_sign"]:
+            assert tok not in flat
+        assert d["secret_value_observed"] is False
+
+
+# ---------------------------------------------------------------------------
+# O9 — no live endpoint reference in review module source
+# ---------------------------------------------------------------------------
+
+class TestO9NoLiveEndpointInReviewModule:
+    def test_review_module_does_not_reference_live_hosts(self):
+        src = _MODULE_PATH.read_text(encoding="utf-8").lower()
+        assert "api.bybit.com" not in src
+        assert "api-testnet.bybit.com" not in src
+        assert "api-demo.bybit.com" not in src
+
+    def test_review_module_does_not_make_http_calls(self):
+        src = _MODULE_PATH.read_text(encoding="utf-8")
+        for tok in ("import urllib", "import requests", "import httpx",
+                    "import http.client", "urlopen", ".post(", "hmac",
+                    "X-BAPI-SIGN"):
+            assert tok not in src, f"forbidden token in review module: {tok!r}"
+
+
+# ---------------------------------------------------------------------------
+# O10 — forbidden imports remain absent after TASK-014O changes
+# ---------------------------------------------------------------------------
+
+class TestO10ForbiddenImportsAfterGuardWiring:
+    def _imports(self) -> set[str]:
+        tree = ast.parse(_MODULE_PATH.read_text(encoding="utf-8"))
+        names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    names.add(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+                names.add(mod)
+                for alias in node.names:
+                    names.add(f"{mod}.{alias.name}")
+        return names
+
+    @pytest.mark.parametrize("forbidden", [
+        "main", "src.risk", "BybitExecutor",
+        "src.demo_close_only_sender",
+        "src.demo_new_entry_sender",
+        "src.demo_emergency_close_sender",
+        "scripts.execute_demo_close_only_cleanup",
+        "scripts.execute_demo_new_entry",
+        "scripts.execute_demo_emergency_close",
+        "pybit",
+    ])
+    def test_forbidden_module_not_imported(self, forbidden):
+        names = self._imports()
+        for n in names:
+            assert forbidden not in n, (
+                f"forbidden import {forbidden!r} appears in {n!r}"
+            )
+
+    def test_guard_module_is_imported(self):
+        """Confirm the guard module is wired in — its dataclass and default
+        threshold must be reachable from the review module."""
+        names = self._imports()
+        joined = " ".join(names)
+        assert "src.demo_market_price_guard" in joined or \
+               "demo_market_price_guard" in joined
+
+
+# ---------------------------------------------------------------------------
+# O11 — TASK-014L sender rejects review without realtime_price_guard_verified
+# ---------------------------------------------------------------------------
+
+class TestO11SenderRejectsUnverifiedReview:
+    """Confirms the upstream contract with TASK-014L's G19 gate: a review JSON
+    where realtime_price_guard_verified=False must cause the sender to add
+    'missing_realtime_price_guard' to blocked_gates and refuse to dry-run."""
+
+    def test_sender_gate_blocks_when_review_guard_false(self):
+        from datetime import datetime, timezone
+        from src.demo_new_entry_sender import (
+            DemoNewEntrySender,
+            _expected_token,
+        )
+
+        rec = _clean_recon()
+        cand = NewEntryCandidate(
+            symbol="AAVEUSDT", side="long",
+            entry_reference_price=120.0, stop_price=110.0,
+            requested_risk_usd=30.0, score=1.0,
+        )
+        # Build the review with the guard NOT engaged (legacy mode).
+        # By construction, the review's realtime_price_guard_verified is False.
+        review_obj = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand],
+            instrument_rules=_RULES_CLEAN,
+        )
+        assert review_obj.realtime_price_guard_verified is False
+        review = review_obj.to_dict(timestamp_utc="2026-06-09T12:00:00Z")
+        assert review["realtime_price_guard_verified"] is False
+
+        now    = datetime(2026, 6, 9, 12, 0, 0, tzinfo=timezone.utc)
+        token  = _expected_token(now)
+        sender = DemoNewEntrySender(allow_real_network=False)
+        r = sender.submit_one_new_entry(
+            review=review, symbol="AAVEUSDT", confirm_token=token,
+            execute_new_entry=False, _now=now,
+        )
+        assert "missing_realtime_price_guard" in r.blocked_gates
+        assert r.order_sent is False
+        assert r.execute_allowed is False
+
+
+# ---------------------------------------------------------------------------
+# O12 — sender allows dry-run only when realtime_price_guard_verified=True
+# ---------------------------------------------------------------------------
+
+class TestO12SenderAllowsDryRunWhenVerified:
+    def test_sender_dry_run_passes_when_review_guard_true(self):
+        from datetime import datetime, timezone
+        from src.demo_new_entry_sender import (
+            DemoNewEntrySender,
+            _expected_token,
+        )
+
+        rec = _clean_recon()
+        cand = NewEntryCandidate(
+            symbol="AAVEUSDT", side="long",
+            entry_reference_price=120.0, stop_price=110.0,
+            requested_risk_usd=30.0, score=1.0,
+        )
+        guard = _guard_eval("AAVEUSDT", 120.0, 118.0)
+        review_obj = review_new_entry_candidates(
+            reconciliation=rec, candidates=[cand],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations={"AAVEUSDT": guard},
+        )
+        assert review_obj.realtime_price_guard_verified is True
+        review = review_obj.to_dict(timestamp_utc="2026-06-09T12:00:00Z")
+        assert review["realtime_price_guard_verified"] is True
+
+        now    = datetime(2026, 6, 9, 12, 0, 0, tzinfo=timezone.utc)
+        token  = _expected_token(now)
+        sender = DemoNewEntrySender(allow_real_network=False)
+        r = sender.submit_one_new_entry(
+            review=review, symbol="AAVEUSDT", confirm_token=token,
+            execute_new_entry=False, _now=now,
+        )
+        assert "missing_realtime_price_guard" not in r.blocked_gates
+        # Dry-run must NEVER actually send an order, regardless of gates.
+        assert r.order_sent is False
+        # When all static gates pass the dry-run reports execute_allowed=True
+        assert r.execute_allowed is True
+        assert r.mode == "dry_run"
+
+
+# ---------------------------------------------------------------------------
+# O13 — review-level realtime_price_guard_verified semantics
+# ---------------------------------------------------------------------------
+
+class TestO13ReviewLevelGuardVerifiedSemantics:
+    """Top-level review.realtime_price_guard_verified must be True iff every
+    accepted payload was verified.  A single unverified-but-otherwise-valid
+    candidate must drag the top-level signal back to False."""
+
+    def test_mixed_candidates_top_level_false(self):
+        rec = _clean_recon()
+        good = NewEntryCandidate(
+            symbol="AAVEUSDT", side="long",
+            entry_reference_price=120.0, stop_price=110.0,
+            requested_risk_usd=30.0, score=1.0,
+        )
+        bad = NewEntryCandidate(
+            symbol="SOLUSDT", side="long",
+            entry_reference_price=160.0, stop_price=150.0,
+            requested_risk_usd=40.0, score=0.9,
+        )
+        evals = {
+            "AAVEUSDT": _guard_eval("AAVEUSDT", 120.0, 118.0),
+            "SOLUSDT":  _guard_eval("SOLUSDT", 160.0, 66.47),  # stale
+        }
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[good, bad],
+            instrument_rules=_RULES_CLEAN,
+            price_guard_evaluations=evals,
+        )
+        # AAVEUSDT accepted; SOLUSDT rejected stale.  All ACCEPTED payloads
+        # were verified, so top-level signal is True.
+        aave = next(e for e in r.evaluations if e.symbol == "AAVEUSDT")
+        sol  = next(e for e in r.evaluations if e.symbol == "SOLUSDT")
+        assert aave.accepted is True
+        assert sol.accepted is False
+        assert sol.reject_reason == REJECT_STALE_ENTRY_REFERENCE_PRICE
+        # The accepted payload(s) are all verified, so top-level is True.
+        assert r.realtime_price_guard_verified is True
+        # And the guard_evaluations record carries entries for both symbols.
+        recorded_syms = {ev["symbol"] for ev in r.price_guard_evaluations}
+        assert {"AAVEUSDT", "SOLUSDT"}.issubset(recorded_syms)
+
+    def test_legacy_no_guard_top_level_false(self):
+        """Backward-compat: when price_guard_evaluations is None, top-level
+        guard signal is False and payloads have verified=False (sender G19
+        will reject them — correct fail-closed posture)."""
+        rec = _clean_recon()
+        r = review_new_entry_candidates(
+            reconciliation=rec, candidates=[_good_long("AAVEUSDT")],
+            instrument_rules=_RULES_CLEAN,
+        )
+        assert r.realtime_price_guard_verified is False
+        for p in r.payload_previews:
+            assert p.realtime_price_guard_verified is False

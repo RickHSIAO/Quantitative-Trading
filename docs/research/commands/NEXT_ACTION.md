@@ -1,5 +1,69 @@
 # Next Action
 
+## TASK-014O Status (2026-06-09)
+
+| item | status |
+|---|---|
+| src/demo_market_price_guard.py — RealtimeMarketPrice + PriceGuardEvaluation dataclasses, evaluate_price_guard() pure evaluator, batch helper, DemoMarketPriceGuard public-market client (api-demo.bybit.com + /v5/market/tickers only) | DONE |
+| src/demo_market_price_guard.py — default guard threshold 5.0%; failure reasons missing/stale/invalid; PRICE_SOURCE_BYBIT_DEMO_TICKER + PRICE_SOURCE_FIXTURE; no HMAC; no env vars; no secrets; no order endpoint | DONE |
+| src/demo_new_entry_review.py — review_new_entry_candidates() accepts price_guard_evaluations & price_guard_threshold_pct; missing => REJECT_MISSING_REALTIME_PRICE; stale >5% => REJECT_STALE_ENTRY_REFERENCE_PRICE; verified => qty / notional / stop_risk anchored to realtime market price | DONE |
+| src/demo_new_entry_review.py — NewEntryPayloadPreview carries realtime_price_guard_verified / price_source / realtime_market_price / price_deviation_pct / price_guard_threshold_pct / price_timestamp_utc | DONE |
+| src/demo_new_entry_review.py — top-level review.realtime_price_guard_verified=True iff guard pipeline engaged AND not fail_closed AND ≥1 payload emitted AND all emitted payloads verified | DONE |
+| scripts/preview_demo_new_entry_review.py — --with-realtime-price-guard (default ON) / --allow-real-market-network (default OFF) / --price-guard-threshold-pct CLI flags; report includes "Realtime Price Guard (TASK-014O)" section | DONE |
+| tests/demo_trading/test_demo_market_price_guard.py — 51 tests O1-O12 + batch + dataclass round-trip; SOLUSDT 160 vs 66.47 incident replayed | DONE |
+| tests/demo_trading/test_demo_new_entry_review.py — 26 new TASK-014O integration tests (O1-O13) covering missing / stale / verified / payload fields / guarded-price anchor / no-order-endpoint / no-secrets / forbidden-imports / sender G19 contract | DONE |
+| pytest tests/demo_trading | 1065/1065 PASS (988 prior + 51 guard + 26 review integration) |
+| py_compile new + modified files | PASS |
+| guard module never contacts /v5/order/ paths; never reaches api.bybit.com / api-testnet.bybit.com; only api-demo.bybit.com + /v5/market/tickers | CONFIRMED |
+| review module remains free of urllib / requests / httpx / hmac / api-*.bybit.com / X-BAPI-SIGN tokens | CONFIRMED |
+| AST imports (review + guard module): no main / src.risk / BybitExecutor / pybit / demo_close_only_sender / demo_new_entry_sender / demo_emergency_close_sender / scripts.execute_* | CONFIRMED |
+| backward compat: existing 47 K-series tests pass unchanged when price_guard_evaluations is None; payloads emit realtime_price_guard_verified=False; sender G19 refuses them (correct fail-closed) | CONFIRMED |
+| sender G19 contract: O11 review with realtime_price_guard_verified=False → "missing_realtime_price_guard" in blocked_gates / execute_allowed=False / order_sent=False | CONFIRMED |
+| sender G19 contract: O12 review with realtime_price_guard_verified=True → "missing_realtime_price_guard" not in blocked_gates / dry-run execute_allowed=True / order_sent=False | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-09 TASK-014O)
+
+1. Update VPS git pull and inspect the new guard module + extended review + CLI:
+       src/demo_market_price_guard.py
+       src/demo_new_entry_review.py
+       scripts/preview_demo_new_entry_review.py
+       tests/demo_trading/test_demo_market_price_guard.py
+       tests/demo_trading/test_demo_new_entry_review.py
+
+2. VPS realtime-guard DRY-RUN (no orders sent):
+       source .env.demo
+       # 1) read-only proof refresh
+       python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+       # 2) preview new-entry review WITH realtime price guard ON
+       python3 scripts/preview_demo_new_entry_review.py \
+           --from-latest-reconciliation \
+           --allow-real-market-network \
+           --with-realtime-price-guard \
+           --write-report
+       cat outputs/demo_trading/new_entry_review/latest_new_entry_review.md
+
+   Expected: report's "Realtime Price Guard (TASK-014O)" section lists per-symbol
+             candidate price vs realtime market price; any deviation >5% is
+             rejected as stale_entry_reference_price; review-level
+             realtime_price_guard_verified=True only if all accepted payloads
+             are verified.
+
+3. Re-run TASK-014L Demo new-entry dry-run sender against a guarded review:
+       python3 scripts/execute_demo_new_entry.py \
+           --from-latest-review --symbol <verified-symbol> \
+           --confirm-token CONFIRM_DEMO_NEW_ENTRY_$(date -u +%Y%m%d) \
+           --dry-run --write-report
+
+   Expected (DRY-RUN): G19 missing_realtime_price_guard NOT present; gates pass;
+   no order sent.
+
+4. Only after Rick reviews the guarded preview JSON and approves the next
+   workorder may a live new-entry be re-attempted (separate task).
+
+---
+
 ## TASK-014N Status (2026-06-09)
 
 | item | status |

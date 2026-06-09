@@ -44,6 +44,13 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 from src.demo_instrument_rules import InstrumentRules
+from src.demo_market_price_guard import (
+    DEFAULT_PRICE_GUARD_THRESHOLD_PCT,
+    DemoMarketPriceGuard,
+    PriceGuardEvaluation,
+    RealtimeMarketPrice,
+    evaluate_price_guard,
+)
 from src.demo_new_entry_review import (
     NewEntryCandidate,
     NewEntryReviewResult,
@@ -313,6 +320,28 @@ def _write_report(result: NewEntryReviewResult, output_dir: Path, ts_utc: str) -
             )
         md_lines.append("")
 
+    md_lines += [
+        "## Realtime Price Guard (TASK-014O)",
+        "",
+        f"- realtime_price_guard_verified: `{result.realtime_price_guard_verified}`",
+        f"- price_guard_threshold_pct: `{result.price_guard_threshold_pct}`",
+        f"- price_guard_evaluations: `{len(result.price_guard_evaluations)}`",
+        "",
+    ]
+    if result.price_guard_evaluations:
+        md_lines.append("| Symbol | Candidate Ref | Realtime | Source | Dev % | Verified |")
+        md_lines.append("|---|---|---|---|---|---|")
+        for ev in result.price_guard_evaluations:
+            md_lines.append(
+                f"| {ev.get('symbol', '')} "
+                f"| {ev.get('candidate_entry_reference_price', '')} "
+                f"| {ev.get('realtime_market_price', '')} "
+                f"| `{ev.get('price_source', '')}` "
+                f"| {ev.get('price_deviation_pct', '')} "
+                f"| {ev.get('realtime_price_guard_verified', '')} |"
+            )
+        md_lines.append("")
+
     if result.payload_previews:
         md_lines += ["## Payload Previews (PLANNING ONLY — never sent)", ""]
         for p in result.payload_previews:
@@ -324,6 +353,10 @@ def _write_report(result: NewEntryReviewResult, output_dir: Path, ts_utc: str) -
                 f"- reduce_only: `{p.reduce_only}` (new entry — must be False)",
                 f"- entry_reference_price: `{p.entry_reference_price}`",
                 f"- rounded_entry_price: `{p.rounded_entry_price}`",
+                f"- realtime_market_price: `{p.realtime_market_price}`",
+                f"- price_source: `{p.price_source}`",
+                f"- price_deviation_pct: `{p.price_deviation_pct:.4f}`",
+                f"- realtime_price_guard_verified: `{p.realtime_price_guard_verified}`",
                 f"- stop_price: `{p.stop_price}`",
                 f"- rounded_stop_price: `{p.rounded_stop_price}`",
                 f"- estimated_notional_usd: `{p.estimated_notional_usd:.2f}`",
@@ -404,6 +437,20 @@ def _print_result(result: NewEntryReviewResult) -> None:
         for r in result.fail_closed_reasons:
             print(f"  - {r}")
 
+    _hdr("Realtime Price Guard (TASK-014O)")
+    print(f"  realtime_price_guard_verified : {result.realtime_price_guard_verified}")
+    print(f"  price_guard_threshold_pct     : {result.price_guard_threshold_pct}")
+    if result.price_guard_evaluations:
+        for ev in result.price_guard_evaluations:
+            print(
+                f"  {ev.get('symbol', ''):<10} "
+                f"cand={ev.get('candidate_entry_reference_price', 0):<10} "
+                f"real={ev.get('realtime_market_price', 0):<10} "
+                f"src={ev.get('price_source', ''):<35} "
+                f"dev%={ev.get('price_deviation_pct', 0):<8} "
+                f"verified={ev.get('realtime_price_guard_verified', False)}"
+            )
+
     _hdr("Candidate Evaluations")
     if not result.evaluations:
         print("  (no candidates supplied)")
@@ -446,11 +493,39 @@ def _print_result(result: NewEntryReviewResult) -> None:
 # Preview runner
 # ---------------------------------------------------------------------------
 
+def _build_price_guard_evaluations(
+    candidates:                  list[NewEntryCandidate],
+    allow_real_network:          bool,
+    price_guard_threshold_pct:   float,
+) -> dict[str, PriceGuardEvaluation]:
+    """
+    Fetch a realtime market price for every candidate symbol and evaluate the
+    guard.  In fixture mode the client returns a deterministic fixture price.
+
+    Pure helper — never calls any order endpoint.
+    """
+    client = DemoMarketPriceGuard(allow_real_network=allow_real_network)
+    symbols = sorted({c.symbol for c in candidates})
+    market_prices = client.fetch_market_prices(symbols)
+    evals: dict[str, PriceGuardEvaluation] = {}
+    for cand in candidates:
+        evals[cand.symbol] = evaluate_price_guard(
+            symbol=cand.symbol,
+            candidate_entry_reference_price=cand.entry_reference_price,
+            market_price=market_prices.get(cand.symbol),
+            threshold_pct=price_guard_threshold_pct,
+        )
+    return evals
+
+
 def run_preview(
     mode:           str  = "fixture",
     write_report:   bool = False,
     reconcile_dir:  Path | None = None,
     review_dir:     Path | None = None,
+    with_realtime_price_guard: bool = True,
+    allow_real_market_network: bool = False,
+    price_guard_threshold_pct: float = DEFAULT_PRICE_GUARD_THRESHOLD_PCT,
 ) -> int:
     """
     Run the new-entry candidate review preview.
@@ -462,7 +537,7 @@ def run_preview(
 
     print(_SEP)
     print("DRY RUN / NO ORDERS SENT / NO POSITIONS MODIFIED")
-    print("TASK-014K: Demo New-entry Review Preview")
+    print("TASK-014K / TASK-014O: Demo New-entry Review Preview")
     print(_SEP)
 
     if mode == "from_latest_reconciliation":
@@ -510,6 +585,18 @@ def run_preview(
                | {p.symbol for p in recon.positions})
     )
 
+    price_guard_evals: dict[str, PriceGuardEvaluation] | None = None
+    if with_realtime_price_guard:
+        # In real-reconciliation mode, fetch live ticker prices from the demo
+        # public market endpoint; in fixture mode, use the deterministic
+        # FIXTURE_MARKET_PRICES dict (no I/O).
+        real_market_net = allow_real_market_network and (mode == "from_latest_reconciliation")
+        price_guard_evals = _build_price_guard_evaluations(
+            candidates=candidates,
+            allow_real_network=real_market_net,
+            price_guard_threshold_pct=price_guard_threshold_pct,
+        )
+
     result = review_new_entry_candidates(
         reconciliation=recon,
         candidates=candidates,
@@ -517,6 +604,8 @@ def run_preview(
         endpoint_family="bybit_demo",
         account_mode="demo",
         available_balance_usd_source=avail_src,
+        price_guard_evaluations=price_guard_evals,
+        price_guard_threshold_pct=price_guard_threshold_pct,
     )
 
     _print_result(result)
@@ -549,12 +638,43 @@ def main() -> None:
         action="store_true",
         help="Write JSON + Markdown report to outputs/demo_trading/new_entry_review/.",
     )
+    parser.add_argument(
+        "--no-realtime-price-guard",
+        action="store_true",
+        help=(
+            "Disable the TASK-014O realtime market price guard. Without this "
+            "flag the guard is engaged in fixture mode (FIXTURE_MARKET_PRICES) "
+            "and in real-reconciliation mode (with --allow-real-market-network)."
+        ),
+    )
+    parser.add_argument(
+        "--allow-real-market-network",
+        action="store_true",
+        help=(
+            "Allow read-only GETs to api-demo.bybit.com/v5/market/tickers for "
+            "the realtime price guard.  Only takes effect with "
+            "--from-latest-reconciliation."
+        ),
+    )
+    parser.add_argument(
+        "--price-guard-threshold-pct",
+        type=float,
+        default=DEFAULT_PRICE_GUARD_THRESHOLD_PCT,
+        help="Maximum allowed deviation (percent) between candidate entry_reference_price "
+             "and the realtime market price.  Default: 5.0.",
+    )
     args = parser.parse_args()
     mode = (
         "from_latest_reconciliation" if args.from_latest_reconciliation
         else "fixture"
     )
-    sys.exit(run_preview(mode=mode, write_report=args.write_report))
+    sys.exit(run_preview(
+        mode=mode,
+        write_report=args.write_report,
+        with_realtime_price_guard=not args.no_realtime_price_guard,
+        allow_real_market_network=args.allow_real_market_network,
+        price_guard_threshold_pct=args.price_guard_threshold_pct,
+    ))
 
 
 if __name__ == "__main__":

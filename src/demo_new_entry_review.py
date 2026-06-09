@@ -1,6 +1,7 @@
 """
 src/demo_new_entry_review.py
 TASK-014K: Demo new-entry dry-run proposal review.
+TASK-014O: Integrated realtime market price guard.
 
 Reads a verified reconciliation snapshot (real_readonly) and a list of new-entry
 candidates; per candidate it applies a layered fail-closed gate, projects the
@@ -21,8 +22,17 @@ SAFETY INVARIANTS (structural — verified by tests):
   action_type             = "PREVIEW_REVIEW_ONLY" (always)
   short_capacity_full     → every short candidate REJECTED (no short payloads)
 
+TASK-014O additions:
+  When `price_guard_evaluations` is supplied to review_new_entry_candidates(),
+  candidates without a verified realtime market price are REJECTED and
+  produce NO executable payload.  The top-level `realtime_price_guard_verified`
+  field reflects whether the guard pipeline was engaged for this review.
+  Accepted payloads recompute qty/notional/stop_risk using the guarded price
+  (realtime_market_price) rather than the caller-supplied
+  entry_reference_price.
+
 No imports of main, src.risk, BybitExecutor, close-only sender, or any
-exchange-execution module.
+exchange-execution module.  No URL strings, no urllib, no HTTP client.
 """
 from __future__ import annotations
 
@@ -37,6 +47,10 @@ from src.demo_instrument_rules import (
     REJECT_MISSING_RULE,
     round_price_to_tick,
     round_qty_down,
+)
+from src.demo_market_price_guard import (
+    DEFAULT_PRICE_GUARD_THRESHOLD_PCT,
+    PriceGuardEvaluation,
 )
 from src.demo_portfolio_risk import (
     MAX_GROSS_EXPOSURE_RATIO,
@@ -78,6 +92,9 @@ REJECT_PER_TRADE_RISK_CAP         = "per_trade_risk_cap_exceeded"
 REJECT_MAX_SINGLE_NOTIONAL        = "max_single_position_notional_exceeded"
 REJECT_PROJECTED_GROSS_EXPOSURE   = "projected_gross_exposure_exceeded"
 REJECT_PROJECTED_NET_EXPOSURE     = "projected_net_exposure_exceeded"
+# TASK-014O: realtime price guard rejection reasons
+REJECT_MISSING_REALTIME_PRICE     = "missing_realtime_price"
+REJECT_STALE_ENTRY_REFERENCE_PRICE = "stale_entry_reference_price"
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +163,15 @@ class NewEntryPayloadPreview:
     confirmation_required:           bool   # always True
     order_sent:                      bool   # always False
     order_endpoint_called:           bool   # always False
+    # TASK-014O realtime price guard fields (defaults preserve legacy behaviour
+    # for callers that never engaged the guard pipeline; sender G19 still
+    # rejects unverified payloads).
+    realtime_price_guard_verified:   bool  = False
+    price_source:                    str   = ""
+    realtime_market_price:           float = 0.0
+    price_deviation_pct:             float = 0.0
+    price_guard_threshold_pct:       float = DEFAULT_PRICE_GUARD_THRESHOLD_PCT
+    price_timestamp_utc:             str   = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -172,6 +198,12 @@ class NewEntryPayloadPreview:
             "confirmation_required":          self.confirmation_required,
             "order_sent":                     self.order_sent,
             "order_endpoint_called":          self.order_endpoint_called,
+            "realtime_price_guard_verified":  self.realtime_price_guard_verified,
+            "price_source":                   self.price_source,
+            "realtime_market_price":          self.realtime_market_price,
+            "price_deviation_pct":            round(self.price_deviation_pct, 4),
+            "price_guard_threshold_pct":      self.price_guard_threshold_pct,
+            "price_timestamp_utc":            self.price_timestamp_utc,
         }
 
 
@@ -251,6 +283,11 @@ class NewEntryReviewResult:
     order_endpoint_called:               bool = False
     secret_value_observed:               bool = False
 
+    # TASK-014O: realtime price guard top-level signal (sender G19 reads this)
+    realtime_price_guard_verified:       bool = False
+    price_guard_threshold_pct:           float = DEFAULT_PRICE_GUARD_THRESHOLD_PCT
+    price_guard_evaluations:             list[dict[str, Any]] = field(default_factory=list)
+
     def to_dict(self, timestamp_utc: str = "") -> dict[str, Any]:
         return {
             "timestamp":                             timestamp_utc,
@@ -286,6 +323,9 @@ class NewEntryReviewResult:
             "no_position_modified":                  self.no_position_modified,
             "order_endpoint_called":                 self.order_endpoint_called,
             "secret_value_observed":                 self.secret_value_observed,
+            "realtime_price_guard_verified":         self.realtime_price_guard_verified,
+            "price_guard_threshold_pct":             self.price_guard_threshold_pct,
+            "price_guard_evaluations":               list(self.price_guard_evaluations),
         }
 
 
@@ -392,8 +432,20 @@ def _evaluate_candidate(
     running_short_notional:      float,
     max_long_allowed_remaining:  int,
     max_short_allowed_remaining: int,
+    price_guard:                 PriceGuardEvaluation | None = None,
+    price_guard_threshold_pct:   float = DEFAULT_PRICE_GUARD_THRESHOLD_PCT,
+    enforce_price_guard:         bool = False,
 ) -> NewEntryEvaluation:
-    """Apply per-candidate gates; return evaluation (accepted or rejected)."""
+    """Apply per-candidate gates; return evaluation (accepted or rejected).
+
+    When `enforce_price_guard` is True and `price_guard` is None or not
+    verified, the candidate is REJECTED with `missing_realtime_price` or
+    `stale_entry_reference_price` and no payload is emitted.
+
+    When the guard verifies, the realtime market price replaces the caller-
+    supplied `entry_reference_price` for qty / notional / stop-risk
+    recomputation, so portfolio risk is anchored to the live market.
+    """
     side = _norm_side(cand.side)
     if side not in ("long", "short"):
         return _reject(cand, REJECT_INVALID_SIDE, {"raw_side": cand.side})
@@ -442,10 +494,59 @@ def _evaluate_candidate(
     if not _is_pos_float(cand.stop_price):
         return _reject(cand, REJECT_INVALID_STOP_PRICE,
                        {"stop_price": cand.stop_price})
-    if not _stop_distance_valid(side, cand.entry_reference_price, cand.stop_price):
+
+    # --- realtime price guard (TASK-014O) --------------------------------
+    # Determines which price is anchored for downstream stop-distance and
+    # qty calculations.  When the guard is enforced, only a verified live
+    # market price is acceptable.
+    guarded_entry_price = cand.entry_reference_price
+    guard_verified      = False
+    guard_source        = ""
+    guard_real_price    = 0.0
+    guard_deviation_pct = 0.0
+    guard_threshold     = price_guard_threshold_pct
+    guard_timestamp     = ""
+
+    if price_guard is not None:
+        guard_source        = price_guard.price_source
+        guard_real_price    = price_guard.realtime_market_price
+        guard_deviation_pct = price_guard.price_deviation_pct
+        guard_threshold     = price_guard.price_guard_threshold_pct
+        guard_timestamp     = price_guard.price_timestamp_utc
+        guard_verified      = bool(price_guard.realtime_price_guard_verified)
+
+    if enforce_price_guard:
+        if price_guard is None:
+            return _reject(cand, REJECT_MISSING_REALTIME_PRICE,
+                           {"symbol": cand.symbol,
+                            "price_guard_threshold_pct": guard_threshold})
+        if not guard_verified:
+            fail_reason = price_guard.price_guard_fail_reason or REJECT_MISSING_REALTIME_PRICE
+            reject_reason = (
+                REJECT_STALE_ENTRY_REFERENCE_PRICE
+                if fail_reason == "stale_entry_reference_price"
+                else REJECT_MISSING_REALTIME_PRICE
+            )
+            return _reject(cand, reject_reason, {
+                "symbol":                          cand.symbol,
+                "candidate_entry_reference_price": cand.entry_reference_price,
+                "realtime_market_price":           guard_real_price,
+                "price_source":                    guard_source,
+                "price_deviation_pct":             guard_deviation_pct,
+                "price_guard_threshold_pct":       guard_threshold,
+                "price_guard_fail_reason":         fail_reason,
+            })
+        # Verified — anchor downstream computation to the live market price
+        # rather than the caller-supplied entry_reference_price.
+        if guard_real_price > 0:
+            guarded_entry_price = guard_real_price
+
+    if not _stop_distance_valid(side, guarded_entry_price, cand.stop_price):
         return _reject(cand, REJECT_INVALID_STOP_DISTANCE,
-                       {"side": side, "entry": cand.entry_reference_price,
-                        "stop": cand.stop_price})
+                       {"side": side, "entry": guarded_entry_price,
+                        "stop": cand.stop_price,
+                        "candidate_entry_reference_price": cand.entry_reference_price,
+                        "realtime_market_price": guard_real_price})
 
     if not (math.isfinite(cand.requested_risk_usd) and cand.requested_risk_usd > 0):
         return _reject(cand, REJECT_REQUESTED_RISK_NON_POSITIVE,
@@ -460,8 +561,8 @@ def _evaluate_candidate(
                         "per_trade_cap_usd": per_trade_cap})
 
     # --- compute quantity from risk --------------------------------------
-    rounded_entry = round_price_to_tick(cand.entry_reference_price, rules.tick_size)
-    rounded_stop  = round_price_to_tick(cand.stop_price,            rules.tick_size)
+    rounded_entry = round_price_to_tick(guarded_entry_price, rules.tick_size)
+    rounded_stop  = round_price_to_tick(cand.stop_price,     rules.tick_size)
     if rounded_entry <= 0 or rounded_stop <= 0:
         return _reject(cand, REJECT_INVALID_STOP_DISTANCE,
                        {"rounded_entry": rounded_entry,
@@ -563,6 +664,12 @@ def _evaluate_candidate(
         confirmation_required=True,
         order_sent=False,
         order_endpoint_called=False,
+        realtime_price_guard_verified=(enforce_price_guard and guard_verified),
+        price_source=guard_source,
+        realtime_market_price=guard_real_price,
+        price_deviation_pct=guard_deviation_pct,
+        price_guard_threshold_pct=guard_threshold,
+        price_timestamp_utc=guard_timestamp,
     )
     return NewEntryEvaluation(
         symbol=cand.symbol,
@@ -591,6 +698,8 @@ def review_new_entry_candidates(
     endpoint_family:   str = _REQUIRED_ENDPOINT_FAMILY,
     account_mode:      str = _REQUIRED_ACCOUNT_MODE,
     available_balance_usd_source: str = "account.totalAvailableBalance",
+    price_guard_evaluations: dict[str, PriceGuardEvaluation] | None = None,
+    price_guard_threshold_pct: float = DEFAULT_PRICE_GUARD_THRESHOLD_PCT,
 ) -> NewEntryReviewResult:
     """
     Review a list of new-entry candidates against the reconciliation snapshot.
@@ -652,7 +761,13 @@ def review_new_entry_candidates(
                 {"fail_closed_reasons": list(fail_reasons)},
             ))
     else:
+        enforce_guard = price_guard_evaluations is not None
         for cand in candidates:
+            cand_guard = (
+                price_guard_evaluations.get(cand.symbol)
+                if price_guard_evaluations is not None
+                else None
+            )
             ev = _evaluate_candidate(
                 cand=cand,
                 recon=reconciliation,
@@ -667,6 +782,9 @@ def review_new_entry_candidates(
                 running_short_notional=running_short_notional,
                 max_long_allowed_remaining=max_long_allowed_remaining,
                 max_short_allowed_remaining=max_short_allowed_remaining,
+                price_guard=cand_guard,
+                price_guard_threshold_pct=price_guard_threshold_pct,
+                enforce_price_guard=enforce_guard,
             )
             evaluations.append(ev)
 
@@ -690,6 +808,25 @@ def review_new_entry_candidates(
     accepted = [e for e in evaluations if e.accepted]
     rejected = [e for e in evaluations if not e.accepted]
     payloads = [e.payload for e in accepted if e.payload is not None]
+
+    # TASK-014O: top-level realtime price guard signal — True iff the caller
+    # engaged the guard pipeline AND every accepted payload was verified
+    # against a live market price.  Sender G19 reads this field.
+    guard_engaged = price_guard_evaluations is not None
+    # Top-level signal must be True only when the guard pipeline was engaged,
+    # the review is not fail-closed, AT LEAST ONE payload was emitted, AND
+    # every emitted payload is verified.  Vacuous-True (zero accepted
+    # payloads) would mislead the sender's G19 gate, so we require non-empty.
+    review_guard_verified = bool(
+        guard_engaged
+        and not fail_closed
+        and payloads
+        and all(p.realtime_price_guard_verified for p in payloads)
+    )
+    guard_eval_dicts: list[dict[str, Any]] = []
+    if guard_engaged:
+        for sym, ev in price_guard_evaluations.items():
+            guard_eval_dicts.append(ev.to_dict())
 
     next_required_task = (
         "TASK-014L Demo New-entry Sender Gate (manual approval required)"
@@ -726,4 +863,7 @@ def review_new_entry_candidates(
         existing_symbols=sorted(reconciliation.positions and
                                 [p.symbol for p in reconciliation.positions] or []),
         next_required_task=next_required_task,
+        realtime_price_guard_verified=review_guard_verified,
+        price_guard_threshold_pct=float(price_guard_threshold_pct),
+        price_guard_evaluations=guard_eval_dicts,
     )

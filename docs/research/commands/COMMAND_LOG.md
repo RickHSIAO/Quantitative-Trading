@@ -21,6 +21,130 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014O — Add Demo New-entry Realtime Price Guard）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014O)
+Task: Resolve the TASK-014K stale-price root cause that produced the
+      TASK-014L SOLUSDT new-entry incident (preview entry_reference_price=160
+      vs actual fill ~66.47; ~58% deviation; stop_price=0).  Build a
+      fail-closed realtime market-price guard wired into the new-entry
+      review pipeline, with the following invariants:
+        A. src/demo_market_price_guard.py — NEW module exposing
+           RealtimeMarketPrice + PriceGuardEvaluation dataclasses,
+           evaluate_price_guard() pure evaluator, batch helper, and a
+           DemoMarketPriceGuard client that ONLY contacts the public,
+           unauthenticated /v5/market/tickers endpoint at
+           api-demo.bybit.com (no HMAC, no env vars, no secrets, no order
+           endpoints).  Default guard_threshold_pct = 5.0.
+        B. src/demo_new_entry_review.py — extend
+           review_new_entry_candidates() with optional
+           price_guard_evaluations parameter; when supplied, missing
+           realtime price => REJECT_MISSING_REALTIME_PRICE; deviation > 5%
+           => REJECT_STALE_ENTRY_REFERENCE_PRICE; verified candidates use
+           the realtime market price as the anchor for qty / notional /
+           stop_risk recomputation; payload preview carries
+           realtime_price_guard_verified=True, price_source,
+           realtime_market_price, price_deviation_pct,
+           price_guard_threshold_pct, price_timestamp_utc; top-level
+           review.realtime_price_guard_verified=True iff guard pipeline
+           engaged, not fail_closed, AT LEAST ONE payload emitted, and
+           EVERY emitted payload is verified.  Legacy callers (no
+           price_guard_evaluations) keep the old behavior but the top-
+           level signal stays False, so sender G19 will refuse legacy
+           reviews (correct fail-closed posture).
+        C. scripts/preview_demo_new_entry_review.py — wire the guard
+           into the preview CLI behind --with-realtime-price-guard
+           (default ON) / --allow-real-market-network (default OFF,
+           fixture mode unless explicitly opted in) /
+           --price-guard-threshold-pct.  Real-network fetch only when
+           mode=from_latest_reconciliation AND --allow-real-market-network
+           is set; otherwise fall back to fixture prices.  Report MD now
+           includes a "Realtime Price Guard (TASK-014O)" section.
+        D. tests/demo_trading/test_demo_market_price_guard.py — 51 tests
+           covering O1 missing realtime price; O2 stale > 5%; O3 SOLUSDT
+           incident replay (160 vs 66.47); O4 within threshold; O5
+           threshold edge; O6 invalid threshold; O7 invalid candidate
+           price; O8 fixture client; O9 real-mode URL whitelist (mocked
+           urlopen — asserts request stays on api-demo.bybit.com +
+           /v5/market/tickers, never reaches /v5/order/ or live host,
+           never sends X-BAPI-SIGN); O10 module source cleanliness
+           (no order endpoint tokens, no live host, no secrets); O11
+           forbidden imports absent (main, src.risk, BybitExecutor,
+           demo_close_only_sender, demo_new_entry_sender,
+           demo_emergency_close_sender, scripts.execute_*, pybit);
+           plus batch-helper and dataclass serialization tests.
+           tests/demo_trading/test_demo_new_entry_review.py — extended
+           with 26 new TASK-014O integration tests (O1-O13) verifying
+           the guard pipeline wired through review_new_entry_candidates()
+           rejects missing/stale prices, anchors verified payloads to
+           realtime market prices, propagates realtime_price_guard_verified
+           through both payload and top-level fields, leaves no orders
+           sent / no endpoint called / no secrets observed, keeps the
+           review module free of forbidden imports / URLs / HTTP
+           clients, and confirms TASK-014L's sender G19 gate refuses
+           reviews lacking realtime_price_guard_verified=True.
+
+Status before: READY — TASK-014N committed (220f615); local main clean;
+               SOLUSDT emergency close-only path tested; root cause of
+               TASK-014K stale-price preview still unresolved.
+Status after:  READY — TASK-014O complete on local main; new guard
+               module + extended review pipeline + CLI flags + 51+26 new
+               tests; 1065/1065 demo_trading tests pass (988 prior + 51
+               guard + 26 review integration); guard never sends orders,
+               never modifies positions, never loads secrets, never
+               contacts a live host or order endpoint; sender G19 still
+               enforces realtime_price_guard_verified=True before any
+               dry-run is allowed; main.py / src/risk.py / BybitExecutor
+               unchanged.
+
+Files changed:
+  - src/demo_market_price_guard.py                       (CREATED)
+  - src/demo_new_entry_review.py                         (MODIFIED — guard pipeline wired)
+  - scripts/preview_demo_new_entry_review.py             (MODIFIED — guard CLI flags + report section)
+  - tests/demo_trading/test_demo_market_price_guard.py   (CREATED — 51 tests)
+  - tests/demo_trading/test_demo_new_entry_review.py     (MODIFIED — 26 TASK-014O integration tests)
+  - docs/research/commands/NEXT_ACTION.md                (MODIFIED — TASK-014O block prepended)
+  - docs/research/commands/COMMAND_LOG.md                (MODIFIED — this entry prepended)
+
+Validation:
+  - python -m py_compile src/demo_market_price_guard.py             → PASS
+  - python -m py_compile src/demo_new_entry_review.py               → PASS
+  - python -m py_compile scripts/preview_demo_new_entry_review.py   → PASS
+  - python -m pytest tests/demo_trading -q                          → 1065 passed
+  - O3 SOLUSDT incident replay (160 vs 66.47) → rejected as
+    stale_entry_reference_price; deviation 140.71%; no payload emitted
+  - O6 verified-price anchor → SOLUSDT candidate at 160 with real
+    market 153.5 (~4.23% deviation) gives rounded_entry_price=153.5,
+    notional/stop_risk anchored to 153.5 NOT 160
+  - O11 sender G19 → review with realtime_price_guard_verified=False
+    blocks with "missing_realtime_price_guard"; O12 verified review
+    passes G19 in dry-run
+
+Outputs:
+  - None.  No orders sent.  No emergency closes triggered.  No
+    new-entry orders placed.  Dry-run / pure-computation review only.
+
+Notes:
+  - Public market endpoint policy: /v5/market/tickers is unauthenticated
+    and hosted on the same api-demo.bybit.com base that all other Demo
+    code paths use.  No HMAC headers are attached; no env vars are read
+    by the guard module.  Module source K18/K19 invariants on the
+    review module remain intact (no URL strings, no urllib, no HTTP
+    client in src/demo_new_entry_review.py — only the dataclass type +
+    threshold constant are imported from the new guard module).
+  - Backward compatibility: existing 47 K-series review tests continue
+    to pass unchanged because price_guard_evaluations defaults to None
+    (legacy mode); but legacy reviews emit payloads with
+    realtime_price_guard_verified=False, which sender G19 (TASK-014M)
+    will refuse — exactly the fail-closed posture intended.
+  - Commit: local commit only; no push (per feedback_git_push.md).
+  - Next step gate: Demo new-entry dry-run sender may now be re-run
+    against a review produced with the guard engaged
+    (--allow-real-market-network on VPS only, when permitted).
+
+---
+
 ### 2026-06-09（TASK-014N — Add Demo Emergency Missing-stop Close-only Sender / Single-position Gate）
 
 Agent: Claude Opus 4.7
