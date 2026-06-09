@@ -1,5 +1,74 @@
 # Next Action
 
+## TASK-014Q Status (2026-06-09)
+
+| item | status |
+|---|---|
+| src/demo_new_entry_protection.py — NEW pure-computation module; 6-phase protected entry lifecycle constants; endpoint-group separation (order_create / trading_stop / read_only) declared via constants only; ProtectedEntryPlan dataclass with safety invariants; build_protected_entry_plan() validates review-level (realtime_price_guard_verified) + payload-level (symbol/side/qty/entry/stop) + stop direction (long stop strictly below entry, short stop strictly above entry); always emits protected_entry_execute_allowed=False with reason stop_loss_attachment_not_implemented | DONE |
+| src/demo_new_entry_protection.py — no urlopen / requests / httpx / hmac / api-*.bybit.com / X-BAPI-SIGN / env reads / BybitExecutor; STOP_ATTACH_ENDPOINT constant declared but never invoked; G20_BLOCKED_GATE_NAME = "protected_entry_policy_missing" | CONFIRMED |
+| scripts/preview_demo_new_entry_protection.py — NEW CLI: --from-latest-review / --symbol / --write-report; reads outputs/demo_trading/new_entry_review/latest_new_entry_review.json; writes JSON + Markdown to outputs/demo_trading/new_entry_protection/{ts}_*.{json,md} + latest_*; report includes endpoint-group separation table + safety invariants section + blocked reasons | DONE |
+| src/demo_new_entry_sender.py — G20 gate "protected_entry_policy_missing" inserted AFTER dry-run early return / BEFORE pre-send refresh; actual --execute-new-entry short-circuits with execute_allowed=False, order_sent=False, blocked_gates=[G20_BLOCKED_GATE_NAME]; dry-run path reports protected_entry_required=True via new field; instance attribute _protected_entry_policy_required defaults True with explicit test opt-out for F23/F24/F25 legacy mechanics tests | DONE |
+| scripts/execute_demo_new_entry.py — propagates protected_entry_required to console output + Markdown report row | DONE |
+| tests/demo_trading/test_demo_new_entry_protection.py — 63 tests Q1-Q16 covering realtime guard required, missing/zero/negative/None stop_price → fail closed, long stop below entry, short stop above entry (AVAXUSDT), missing/unknown symbol, preview does not send order, no stop endpoint call + endpoint group separation, no secrets in output / no env reads / no live hostname, forbidden imports (~20 modules), sender G20 blocks actual execute with urlopen sentinel, sender dry-run reports protected_entry_required, defense-in-depth G19+G20, code-only AST/tokenize scan for forbidden words (no TP / leverage / transfer / withdraw / deposit / emergency_close), ProtectedEntryPlan to_dict round-trip, lifecycle phase check, preview-only status, CLI missing-review → exit 1, --write-report emits JSON + Markdown | DONE |
+| tests/demo_trading/test_demo_new_entry_sender.py — F23/F24/F25/TestExecuteUsesDemoEndpoint/TestOrderBodyComposition opt out of G20 via sender._protected_entry_policy_required = False to preserve existing sender mechanics coverage | DONE |
+| pytest tests/demo_trading | 1188/1188 PASS (1125 prior + 63 new Q-series) |
+| py_compile new + modified files | PASS |
+| no live hostname (api.bybit.com / api-testnet.bybit.com) in protection module or preview script; only documentation references to api-demo.bybit.com via underlying review | CONFIRMED |
+| AST/code-only scan: protection module imports no main / src.risk / BybitExecutor / pybit / demo_close_only_sender / demo_emergency_close_sender / scripts.execute_*; no urlopen / requests / httpx / hmac / os.environ in CODE (string literals + docstrings excluded via tokenize) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| no orders sent / no positions modified / no stop endpoint called / no order endpoint called / no secrets observed | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-09 TASK-014Q)
+
+1. Update VPS git pull and inspect the new protection module + extended CLI + sender G20 gate:
+       src/demo_new_entry_protection.py
+       scripts/preview_demo_new_entry_protection.py
+       src/demo_new_entry_sender.py
+       scripts/execute_demo_new_entry.py
+       tests/demo_trading/test_demo_new_entry_protection.py
+       tests/demo_trading/test_demo_new_entry_sender.py
+
+2. VPS protected-entry DRY-RUN flow (no orders sent / no stop endpoint called):
+       source .env.demo
+       # 1) read-only proof refresh
+       python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+       # 2) wallet audit
+       python3 scripts/preview_demo_wallet_audit.py --real-readonly --write-report
+       # 3) position reconciliation
+       python3 scripts/preview_demo_position_reconcile.py --real-readonly --write-report
+       # 4) new-entry review with market-backed builder + realtime guard
+       python3 scripts/preview_demo_new_entry_review.py \
+           --from-latest-reconciliation \
+           --allow-real-market-network \
+           --with-realtime-price-guard \
+           --write-report
+       # 5) protected entry preview (TASK-014Q — preview-only, never sends)
+       python3 scripts/preview_demo_new_entry_protection.py \
+           --from-latest-review --symbol <verified-symbol> --write-report
+       cat outputs/demo_trading/new_entry_protection/latest_new_entry_protection.md
+
+   Expected: ProtectedEntryPlan reports phase=pre_entry_review, status=preview_only,
+             stop direction validated, stop_loss_endpoint_allowed=False,
+             protected_entry_execute_allowed=False with reason
+             stop_loss_attachment_not_implemented; no_orders_sent=True,
+             order_endpoint_called=False, stop_endpoint_called=False.
+
+3. Confirm TASK-014L sender now blocks actual --execute-new-entry:
+       python3 scripts/execute_demo_new_entry.py \
+           --from-latest-review --symbol <verified-symbol> \
+           --confirm-token CONFIRM_DEMO_NEW_ENTRY_$(date -u +%Y%m%d) \
+           --execute-new-entry --write-report
+
+   Expected: blocked_gates contains "protected_entry_policy_missing";
+   execute_allowed=False; order_sent=False; protected_entry_required=True.
+   Dry-run (--dry-run instead of --execute-new-entry) still succeeds with
+   protected_entry_required=True surfaced as new field.
+
+4. Human decision gate: TASK-014R (Demo Stop-loss Attachment Sender /
+   Trading Stop Dry-run) is the next authorized step to enable
+   protected entry execution.
+
 ## TASK-014P Status (2026-06-09)
 
 | item | status |

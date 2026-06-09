@@ -836,6 +836,10 @@ class TestF23PreSendRefresh:
         sender._api_secret = "test_secret_f23"
         sender._key_present    = True
         sender._secret_present = True
+        # F23/F24/F25 pre-date TASK-014Q and verify the order-submission /
+        # refresh mechanics directly.  Opt out of the G20 protected-entry
+        # gate so those legacy paths remain reachable for unit testing.
+        sender._protected_entry_policy_required = False
         return sender
 
     def test_target_symbol_already_open_blocked(self):
@@ -910,6 +914,7 @@ class TestF24RefreshProofBalance:
         sender = DemoNewEntrySender(allow_real_network=True)
         sender._api_key    = "test_key_f24"
         sender._api_secret = "test_secret_f24"
+        sender._protected_entry_policy_required = False  # TASK-014Q opt-out
         return sender
 
     def test_refresh_proof_weak_blocked(self):
@@ -968,6 +973,7 @@ class TestF25MockedOrderExecution:
         sender._api_secret = "SECRET_F25_SHOULD_NOT_APPEAR"
         sender._key_present    = True
         sender._secret_present = True
+        sender._protected_entry_policy_required = False  # TASK-014Q opt-out
         return sender
 
     def _execute_with_mock_response(
@@ -1031,6 +1037,7 @@ class TestExecuteUsesDemoEndpoint:
         sender._api_secret = "sec_demo_only"
         sender._key_present    = True
         sender._secret_present = True
+        sender._protected_entry_policy_required = False  # TASK-014Q opt-out
         return sender
 
     def test_order_url_is_demo_endpoint(self, monkeypatch):
@@ -1106,6 +1113,7 @@ class TestOrderBodyComposition:
         sender._api_secret = "s_body"
         sender._key_present    = True
         sender._secret_present = True
+        sender._protected_entry_policy_required = False  # TASK-014Q opt-out
         return sender
 
     def _capture_body(self) -> dict:

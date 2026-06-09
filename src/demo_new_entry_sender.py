@@ -4,6 +4,13 @@ TASK-014L: Demo new-entry order gate — single-order, manual-confirmed executio
 
 Enforces layered safety gates before any new-entry order submission:
 
+  G20 (TASK-014Q): protected-entry policy gate.
+    actual --execute-new-entry is blocked with "protected_entry_policy_missing"
+    until a future task adds a Demo-only stop-loss attachment sender.  This
+    prevents the SOLUSDT-class incident where a successful entry order leaves
+    behind a naked position (stop_price=0).  Dry-run still permitted so the
+    rest of the gate behavior remains testable.
+
   Static gates (read from TASK-014K latest_new_entry_review.json):
     1.  review.fail_closed must be False
     2.  review.demo_runtime_verified must be True
@@ -79,6 +86,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from src.demo_new_entry_protection import G20_BLOCKED_GATE_NAME
 from src.demo_readonly_client import (
     DEMO_BASE_URL,
     PROOF_STRONG,
@@ -156,6 +164,10 @@ class NewEntryOrderResult:
     no_position_modified:        bool  = True   # False ONLY when order succeeds
     review_fail_closed:          bool  = False
     review_timestamp:            str   = ""
+    # TASK-014Q: this is always True until TASK-014R adds a stop-loss
+    # attachment sender.  Surfaces in dry-run reports so the operator
+    # sees that protected entry is required but not yet implemented.
+    protected_entry_required:    bool  = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -189,6 +201,7 @@ class NewEntryOrderResult:
             "no_position_modified":          self.no_position_modified,
             "review_fail_closed":            self.review_fail_closed,
             "review_timestamp":              self.review_timestamp,
+            "protected_entry_required":      self.protected_entry_required,
         }
 
 
@@ -250,6 +263,13 @@ class DemoNewEntrySender:
         self._api_secret     = ""
         self._key_present    = False
         self._secret_present = False
+        # TASK-014Q: protected-entry policy gate.  When True (default), actual
+        # --execute-new-entry is blocked with G20 protected_entry_policy_missing
+        # because the stop-loss attachment sender is not yet implemented.
+        # The TASK-014L CLI never disables this.  Legacy unit tests that exercise
+        # the order-submission mechanics (F23/F24/F25) opt out explicitly by
+        # setting this attribute to False on the sender instance.
+        self._protected_entry_policy_required: bool = True
 
         if allow_real_network:
             self._api_key        = os.environ.get("BYBIT_DEMO_API_KEY",    "")
@@ -640,6 +660,38 @@ class DemoNewEntrySender:
                 blocked_gates=[],
                 review_fail_closed=review_fail_closed,
                 review_timestamp=review_ts,
+            )
+
+        # G20 (TASK-014Q): protected-entry policy.  Until a future task
+        # implements a Demo-only stop-loss attachment sender, actual order
+        # submission MUST be blocked here to prevent naked entries (the
+        # SOLUSDT incident pattern: entry filled, stop_price=0).  Dry-run is
+        # not affected (it returned above).
+        if self._protected_entry_policy_required:
+            return NewEntryOrderResult(
+                timestamp_utc=ts_utc,
+                mode=mode,
+                demo_runtime_verified=demo_runtime_verified,
+                proof_strength=proof_strength,
+                endpoint_family=endpoint_family,
+                account_mode=account_mode,
+                position_details_source=pds,
+                available_balance_usd_source=avail_src,
+                selected_symbol=symbol,
+                selected_side=selected_side,
+                selected_qty=selected_qty,
+                order_side=order_side,
+                order_type=order_type,
+                preview_only_source=preview_only_src,
+                execute_requested=True,
+                execute_allowed=False,
+                order_sent=False,
+                order_response_status="",
+                order_id="",
+                blocked_gates=[G20_BLOCKED_GATE_NAME],
+                review_fail_closed=review_fail_closed,
+                review_timestamp=review_ts,
+                protected_entry_required=True,
             )
 
         # Execute path: pre-send refresh

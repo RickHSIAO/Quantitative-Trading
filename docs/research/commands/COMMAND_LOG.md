@@ -21,6 +21,175 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014Q — Add Demo Protected Entry / Stop-loss Attachment Policy）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014Q)
+Task: Close the SOLUSDT naked-position class of incident by introducing a
+      protected-entry lifecycle that the Demo new-entry sender refuses to
+      bypass.  The TASK-014L sender currently sends a Market entry order
+      and walks away — leaving stop_price=0 (naked position) that only
+      the TASK-014N emergency close can recover.  Until a future task
+      (TASK-014R) implements a Demo-only stop-loss attachment sender,
+      actual --execute-new-entry MUST fail closed.  Deliverables:
+        A. src/demo_new_entry_protection.py — NEW pure-computation
+           module defining the protected-entry lifecycle (phases 1-6),
+           endpoint-group separation (order_create vs trading_stop vs
+           read_only), ProtectedEntryPlan dataclass, and
+           build_protected_entry_plan() pre-entry validator.  Pre-entry
+           checks: review.fail_closed=False, realtime_price_guard_verified=
+           True, demo_runtime_verified, proof_strength=STRONG, endpoint_
+           family=bybit_demo, account_mode=demo, position_details_source=
+           real_readonly, payload preview_only / qty>0 / entry>0 /
+           stop_price>0 / reduce_only=False / order_sent=False /
+           order_endpoint_called=False / order_side matches side label;
+           AND stop direction: long stop < entry; short stop > entry.
+           protected_entry_execute_allowed ALWAYS False in this task
+           (reason: stop_loss_attachment_not_implemented); TASK-014R
+           will lift it.  Module is pure computation — no HTTP / no
+           urllib / no hmac / no env reads / no order endpoint
+           invocation / no forbidden imports (main / src.risk /
+           BybitExecutor / pybit / ccxt / demo_close_only_sender /
+           demo_new_entry_sender / demo_emergency_close_sender /
+           scripts.execute_*).  STOP_ATTACH_ENDPOINT = "/v5/position/
+           trading-stop" is announced for documentation but NEVER
+           invoked.
+        B. scripts/preview_demo_new_entry_protection.py — NEW CLI.
+           --from-latest-review / --symbol / --write-report.  Reads
+           outputs/demo_trading/new_entry_review/latest_new_entry_
+           review.json; emits outputs/demo_trading/new_entry_
+           protection/{ts}_new_entry_protection.json + .md +
+           latest_*.  Never sends an order, never calls the trading-
+           stop endpoint, never reads env / secrets, never touches
+           positions.
+        C. src/demo_new_entry_sender.py — extended with G20
+           "protected_entry_policy_missing" gate on the actual
+           execute-new-entry path.  Default
+           sender._protected_entry_policy_required=True; when the
+           caller sets execute_new_entry=True, sender returns a
+           blocked result with G20 in blocked_gates and never reaches
+           the pre-send refresh / urlopen.  Dry-run path is unchanged:
+           still reports protected_entry_required=True via the new
+           NewEntryOrderResult field so operators see the requirement
+           but the dry-run preview is not blocked.  Legacy unit tests
+           that exercise the actual order-submission mechanics
+           (F23/F24/F25/TestExecuteUsesDemoEndpoint/
+           TestOrderBodyComposition) opt out via
+           sender._protected_entry_policy_required=False — explicitly
+           documented as TEST-ONLY; the CLI never disables the gate.
+        D. tests/demo_trading/test_demo_new_entry_protection.py —
+           63 new tests Q1-Q16 covering: realtime guard required;
+           missing/zero/negative/missing-field stop_price → fail
+           closed; long-stop-above-entry / short-stop-below-entry
+           blocked; missing/unknown symbol → fail closed; preview
+           never sends order; preview never calls stop endpoint;
+           endpoint-group separation; no secrets in module or
+           plan dict; no env reads (code-only AST scan); no live
+           hostname; AST imports do not include forbidden modules
+           (main / src.risk / executor / close-only / new-entry
+           sender / emergency-close / postfill verify / scripts.
+           execute_* / pybit / ccxt / urllib / requests / httpx /
+           hmac / hashlib); sender actual execute blocked with G20
+           — and never reaches urlopen (asserted by monkeypatching
+           urllib.request.urlopen to AssertionError sentinel);
+           sender dry-run reports protected_entry_required=True;
+           legacy review still blocked at G19; G20 still blocks
+           even when G19 passes; no TP / leverage / transfer /
+           withdraw / deposit in code; no emergency_close imports
+           in module or CLI; ProtectedEntryPlan to_dict round-trip;
+           preview-only status + phase_1_pre_entry_review;
+           CLI smoke (missing review → exit 1; --write-report
+           emits both JSON and Markdown).
+        E. scripts/execute_demo_new_entry.py — minor: surface
+           protected_entry_required field in dry-run / execute report
+           (print + Markdown row).
+
+Status before: READY — TASK-014P committed (f7de8da); VPS real-market
+               review PASS (SOLUSDT realtime=66.21, stop=62.9, guard
+               verified, sender dry-run passes G1-G19); however
+               actual --execute-new-entry would still submit a naked
+               entry with no stop-loss attachment.
+Status after:  READY — TASK-014Q complete on local main; new protection
+               module + preview CLI + sender G20 gate + 63 Q-series
+               tests; 1188/1188 demo_trading tests pass (1125 prior +
+               63 Q-series); protection module is pure computation
+               (no HTTP / no env / no secrets / no order endpoint /
+               no live host); ProtectedEntryPlan emits
+               protected_entry_execute_allowed=False with reason
+               stop_loss_attachment_not_implemented; sender actual
+               --execute-new-entry blocked with G20
+               protected_entry_policy_missing and never reaches
+               urlopen; sender dry-run still surfaces
+               protected_entry_required=True so the operator sees
+               the requirement; main.py / src/risk.py / BybitExecutor
+               unchanged; SOLUSDT incident pattern (entry filled,
+               stop_price=0) cannot recur via this code path.
+
+Files changed:
+  - src/demo_new_entry_protection.py                       (CREATED — pure-computation policy + plan builder)
+  - scripts/preview_demo_new_entry_protection.py           (CREATED — preview CLI + report writer)
+  - src/demo_new_entry_sender.py                           (MODIFIED — G20 gate + protected_entry_required field)
+  - scripts/execute_demo_new_entry.py                      (MODIFIED — surfaces protected_entry_required in report)
+  - tests/demo_trading/test_demo_new_entry_protection.py   (CREATED — 63 tests)
+  - tests/demo_trading/test_demo_new_entry_sender.py       (MODIFIED — F23/F24/F25/Demo/Body opt-out flag for legacy mechanics tests)
+  - docs/research/commands/NEXT_ACTION.md                  (MODIFIED — TASK-014Q block prepended)
+  - docs/research/commands/COMMAND_LOG.md                  (MODIFIED — this entry prepended)
+  - .gitignore                                             (MODIFIED — added outputs/demo_trading/new_entry_protection/)
+
+Validation:
+  - python -m py_compile src/demo_new_entry_protection.py            → PASS
+  - python -m py_compile scripts/preview_demo_new_entry_protection.py → PASS
+  - python -m py_compile src/demo_new_entry_sender.py                → PASS
+  - python -m py_compile scripts/execute_demo_new_entry.py           → PASS
+  - python -m pytest tests/demo_trading -q                           → 1188 passed
+  - Q1 realtime guard required: review without realtime_price_guard_
+    verified=True → protected_entry_status=FAIL_CLOSED with reason
+    review_missing_realtime_price_guard
+  - Q2/Q3/Q4 stop validation: missing stop → payload_missing_stop_price;
+    long stop≥entry → long_stop_must_be_below_entry; short stop≤entry
+    → short_stop_must_be_above_entry
+  - Q11 sender G20: default sender refuses actual --execute-new-entry
+    with G20 protected_entry_policy_missing; urlopen sentinel never
+    fires (G20 short-circuits before refresh)
+  - Q12 sender dry-run: protected_entry_required=True surfaces in result
+    dataclass AND to_dict(); dry-run execute_allowed remains True so
+    the rest of the gate behavior is testable
+  - Q14 defense-in-depth: even when caller bypasses G20 via
+    _protected_entry_policy_required=False, a legacy review without
+    realtime guard still blocks at G19
+
+Outputs:
+  - None.  No orders sent.  No emergency closes triggered.  No
+    new-entry orders placed.  No trading-stop endpoint called.
+    Pure-computation preview only.
+
+Notes:
+  - Endpoint-group separation: the module declares ENDPOINT_GROUPS
+    with order_create=(/v5/order/create,), trading_stop=(/v5/
+    position/trading-stop,), and read_only=(wallet-balance /
+    position/list / market/tickers / account/info).  The TASK-014L
+    sender invokes order_create only; the protection module invokes
+    NOTHING; the trading_stop endpoint is reserved for TASK-014R.
+  - Lifecycle phases: phase_1_pre_entry_review (this module),
+    phase_2_entry_order (TASK-014L), phase_3_post_fill_verify
+    (TASK-014M / verify_demo_new_entry_postfill.py), phase_4_stop_
+    attachment (TASK-014R, not yet implemented), phase_5_final_
+    verify (TASK-014R), phase_6_failure_recovery (TASK-014N
+    emergency close).
+  - Test escape hatch: F23/F24/F25/Demo/Body sender tests opt out of
+    G20 by setting sender._protected_entry_policy_required=False on
+    the constructed sender.  This is documented inline as TEST-ONLY
+    and the CLI never disables the gate.
+  - Commit: local commit only; no push (per feedback_git_push.md).
+  - Next step gate: TASK-014R (Demo Stop-loss Attachment Sender /
+    Trading Stop Dry-run) — implement /v5/position/trading-stop
+    sender against api-demo.bybit.com, with its own dry-run and
+    mock-safe tests, and lift the G20 block after stop attach
+    is verified.  Until then, actual new-entry execute remains
+    blocked.
+
+---
+
 ### 2026-06-09（TASK-014P — Add Market-backed Demo New-entry Candidates）
 
 Agent: Claude Opus 4.7

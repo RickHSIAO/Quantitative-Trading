@@ -143,6 +143,7 @@ def _write_execution_report(
         f"| available_balance_usd_source | {result.available_balance_usd_source} |",
         f"| review_fail_closed | {result.review_fail_closed} |",
         f"| review_timestamp | {result.review_timestamp} |",
+        f"| protected_entry_required | {result.protected_entry_required} |",
         "",
     ]
     if result.blocked_gates:
@@ -208,6 +209,7 @@ def _print_result(result: NewEntryOrderResult) -> None:
     print(f"  no_position_modified     : {result.no_position_modified}")
     print(f"  review_fail_closed       : {result.review_fail_closed}")
     print(f"  review_timestamp         : {result.review_timestamp}")
+    print(f"  protected_entry_required : {result.protected_entry_required}")
 
 
 # ---------------------------------------------------------------------------
