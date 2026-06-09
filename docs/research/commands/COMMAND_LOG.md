@@ -21,6 +21,45 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014I — Demo Wallet Availability Field Audit）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014I)
+Task: Build read-only Demo wallet / margin availability audit.  Investigate
+      whether available_balance_usd=0.00 is a genuine account state or a
+      field-mapping error by capturing all Bybit wallet balance fields, evaluating
+      5 candidate available-balance fields, and flagging mapping_suspect when any
+      liquidity-oriented candidate differs from the current mapping.
+Status before: TASK-014H complete (614 tests PASS); 2 close-only orders executed
+               on VPS (MERLUSDT + BOMEUSDT); 5 short positions remain; equity=11613.47;
+               available_balance=0.00 (only blocking violation remaining).
+Status after:  TASK-014I complete (659 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_wallet_audit.py                             -- NEW (extract_wallet_fields, audit_wallet, WalletAuditResult)
+  scripts/preview_demo_wallet_audit.py                 -- NEW (fixture + --real-readonly + --write-report)
+  tests/demo_trading/test_demo_wallet_audit.py         -- NEW (45 tests, I1-I10 + integration)
+  .gitignore                                           -- UPDATED (outputs/demo_trading/wallet_audit/)
+  docs/research/commands/COMMAND_LOG.md               (this entry)
+  docs/research/commands/NEXT_ACTION.md               (TASK-014I status)
+
+Validation:
+  python -m py_compile src/demo_wallet_audit.py                  PASS
+  python -m py_compile scripts/preview_demo_wallet_audit.py      PASS
+  pytest tests/demo_trading -q                                    659 passed
+  wallet fields: all 5 candidates (totalAvailableBalance, account.availableToWithdraw,
+    coin.USDT.availableToWithdraw, coin.USDT.free, coin.USDT.walletBalance)     CONFIRMED
+  coin.USDT.walletBalance excluded from conflict detection (includes locked margin)  CONFIRMED
+  fail_closed on proof != STRONG or endpoint != bybit_demo                      CONFIRMED
+  mapping_suspect=True when totalAvailableBalance > current_mapping              CONFIRMED
+  all candidates zero (fixture) => mapping_suspect=False, genuine state noted    CONFIRMED
+  no order endpoint tokens in new source                                          CONFIRMED
+  no secrets in JSON / MD reports                                                 CONFIRMED
+  main.py / src/risk.py / BybitExecutor not imported or modified                 CONFIRMED
+  new_entry_allowed=False always (this module never enables entries)              CONFIRMED
+
+---
+
 ### 2026-06-09（TASK-014H — Persist Real Demo Position Details）
 
 Agent: Claude Opus 4.7

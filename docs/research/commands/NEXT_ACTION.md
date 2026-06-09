@@ -1,5 +1,60 @@
 # Next Action
 
+## TASK-014I Status (2026-06-09)
+
+| item | status |
+|---|---|
+| src/demo_wallet_audit.py — extract_wallet_fields, audit_wallet, WalletAuditResult | DONE |
+| scripts/preview_demo_wallet_audit.py — fixture + --real-readonly + --write-report | DONE |
+| tests/demo_trading/test_demo_wallet_audit.py — 45 tests (I1-I10 + integration) | DONE |
+| pytest tests/demo_trading | 659/659 PASS |
+| py_compile all new files | PASS |
+| .gitignore — outputs/demo_trading/wallet_audit/ | DONE |
+| 5 candidate fields captured (totalAvailableBalance, account.availToWithdraw, coin.USDT.availToWithdraw, coin.USDT.free, coin.USDT.walletBalance) | CONFIRMED |
+| mapping_suspect=True when liquidity candidate > current by >10 USD | CONFIRMED |
+| fail_closed on proof != STRONG or endpoint != bybit_demo | CONFIRMED |
+| no order endpoint / no secrets / no new_entry_allowed | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| local commit | PENDING (Rick must git push) |
+
+## Fixture Audit Findings (deterministic — pre-VPS)
+
+| field | value |
+|---|---|
+| account.totalAvailableBalance | 0.00 |
+| account.availableToWithdraw | 0.00 |
+| coin.USDT.availableToWithdraw | 0.00 (current mapping) |
+| coin.USDT.free | 0.00 |
+| coin.USDT.walletBalance | 11500.00 (includes locked margin — not used for conflict) |
+| available_balance_mapping_suspect (fixture) | False |
+| chosen_available_balance_field | account.totalAvailableBalance |
+| chosen_available_balance_value | 0.00 |
+| recommended_next_action | all candidates agree: 0.00 — genuine state; close positions |
+
+## Next Rick Action (set by 2026-06-09 TASK-014I)
+
+1. git push origin main (delivers TASK-014D through TASK-014I)
+2. On VPS after git pull — run wallet audit with real credentials:
+     source .env.demo
+     python3 scripts/preview_demo_wallet_audit.py --real-readonly --write-report
+3. Review outputs/demo_trading/wallet_audit/latest_wallet_audit.md
+     - If available_balance_mapping_suspect=False:
+       → Confirmed genuine zero-margin state; must close more positions
+     - If available_balance_mapping_suspect=True:
+       → chosen_available_balance_field shows a better mapping candidate;
+         Rick decides whether to update _wallet_real() in demo_readonly_client.py
+4. If mapping is confirmed correct (0.00 genuine) and more closes are needed:
+     python3 scripts/preview_demo_close_only_cleanup.py \\
+         --from-latest-reconciliation \\
+         --confirm-token CONFIRM_DEMO_CLOSE_ONLY_$(date +%Y%m%d) --write-report
+     → Then dry-run + execute via execute_demo_close_only_cleanup.py
+
+## Status
+READY (Rick action: git push + VPS wallet audit + review mapping suspect flag)
+
+## Owner
+Rick
+
 ## TASK-014H Status (2026-06-09)
 
 | item | status |

@@ -59,3 +59,4 @@ outputs/demo_trading/readonly_smoke/
 outputs/demo_trading/reconciliation/
 outputs/demo_trading/close_only_cleanup/
 outputs/demo_trading/close_only_execution/
+outputs/demo_trading/wallet_audit/
