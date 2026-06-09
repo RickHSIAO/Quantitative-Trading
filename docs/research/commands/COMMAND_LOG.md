@@ -21,6 +21,162 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014U — Add Demo Trading-stop No-op Probe Design / Tiny Isolated Position Plan）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014U)
+Task: Design (NOT execute) a safe no-op real probe path for the Bybit
+      V5 /v5/position/trading-stop endpoint given that 5 existing demo
+      short positions (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT /
+      EDUUSDT) must not be touched.  Produce a three-plan comparison
+      (tiny isolated position / read-only endpoint research /
+      expected-error probe), recommend tiny_isolated_position_plan,
+      keep real execution blocked behind --allow-real-noop-probe ->
+      REAL_NOOP_PROBE_NOT_IMPLEMENTED, and surface 30+ gate constants
+      (33 defined; 22 always-on in plan mode, 23 with the real-guard
+      flag, plus conditional upstream / symbol-collision gates).
+Status before: TASK-014T DONE; trading-stop contract preview + mock
+      permission OK; --allow-real-stop-probe returns
+      REAL_PROBE_NOT_IMPLEMENTED; G20 still blocks --execute-new-entry;
+      no documented no-op probe path exists.
+Status after: TASK-014U DONE; G20 still in place; real no-op probe
+      stays deferred to TASK-014V+.
+
+Files changed:
+  - NEW src/demo_trading_stop_noop_probe_plan.py
+        DemoTradingStopNoopProbePlanner + NoopProbePlanResult
+        dataclass; design_plan() reads readonly_smoke + reconciliation
+        + protection + contract JSON (all four required), validates
+        the selected symbol is NOT one of the 5 existing demo short
+        positions, builds three plan tables
+        (tiny_isolated_position_plan, read_only_endpoint_research,
+        expected_error_probe), recommends tiny_isolated_position_plan,
+        and routes to:
+          * plan                 -> NOOP_PROBE_PLAN_READY
+                                    (current_task_real_execution_allowed=False;
+                                     22 in-task open blockers surfaced)
+          * --allow-real-noop-probe -> REAL_NOOP_PROBE_NOT_IMPLEMENTED
+                                       (adds real_noop_probe_not_implemented
+                                        gate; no socket opened)
+        Safety invariants
+        (stop_endpoint_called=False, order_endpoint_called=False,
+         no_position_modified=True, no_live_endpoint=True,
+         no_orders_sent=True, no_batch_order=True,
+         no_close_only_path=True, emergency_close_invoked=False,
+         secret_value_observed=False, g20_policy_still_in_place=True)
+        always honored.  /v5/position/trading-stop and /v5/order/create
+        are recorded as STRING references and NEVER invoked.  No
+        urllib / requests / httpx / socket / hmac / os.environ / main /
+        src.risk / BybitExecutor / pybit / src.demo_new_entry_sender /
+        src.demo_close_only_sender / src.demo_emergency_close_sender /
+        src.demo_protected_new_entry_orchestrator /
+        src.demo_trading_stop_contract_probe / scripts.execute_*.
+  - NEW scripts/preview_demo_trading_stop_noop_probe_plan.py
+        CLI: --from-latest-readonly --from-latest-reconciliation
+        --from-latest-protection --from-latest-contract --symbol
+        --allow-real-noop-probe --write-report.  Reads the four
+        upstream latest JSON files; writes JSON + Markdown to
+        outputs/demo_trading/trading_stop_noop_probe_plan/.  No
+        confirm-token required for plan mode (this is a design step);
+        the real-guard flag is hard-gated to
+        REAL_NOOP_PROBE_NOT_IMPLEMENTED regardless of any token.
+  - NEW tests/demo_trading/test_demo_trading_stop_noop_probe_plan.py
+        58 tests U1 - U32 + extras, covering:
+        plan-ready / upstream-missing / symbol-missing /
+        symbol-collision (parametrized over 5 existing demo
+        positions) / realtime-guard-missing / review-fail-closed /
+        prior-probe-flipped / 15 tiny-isolated gates /
+        3 expected-error gates / 3 readonly-research gates /
+        defense-in-depth (existing_positions_must_not_be_touched,
+        g20_sender_policy_still_in_place) / module defines >= 30
+        GATE_ constants / happy-path plan surfaces >= 22 in-task
+        gates / real-guard adds real_noop_probe_not_implemented /
+        three-plan presence + recommended_path == tiny / only tiny
+        plan has a TASK-014V next-task pointer / expected-error path
+        flagged touches_existing_positions=True / report artifacts
+        in both plan and real-guard modes / no secrets in report /
+        no forbidden imports / no urllib/urlopen/socket/http.client
+        tokens in module or CLI source / no close-only /
+        emergency-close / new-entry-sender / contract-probe back
+        coupling / module safe under socket.socket=None at import /
+        TASK-014L G20 NOT lifted (G20 constant unchanged, gate name
+        absent from source, g20_policy_still_in_place=True) / all
+        safety invariants True/False as documented / path refs
+        string-only / dataclass to_dict round-trip with deep-copy
+        immutability / 5 CLI exit-code paths (missing upstream /
+        missing symbol / collision symbol / default-plan / real-guard)
+        / TRADING_STOP_PATH_REF matches TASK-014T constant by string
+        equality / fresh plans per design call.
+  - UPDATED .gitignore: added
+        outputs/demo_trading/trading_stop_noop_probe_plan/ to the
+        ignore list (TASK-014U report artifacts not committed).
+  - UPDATED docs/research/commands/COMMAND_LOG.md: prepended this
+        entry.
+  - UPDATED docs/research/commands/NEXT_ACTION.md: prepended TASK-014U
+        status block + Next Rick Action.
+
+Validation:
+  - py_compile src/demo_trading_stop_noop_probe_plan.py PASS
+  - py_compile scripts/preview_demo_trading_stop_noop_probe_plan.py PASS
+  - py_compile tests/demo_trading/test_demo_trading_stop_noop_probe_plan.py PASS
+  - pytest tests/demo_trading -q: 1443 / 1443 PASS
+    (1385 prior + 58 new U-series).
+  - SOLUSDT plan mode: status=NOOP_PROBE_PLAN_READY;
+    recommended_path=tiny_isolated_position_plan;
+    real_probe_allowed=False;
+    real_noop_probe_implemented=False;
+    current_task_real_execution_allowed=False;
+    blocked_gates contains all 15 tiny + 3 expected-err + 3 readonly
+    + 2 defense-in-depth gates; stop_endpoint_called=False;
+    order_endpoint_called=False; no_position_modified=True;
+    no_live_endpoint=True.
+  - SOLUSDT --allow-real-noop-probe mode:
+    status=REAL_NOOP_PROBE_NOT_IMPLEMENTED;
+    blocked_gates contains real_noop_probe_not_implemented;
+    real_probe_allowed=True; real_noop_probe_implemented=False;
+    current_task_real_execution_allowed=False;
+    stop_endpoint_called=False; no_position_modified=True.
+  - 5 existing demo positions (ENAUSDT / TIAUSDT / AIXBTUSDT /
+    POLYXUSDT / EDUUSDT) parametrized as --symbol arg:
+    status=FAIL_CLOSED;
+    blocked_gates contains selected_symbol_collides_with_existing_position
+    AND tiny_symbol_overlaps_existing_position; rc=1.
+  - AST scan: no import of main / src.risk / BybitExecutor / pybit /
+    src.bybit_executor / src.demo_new_entry_sender /
+    src.demo_close_only_sender / src.demo_emergency_close_sender /
+    src.demo_protected_new_entry_orchestrator /
+    src.demo_trading_stop_contract_probe / scripts.execute_*;
+    no import of urllib / requests / httpx / socket / http.client.
+  - urlopen sentinel: subprocess imports module with
+    socket.socket=None; OK STATUS_PLAN_READY printed.
+
+Outputs (gitignored):
+  outputs/demo_trading/trading_stop_noop_probe_plan/
+    {ts}_noop_probe_plan.json
+    {ts}_noop_probe_plan.md
+    latest_noop_probe_plan.json
+    latest_noop_probe_plan.md
+
+Notes:
+  - TASK-014U is a DESIGN step only.  No real probe is executed in
+    this task and no flag can override that.
+  - The 5 existing demo short positions are NEVER touched.  Symbol
+    selection is checked against EXISTING_POSITION_SYMBOLS and a
+    collision is FAIL_CLOSED.
+  - The recommended next path is the tiny isolated position
+    lifecycle mock (TASK-014V).  That task will exercise the entry +
+    stop-attach + emergency-close lifecycle against a single, tiny,
+    isolated demo position on a symbol disjoint from the existing
+    five.  Until that mock lifecycle is proven safe end-to-end, the
+    real no-op probe stays unimplemented.
+  - TASK-014L sender G20 (protected_entry_policy_missing) is
+    deliberately NOT lifted by this task.  --execute-new-entry
+    continues to FAIL_CLOSED on the real entry sender.
+  - Local commit only (per memory rule: do not push to GitHub
+    without explicit instruction).
+
+---
+
 ### 2026-06-10（TASK-014T — Add Demo Trading-stop Endpoint Contract Probe / Permission Gate）
 
 Agent: Claude Opus 4.7

@@ -1,5 +1,121 @@
 # Next Action
 
+## TASK-014U Status (2026-06-10)
+
+| item | status |
+|---|---|
+| src/demo_trading_stop_noop_probe_plan.py — NEW pure-computation / mock-safe design module; DemoTradingStopNoopProbePlanner + NoopProbePlanResult dataclass; reads readonly_smoke + reconciliation + protection + contract JSON (all four required); validates --symbol is NOT one of the 5 existing demo short positions (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT); builds three plan tables (tiny_isolated_position_plan, read_only_endpoint_research, expected_error_probe); recommends tiny_isolated_position_plan; routes to plan -> NOOP_PROBE_PLAN_READY OR --allow-real-noop-probe -> REAL_NOOP_PROBE_NOT_IMPLEMENTED (no socket); current_task_real_execution_allowed=False always | DONE |
+| src/demo_trading_stop_noop_probe_plan.py — NO urlopen / urllib / requests / httpx / socket / http.client / hmac / X-BAPI-SIGN / os.environ / getenv / dotenv; NO import of main / src.risk / BybitExecutor / pybit / src.bybit_executor / src.demo_new_entry_sender / src.demo_close_only_sender / src.demo_emergency_close_sender / src.demo_protected_new_entry_orchestrator / src.demo_trading_stop_contract_probe / scripts.execute_*; TRADING_STOP_PATH_REF and ORDER_CREATE_PATH_REF stored as strings only and never invoked | CONFIRMED |
+| scripts/preview_demo_trading_stop_noop_probe_plan.py — NEW CLI: --from-latest-readonly / --from-latest-reconciliation / --from-latest-protection / --from-latest-contract / --symbol / --allow-real-noop-probe / --write-report; reads outputs/demo_trading/{readonly_smoke,reconciliation,new_entry_protection,trading_stop_contract}/latest_*.json; writes JSON + Markdown to outputs/demo_trading/trading_stop_noop_probe_plan/; NO real trading-stop send and NO --execute-noop-probe flag (real-guard returns REAL_NOOP_PROBE_NOT_IMPLEMENTED) | DONE |
+| tests/demo_trading/test_demo_trading_stop_noop_probe_plan.py — 58 tests U1-U32 + extras: plan-ready / 4x upstream-missing / symbol-missing / symbol-collision (parametrized over 5 existing demo positions) / realtime-guard-missing / review-fail-closed / prior-probe-flipped / 15 tiny-isolated gates / 3 expected-error gates / 3 readonly-research gates / 2 defense-in-depth gates / module defines >= 30 GATE_ constants / happy-path plan surfaces >= 22 in-task gates / real-guard adds real_noop_probe_not_implemented / three-plan presence + recommended_path == tiny / only tiny plan has a TASK-014V next-task pointer / expected-error path flagged touches_existing_positions=True / report artifacts (plan + real-guard modes) / no secrets / no forbidden imports / no urllib / urlopen / socket / http.client in source / no close-only / emergency-close / new-entry / contract-probe back coupling / module safe under socket.socket=None at import / TASK-014L G20 NOT lifted / dataclass to_dict round-trip with deep-copy immutability / 5 CLI exit-code paths / TRADING_STOP_PATH_REF matches TASK-014T constant / fresh plans per call | DONE |
+| pytest tests/demo_trading | 1443/1443 PASS (1385 prior + 58 new U-series) |
+| py_compile new files | PASS |
+| SOLUSDT plan mode: status=NOOP_PROBE_PLAN_READY, mode=plan, recommended_path=tiny_isolated_position_plan, real_probe_allowed=False, real_noop_probe_implemented=False, current_task_real_execution_allowed=False, blocked_gates contains all 15 tiny + 3 expected-err + 3 readonly + 2 defense-in-depth gates, stop_endpoint_called=False, order_endpoint_called=False, no_position_modified=True, no_live_endpoint=True, no_orders_sent=True, secret_value_observed=False, g20_policy_still_in_place=True | CONFIRMED |
+| SOLUSDT --allow-real-noop-probe mode: status=REAL_NOOP_PROBE_NOT_IMPLEMENTED, mode=real_noop_probe, real_probe_allowed=True, real_noop_probe_implemented=False, current_task_real_execution_allowed=False, blocked_gates contains real_noop_probe_not_implemented, stop_endpoint_called=False, order_endpoint_called=False, no_position_modified=True, no_live_endpoint=True | CONFIRMED |
+| 5 existing demo short positions (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT) as --symbol arg: status=FAIL_CLOSED, blocked_gates contains selected_symbol_collides_with_existing_position AND tiny_symbol_overlaps_existing_position, rc=1, no_position_modified=True | CONFIRMED |
+| no live hostname in module or CLI (api.bybit.com / api-testnet.bybit.com); base_url_ref=https://api-demo.bybit.com recorded informationally only | CONFIRMED |
+| AST scan: no import of main / src.risk / BybitExecutor / pybit / src.bybit_executor / src.demo_new_entry_sender / src.demo_close_only_sender / src.demo_emergency_close_sender / src.demo_protected_new_entry_orchestrator / src.demo_trading_stop_contract_probe / scripts.execute_*; no import of urllib / requests / httpx / socket / http.client | CONFIRMED |
+| urlopen sentinel: import module with socket.socket=None in subprocess - PASS | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| 5 existing demo short positions | NOT TOUCHED (no real probe; collision check FAIL_CLOSED) |
+| no orders sent / no positions modified / no stop endpoint called / no order endpoint called / no secrets observed / no emergency close invoked | CONFIRMED |
+| TASK-014L sender G20 (protected_entry_policy_missing) | STILL IN PLACE (deliberately not lifted by TASK-014U; constant unchanged; gate name not present in module/CLI source) |
+| TASK-014U real no-op probe | DELIBERATELY NOT IMPLEMENTED (returns REAL_NOOP_PROBE_NOT_IMPLEMENTED) |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014U)
+
+1. Update VPS git pull and inspect the new design module + CLI + tests:
+       src/demo_trading_stop_noop_probe_plan.py
+       scripts/preview_demo_trading_stop_noop_probe_plan.py
+       tests/demo_trading/test_demo_trading_stop_noop_probe_plan.py
+
+2. VPS plan-mode design preview (no network at all from this design
+   module; the upstream read-only / reconciliation / market-price
+   steps still hit api-demo.bybit.com via the existing clients):
+       source .env.demo
+       # 1) read-only proof refresh
+       python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+       # 2) wallet audit
+       python3 scripts/preview_demo_wallet_audit.py --real-readonly --write-report
+       # 3) position reconciliation
+       python3 scripts/preview_demo_position_reconcile.py --from-latest-readonly-smoke --write-report
+       # 4) market-backed new-entry review
+       python3 scripts/preview_demo_new_entry_review.py \
+           --from-latest-reconciliation --allow-real-market-network --write-report
+       # 5) protected-entry preview (TASK-014Q)
+       python3 scripts/preview_demo_new_entry_protection.py \
+           --from-latest-review --symbol SOLUSDT --write-report
+       # 6) trading-stop contract preview (TASK-014T)
+       python3 scripts/preview_demo_trading_stop_contract.py \
+           --from-latest-protection --symbol SOLUSDT --write-report
+       # 7) no-op probe DESIGN plan (TASK-014U — no network)
+       python3 scripts/preview_demo_trading_stop_noop_probe_plan.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/trading_stop_noop_probe_plan/latest_noop_probe_plan.md
+
+   Expected plan:
+     status=NOOP_PROBE_PLAN_READY;
+     mode=plan;
+     recommended_path=tiny_isolated_position_plan;
+     real_probe_allowed=False; real_noop_probe_implemented=False;
+     current_task_real_execution_allowed=False;
+     stop_endpoint_called=False; order_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True;
+     blocked_gates contains the 15 tiny-isolated + 3 expected-error +
+     3 read-only research + 2 defense-in-depth gates (22 in-task
+     open blockers); g20_policy_still_in_place=True.
+
+3. Optional real-no-op-probe guard sanity check (returns
+   REAL_NOOP_PROBE_NOT_IMPLEMENTED; still no socket opened):
+       python3 scripts/preview_demo_trading_stop_noop_probe_plan.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --symbol SOLUSDT --allow-real-noop-probe --write-report
+
+   Expected:
+     status=REAL_NOOP_PROBE_NOT_IMPLEMENTED;
+     blocked_gates contains "real_noop_probe_not_implemented";
+     real_probe_allowed=True; real_noop_probe_implemented=False;
+     current_task_real_execution_allowed=False;
+     stop_endpoint_called=False; no_position_modified=True.
+
+4. Symbol collision sanity check (any of the 5 existing demo shorts
+   must FAIL_CLOSED):
+       python3 scripts/preview_demo_trading_stop_noop_probe_plan.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --symbol ENAUSDT --write-report
+
+   Expected:
+     status=FAIL_CLOSED;
+     blocked_gates contains
+       "selected_symbol_collides_with_existing_position"
+     AND "tiny_symbol_overlaps_existing_position";
+     exit code 1.
+
+5. Confirm TASK-014L sender still blocks --execute-new-entry
+   (TASK-014U does NOT lift G20):
+       python3 scripts/execute_demo_new_entry.py \
+           --from-latest-review --symbol SOLUSDT \
+           --confirm-token CONFIRM_DEMO_NEW_ENTRY_$(date -u +%Y%m%d) \
+           --execute-new-entry --write-report
+   Expected: blocked_gates contains "protected_entry_policy_missing";
+   execute_allowed=False; order_sent=False.
+
+6. Human decision gate: TASK-014V (Tiny Isolated Demo Position
+   Lifecycle Mock) is the next authorized step.  It must produce a
+   self-contained mock chain that opens one tiny position on a symbol
+   disjoint from the 5 existing demo shorts, attaches the stop,
+   verifies post-fill state, and exercises the emergency-close path
+   — all without real network calls.  Only after that mock lifecycle
+   PASSes end-to-end can we plan a real no-op probe (which would
+   then be the subject of a separate task).  Until then the real
+   no-op probe stays REAL_NOOP_PROBE_NOT_IMPLEMENTED and TASK-014L
+   sender G20 stays in place.
+
 ## TASK-014T Status (2026-06-10)
 
 | item | status |
