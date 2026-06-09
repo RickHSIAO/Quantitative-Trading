@@ -558,17 +558,32 @@ class TestU21ReportArtifactsPlan:
             )
             assert rc == 0
             files = sorted(p.name for p in plan_d.iterdir())
+            # Primary spec filenames (FIX2).
+            assert "latest_trading_stop_noop_probe_plan.json" in files
+            assert "latest_trading_stop_noop_probe_plan.md"   in files
+            # Legacy alias filenames still present.
             assert "latest_noop_probe_plan.json" in files
             assert "latest_noop_probe_plan.md"   in files
+            # Timestamped pair (one each).
             ts_json = [n for n in files if n.endswith(".json") and not n.startswith("latest_")]
             ts_md   = [n for n in files if n.endswith(".md")   and not n.startswith("latest_")]
             assert len(ts_json) == 1
             assert len(ts_md)   == 1
-            data = json.loads((plan_d / "latest_noop_probe_plan.json").read_text(encoding="utf-8"))
+            assert ts_json[0].endswith("_trading_stop_noop_probe_plan.json")
+            assert ts_md[0].endswith("_trading_stop_noop_probe_plan.md")
+            # Read content from primary spec filename.
+            data = json.loads(
+                (plan_d / "latest_trading_stop_noop_probe_plan.json").read_text(encoding="utf-8")
+            )
             assert data["status"] == STATUS_PLAN_READY
             assert data["recommended_path"] == PATH_TINY_ISOLATED
             assert data["current_task_real_execution_allowed"] is False
             assert data["selected_symbol"] == "SOLUSDT"
+            # Legacy alias must contain identical content.
+            data_alias = json.loads(
+                (plan_d / "latest_noop_probe_plan.json").read_text(encoding="utf-8")
+            )
+            assert data_alias["status"] == data["status"]
 
 
 # ===========================================================================
@@ -1032,6 +1047,117 @@ class TestFix1ReadonlyFilenameResolution:
                 _now=_TEST_NOW,
             )
             assert rc == 1
+
+
+# ===========================================================================
+# FIX2: align no-op probe latest report filename
+# (TASK-014U-FIX2 — primary latest must be
+#  latest_trading_stop_noop_probe_plan.{json,md})
+# ===========================================================================
+
+class TestFix2LatestReportFilenames:
+    """Verify the primary latest report filenames match the spec and that
+    legacy aliases are also written."""
+
+    def _setup(self, base: Path):
+        ro_d    = base / "readonly";     ro_d.mkdir()
+        recon_d = base / "recon";        recon_d.mkdir()
+        prot_d  = base / "protection";   prot_d.mkdir()
+        con_d   = base / "contract";     con_d.mkdir()
+        plan_d  = base / "plan"
+        (ro_d    / "latest_smoke.json").write_text(json.dumps(_valid_readonly()), encoding="utf-8")
+        (recon_d / "latest_reconciliation.json").write_text(json.dumps(_valid_reconciliation()), encoding="utf-8")
+        (prot_d  / "latest_new_entry_protection.json").write_text(json.dumps(_valid_protection()), encoding="utf-8")
+        (con_d   / "latest_trading_stop_contract.json").write_text(json.dumps(_valid_contract()), encoding="utf-8")
+        return ro_d, recon_d, prot_d, con_d, plan_d
+
+    def test_primary_spec_json_created(self):
+        from scripts.preview_demo_trading_stop_noop_probe_plan import run_execute
+        with tempfile.TemporaryDirectory() as td:
+            ro_d, recon_d, prot_d, con_d, plan_d = self._setup(Path(td))
+            rc = run_execute(
+                symbol="SOLUSDT", allow_real_noop_probe=False, write_report=True,
+                readonly_dir=ro_d, reconciliation_dir=recon_d,
+                protection_dir=prot_d, contract_dir=con_d, plan_dir=plan_d,
+                _now=_TEST_NOW,
+            )
+            assert rc == 0
+            assert (plan_d / "latest_trading_stop_noop_probe_plan.json").exists()
+            data = json.loads(
+                (plan_d / "latest_trading_stop_noop_probe_plan.json").read_text(encoding="utf-8")
+            )
+            assert data["status"] == STATUS_PLAN_READY
+            assert data["stop_endpoint_called"]  is False
+            assert data["order_endpoint_called"] is False
+            assert data["no_position_modified"]  is True
+
+    def test_primary_spec_md_created(self):
+        from scripts.preview_demo_trading_stop_noop_probe_plan import run_execute
+        with tempfile.TemporaryDirectory() as td:
+            ro_d, recon_d, prot_d, con_d, plan_d = self._setup(Path(td))
+            rc = run_execute(
+                symbol="SOLUSDT", allow_real_noop_probe=False, write_report=True,
+                readonly_dir=ro_d, reconciliation_dir=recon_d,
+                protection_dir=prot_d, contract_dir=con_d, plan_dir=plan_d,
+                _now=_TEST_NOW,
+            )
+            assert rc == 0
+            assert (plan_d / "latest_trading_stop_noop_probe_plan.md").exists()
+            md = (plan_d / "latest_trading_stop_noop_probe_plan.md").read_text(encoding="utf-8")
+            assert "NOOP_PROBE_PLAN_READY" in md
+            assert "tiny_isolated_position_plan" in md
+
+    def test_legacy_alias_json_retained(self):
+        from scripts.preview_demo_trading_stop_noop_probe_plan import run_execute
+        with tempfile.TemporaryDirectory() as td:
+            ro_d, recon_d, prot_d, con_d, plan_d = self._setup(Path(td))
+            run_execute(
+                symbol="SOLUSDT", allow_real_noop_probe=False, write_report=True,
+                readonly_dir=ro_d, reconciliation_dir=recon_d,
+                protection_dir=prot_d, contract_dir=con_d, plan_dir=plan_d,
+                _now=_TEST_NOW,
+            )
+            assert (plan_d / "latest_noop_probe_plan.json").exists()
+
+    def test_legacy_alias_md_retained(self):
+        from scripts.preview_demo_trading_stop_noop_probe_plan import run_execute
+        with tempfile.TemporaryDirectory() as td:
+            ro_d, recon_d, prot_d, con_d, plan_d = self._setup(Path(td))
+            run_execute(
+                symbol="SOLUSDT", allow_real_noop_probe=False, write_report=True,
+                readonly_dir=ro_d, reconciliation_dir=recon_d,
+                protection_dir=prot_d, contract_dir=con_d, plan_dir=plan_d,
+                _now=_TEST_NOW,
+            )
+            assert (plan_d / "latest_noop_probe_plan.md").exists()
+
+    def test_primary_and_alias_identical_content(self):
+        from scripts.preview_demo_trading_stop_noop_probe_plan import run_execute
+        with tempfile.TemporaryDirectory() as td:
+            ro_d, recon_d, prot_d, con_d, plan_d = self._setup(Path(td))
+            run_execute(
+                symbol="SOLUSDT", allow_real_noop_probe=False, write_report=True,
+                readonly_dir=ro_d, reconciliation_dir=recon_d,
+                protection_dir=prot_d, contract_dir=con_d, plan_dir=plan_d,
+                _now=_TEST_NOW,
+            )
+            primary = (plan_d / "latest_trading_stop_noop_probe_plan.json").read_text(encoding="utf-8")
+            alias   = (plan_d / "latest_noop_probe_plan.json").read_text(encoding="utf-8")
+            assert primary == alias
+
+    def test_timestamped_files_use_spec_suffix(self):
+        from scripts.preview_demo_trading_stop_noop_probe_plan import run_execute
+        with tempfile.TemporaryDirectory() as td:
+            ro_d, recon_d, prot_d, con_d, plan_d = self._setup(Path(td))
+            run_execute(
+                symbol="SOLUSDT", allow_real_noop_probe=False, write_report=True,
+                readonly_dir=ro_d, reconciliation_dir=recon_d,
+                protection_dir=prot_d, contract_dir=con_d, plan_dir=plan_d,
+                _now=_TEST_NOW,
+            )
+            ts_files = [p.name for p in plan_d.iterdir() if not p.name.startswith("latest_")]
+            assert any(n.endswith("_trading_stop_noop_probe_plan.json") for n in ts_files)
+            assert any(n.endswith("_trading_stop_noop_probe_plan.md")   for n in ts_files)
 
 
 # ===========================================================================

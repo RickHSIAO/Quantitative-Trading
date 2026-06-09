@@ -29,10 +29,12 @@ Reads:
 
 Writes (when --write-report):
   outputs/demo_trading/trading_stop_noop_probe_plan/
-      {ts}_noop_probe_plan.json
-      {ts}_noop_probe_plan.md
-      latest_noop_probe_plan.json
-      latest_noop_probe_plan.md
+      {ts}_trading_stop_noop_probe_plan.json
+      {ts}_trading_stop_noop_probe_plan.md
+      latest_trading_stop_noop_probe_plan.json    (primary)
+      latest_trading_stop_noop_probe_plan.md      (primary)
+      latest_noop_probe_plan.json                 (legacy alias)
+      latest_noop_probe_plan.md                   (legacy alias)
 
 IMPORTANT:
   - This is a DESIGN module.  No network at all.  Even with
@@ -160,15 +162,18 @@ def _write_report(r: NoopProbePlanResult, output_dir: Path) -> None:
         .replace("T", "_")
         .replace("Z", "")
     )
-    json_path   = output_dir / f"{ts_safe}_noop_probe_plan.json"
-    json_latest = output_dir / "latest_noop_probe_plan.json"
-    md_path     = output_dir / f"{ts_safe}_noop_probe_plan.md"
-    md_latest   = output_dir / "latest_noop_probe_plan.md"
+    json_path        = output_dir / f"{ts_safe}_trading_stop_noop_probe_plan.json"
+    json_latest      = output_dir / "latest_trading_stop_noop_probe_plan.json"
+    json_latest_alias = output_dir / "latest_noop_probe_plan.json"   # legacy
+    md_path          = output_dir / f"{ts_safe}_trading_stop_noop_probe_plan.md"
+    md_latest        = output_dir / "latest_trading_stop_noop_probe_plan.md"
+    md_latest_alias  = output_dir / "latest_noop_probe_plan.md"       # legacy
 
     data      = r.to_dict()
     json_text = json.dumps(data, indent=2)
     json_path.write_text(json_text, encoding="utf-8")
     json_latest.write_text(json_text, encoding="utf-8")
+    json_latest_alias.write_text(json_text, encoding="utf-8")
 
     md_lines: list[str] = [
         "# Demo Trading-stop No-op Probe Plan (TASK-014U)",
@@ -270,9 +275,12 @@ def _write_report(r: NoopProbePlanResult, output_dir: Path) -> None:
     md_text = "\n".join(md_lines)
     md_path.write_text(md_text, encoding="utf-8")
     md_latest.write_text(md_text, encoding="utf-8")
+    md_latest_alias.write_text(md_text, encoding="utf-8")
 
     print(f"  report: {json_latest}")
     print(f"  report: {md_latest}")
+    print(f"  report (legacy alias): {json_latest_alias}")
+    print(f"  report (legacy alias): {md_latest_alias}")
 
 
 def run_execute(

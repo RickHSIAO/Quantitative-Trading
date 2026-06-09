@@ -1,5 +1,44 @@
 # Next Action
 
+## TASK-014U-FIX2 Status (2026-06-10)
+
+| item | status |
+|---|---|
+| root cause: _write_report() used truncated stem "noop_probe_plan" instead of spec stem "trading_stop_noop_probe_plan" | CONFIRMED |
+| primary latest filenames: latest_trading_stop_noop_probe_plan.{json,md} | DONE |
+| legacy alias filenames still written: latest_noop_probe_plan.{json,md} | DONE |
+| timestamped pairs renamed: {ts}_trading_stop_noop_probe_plan.{json,md} | DONE |
+| 6 new FIX2 tests covering primary json/md / legacy alias / identical content / timestamped suffix | DONE |
+| pytest tests/demo_trading | 1452/1452 PASS (1446 prior + 6 new FIX2) |
+| no order endpoint / no stop endpoint / no position modified / G20 unchanged / no secrets | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014U-FIX2)
+
+1. Update VPS git pull:
+       git pull
+       python3 -m pytest tests/demo_trading -q   # expect 1452 PASS
+
+2. Re-run VPS step 7 (--write-report):
+       source .env.demo
+       python3 scripts/preview_demo_trading_stop_noop_probe_plan.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/trading_stop_noop_probe_plan/latest_trading_stop_noop_probe_plan.md
+
+   Expected primary files written:
+     outputs/demo_trading/trading_stop_noop_probe_plan/
+       latest_trading_stop_noop_probe_plan.json  (primary)
+       latest_trading_stop_noop_probe_plan.md    (primary)
+       latest_noop_probe_plan.json               (legacy alias)
+       latest_noop_probe_plan.md                 (legacy alias)
+       {ts}_trading_stop_noop_probe_plan.json
+       {ts}_trading_stop_noop_probe_plan.md
+
+3. Confirm TASK-014V gate is now the only remaining human decision:
+   see "Next Rick Action (set by 2026-06-10 TASK-014U)" below.
+
 ## TASK-014U-FIX1 Status (2026-06-10)
 
 | item | status |

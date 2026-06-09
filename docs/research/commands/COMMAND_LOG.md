@@ -21,6 +21,60 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014U-FIX2 — Align No-op Probe Latest Report Filenames）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014U-FIX2)
+Task: Rename the primary latest report files produced by
+      scripts/preview_demo_trading_stop_noop_probe_plan.py from the
+      truncated latest_noop_probe_plan.{json,md} to the spec-correct
+      latest_trading_stop_noop_probe_plan.{json,md}.  Retain the old
+      names as legacy aliases so upstream reads are not broken.
+Status before: TASK-014U-FIX1 done; VPS can read the readonly smoke;
+      but report latest files were written with the wrong stem (script
+      said latest_noop_probe_plan.* instead of
+      latest_trading_stop_noop_probe_plan.*).
+Status after: TASK-014U-FIX2 DONE; primary latest names match spec;
+      legacy aliases still written; all tests PASS.
+
+Files changed:
+  - UPDATED scripts/preview_demo_trading_stop_noop_probe_plan.py
+        _write_report(): primary latest names are now
+          latest_trading_stop_noop_probe_plan.json (primary)
+          latest_trading_stop_noop_probe_plan.md   (primary)
+          latest_noop_probe_plan.json              (legacy alias)
+          latest_noop_probe_plan.md                (legacy alias)
+        Timestamped pair renamed:
+          {ts}_trading_stop_noop_probe_plan.json
+          {ts}_trading_stop_noop_probe_plan.md
+        Console print shows primary spec names first, then legacy.
+        Docstring Writes section updated.
+  - UPDATED tests/demo_trading/test_demo_trading_stop_noop_probe_plan.py
+        TestU21 enhanced: asserts both primary spec names and legacy
+        aliases exist; reads content from primary spec name; verifies
+        timestamped files use the spec suffix.
+        Added TestFix2LatestReportFilenames (6 tests):
+          test_primary_spec_json_created
+          test_primary_spec_md_created
+          test_legacy_alias_json_retained
+          test_legacy_alias_md_retained
+          test_primary_and_alias_identical_content
+          test_timestamped_files_use_spec_suffix
+
+Validation:
+  - py_compile scripts/preview_demo_trading_stop_noop_probe_plan.py PASS
+  - pytest tests/demo_trading/test_demo_trading_stop_noop_probe_plan.py -q:
+    67 / 67 PASS (61 prior + 6 new FIX2 tests).
+  - pytest tests/demo_trading -q: 1452 / 1452 PASS.
+
+Notes:
+  - src/demo_trading_stop_noop_probe_plan.py NOT modified.
+  - main.py / src/risk.py / BybitExecutor NOT modified.
+  - No order endpoint, no stop endpoint, no position modified,
+    G20 unchanged, no secrets.
+
+---
+
 ### 2026-06-10（TASK-014U-FIX1 — Fix Readonly Smoke Latest Path）
 
 Agent: Claude Sonnet 4.6
