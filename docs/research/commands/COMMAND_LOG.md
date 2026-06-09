@@ -21,6 +21,78 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014K — Add Demo New-entry Dry-run Proposal Review）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014K)
+Task: Add a pure-computation new-entry dry-run review module that reads a verified
+      real_readonly reconciliation snapshot and a caller-supplied list of new-entry
+      candidates, applies layered fail-closed gates (top-level + per-candidate),
+      produces a rounded payload preview per accepted candidate, and writes JSON+MD
+      reports.  No orders sent, no positions modified, no order endpoint called,
+      no secrets observed.  No reuse of the close-only sender.  Hardcoded preview
+      invariants: preview_only=True, order_sent=False, order_endpoint_called=False,
+      reduce_only=False on the entry payload, action_type=PREVIEW_REVIEW_ONLY.
+Status before: TASK-014J complete (699 tests PASS)
+Status after:  TASK-014K complete (746 tests PASS, py_compile PASS)
+
+Files changed:
+  src/demo_new_entry_review.py                            -- NEW (review_new_entry_candidates pure-computation core)
+  scripts/preview_demo_new_entry_review.py                -- NEW (fixture + --from-latest-reconciliation + --write-report)
+  tests/demo_trading/test_demo_new_entry_review.py        -- NEW (47 tests across K1-K19 groups)
+  .gitignore                                              -- MODIFIED (outputs/demo_trading/new_entry_review/)
+  docs/research/commands/COMMAND_LOG.md                   (this entry)
+  docs/research/commands/NEXT_ACTION.md                   (TASK-014K status)
+
+Validation:
+  python -m py_compile src/demo_new_entry_review.py                             PASS
+  python -m py_compile scripts/preview_demo_new_entry_review.py                 PASS
+  python -m py_compile tests/demo_trading/test_demo_new_entry_review.py         PASS
+  pytest tests/demo_trading -q                                                  746/746 PASS
+  K1  reconciliation_not_pass -> fail_closed                                    CONFIRMED
+  K2  proof_not_strong -> fail_closed                                           CONFIRMED
+  K3  position_details_source != real_readonly -> fail_closed                   CONFIRMED
+  K4  runtime_not_verified / available_balance <= 0 -> fail_closed              CONFIRMED
+  K5  short_capacity_full -> every short candidate REJECTED                     CONFIRMED
+  K6  long capacity available -> long candidates accepted                       CONFIRMED
+  K7  duplicate symbol (existing + intra-batch) -> REJECTED                     CONFIRMED
+  K8  missing_instrument_rule -> REJECTED                                       CONFIRMED
+  K9  rounded_qty_zero -> REJECTED                                              CONFIRMED
+  K10 min_notional_after_rounding -> REJECTED                                   CONFIRMED
+  K11 invalid_stop_distance (wrong side / zero) -> REJECTED                     CONFIRMED
+  K12 projected gross / max_single_notional gate reachable                      CONFIRMED
+  K13 projected net exposure gate exists and not falsely tripped                CONFIRMED
+  K14 every payload.preview_only=True                                           CONFIRMED
+  K15 every payload.order_sent=False                                            CONFIRMED
+  K16 every payload.order_endpoint_called=False                                 CONFIRMED
+  K17 secret_value_observed=False; no secret tokens in to_dict output           CONFIRMED
+  K18 module source: no live hostname, no order endpoint, no HTTP client        CONFIRMED
+  K19 module imports: no main / no src.risk / no BybitExecutor /                CONFIRMED
+                      no demo_close_only_sender / no execute_demo_close_only
+  fixture-mode preview script: SOLUSDT/AAVEUSDT/LINKUSDT all accepted with      CONFIRMED
+                       preview_only=True / order_sent=False payloads
+  next_required_task = "TASK-014L Demo New-entry Sender Gate (manual approval   CONFIRMED
+                       required)" when any candidate accepted
+  main.py / src/risk.py / BybitExecutor                                         NOT MODIFIED
+
+Outputs:
+  outputs/demo_trading/new_entry_review/{timestamp}_new_entry_review.json (gitignored)
+  outputs/demo_trading/new_entry_review/{timestamp}_new_entry_review.md   (gitignored)
+  outputs/demo_trading/new_entry_review/latest_new_entry_review.json      (gitignored)
+  outputs/demo_trading/new_entry_review/latest_new_entry_review.md        (gitignored)
+
+Notes:
+  This is a planning artefact ONLY.  TASK-014K does NOT implement a sender for
+  new-entry payloads.  Payload previews are constructed with hardcoded
+  invariants (preview_only=True, order_sent=False, order_endpoint_called=False,
+  confirmation_required=True) that are enforced structurally and verified by
+  tests.  The close-only sender (TASK-014G) is NOT reused or called by this
+  module; tests verify the module does not import demo_close_only_sender or
+  execute_demo_close_only_cleanup.  TASK-014L (Demo New-entry Sender Gate)
+  must be opened separately before any new-entry payload could be transmitted.
+
+---
+
 ### 2026-06-09（TASK-014J — Fix Demo Available Balance Mapping to account.totalAvailableBalance）
 
 Agent: Claude Sonnet 4.6

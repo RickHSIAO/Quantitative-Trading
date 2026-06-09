@@ -1,5 +1,57 @@
 # Next Action
 
+## TASK-014K Status (2026-06-09)
+
+| item | status |
+|---|---|
+| src/demo_new_entry_review.py — review_new_entry_candidates (pure computation) | DONE |
+| src/demo_new_entry_review.py — NewEntryCandidate / NewEntryPayloadPreview / NewEntryEvaluation / NewEntryReviewResult | DONE |
+| src/demo_new_entry_review.py — layered fail-closed gates (top-level + per-candidate) | DONE |
+| scripts/preview_demo_new_entry_review.py — fixture + --from-latest-reconciliation + --write-report | DONE |
+| tests/demo_trading/test_demo_new_entry_review.py — 47 tests (K1-K19) | DONE |
+| .gitignore — outputs/demo_trading/new_entry_review/ | DONE |
+| pytest tests/demo_trading | 746/746 PASS |
+| py_compile all new files | PASS |
+| top-level gate: demo_runtime_verified + STRONG + real_readonly + new_entry_allowed + available>0 + slots | CONFIRMED |
+| per-candidate gate: side capacity → open slot → duplicate → rule → prices → stop_distance → risk → rounding → notional → cap → projected exposure | CONFIRMED |
+| short_capacity_full → every short candidate REJECTED | CONFIRMED |
+| payload.preview_only=True / order_sent=False / order_endpoint_called=False (always) | CONFIRMED |
+| payload.reduce_only=False on new entries | CONFIRMED |
+| action_type=PREVIEW_REVIEW_ONLY (always) | CONFIRMED |
+| no_orders_sent=True / no_position_modified=True (always) | CONFIRMED |
+| secret_value_observed=False (always) | CONFIRMED |
+| module source: no live hostname, no order endpoint, no HTTP client | CONFIRMED |
+| module imports: no main / src.risk / BybitExecutor / demo_close_only_sender / execute_demo_close_only_cleanup | CONFIRMED |
+| running portfolio state mutation when each candidate accepts (capacity / budget / notional) | CONFIRMED |
+| next_required_task = "TASK-014L Demo New-entry Sender Gate (manual approval required)" when any accept | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| local commit | PENDING (Rick must git push) |
+
+## Next Rick Action (set by 2026-06-09 TASK-014K)
+
+1. git push origin main (delivers TASK-014D through TASK-014K)
+2. On VPS after git pull — refresh pipeline (in order):
+     source .env.demo
+     python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+     python3 scripts/preview_demo_position_reconcile.py --from-latest-readonly-smoke --write-report
+     python3 scripts/preview_demo_new_entry_review.py --from-latest-reconciliation --write-report
+3. Review outputs/demo_trading/new_entry_review/latest_new_entry_review.md
+   - fail_closed must be False (top-level gates all pass)
+   - any short candidate listed will be rejected with short_capacity_full
+     (current real state has short_count=5/5)
+   - any well-formed long candidate should appear in payload_previews with
+     preview_only=True / order_sent=False / order_endpoint_called=False
+4. Decide whether to open TASK-014L (Demo New-entry Sender Gate).
+   No new-entry payload can be transmitted before TASK-014L is implemented
+   AND a manual confirmation token is supplied at execute time.
+
+## Status
+READY (Rick action: git push + VPS pipeline + review new-entry preview report
+        + decide whether to open TASK-014L)
+
+## Owner
+Rick
+
 ## TASK-014J Status (2026-06-09)
 
 | item | status |
