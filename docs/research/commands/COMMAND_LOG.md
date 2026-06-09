@@ -21,6 +21,51 @@ Notes:
 
 ---
 
+### 2026-06-09（TASK-014H — Persist Real Demo Position Details）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014H)
+Task: Persist the 8 real Demo short positions captured by TASK-014D read-only
+      smoke through reconciliation, cleanup, and sender so the close-only
+      pipeline never falls back to the wrong fixture symbols (ETHUSDT /
+      BNBUSDT). Add `position_details_source` provenance field and gate
+      `execute_ready` / `execute_allowed` on `position_details_source ==
+      "real_readonly"`. No order submission, no Demo endpoint call, no secret
+      leak, no change to main.py / src/risk.py / BybitExecutor.
+Status before: TASK-014G complete (584 tests PASS)
+Status after:  TASK-014H complete (614 tests PASS, py_compile PASS)
+
+Files changed:
+  scripts/preview_demo_readonly_runtime.py             -- UPDATED (positions[], position_details_source, positions_count, timestamp, no_orders_sent)
+  scripts/preview_demo_position_reconcile.py           -- UPDATED (load real positions from smoke, fail-closed on missing details)
+  scripts/preview_demo_close_only_cleanup.py           -- UPDATED (thread position_details_source through to plan_cleanup)
+  scripts/execute_demo_close_only_cleanup.py           -- UPDATED (report + printer show position_details_source)
+  src/demo_position_reconcile.py                       -- UPDATED (ReconciliationResult.position_details_source, positions[] in to_dict)
+  src/demo_close_only_cleanup.py                       -- UPDATED (CleanupPlan.position_details_source, execute_ready gated on real source)
+  src/demo_close_only_sender.py                        -- UPDATED (Gate 5b position_details_source_not_real_readonly; CloseOrderResult fields)
+  tests/demo_trading/test_demo_close_only_cleanup.py   -- UPDATED (existing fixtures now declare position_details_source="real_readonly")
+  tests/demo_trading/test_demo_close_only_sender.py    -- UPDATED (helper threads position_details_source)
+  tests/demo_trading/test_demo_task_014h.py            -- NEW (30 tests, H1-H13)
+  docs/research/commands/COMMAND_LOG.md               (this entry)
+  docs/research/commands/NEXT_ACTION.md               (TASK-014H status)
+
+Validation:
+  python -m py_compile scripts/preview_demo_readonly_runtime.py            PASS
+  python -m py_compile scripts/preview_demo_position_reconcile.py          PASS
+  python -m py_compile scripts/preview_demo_close_only_cleanup.py          PASS
+  python -m py_compile scripts/execute_demo_close_only_cleanup.py          PASS
+  pytest tests/demo_trading -q                                             614 passed
+  position_details_source propagated smoke -> reconciliation -> cleanup -> sender  CONFIRMED
+  reconciliation fail-closed when real smoke positions absent              CONFIRMED (reason=missing_real_position_details)
+  cleanup execute_ready=False when source != real_readonly                 CONFIRMED
+  sender Gate 5b: position_details_source_not_real_readonly                CONFIRMED
+  sender Gate: symbol_not_in_candidates blocks ETHUSDT / BNBUSDT           CONFIRMED
+  no orders sent; no Demo POST issued by TASK-014H pipeline                CONFIRMED
+  no API key / secret bytes in JSON or MD reports                          CONFIRMED
+  main.py / src/risk.py / BybitExecutor not imported by TASK-014H modules  CONFIRMED
+
+---
+
 ### 2026-06-06（TASK-014G — Demo Close-only Sender Gate）
 
 Agent: Claude Sonnet 4.6

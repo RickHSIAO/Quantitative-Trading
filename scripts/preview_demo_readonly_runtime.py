@@ -40,8 +40,15 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-from src.demo_instrument_rules import apply_instrument_rules_to_proposal
-from src.demo_portfolio_risk import DemoSignalCandidate, compute_demo_portfolio_sizing
+from src.demo_instrument_rules import (
+    InstrumentRules,
+    apply_instrument_rules_to_proposal,
+)
+from src.demo_portfolio_risk import (
+    DemoOpenPosition,
+    DemoSignalCandidate,
+    compute_demo_portfolio_sizing,
+)
 from src.demo_readonly_client import DemoReadOnlyClient
 from src.demo_runtime_adapter import adapt_all
 from src.demo_runtime_probe import probe_demo_runtime
@@ -76,6 +83,52 @@ _FIXTURE_FULL_KELLY = 0.60   # illustrative; real value comes from strategy conf
 
 
 # ---------------------------------------------------------------------------
+# Position / instrument-rule serialisation (TASK-014H)
+# ---------------------------------------------------------------------------
+
+def _serialize_positions(
+    positions: list[DemoOpenPosition],
+    source:    str,
+) -> list[dict]:
+    """Serialise DemoOpenPosition list for smoke JSON.  No secrets included."""
+    out: list[dict] = []
+    for p in positions:
+        notional = abs(p.quantity * p.entry_price)
+        out.append({
+            "symbol":       p.symbol,
+            "side":         p.side,
+            "quantity":     float(p.quantity),
+            "entry_price":  float(p.entry_price),
+            "stop_price":   float(p.stop_price),
+            "notional_usd": round(notional, 2),
+            "source":       source,
+        })
+    return out
+
+
+def _serialize_instrument_rules_for_positions(
+    positions: list[DemoOpenPosition],
+    rules:     dict[str, InstrumentRules],
+) -> dict[str, dict]:
+    """Serialise only the instrument rules referenced by current positions."""
+    out: dict[str, dict] = {}
+    for p in positions:
+        r = rules.get(p.symbol)
+        if r is None:
+            continue
+        out[p.symbol] = {
+            "qty_step":        r.qty_step,
+            "min_qty":         r.min_qty,
+            "max_qty":         r.max_qty,
+            "tick_size":       r.tick_size,
+            "min_notional":    r.min_notional,
+            "price_precision": r.price_precision,
+            "qty_precision":   r.qty_precision,
+        }
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Report writer
 # ---------------------------------------------------------------------------
 
@@ -105,6 +158,7 @@ def _write_report(data: dict, output_dir: Path) -> None:
         f"",
         f"run_timestamp_utc: `{ts}`  ",
         f"source: `{data.get('source', 'unknown')}`  ",
+        f"position_details_source: `{data.get('position_details_source', 'unknown')}`  ",
         f"proof_strength: **{proof}**  ",
         f"demo_runtime_verified: `{verified}`  ",
         f"fail_closed: `{fail_closed}`  ",
@@ -117,12 +171,27 @@ def _write_report(data: dict, output_dir: Path) -> None:
         f"| api_secret_present | {data.get('api_secret_present', False)} |",
         f"| order_endpoint_called | {data.get('order_endpoint_called', False)} |",
         f"| secret_value_observed | {data.get('secret_value_observed', False)} |",
+        f"| no_orders_sent | {data.get('no_orders_sent', True)} |",
         f"| equity_usd | {data.get('equity_usd', 0):.2f} |",
         f"| available_balance_usd | {data.get('available_balance_usd', 0):.2f} |",
         f"| open_positions_count | {data.get('open_positions_count', 0)} |",
+        f"| positions_count | {data.get('positions_count', 0)} |",
+        f"| position_details_source | {data.get('position_details_source', 'unknown')} |",
         f"| proposals_accepted | {data.get('proposals_accepted', 0)} |",
         f"",
     ]
+    positions = data.get("positions", [])
+    if positions:
+        md_lines += ["## Open Positions (read-only snapshot)", ""]
+        md_lines.append("| Symbol | Side | Qty | Entry | Stop | Notional | Source |")
+        md_lines.append("|---|---|---|---|---|---|---|")
+        for p in positions:
+            md_lines.append(
+                f"| {p.get('symbol','')} | {p.get('side','')} | {p.get('quantity',0)} "
+                f"| {p.get('entry_price',0):.4f} | {p.get('stop_price',0):.4f} "
+                f"| {p.get('notional_usd',0):.2f} | {p.get('source','')} |"
+            )
+        md_lines.append("")
     fail_reasons = data.get("fail_reasons", [])
     if fail_reasons:
         md_lines += ["## Fail Reasons", ""]
@@ -220,6 +289,7 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
 
     # 7. Early exit on fail-closed
     overall_fail_closed = planner.fail_closed or probe.fail_closed
+    position_details_source = "real_readonly" if use_real_network else "fixture"
     if overall_fail_closed or not probe.demo_runtime_verified:
         _hdr("FAIL CLOSED")
         print("  demo runtime NOT verified — no proposals generated")
@@ -227,9 +297,12 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
             print(f"  reason: {probe.failure_reason}")
         print(_SEP)
         if write_report:
+            now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             _write_report({
-                "run_timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "run_timestamp_utc": now_iso,
+                "timestamp": now_iso,
                 "source": proof_snap.source,
+                "position_details_source": position_details_source,
                 "proof_strength": proof_snap.proof_strength,
                 "demo_runtime_verified": probe.demo_runtime_verified,
                 "fail_closed": overall_fail_closed,
@@ -238,9 +311,17 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
                 "api_secret_present": proof_snap.api_secret_present,
                 "order_endpoint_called": False,
                 "secret_value_observed": False,
+                "no_orders_sent": True,
                 "equity_usd": planner.equity_usd,
                 "available_balance_usd": planner.available_balance_usd,
                 "open_positions_count": len(planner.open_positions),
+                "positions_count": len(planner.open_positions),
+                "positions": _serialize_positions(
+                    planner.open_positions, position_details_source,
+                ),
+                "instrument_rules": _serialize_instrument_rules_for_positions(
+                    planner.open_positions, planner.instrument_rules,
+                ),
                 "proposals_accepted": 0,
             }, _OUTPUT_DIR)
         return 1
@@ -317,9 +398,12 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
     print(_SEP)
 
     if write_report:
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         _write_report({
-            "run_timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "run_timestamp_utc": now_iso,
+            "timestamp": now_iso,
             "source": proof_snap.source,
+            "position_details_source": position_details_source,
             "proof_strength": proof_snap.proof_strength,
             "demo_runtime_verified": probe.demo_runtime_verified,
             "fail_closed": overall_fail_closed,
@@ -328,9 +412,17 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
             "api_secret_present": proof_snap.api_secret_present,
             "order_endpoint_called": False,
             "secret_value_observed": False,
+            "no_orders_sent": True,
             "equity_usd": planner.equity_usd,
             "available_balance_usd": planner.available_balance_usd,
             "open_positions_count": len(planner.open_positions),
+            "positions_count": len(planner.open_positions),
+            "positions": _serialize_positions(
+                planner.open_positions, position_details_source,
+            ),
+            "instrument_rules": _serialize_instrument_rules_for_positions(
+                planner.open_positions, planner.instrument_rules,
+            ),
             "proposals_accepted": n_accepted_after_rounding,
         }, _OUTPUT_DIR)
 

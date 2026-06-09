@@ -1,5 +1,58 @@
 # Next Action
 
+## TASK-014H Status (2026-06-09)
+
+| item | status |
+|---|---|
+| scripts/preview_demo_readonly_runtime.py — positions[] + position_details_source | DONE |
+| scripts/preview_demo_position_reconcile.py — load real positions, fail-closed on missing | DONE |
+| scripts/preview_demo_close_only_cleanup.py — thread position_details_source through plan_cleanup | DONE |
+| scripts/execute_demo_close_only_cleanup.py — report displays position_details_source | DONE |
+| src/demo_position_reconcile.py — ReconciliationResult.position_details_source + positions[] | DONE |
+| src/demo_close_only_cleanup.py — CleanupPlan.position_details_source, execute_ready gated | DONE |
+| src/demo_close_only_sender.py — Gate 5b position_details_source_not_real_readonly | DONE |
+| tests/demo_trading/test_demo_task_014h.py — 30 tests (H1-H13) | DONE |
+| tests/demo_trading/test_demo_close_only_cleanup.py — fixtures updated | DONE |
+| tests/demo_trading/test_demo_close_only_sender.py — helper updated | DONE |
+| pytest tests/demo_trading | 614/614 PASS |
+| py_compile all modified files | PASS |
+| reconciliation fail-closed when real smoke lacks positions details | CONFIRMED |
+| cleanup execute_ready=False when source != real_readonly | CONFIRMED |
+| sender Gate 5b blocks fixture-only candidates (ETHUSDT / BNBUSDT) | CONFIRMED |
+| no orders sent / no Demo POST issued in pipeline | CONFIRMED |
+| no API key / secret bytes in any JSON or MD report | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | NOT MODIFIED |
+| local commit | PENDING (Rick must git push) |
+
+## Next Rick Action (set by 2026-06-09 TASK-014H)
+
+1. git push origin main (delivers TASK-014D through TASK-014H)
+2. On VPS after git pull — refresh pipeline (in order):
+     source .env.demo
+     python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+     python3 scripts/preview_demo_position_reconcile.py --from-latest-smoke --write-report
+     python3 scripts/preview_demo_close_only_cleanup.py --from-latest-reconciliation \\
+         --confirm-token CONFIRM_DEMO_CLOSE_ONLY_$(date +%Y%m%d) --write-report
+3. Verify the cleanup plan now references the REAL Demo symbols (e.g. AIXBTUSDT,
+   ENAUSDT, BOMEUSDT, EDUUSDT, MERLUSDT, XAUTUSDT, POLYXUSDT, TIAUSDT), not
+   ETHUSDT / BNBUSDT.
+4. Dry-run single close gated on real symbol (review before executing):
+     python3 scripts/execute_demo_close_only_cleanup.py \\
+         --from-latest-cleanup \\
+         --symbol <REAL_SYMBOL_FROM_RECONCILIATION> \\
+         --confirm-token CONFIRM_DEMO_CLOSE_ONLY_$(date +%Y%m%d) \\
+         --write-report
+5. Review outputs/demo_trading/close_only_execution/latest_close_only_execution.md
+   (position_details_source must read `real_readonly`; source_position_details_is_real
+   must be True before execute is permitted).
+6. Manual execute decision is Rick's; sender still requires --execute-close-only.
+
+## Status
+READY (Rick action: git push + VPS pipeline + dry-run review + manual execute decision)
+
+## Owner
+Rick
+
 ## TASK-014G Status (2026-06-06)
 
 | item | status |

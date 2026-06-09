@@ -137,6 +137,11 @@ class CleanupPlan:
     order_endpoint_called:   bool = False
     secret_value_observed:   bool = False
 
+    # TASK-014H: position-source provenance ("real_readonly" | "fixture")
+    position_details_source: str  = "fixture"
+    # When True the source matches real_readonly (gates execute_ready)
+    source_position_details_is_real: bool = False
+
     def to_dict(self, timestamp_utc: str = "") -> dict[str, Any]:
         return {
             "timestamp":                    timestamp_utc,
@@ -190,6 +195,8 @@ class CleanupPlan:
             "snapshot_fresh":                   self.snapshot_fresh,
             "snapshot_age_hours":               self.snapshot_age_hours,
             "snapshot_timestamp_utc":           self.snapshot_timestamp_utc,
+            "position_details_source":         self.position_details_source,
+            "source_position_details_is_real": self.source_position_details_is_real,
             "confirmation_required":            self.confirmation_required,
             "confirm_token_expected_pattern":   self.confirm_token_expected_pattern,
             "confirm_token_valid":              self.confirm_token_valid,
@@ -360,6 +367,7 @@ def plan_cleanup(
     today:                   date | None = None,
     snapshot_timestamp_utc:  str   = "",
     max_snapshot_age_hours:  float = MAX_SNAPSHOT_AGE_HOURS,
+    position_details_source: str   = "fixture",
     _now:                    datetime | None = None,
 ) -> CleanupPlan:
     """
@@ -440,6 +448,11 @@ def plan_cleanup(
         for p in payloads
     ) if payloads else (not cleanup_needed)
 
+    # TASK-014H: source-of-truth gate — close candidates may only come from
+    # real_readonly position details.  Fixture/legacy sources never satisfy
+    # this gate, blocking execute_ready even if every other gate passes.
+    source_is_real = (position_details_source == "real_readonly")
+
     # ── Execute-ready gate ────────────────────────────────────────────────
     # execute_ready=True only when ALL conditions are satisfied.
     # Even then, no sender is implemented — no_orders_sent remains True.
@@ -450,6 +463,7 @@ def plan_cleanup(
         and payload_safe
         and demo_runtime_verified
         and selected
+        and source_is_real
     )
 
     return CleanupPlan(
@@ -478,4 +492,6 @@ def plan_cleanup(
         confirm_token_provided=confirm_token,
         confirm_token_valid=token_valid,
         execute_ready=execute_ready,
+        position_details_source=position_details_source,
+        source_position_details_is_real=source_is_real,
     )

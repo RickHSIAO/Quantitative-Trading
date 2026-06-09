@@ -104,9 +104,13 @@ class ReconciliationResult:
     order_endpoint_called:   bool = False
     secret_value_observed:   bool = False
 
+    # TASK-014H: position-source provenance (defaults to "fixture")
+    position_details_source: str  = "fixture"   # "real_readonly" | "fixture"
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "mode":                        self.mode,
+            "position_details_source":     self.position_details_source,
             "demo_runtime_verified":       self.demo_runtime_verified,
             "proof_strength":              self.proof_strength,
             "equity_usd":                  round(self.equity_usd, 2),
@@ -126,6 +130,20 @@ class ReconciliationResult:
             "available_slots":             self.available_slots,
             "max_long_allowed_remaining":  self.max_long_allowed_remaining,
             "max_short_allowed_remaining": self.max_short_allowed_remaining,
+            "positions": [
+                {
+                    "symbol":       pd.symbol,
+                    "side":         pd.side,
+                    "quantity":     pd.quantity,
+                    "entry_price":  pd.entry_price,
+                    "stop_price":   pd.stop_price,
+                    "notional_usd": round(pd.notional_usd, 2),
+                    "stop_risk_usd": round(pd.stop_risk_usd, 2),
+                    "missing_stop": pd.missing_stop,
+                    "missing_instrument_rule": pd.missing_instrument_rule,
+                }
+                for pd in self.positions
+            ],
             "violations": [
                 {"code": v.code, "detail": v.detail, "is_hard": v.is_hard}
                 for v in self.violations
@@ -166,6 +184,7 @@ def reconcile(
     demo_runtime_verified:   bool  = False,
     proof_strength:          str   = "",
     mode:                    str   = "fixture",
+    position_details_source: str   = "fixture",
 ) -> ReconciliationResult:
     """
     Compute portfolio reconciliation metrics, detect rule violations, and
@@ -351,4 +370,5 @@ def reconcile(
         blocked_reasons=blocked_reasons,
         suggested_actions=suggested_actions,
         cannot_proceed_to_order_smoke=not new_entry_allowed,
+        position_details_source=position_details_source,
     )

@@ -74,6 +74,66 @@ _FIXTURE_POSITIONS_LEGACY: list[DemoOpenPosition] = [
     DemoOpenPosition("LINKUSDT", "short",  20.00,     14.50,    16.00),
 ]
 
+_PERMISSIVE_RULES = InstrumentRules(
+    "PERMISSIVE", 0.0001, 0.0001, 0, 0.0001, 1.0, 4, 4,
+)
+
+
+def _build_rules_for_real_positions(
+    rules_dict: dict[str, dict],
+    symbols:    list[str],
+) -> dict[str, InstrumentRules]:
+    """
+    Build InstrumentRules dict for the real-readonly path.
+
+    Uses rules from the smoke JSON when present; otherwise falls back to a
+    permissive default keyed on the position's own symbol so that the
+    `missing_instrument_rule` violation does not fire for symbols the
+    fixture-side rules table does not know about.
+    """
+    out: dict[str, InstrumentRules] = {}
+    for sym in symbols:
+        r = rules_dict.get(sym) if rules_dict else None
+        if r:
+            out[sym] = InstrumentRules(
+                symbol=sym,
+                qty_step=float(r.get("qty_step", 0.0001) or 0.0001),
+                min_qty=float(r.get("min_qty", 0.0001) or 0.0001),
+                max_qty=float(r.get("max_qty", 0) or 0),
+                tick_size=float(r.get("tick_size", 0.0001) or 0.0001),
+                min_notional=float(r.get("min_notional", 1.0) or 1.0),
+                price_precision=int(r.get("price_precision", 4) or 4),
+                qty_precision=int(r.get("qty_precision", 4) or 4),
+            )
+        else:
+            out[sym] = InstrumentRules(
+                symbol=sym,
+                qty_step=_PERMISSIVE_RULES.qty_step,
+                min_qty=_PERMISSIVE_RULES.min_qty,
+                max_qty=_PERMISSIVE_RULES.max_qty,
+                tick_size=_PERMISSIVE_RULES.tick_size,
+                min_notional=_PERMISSIVE_RULES.min_notional,
+                price_precision=_PERMISSIVE_RULES.price_precision,
+                qty_precision=_PERMISSIVE_RULES.qty_precision,
+            )
+    return out
+
+
+def _positions_from_smoke(smoke: dict) -> list[DemoOpenPosition]:
+    """Convert smoke JSON positions list to DemoOpenPosition list (no fallback)."""
+    raw_positions = smoke.get("positions", []) or []
+    out: list[DemoOpenPosition] = []
+    for p in raw_positions:
+        out.append(DemoOpenPosition(
+            symbol=str(p.get("symbol", "")),
+            side=str(p.get("side", "")),
+            quantity=float(p.get("quantity", 0.0) or 0.0),
+            entry_price=float(p.get("entry_price", 0.0) or 0.0),
+            stop_price=float(p.get("stop_price", 0.0) or 0.0),
+        ))
+    return out
+
+
 # Fixture instrument rules — sufficient for the legacy positions
 _FIXTURE_INSTRUMENT_RULES: dict[str, InstrumentRules] = {
     "BTCUSDT":  InstrumentRules("BTCUSDT",  0.001, 0.001, 0,  0.1,    1.0, 1, 3),
@@ -136,6 +196,7 @@ def _write_report(result: ReconciliationResult, output_dir: Path, ts_utc: str) -
         "",
         f"timestamp: `{ts_utc}`  ",
         f"mode: `{result.mode}`  ",
+        f"position_details_source: `{result.position_details_source}`  ",
         f"demo_runtime_verified: `{result.demo_runtime_verified}`  ",
         f"proof_strength: **{result.proof_strength}**  ",
         "",
@@ -217,6 +278,10 @@ def _fmt_usd(v: float) -> str:
 
 
 def _print_result(result: ReconciliationResult) -> None:
+    _hdr("Source")
+    print(f"  position_details_source : {result.position_details_source}")
+    print(f"  mode                    : {result.mode}")
+
     _hdr("Portfolio Metrics")
     print(f"  equity_usd                 : {_fmt_usd(result.equity_usd)}")
     print(f"  available_balance_usd      : {_fmt_usd(result.available_balance_usd)}")
@@ -310,12 +375,14 @@ def run_preview(
     print("TASK-014E: Demo Position Reconciliation Preview")
     print(_SEP)
 
-    demo_runtime_verified = False
-    proof_strength        = ""
-    equity_usd            = _FIXTURE_EQUITY_CLEAN
-    available_balance_usd = _FIXTURE_AVAILABLE_CLEAN
-    positions             = _FIXTURE_POSITIONS_CLEAN
-    report_mode           = "fixture"
+    demo_runtime_verified   = False
+    proof_strength          = ""
+    equity_usd              = _FIXTURE_EQUITY_CLEAN
+    available_balance_usd   = _FIXTURE_AVAILABLE_CLEAN
+    positions               = _FIXTURE_POSITIONS_CLEAN
+    instrument_rules        = _FIXTURE_INSTRUMENT_RULES
+    report_mode             = "fixture"
+    position_details_source = "fixture"
 
     if mode == "from_latest_smoke":
         smoke = load_latest_smoke(_smoke_dir)
@@ -332,29 +399,70 @@ def run_preview(
             print(_SEP)
             return 1
 
+        smoke_source = str(smoke.get("position_details_source", ""))
+
+        # TASK-014H: positions details must come from the smoke JSON itself.
+        # No fallback to fixture positions in real_readonly mode.
+        if smoke_source == "real_readonly":
+            if "positions" not in smoke or not isinstance(smoke.get("positions"), list):
+                print("\n[FAIL CLOSED] real_readonly smoke missing positions details.")
+                print("  reason=missing_real_position_details")
+                print("  Re-run readonly smoke with TASK-014H writer (positions field required).")
+                print(_SEP)
+                return 1
+            position_details_source = "real_readonly"
+            report_mode             = "real_readonly_snapshot"
+            positions               = _positions_from_smoke(smoke)
+            instrument_rules        = _build_rules_for_real_positions(
+                smoke.get("instrument_rules", {}) or {},
+                [p.symbol for p in positions],
+            )
+        elif smoke_source == "fixture":
+            # Explicit fixture-mode smoke: allowed for tests, but NEVER labelled
+            # real_readonly_snapshot.  Must still contain positions list.
+            if "positions" not in smoke or not isinstance(smoke.get("positions"), list):
+                print("\n[FAIL CLOSED] fixture smoke missing positions details.")
+                print("  reason=missing_position_details")
+                print("  Re-run readonly smoke with TASK-014H writer (positions field required).")
+                print(_SEP)
+                return 1
+            position_details_source = "fixture"
+            report_mode             = "fixture_from_smoke"
+            positions               = _positions_from_smoke(smoke)
+            instrument_rules        = _build_rules_for_real_positions(
+                smoke.get("instrument_rules", {}) or {},
+                [p.symbol for p in positions],
+            )
+        else:
+            # Legacy smoke files without position_details_source — fail closed.
+            print("\n[FAIL CLOSED] latest_smoke.json missing position_details_source.")
+            print("  reason=missing_real_position_details")
+            print("  Re-run readonly smoke writer (TASK-014H) before reconciliation.")
+            print(_SEP)
+            return 1
+
         demo_runtime_verified = True
         proof_strength        = smoke.get("proof_strength", "")
         equity_usd            = float(smoke.get("equity_usd", 0.0))
         available_balance_usd = float(smoke.get("available_balance_usd", 0.0))
-        # Use legacy fixture positions (smoke JSON does not contain individual position data)
-        positions             = _FIXTURE_POSITIONS_LEGACY
-        report_mode           = "real_readonly_snapshot"
 
         print(f"  [smoke] demo_runtime_verified={demo_runtime_verified}")
         print(f"  [smoke] proof_strength={proof_strength}")
         print(f"  [smoke] equity_usd={equity_usd:.2f}")
         print(f"  [smoke] available_balance_usd={available_balance_usd:.2f}")
-        print(f"  [note]  position details from fixture (smoke JSON has aggregate only)")
+        print(f"  [smoke] position_details_source={position_details_source}")
+        print(f"  [smoke] positions_loaded={len(positions)}")
 
     result = reconcile(
         equity_usd=equity_usd,
         available_balance_usd=available_balance_usd,
         positions=positions,
-        instrument_rules=_FIXTURE_INSTRUMENT_RULES,
+        instrument_rules=instrument_rules,
         full_kelly_fraction=0.60,
         demo_runtime_verified=demo_runtime_verified,
         proof_strength=proof_strength,
         mode=report_mode,
+        position_details_source=position_details_source,
     )
 
     _print_result(result)

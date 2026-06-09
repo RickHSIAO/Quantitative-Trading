@@ -133,6 +133,8 @@ def _write_execution_report(
         f"| order_sent | {result.order_sent} |",
         f"| order_response_status | {result.order_response_status} |",
         f"| order_id | {result.order_id or '(not sent)'} |",
+        f"| position_details_source | {result.position_details_source} |",
+        f"| source_position_details_is_real | {result.source_position_details_is_real} |",
         "",
     ]
     if result.blocked_gates:
@@ -185,6 +187,8 @@ def _print_result(result: CloseOrderResult) -> None:
     print(f"  secret_value_observed    : {result.secret_value_observed}")
     print(f"  order_endpoint_called    : {result.order_endpoint_called}")
     print(f"  no_position_modified     : {result.no_position_modified}")
+    print(f"  position_details_source  : {result.position_details_source}")
+    print(f"  source_is_real_readonly  : {result.source_position_details_is_real}")
 
 
 # ---------------------------------------------------------------------------

@@ -101,6 +101,21 @@ def load_latest_reconciliation(reconcile_dir: Path) -> dict | None:
         return None
 
 
+def _positions_from_reconciliation(rec: dict) -> list[DemoOpenPosition]:
+    """Convert reconciliation positions array to DemoOpenPosition list."""
+    raw = rec.get("positions", []) or []
+    out: list[DemoOpenPosition] = []
+    for p in raw:
+        out.append(DemoOpenPosition(
+            symbol=str(p.get("symbol", "")),
+            side=str(p.get("side", "")),
+            quantity=float(p.get("quantity", 0.0) or 0.0),
+            entry_price=float(p.get("entry_price", 0.0) or 0.0),
+            stop_price=float(p.get("stop_price", 0.0) or 0.0),
+        ))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Report writer
 # ---------------------------------------------------------------------------
@@ -128,6 +143,8 @@ def _write_report(plan: CleanupPlan, output_dir: Path, ts_utc: str) -> None:
         "",
         f"timestamp: `{ts_utc}`  ",
         f"mode: `{plan.mode}`  ",
+        f"position_details_source: `{plan.position_details_source}`  ",
+        f"source_position_details_is_real: `{plan.source_position_details_is_real}`  ",
         f"demo_runtime_verified: `{plan.demo_runtime_verified}`  ",
         f"proof_strength: **{plan.proof_strength}**  ",
         "",
@@ -267,6 +284,8 @@ def _print_plan(plan: CleanupPlan) -> None:
     print(f"  confirmation_required        : {plan.confirmation_required}")
     print(f"  confirm_token_pattern        : {plan.confirm_token_expected_pattern}")
     print(f"  confirm_token_valid          : {plan.confirm_token_valid}")
+    print(f"  position_details_source      : {plan.position_details_source}")
+    print(f"  source_position_details_is_real: {plan.source_position_details_is_real}")
     print(f"  execute_ready                : {plan.execute_ready}")
     if not plan.execute_ready:
         gates = []
@@ -278,6 +297,8 @@ def _print_plan(plan: CleanupPlan) -> None:
             gates.append("token_invalid_or_missing")
         if not plan.demo_runtime_verified:
             gates.append("demo_not_verified")
+        if not plan.source_position_details_is_real:
+            gates.append("position_details_source_not_real_readonly")
         print(f"  blocked_gates                : {gates}")
 
     _hdr("Safety Invariants")
@@ -320,13 +341,14 @@ def run_preview(
     print("TASK-014F: Demo Close-only Cleanup Preview")
     print(_SEP)
 
-    equity_usd            = 10_000.0
-    available_balance_usd = 8_500.0
-    positions             = _FIXTURE_POSITIONS_CLEAN
-    demo_runtime_verified = False
-    proof_strength        = ""
-    snapshot_timestamp    = ""
-    report_mode           = "fixture"
+    equity_usd              = 10_000.0
+    available_balance_usd   = 8_500.0
+    positions               = _FIXTURE_POSITIONS_CLEAN
+    demo_runtime_verified   = False
+    proof_strength          = ""
+    snapshot_timestamp      = ""
+    report_mode             = "fixture"
+    position_details_source = "fixture"
 
     if mode == "from_latest_reconciliation":
         rec = load_latest_reconciliation(_reconcile_dir)
@@ -343,12 +365,39 @@ def run_preview(
             print(_SEP)
             return 1
 
+        rec_source = str(rec.get("position_details_source", ""))
+        rec_positions = rec.get("positions", None)
+        # TASK-014H: reconciliation MUST have real positions; no fallback.
+        if rec_source == "real_readonly":
+            if not isinstance(rec_positions, list) or not rec_positions:
+                print("\n[FAIL CLOSED] real_readonly reconciliation missing positions list.")
+                print("  reason=missing_real_position_details")
+                print(_SEP)
+                return 1
+            position_details_source = "real_readonly"
+            positions               = _positions_from_reconciliation(rec)
+        elif rec_source == "fixture":
+            if not isinstance(rec_positions, list):
+                print("\n[FAIL CLOSED] reconciliation positions list missing.")
+                print(_SEP)
+                return 1
+            position_details_source = "fixture"
+            positions               = (
+                _positions_from_reconciliation(rec)
+                if rec_positions
+                else _FIXTURE_POSITIONS_CLEAN
+            )
+        else:
+            print("\n[FAIL CLOSED] reconciliation missing position_details_source.")
+            print("  reason=missing_real_position_details")
+            print(_SEP)
+            return 1
+
         snapshot_timestamp    = rec.get("timestamp", "")
         demo_runtime_verified = True
         proof_strength        = rec.get("proof_strength", "")
         equity_usd            = float(rec.get("equity_usd", 0.0))
         available_balance_usd = float(rec.get("available_balance_usd", 0.0))
-        positions             = _FIXTURE_POSITIONS_LEGACY
         report_mode           = "from_latest_reconciliation"
 
         print(f"  [reconciliation] demo_runtime_verified={demo_runtime_verified}")
@@ -356,7 +405,8 @@ def run_preview(
         print(f"  [reconciliation] equity_usd={equity_usd:.2f}")
         print(f"  [reconciliation] available_balance_usd={available_balance_usd:.2f}")
         print(f"  [reconciliation] snapshot_timestamp={snapshot_timestamp}")
-        print(f"  [note] position details from fixture (reconciliation JSON has aggregate only)")
+        print(f"  [reconciliation] position_details_source={position_details_source}")
+        print(f"  [reconciliation] positions_loaded={len(positions)}")
 
         # Staleness pre-check for early exit
         from src.demo_close_only_cleanup import _check_snapshot_freshness
@@ -378,6 +428,7 @@ def run_preview(
         confirm_token=confirm_token,
         snapshot_timestamp_utc=snapshot_timestamp,
         max_snapshot_age_hours=max_snapshot_age_hours,
+        position_details_source=position_details_source,
     )
 
     _print_plan(plan)

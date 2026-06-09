@@ -367,6 +367,25 @@ class TestUnverifiedReconciliation:
             "equity_usd": 11_404.01,
             "available_balance_usd": 0.0,
             "timestamp": "2026-06-06T10:00:00Z",
+            "position_details_source": "real_readonly",
+            "positions": [
+                {"symbol": "AIXBTUSDT", "side": "short", "quantity": 100.0,
+                 "entry_price": 0.50, "stop_price": 0.55},
+                {"symbol": "ENAUSDT", "side": "short", "quantity": 1000.0,
+                 "entry_price": 0.80, "stop_price": 0.85},
+                {"symbol": "BOMEUSDT", "side": "short", "quantity": 5000.0,
+                 "entry_price": 0.01, "stop_price": 0.012},
+                {"symbol": "EDUUSDT", "side": "short", "quantity": 800.0,
+                 "entry_price": 1.20, "stop_price": 1.30},
+                {"symbol": "MERLUSDT", "side": "short", "quantity": 400.0,
+                 "entry_price": 2.40, "stop_price": 2.60},
+                {"symbol": "XAUTUSDT", "side": "short", "quantity": 0.4,
+                 "entry_price": 2400.0, "stop_price": 2500.0},
+                {"symbol": "POLYXUSDT", "side": "short", "quantity": 1500.0,
+                 "entry_price": 0.30, "stop_price": 0.34},
+                {"symbol": "TIAUSDT", "side": "short", "quantity": 50.0,
+                 "entry_price": 5.40, "stop_price": 5.80},
+            ],
         }), encoding="utf-8")
         return d
 
@@ -561,6 +580,7 @@ class TestCorrectTokenNoSender:
             snapshot_timestamp_utc=fresh_ts,
             max_snapshot_age_hours=24.0,
             _now=now,
+            position_details_source="real_readonly",
         )
 
     def test_no_orders_sent_always_true(self):

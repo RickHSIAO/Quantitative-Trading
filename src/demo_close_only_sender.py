@@ -101,6 +101,8 @@ class CloseOrderResult:
     order_endpoint_called:       bool  = False
     private_order_endpoint_called: bool = False
     no_position_modified:        bool  = True   # False only when order succeeds
+    position_details_source:     str   = "fixture"   # TASK-014H
+    source_position_details_is_real: bool = False    # TASK-014H
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -126,6 +128,8 @@ class CloseOrderResult:
             "order_endpoint_called":          self.order_endpoint_called,
             "private_order_endpoint_called":  self.private_order_endpoint_called,
             "no_position_modified":           self.no_position_modified,
+            "position_details_source":        self.position_details_source,
+            "source_position_details_is_real": self.source_position_details_is_real,
         }
 
 
@@ -250,6 +254,13 @@ class DemoCloseOnlySender:
         # Gate 5: proof strength must be STRONG
         if cleanup_plan.get("proof_strength", "") != PROOF_STRONG:
             gates.append("proof_not_strong")
+
+        # Gate 5b (TASK-014H): position_details_source must be "real_readonly".
+        # Without this gate, a fixture-only cleanup plan could feed candidates
+        # like ETHUSDT / BNBUSDT that do not exist on the real Demo account.
+        pds = cleanup_plan.get("position_details_source", "")
+        if pds != "real_readonly":
+            gates.append("position_details_source_not_real_readonly")
 
         # Gate 6 + 7: symbol must be in candidates (exactly one match)
         candidates = cleanup_plan.get("suggested_close_candidates", [])
@@ -392,6 +403,8 @@ class DemoCloseOnlySender:
 
         demo_runtime_verified = bool(cleanup_plan.get("demo_runtime_verified", False))
         proof_strength        = str(cleanup_plan.get("proof_strength", ""))
+        pds                   = str(cleanup_plan.get("position_details_source", "fixture"))
+        pds_is_real           = (pds == "real_readonly")
 
         # ── Static gate checks ────────────────────────────────────────────
         blocked_gates, candidate, payload = self._gate_checks(
@@ -421,6 +434,8 @@ class DemoCloseOnlySender:
                 order_response_status="",
                 order_id="",
                 blocked_gates=blocked_gates,
+                position_details_source=pds,
+                source_position_details_is_real=pds_is_real,
             )
 
         # ── Dry-run path (all static gates passed, no execution) ──────────
@@ -441,6 +456,8 @@ class DemoCloseOnlySender:
                 order_response_status="",
                 order_id="",
                 blocked_gates=[],
+                position_details_source=pds,
+                source_position_details_is_real=pds_is_real,
             )
 
         # ── Execute path: pre-send read-only refresh ──────────────────────
@@ -464,6 +481,8 @@ class DemoCloseOnlySender:
                 order_response_status="",
                 order_id="",
                 blocked_gates=refresh_gates,
+                position_details_source=pds,
+                source_position_details_is_real=pds_is_real,
             )
 
         # ── Build and submit the close-only order ─────────────────────────
@@ -509,4 +528,6 @@ class DemoCloseOnlySender:
             order_endpoint_called=True,
             private_order_endpoint_called=True,
             no_position_modified=no_pos_modified,
+            position_details_source=pds,
+            source_position_details_is_real=pds_is_real,
         )

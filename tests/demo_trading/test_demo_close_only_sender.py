@@ -98,12 +98,13 @@ def _valid_token(today: date) -> str:
 
 
 def _make_cleanup_plan_dict(
-    today:                  date | None  = None,
-    snapshot_ts:            str          = "",
-    demo_runtime_verified:  bool         = True,
-    proof_strength:         str          = PROOF_STRONG,
-    positions:              list[DemoOpenPosition] | None = None,
-    max_age_hours:          float        = 24.0,
+    today:                   date | None  = None,
+    snapshot_ts:             str          = "",
+    demo_runtime_verified:   bool         = True,
+    proof_strength:          str          = PROOF_STRONG,
+    positions:               list[DemoOpenPosition] | None = None,
+    max_age_hours:           float        = 24.0,
+    position_details_source: str          = "real_readonly",
 ) -> dict[str, Any]:
     """Build a valid cleanup plan dict via plan_cleanup().to_dict()."""
     now      = datetime.now(timezone.utc)
@@ -124,6 +125,7 @@ def _make_cleanup_plan_dict(
         today=_today,
         snapshot_timestamp_utc=snapshot_ts,
         max_snapshot_age_hours=max_age_hours,
+        position_details_source=position_details_source,
     )
     return plan.to_dict(timestamp_utc=snapshot_ts)
 
