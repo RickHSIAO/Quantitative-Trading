@@ -21,6 +21,85 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014AA — Tiny Lifecycle Real Execution Permission Summary / Final Review）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014AA)
+Task: Build a pure-computation final-review permission summary that
+      consolidates the four upstream permission gates (014W real-permission,
+      014X tiny-entry, 014Y tiny-stop-attach, 014Z tiny-cleanup) together
+      with the original readonly / reconciliation / protection / contract /
+      no-op-plan / lifecycle-mock artifacts (10 upstream inputs total),
+      performs cross-artifact consistency checks (selected symbol,
+      entry side=Buy, cleanup side=Sell, tiny qty from rounded_tiny_qty
+      priority, stop price from stop-attach permission gate priority,
+      entry reference price from protection priority, category=linear,
+      payload previews) and emits a final readiness verdict for the future
+      real tiny-position lifecycle execution runner (TASK-014AB).
+      7 stages, 59 GATE_ constants split across 5 categories
+      (23 general + 13 consistency + 7 manual approval + 11 failure +
+      5 execution guard). Documents the fixed 8-step real lifecycle
+      sequence (pre_readonly_snapshot → real_tiny_entry →
+      post_entry_readonly → real_stop_attach → post_stop_attach_readonly
+      → real_cleanup → post_cleanup_readonly → final_audit), each step
+      preview-only here. Documents 3 distinct manual approval tokens
+      (entry / stop-attach / cleanup), string-only, never validated.
+      4 status modes:
+      TINY_LIFECYCLE_PERMISSION_SUMMARY_READY (default checklist),
+      TINY_LIFECYCLE_PERMISSION_SUMMARY_READY_BUT_EXECUTION_DISABLED
+      (`--allow-real-lifecycle-summary`),
+      REAL_LIFECYCLE_EXECUTION_NOT_IMPLEMENTED
+      (`--allow-real-lifecycle-execution` execution-guard mode),
+      FAIL_CLOSED (hard-fail gate raised).
+      Always emits real_execution_allowed=False,
+      current_task_real_execution_allowed=False, g20_lifted=False.
+      next_required_task = TASK-014AB_tiny_lifecycle_real_execution_runner_design_or_manual_approval.
+
+Status before: TASK-014Z DONE (committed a817f5c). Real tiny-position
+      lifecycle still un-orchestrated; no final-review summary gate.
+Status after: 3 new files (src module ~1000 lines, CLI script ~500 lines,
+      test file ~1100 lines, 93 tests / 62 test classes AA1-AA62 + sub-tests
+      all PASS). G20 still in place. 5 existing demo shorts untouched.
+      Real execution path still not implemented.
+
+Files changed:
+  - src/demo_tiny_lifecycle_real_execution_summary.py  (NEW)
+  - scripts/preview_demo_tiny_lifecycle_real_execution_summary.py  (NEW)
+  - tests/demo_trading/test_demo_tiny_lifecycle_real_execution_summary.py  (NEW)
+  - .gitignore  (added `outputs/demo_trading/tiny_lifecycle_real_execution_summary/`)
+  - docs/research/commands/NEXT_ACTION.md  (TASK-014AA status block prepended)
+  - docs/research/commands/COMMAND_LOG.md  (this entry)
+
+Validation:
+  - py_compile src/demo_tiny_lifecycle_real_execution_summary.py: OK
+  - py_compile scripts/preview_demo_tiny_lifecycle_real_execution_summary.py: OK
+  - py_compile tests/demo_trading/test_demo_tiny_lifecycle_real_execution_summary.py: OK
+  - pytest tests/demo_trading/test_demo_tiny_lifecycle_real_execution_summary.py: 93/93 PASS
+  - pytest tests/demo_trading: 1991 PASS + 1 pre-existing unrelated failure
+    (test_demo_emergency_close_sender::test_dry_run_cli_writes_report)
+
+Outputs:
+  - outputs/demo_trading/tiny_lifecycle_real_execution_summary/  (created at first CLI run)
+
+Notes:
+  - No real /v5/order/create. No real /v5/position/trading-stop.
+    No order send. No close-only sender. No emergency-close sender.
+    No new-entry sender real exec. No permission-gate sender reuse.
+    No socket / urllib / requests / httpx / http.client / dotenv.
+    No HMAC / signing.
+  - 4 ACCEPTABLE_*_STATUSES frozensets (real_permission_gate /
+    tiny_entry_permission_gate / tiny_stop_attach_permission_gate /
+    tiny_cleanup_permission_gate).
+  - Hard-fail-closed gates frozenset enforces FAIL_CLOSED downgrade
+    when any of the upstream-presence / status-acceptable /
+    symbol-collision / category-mismatch / payload-shape gates raise.
+  - All 3 manual approval tokens are string-only and NEVER validated
+    in this task; tokens MUST be distinct per step.
+  - Real lifecycle execution stays gated on TASK-014AB until Rick
+    explicitly authorises it.
+
+---
+
 ### 2026-06-10（TASK-014Z — Tiny Isolated Demo Cleanup Permission Gate / Dry-run Only）
 
 Agent: Claude Opus 4.7

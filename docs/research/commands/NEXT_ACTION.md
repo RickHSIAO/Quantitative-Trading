@@ -1,5 +1,79 @@
 # Next Action
 
+## TASK-014AA Status (2026-06-10)
+
+| item | status |
+|---|---|
+| src/demo_tiny_lifecycle_real_execution_summary.py: 7 stages, 59 GATE_ constants (23 general + 13 consistency + 7 manual approval + 11 failure + 5 execution guard), 4 status modes, 10 upstream artifact inputs, hard-fail-closed gates frozenset, dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_lifecycle_real_execution_summary.py: cross-artifact consistency (selected symbol, entry side=Buy, cleanup side=Sell, tiny qty from rounded_tiny_qty priority, stop price from stop-attach permission gate priority, entry reference price from protection priority, category=linear, payload previews from entry / stop-attach / cleanup permission gates) | DONE |
+| src/demo_tiny_lifecycle_real_execution_summary.py: 4 ACCEPTABLE_*_STATUSES frozensets (real_permission_gate / tiny_entry_permission_gate / tiny_stop_attach_permission_gate / tiny_cleanup_permission_gate) | DONE |
+| src/demo_tiny_lifecycle_real_execution_summary.py: 3 distinct manual approval tokens documented (entry / stop-attach / cleanup), string-only, never validated | DONE |
+| src/demo_tiny_lifecycle_real_execution_summary.py: fixed 8-step real lifecycle sequence (pre_readonly_snapshot → real_tiny_entry → post_entry_readonly → real_stop_attach → post_stop_attach_readonly → real_cleanup → post_cleanup_readonly → final_audit), each step preview-only | DONE |
+| src/demo_tiny_lifecycle_real_execution_summary.py: next_required_task = "TASK-014AB_tiny_lifecycle_real_execution_runner_design_or_manual_approval" | DONE |
+| scripts/preview_demo_tiny_lifecycle_real_execution_summary.py: 10 `--from-latest-*` flags incl. new `--from-latest-tiny-cleanup-permission`, `--symbol`, `--allow-real-lifecycle-summary`, `--allow-real-lifecycle-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_lifecycle_real_execution_summary/` | DONE |
+| tests/demo_trading/test_demo_tiny_lifecycle_real_execution_summary.py: 93 tests (62 test classes AA1-AA62 + parametrized sub-tests) covering status modes, 10 missing artifacts, envelope mismatches, 4 status unacceptables (each with acceptable-statuses parametrized), tiny qty / stop price / entry reference / category / payload preview consistency, safety invariants, token gates, guard, report writing, no-secrets, forbidden imports, no close-only / emergency-close / new-entry / cleanup-permission sender reuse, no network tokens, CLI subprocess, next required task = 014AB, gate count = 59, always-on gates, stage shape, missing symbol, G20 not lifted, socket-disabled import, dataclass roundtrip with deep-copy, path refs, fixed 8-step sequence, 3 distinct manual approval tokens, failure response matrix, stage_0 preflight all-present | DONE |
+| py_compile src/demo_tiny_lifecycle_real_execution_summary.py + scripts/preview_demo_tiny_lifecycle_real_execution_summary.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_lifecycle_real_execution_summary.py | 93/93 PASS |
+| pytest tests/demo_trading | 1991 PASS + 1 pre-existing unrelated failure (test_demo_emergency_close_sender) | PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_lifecycle_real_execution_summary/` | DONE |
+| no real `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no close-only sender / no emergency-close sender / no new-entry sender real exec / no permission-gate sender reuse / G20 not lifted / no existing position modified / no secrets | CONFIRMED |
+| local commit | PENDING |
+
+## Next Rick Action (set by 2026-06-10 TASK-014AA)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_lifecycle_real_execution_summary.py scripts/preview_demo_tiny_lifecycle_real_execution_summary.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_lifecycle_real_execution_summary.py -q
+       # expect 93/93 PASS
+       python3 -m pytest tests/demo_trading -q
+       # expect 1991 PASS + 1 pre-existing unrelated failure
+
+2. Run TASK-014AA lifecycle summary checklist (after TASK-014Z CHECKLIST_READY confirmed):
+       python3 scripts/preview_demo_tiny_lifecycle_real_execution_summary.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_lifecycle_real_execution_summary/latest_tiny_lifecycle_real_execution_summary.md
+
+   Expected:
+     status=TINY_LIFECYCLE_PERMISSION_SUMMARY_READY;
+     selected_symbol=SOLUSDT consistent across all 4 permission gates;
+     entry_side=Buy, cleanup_side=Sell;
+     tiny_qty=0.1 (from rounded_tiny_qty), stop_price aligned to tick;
+     real_lifecycle_steps lists 8 preview-only steps with endpoint_called=False;
+     manual_approval_matrix lists 3 distinct tokens;
+     real_execution_allowed=False; g20_lifted=False;
+     next_required_task=TASK-014AB_tiny_lifecycle_real_execution_runner_design_or_manual_approval.
+
+3. (Optional) Permission dry-run envelope:
+       python3 scripts/preview_demo_tiny_lifecycle_real_execution_summary.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --symbol SOLUSDT --allow-real-lifecycle-summary --write-report
+       # expect status=TINY_LIFECYCLE_PERMISSION_SUMMARY_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe --- proves --allow-real-lifecycle-execution never executes:
+       python3 scripts/preview_demo_tiny_lifecycle_real_execution_summary.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --symbol SOLUSDT --allow-real-lifecycle-execution --write-report
+       # expect status=REAL_LIFECYCLE_EXECUTION_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AB
+   (tiny_lifecycle_real_execution_runner_design_or_manual_approval).
+
 ## TASK-014Z Status (2026-06-10)
 
 | item | status |
