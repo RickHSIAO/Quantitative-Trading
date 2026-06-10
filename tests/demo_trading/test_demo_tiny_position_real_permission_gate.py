@@ -595,9 +595,10 @@ class TestW25RealTinyGuard:
         r = _run(allow_real_tiny_position=True)
         assert r.status == STATUS_REAL_TINY_NOT_IMPLEMENTED
         assert r.mode == MODE_REAL_TINY_POSITION_GUARD
-        assert r.real_execution_allowed is True
+        assert r.real_execution_allowed is False
         assert r.real_tiny_position_implemented is False
         assert r.current_task_real_execution_allowed is False
+        assert r.real_tiny_position_requested is True
         assert GATE_REAL_TINY_POSITION_NOT_IMPL in r.blocked_gates
 
     def test_safety_invariants_under_real_guard(self):
@@ -810,8 +811,9 @@ class TestW33ReportRealGuard(TestW31ReportChecklist):
                 (out_d / "latest_tiny_position_real_permission_gate.json").read_text(encoding="utf-8")
             )
             assert data["status"] == STATUS_REAL_TINY_NOT_IMPLEMENTED
-            assert data["real_execution_allowed"] is True
+            assert data["real_execution_allowed"] is False
             assert data["real_tiny_position_implemented"] is False
+            assert data["real_tiny_position_requested"] is True
             assert GATE_REAL_TINY_POSITION_NOT_IMPL in data["blocked_gates"]
             md = (out_d / "latest_tiny_position_real_permission_gate.md").read_text(encoding="utf-8")
             assert "REAL_TINY_POSITION_NOT_IMPLEMENTED" in md

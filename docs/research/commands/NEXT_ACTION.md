@@ -1,5 +1,23 @@
 # Next Action
 
+## TASK-014W-FIX1 Status (2026-06-10)
+
+| item | status |
+|---|---|
+| root cause: `real_execution_allowed` was set to `bool(allow_real_tiny_position)` — semantically wrong; allow flag ≠ execution allowed | FIXED |
+| src/demo_tiny_position_real_permission_gate.py: always return `real_execution_allowed=False` | DONE |
+| src/demo_tiny_position_real_permission_gate.py: add `real_tiny_position_requested` field to capture user intent | DONE |
+| stage_5 envelope: `real_tiny_position_requested` added; `real_execution_allowed=False` confirmed | DONE |
+| to_dict(): `real_tiny_position_requested` serialised | DONE |
+| tests W25: `real_execution_allowed is False`; `real_tiny_position_requested is True` | DONE |
+| tests W33: report JSON `real_execution_allowed is False`; `real_tiny_position_requested is True` | DONE |
+| NEXT_ACTION.md VPS step-4 expected values corrected | DONE |
+| py_compile src + CLI | PASS |
+| pytest tests/demo_trading/test_demo_tiny_position_real_permission_gate.py | 83/83 PASS |
+| order_endpoint_called=False / stop_endpoint_called=False / no_position_modified=True | CONFIRMED |
+| G20 unchanged | CONFIRMED |
+| local commit | PENDING |
+
 ## TASK-014W Status (2026-06-10)
 
 | item | status |
@@ -77,7 +95,8 @@
    Expected:
      status=REAL_TINY_POSITION_NOT_IMPLEMENTED;
      mode=real_tiny_position_guard;
-     real_execution_allowed=True;
+     real_execution_allowed=False;
+     real_tiny_position_requested=True;
      real_tiny_position_implemented=False;
      current_task_real_execution_allowed=False;
      stop_endpoint_called=False; order_endpoint_called=False;

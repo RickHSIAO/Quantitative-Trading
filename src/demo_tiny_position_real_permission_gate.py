@@ -282,6 +282,8 @@ class TinyPositionRealPermissionGateResult:
     real_execution_allowed:       bool = False
     real_tiny_position_implemented: bool = False
     current_task_real_execution_allowed: bool = False
+    # Semantic: user passed --allow-real-tiny-position (does NOT mean execution is allowed).
+    real_tiny_position_requested: bool = False
 
     # Safety invariants (string-only references / always documented).
     trading_stop_path_ref:        str  = TRADING_STOP_PATH_REF
@@ -336,6 +338,7 @@ class TinyPositionRealPermissionGateResult:
             "real_execution_allowed":     self.real_execution_allowed,
             "real_tiny_position_implemented": self.real_tiny_position_implemented,
             "current_task_real_execution_allowed": self.current_task_real_execution_allowed,
+            "real_tiny_position_requested": self.real_tiny_position_requested,
             "trading_stop_path_ref":      self.trading_stop_path_ref,
             "order_create_path_ref":      self.order_create_path_ref,
             "base_url_ref":               self.base_url_ref,
@@ -720,6 +723,7 @@ class DemoTinyPositionRealPermissionGate:
             "real_execution_allowed":               False,
             "real_tiny_position_implemented":       False,
             "current_task_real_execution_allowed":  False,
+            "real_tiny_position_requested":         bool(allow_real_tiny_position),
             "g20_policy_still_in_place":            True,
             "g20_lifted":                           False,
             "no_real_order_endpoint":               True,
@@ -753,10 +757,6 @@ class DemoTinyPositionRealPermissionGate:
             status_out = STATUS_CHECKLIST_READY
             mode_out   = MODE_CHECKLIST
 
-        # `real_execution_allowed` reflects whether the caller flipped the
-        # real-tiny-position flag; the gate itself still does NOT execute
-        # (real_tiny_position_implemented stays False).
-        real_exec_flag_allowed = bool(allow_real_tiny_position)
         return TinyPositionRealPermissionGateResult(
             timestamp_utc=ts_utc,
             mode=mode_out,
@@ -770,9 +770,10 @@ class DemoTinyPositionRealPermissionGate:
             within_tiny_notional_cap=within_cap,
             existing_positions_snapshot=existing_snapshot,
             real_permission_gate_dry_run_allowed=allow_real_permission_gate,
-            real_execution_allowed=real_exec_flag_allowed,
+            real_execution_allowed=False,
             real_tiny_position_implemented=False,
             current_task_real_execution_allowed=False,
+            real_tiny_position_requested=bool(allow_real_tiny_position),
             stop_endpoint_called=False,
             order_endpoint_called=False,
             no_position_modified=True,

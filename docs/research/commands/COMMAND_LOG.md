@@ -114,6 +114,58 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014W-FIX1 — Clarify real tiny guard execution flags）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014W-FIX1)
+Task: Fix semantic error where `real_execution_allowed` was set to
+      `bool(allow_real_tiny_position)` in the
+      REAL_TINY_POSITION_NOT_IMPLEMENTED path, making it appear that
+      real execution was allowed when it is not. The allow flag only
+      means the user requested real tiny; execution is never allowed
+      in TASK-014W. Add `real_tiny_position_requested` field to
+      preserve the "user requested" semantic distinctly from the
+      "execution allowed" semantic.
+Status before: TASK-014W 83/83 tests PASS; VPS validation step-4
+      showed `real_execution_allowed=True` under --allow-real-tiny-position
+      — inconsistent with the REAL_TINY_POSITION_NOT_IMPLEMENTED status
+      and safety semantics.
+Status after: `real_execution_allowed` is always False; new field
+      `real_tiny_position_requested` captures the user-intent flag.
+      Tests W25 and W33 updated; 83/83 PASS. NEXT_ACTION.md VPS
+      step-4 expected values corrected.
+Files changed:
+  - src/demo_tiny_position_real_permission_gate.py
+      * Removed `real_exec_flag_allowed = bool(allow_real_tiny_position)`
+      * `real_execution_allowed` always returned as False
+      * Added `real_tiny_position_requested: bool = False` field
+      * `real_tiny_position_requested` added to to_dict()
+      * stage_5 envelope: `real_tiny_position_requested` added
+  - tests/demo_trading/test_demo_tiny_position_real_permission_gate.py
+      * W25: `real_execution_allowed is False`; `real_tiny_position_requested is True`
+      * W33: JSON report `real_execution_allowed is False`; `real_tiny_position_requested is True`
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+  - docs/research/commands/NEXT_ACTION.md (FIX1 status block; VPS step-4 corrected)
+Validation:
+  - python -m py_compile src/demo_tiny_position_real_permission_gate.py
+                        scripts/preview_demo_tiny_position_real_permission_gate.py → OK
+  - python -m pytest tests/demo_trading/test_demo_tiny_position_real_permission_gate.py -q
+                        → 83 passed
+Safety confirmation:
+  - order_endpoint_called=False: CONFIRMED (no change to execution paths)
+  - stop_endpoint_called=False:  CONFIRMED
+  - no_position_modified=True:   CONFIRMED
+  - G20 unchanged:               CONFIRMED
+  - No new execute flag added:   CONFIRMED (real_tiny_position_requested is read-only semantic)
+Notes:
+  - Before: `real_execution_allowed=True` when allow_real_tiny_position=True (wrong)
+  - After:  `real_execution_allowed=False` always; `real_tiny_position_requested=True` when
+            allow_real_tiny_position=True (correct)
+  - stage_5 and top-level summary now consistent: both show real_execution_allowed=False.
+  - Local commit only — no GitHub push.
+
+---
+
 ### 2026-06-10（TASK-014V — Tiny Isolated Demo Position Lifecycle Mock）
 
 Agent: Claude Opus 4.7
