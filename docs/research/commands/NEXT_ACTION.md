@@ -1,5 +1,86 @@
 # Next Action
 
+## TASK-014AB Status (2026-06-10)
+
+| item | status |
+|---|---|
+| src/demo_tiny_lifecycle_runner_design.py: 8 stages, 68 GATE_ constants (21 general + 6 design scope + 6 state machine + 7 manual approval + 8 payload contract + 10 failure policy + 5 observability + 5 execution guard), 4 status modes, 11 upstream artifact inputs (10 baseline + 014AA lifecycle_summary), hard-fail-closed gates frozenset, dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_lifecycle_runner_design.py: 18 runner states + readonly-between-real-steps invariant + no auto-advance / no parallel / no skip / no retry state-machine constraints | DONE |
+| src/demo_tiny_lifecycle_runner_design.py: 3 distinct manual approval tokens documented (entry / stop-attach / cleanup), token format alone is never authorization, each real step requires separate approval | DONE |
+| src/demo_tiny_lifecycle_runner_design.py: execution payload contract pulled from the 3 permission gates (entry / stop-attach / cleanup) with preview_only=True / reduceOnly / qty-parity / stopLoss>0 / stopLoss<entry_ref — no preview-to-real conversion | DONE |
+| src/demo_tiny_lifecycle_runner_design.py: abort + fail-closed policy for every real step (entry rejected, stop attach rejected, cleanup rejected, readonly unavailable, partial fill, stop mismatch, unexpected position appears, no automatic emergency close, no automatic cleanup, no retry loop) | DONE |
+| src/demo_tiny_lifecycle_runner_design.py: 11 required audit artifacts + sanitisation rules (no secret values in logs, Discord / Notion sanitized only) | DONE |
+| src/demo_tiny_lifecycle_runner_design.py: 4 forbidden flags (--execute-real-lifecycle / --execute-real-entry / --execute-real-stop / --execute-real-cleanup) deliberately absent from code (mentioned only in documentation as forbidden) | DONE |
+| src/demo_tiny_lifecycle_runner_design.py: next_required_task = "TASK-014AC_tiny_lifecycle_runner_implementation_dry_run_only" | DONE |
+| scripts/preview_demo_tiny_lifecycle_runner_design.py: 11 `--from-latest-*` flags incl. new `--from-latest-lifecycle-summary`, `--symbol`, `--allow-runner-design-approval`, `--allow-real-runner-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_lifecycle_runner_design/` | DONE |
+| tests/demo_trading/test_demo_tiny_lifecycle_runner_design.py: 90 tests (55 test classes AB1-AB55 + parametrized sub-tests) covering 4 status modes, 11 missing upstream artifacts, envelope mismatches, lifecycle-summary unacceptable statuses, payload contract violations, missing symbol, 8 stages built, 18-state machine + readonly-after-real invariant, 3 distinct token patterns, execution payload contract, abort and fail-closed policy, 11 audit artifacts, final design verdict, runner design scope, G20 not lifted, socket-disabled import, dataclass roundtrip with deep-copy, path refs, safety invariants, gate count >= 68, always-on gates, no forbidden imports (incl. 014AA summary module), no sender reuse, no network/env/signing tokens, 4 forbidden flags absent (parametrized), CLI exit codes 0/1, next required task = 014AC, upstream lifecycle summary status echoed, status precedence (hard fail beats approval and execution guard) | DONE |
+| py_compile src/demo_tiny_lifecycle_runner_design.py + scripts/preview_demo_tiny_lifecycle_runner_design.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_lifecycle_runner_design.py | 90/90 PASS |
+| pytest tests/demo_trading | 2081 PASS + 1 pre-existing unrelated failure (test_demo_emergency_close_sender — same as 014AA) | PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_lifecycle_runner_design/` | DONE |
+| no runner implemented / no real `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no permission-gate sender reuse / no 014AA summary module reuse / G20 not lifted / no existing position modified / no secrets | CONFIRMED |
+| local commit | PENDING |
+
+## Next Rick Action (set by 2026-06-10 TASK-014AB)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_lifecycle_runner_design.py scripts/preview_demo_tiny_lifecycle_runner_design.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_lifecycle_runner_design.py -q
+       # expect 90/90 PASS
+       python3 -m pytest tests/demo_trading -q
+       # expect 2081 PASS + 1 pre-existing unrelated failure
+
+2. Run TASK-014AB runner design checklist (after TASK-014AA permission-summary
+   confirmed READY):
+       python3 scripts/preview_demo_tiny_lifecycle_runner_design.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_lifecycle_runner_design/latest_tiny_lifecycle_runner_design.md
+
+   Expected:
+     status=TINY_LIFECYCLE_RUNNER_DESIGN_READY;
+     selected_symbol=SOLUSDT consistent across all 11 upstream artifacts;
+     18 runner states surfaced; readonly-between-real-steps invariant present;
+     3 distinct manual approval tokens (never validated);
+     execution payload contract previewed with preview_only=True and reduceOnly;
+     abort + fail-closed policy listed for every real step;
+     11 required audit artifacts listed;
+     real_execution_allowed=False; g20_lifted=False;
+     next_required_task=TASK-014AC_tiny_lifecycle_runner_implementation_dry_run_only.
+
+3. (Optional) Runner-design approval dry-run envelope:
+       python3 scripts/preview_demo_tiny_lifecycle_runner_design.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary \
+           --symbol SOLUSDT --allow-runner-design-approval --write-report
+       # expect status=TINY_LIFECYCLE_RUNNER_DESIGN_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe --- proves --allow-real-runner-execution never executes:
+       python3 scripts/preview_demo_tiny_lifecycle_runner_design.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary \
+           --symbol SOLUSDT --allow-real-runner-execution --write-report
+       # expect status=REAL_RUNNER_EXECUTION_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AC
+   (tiny_lifecycle_runner_implementation_dry_run_only).
+
 ## TASK-014AA Status (2026-06-10)
 
 | item | status |

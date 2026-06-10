@@ -21,6 +21,67 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014AB — Tiny Lifecycle Runner Design / Manual Approval）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014AB)
+Task: Build a pure-computation runner design module that consolidates the
+      11 upstream artifacts (10 baseline + 014AA lifecycle_summary) and
+      documents (a) the design-only scope, (b) the 18-state runner state
+      machine with readonly-between-real-steps invariant, (c) the three
+      distinct manual approval tokens (entry / stop-attach / cleanup) that
+      are never validated here, (d) the execution payload contract pulled
+      from the three permission gates without conversion, (e) the abort /
+      fail-closed policy for every real step, (f) the observability +
+      audit-artifact contract (11 required artifacts + sanitisation rules),
+      and (g) the permanent execution guard.  No runner is implemented in
+      this task; no endpoint is invoked; G20 remains in place; the four
+      forbidden flags (--execute-real-lifecycle / --execute-real-entry /
+      --execute-real-stop / --execute-real-cleanup) are deliberately absent.
+
+Status before: TASK-014AA local-committed, pre-VPS-pull.
+Status after:  TASK-014AB local-committed; next_required_task =
+               TASK-014AC_tiny_lifecycle_runner_implementation_dry_run_only.
+
+Files changed:
+  - src/demo_tiny_lifecycle_runner_design.py (NEW, 1283 lines)
+  - scripts/preview_demo_tiny_lifecycle_runner_design.py (NEW, ~580 lines)
+  - tests/demo_trading/test_demo_tiny_lifecycle_runner_design.py (NEW, ~1100 lines)
+  - .gitignore (+1 line: outputs/demo_trading/tiny_lifecycle_runner_design/)
+  - docs/research/commands/NEXT_ACTION.md (prepend 014AB block)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+
+Validation:
+  - py_compile: PASS (src + scripts + tests)
+  - pytest tests/demo_trading/test_demo_tiny_lifecycle_runner_design.py:
+        90 / 90 PASS in 0.59 s
+  - pytest tests/demo_trading:
+        2081 PASS + 1 pre-existing unrelated failure
+        (test_demo_emergency_close_sender::TestCLIIntegration::
+         test_dry_run_cli_writes_report — same failure already noted under
+         TASK-014AA, untouched by this task)
+
+Outputs:
+  - outputs/demo_trading/tiny_lifecycle_runner_design/  (gitignored)
+
+Notes:
+  - Pure design module — no socket import, no network call, no env read,
+    no signing, no order endpoint touched, no existing position modified.
+  - 8 stages, 68 gates, 18 runner states, 11 required audit artifacts,
+    3 distinct manual approval tokens, 4 status modes.
+  - 11 upstream artifact inputs (10 from 014AA chain + 014AA
+    lifecycle_summary itself); ACCEPTABLE_LIFECYCLE_SUMMARY_STATUSES
+    frozenset enforces the upstream verdict.
+  - Status promotion chain: hard_fail → FAIL_CLOSED;
+    allow_real_runner_execution → REAL_RUNNER_NOT_IMPL;
+    allow_runner_design_approval → DESIGN_READY_EXEC_DISABLED;
+    otherwise → DESIGN_READY.
+  - 4 forbidden flags scanned via tokenize-stripped source
+    (only docstrings/comments may mention them as forbidden — code is clean).
+  - Local commit only (no push) per durable feedback rule.
+
+---
+
 ### 2026-06-10（TASK-014AA — Tiny Lifecycle Real Execution Permission Summary / Final Review）
 
 Agent: Claude Opus 4.7
