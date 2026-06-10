@@ -1,5 +1,82 @@
 # Next Action
 
+## TASK-014AC Status (2026-06-10)
+
+| item | status |
+|---|---|
+| src/demo_tiny_lifecycle_runner_dry_run.py: 8 stages, 73 GATE_ constants, 4 status modes, 12 upstream artifact inputs (10 baseline + 014AA lifecycle_summary + 014AB runner_design), 18 runner states, 8-step dry-run trace, 11 required audit slots, hard-fail-closed gates frozenset, dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_lifecycle_runner_dry_run.py: pure-computation dry-run runner — NO endpoint calls, NO secret reads, NO HMAC/signature, NO preview-to-real conversion, NO sender adapter; 3 synthesized envelopes always force preview_only=True / send_allowed=False / endpoint_called=False / real_payload=False / signature_present=False / private_headers=[] | DONE |
+| src/demo_tiny_lifecycle_runner_dry_run.py: 8-step trace records state_before / action / state_after / artifact_slot / endpoint_called=False / position_modified=False / auto_advanced=False / token_validated=False per step; simulates readonly verification from artifacts only | DONE |
+| src/demo_tiny_lifecycle_runner_dry_run.py: 11 audit slots populated with DRY_RUN_NOT_SENT sanitized convention; failure path simulation covers 5 FAIL_CLOSED branches + 2 MANUAL_REVIEW_REQUIRED branches with no auto retry / no auto cleanup / no auto emergency close | DONE |
+| src/demo_tiny_lifecycle_runner_dry_run.py: forbidden flags (--execute-real-lifecycle / --execute-real-entry / --execute-real-stop / --execute-real-cleanup / --send-order / --place-order) deliberately absent from code | DONE |
+| src/demo_tiny_lifecycle_runner_dry_run.py: next_required_task = "TASK-014AD_tiny_lifecycle_real_execution_guarded_runner_design_review" | DONE |
+| scripts/preview_demo_tiny_lifecycle_runner_dry_run.py: 12 `--from-latest-*` flags incl. new `--from-latest-runner-design`, `--symbol`, `--allow-dry-run-runner-approval`, `--allow-real-runner-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_lifecycle_runner_dry_run/` | DONE |
+| tests/demo_trading/test_demo_tiny_lifecycle_runner_dry_run.py: 111 tests (61 test classes AC1-AC61 + parametrized sub-tests) covering 3 status modes, 12 missing artifacts, 4 envelope mismatches, 3 envelope preview_only violations, runner_design status unacceptable, missing symbol, 8 stages, 18-state machine + readonly-after-real invariant, 8-step dry-run trace + per-step safety invariants, dry-run scope flags, payload materialization, readonly simulation (artifact source only), 11 DRY_RUN_NOT_SENT audit slots, failure path simulation, final dry-run verdict, G20 not lifted, socket-disabled import smoke, dataclass roundtrip with deep-copy, path refs, safety invariants, gate count >= 73, always-on gates, no forbidden imports, no sender reuse, no network/env/signing tokens, 6 forbidden flags absent, token patterns, 12-artifact preflight, report artifacts, no secrets in report, CLI exit codes 0/1, next required task = 014AD, upstream lifecycle_summary + runner_design status echoed, status precedence, whitelist sizes, runner_design_status_acceptable sorted, no signature/headers in all envelopes, existing positions not touched, blocked_gates deduplicated | DONE |
+| py_compile src/demo_tiny_lifecycle_runner_dry_run.py + scripts/preview_demo_tiny_lifecycle_runner_dry_run.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_lifecycle_runner_dry_run.py | 111/111 PASS |
+| pytest tests/demo_trading | 2192 PASS + 1 pre-existing unrelated failure (test_demo_emergency_close_sender — same as 014AA/AB) | PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_lifecycle_runner_dry_run/` | DONE |
+| no real runner / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no permission-gate sender reuse / no 014AA summary or 014AB design module reuse / G20 not lifted / no existing position modified / no secrets / no HMAC / no signature header | CONFIRMED |
+| local commit | PENDING |
+
+## Next Rick Action (set by 2026-06-10 TASK-014AC)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_lifecycle_runner_dry_run.py scripts/preview_demo_tiny_lifecycle_runner_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_lifecycle_runner_dry_run.py -q
+       # expect 111/111 PASS
+       python3 -m pytest tests/demo_trading -q
+       # expect 2192 PASS + 1 pre-existing unrelated failure
+
+2. Run TASK-014AC runner dry-run checklist (after TASK-014AB runner design
+   confirmed READY):
+       python3 scripts/preview_demo_tiny_lifecycle_runner_dry_run.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_lifecycle_runner_dry_run/latest_tiny_lifecycle_runner_dry_run.md
+
+   Expected:
+     status=TINY_LIFECYCLE_RUNNER_DRY_RUN_READY;
+     selected_symbol=SOLUSDT consistent across 12 upstream artifacts;
+     8-step dry-run trace populated (each step endpoint_called=False);
+     3 dry-run envelopes (entry/stop/cleanup) preview_only=True / send_allowed=False;
+     11 audit slots populated with DRY_RUN_NOT_SENT;
+     real_execution_allowed=False; g20_lifted=False; no_secrets_loaded=True;
+     next_required_task=TASK-014AD_tiny_lifecycle_real_execution_guarded_runner_design_review.
+
+3. (Optional) Dry-run-runner approval probe:
+       python3 scripts/preview_demo_tiny_lifecycle_runner_dry_run.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --symbol SOLUSDT --allow-dry-run-runner-approval --write-report
+       # expect status=TINY_LIFECYCLE_RUNNER_DRY_RUN_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe — proves --allow-real-runner-execution never executes:
+       python3 scripts/preview_demo_tiny_lifecycle_runner_dry_run.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --symbol SOLUSDT --allow-real-runner-execution --write-report
+       # expect status=REAL_RUNNER_EXECUTION_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AD
+   (tiny_lifecycle_real_execution_guarded_runner_design_review).
+
 ## TASK-014AB Status (2026-06-10)
 
 | item | status |

@@ -21,6 +21,50 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014AC — Tiny Lifecycle Runner Implementation / Dry-run Only）
+
+Agent: Claude (Opus)
+Command source: Carry-over TASK-014AC workorder (sequential safety chain)
+Task: Implement pure-computation dry-run lifecycle runner — NO endpoint calls,
+NO secret reads, NO HMAC/signature, NO sender adapter, NO preview-to-real
+conversion. 8 stages, 73 gates, 12 upstream artifacts, 18 runner states,
+8-step dry-run trace, 11 audit slots (DRY_RUN_NOT_SENT), 3 synthesized
+envelopes always preview_only=True / send_allowed=False / endpoint_called=False,
+6 forbidden flags absent (--execute-real-*, --send-order, --place-order),
+status modes TINY_LIFECYCLE_RUNNER_DRY_RUN_READY /
+_BUT_EXECUTION_DISABLED / REAL_RUNNER_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED,
+next_required_task = TASK-014AD.
+Status before: TASK-014AB DONE (runner design + manual approval) →
+TASK-014AC PENDING
+Status after: TASK-014AC code + tests + docs DONE (local commit pending)
+Files changed:
+  - src/demo_tiny_lifecycle_runner_dry_run.py (NEW, ~1460 lines)
+  - scripts/preview_demo_tiny_lifecycle_runner_dry_run.py (NEW, ~681 lines)
+  - tests/demo_trading/test_demo_tiny_lifecycle_runner_dry_run.py (NEW,
+    61 test classes AC1-AC61, 111 tests)
+  - .gitignore (added outputs/demo_trading/tiny_lifecycle_runner_dry_run/)
+  - docs/research/commands/NEXT_ACTION.md (prepend TASK-014AC status + Next Rick Action)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - python -m py_compile src/...py scripts/...py tests/...py → OK
+  - python -m pytest tests/demo_trading/test_demo_tiny_lifecycle_runner_dry_run.py -q
+    → 111/111 PASS
+  - python -m pytest tests/demo_trading -q → 2192 PASS + 1 pre-existing
+    unrelated failure (test_demo_emergency_close_sender — same as 014AA/AB)
+Outputs: outputs/demo_trading/tiny_lifecycle_runner_dry_run/ (gitignored,
+runtime-only)
+Notes: Pure-computation only. No socket / no env reads / no signing.
+3 envelopes synthesized internally always preview_only=True regardless of
+upstream; upstream preview_only=False also propagates to FAIL_CLOSED.
+8-step trace records endpoint_called=False / position_modified=False /
+token_validated=False per step. 11 audit slots all DRY_RUN_NOT_SENT.
+Failure path simulation: 5 FAIL_CLOSED + 2 MANUAL_REVIEW_REQUIRED.
+No real runner / no sender reuse / no 014AA-summary or 014AB-design module
+reuse. G20 sender policy still in place. No existing position modified.
+Next: TASK-014AD (tiny_lifecycle_real_execution_guarded_runner_design_review).
+
+---
+
 ### 2026-06-10（TASK-014AB — Tiny Lifecycle Runner Design / Manual Approval）
 
 Agent: Claude Opus 4.7
