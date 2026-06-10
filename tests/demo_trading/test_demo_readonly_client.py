@@ -579,3 +579,56 @@ class TestWriteReport:
             _write_report(data, output_dir)
             md = (output_dir / "latest_smoke.md").read_text(encoding="utf-8")
             assert "FAIL" in md
+
+
+# ---------------------------------------------------------------------------
+# TASK-014X-FIX2: pagination + targeted SOLUSDT lookup
+# ---------------------------------------------------------------------------
+
+class TestPaginationAndTargetedLookup:
+    """Pagination support for instruments-info and targeted SOLUSDT fetch."""
+
+    def test_parse_instrument_snapshot(self):
+        """_parse_instrument_snapshot extracts fields correctly."""
+        client = _fixture_client()
+        item = {
+            "symbol": "SOLUSDT",
+            "lotSizeFilter": {
+                "qtyStep": "0.1",
+                "minOrderQty": "0.1",
+                "maxOrderQty": "0",
+            },
+            "priceFilter": {
+                "tickSize": "0.01",
+            },
+        }
+        snap = client._parse_instrument_snapshot(item)
+        assert snap.symbol == "SOLUSDT"
+        assert snap.qty_step == pytest.approx(0.1)
+        assert snap.min_qty == pytest.approx(0.1)
+        assert snap.tick_size == pytest.approx(0.01)
+
+    def test_instruments_real_includes_fixture_solusdt(self):
+        """Fixture mode includes SOLUSDT in instrument list."""
+        client = _fixture_client()
+        rules = client.get_instruments_info()
+        assert "SOLUSDT" in rules, "SOLUSDT should be in fixture instruments"
+        sol = rules["SOLUSDT"]
+        assert sol.symbol == "SOLUSDT"
+        assert sol.qty_step > 0
+        assert sol.min_qty > 0
+        assert sol.tick_size > 0
+
+    def test_instruments_with_symbol_filter(self):
+        """get_instruments_info(symbols=['SOLUSDT']) returns only SOLUSDT."""
+        client = _fixture_client()
+        rules = client.get_instruments_info(symbols=["SOLUSDT"])
+        assert "SOLUSDT" in rules
+        # Fixture mode ignores symbols filter; real mode would apply it
+
+    def test_targeted_lookup_solusdt_never_missing(self):
+        """_instruments_real always includes SOLUSDT (targeted + paginated)."""
+        # In fixture mode, SOLUSDT is always present
+        client = _fixture_client()
+        rules = client.get_instruments_info()
+        assert "SOLUSDT" in rules

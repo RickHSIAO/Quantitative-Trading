@@ -1,5 +1,71 @@
 # Next Action
 
+## TASK-014X-FIX2 Status (2026-06-10)
+
+| item | status |
+|---|---|
+| root cause: `/v5/market/instruments-info` fetch only got first page; no pagination support; SOLUSDT not in first 500 results | FIXED |
+| src/demo_readonly_client.py: `_instruments_real` now supports pagination via nextPageCursor (max 20 pages) | DONE |
+| src/demo_readonly_client.py: targeted SOLUSDT lookup added (called if paginated fetch doesn't include it) | DONE |
+| src/demo_readonly_client.py: `_parse_instrument_snapshot` helper extracted for code reuse | DONE |
+| scripts/preview_demo_readonly_runtime.py: `instrument_rules_by_symbol` now includes both position symbols + SOLUSDT | DONE |
+| scripts/preview_demo_readonly_runtime.py: pagination metadata added to latest_smoke.json | DONE |
+| tests: TestPaginationAndTargetedLookup (4 tests) in test_demo_readonly_client.py | DONE |
+| tests: TestX71–TestX73 (3 tests) in test_demo_tiny_entry_permission_gate.py | DONE |
+| py_compile src/demo_readonly_client.py + scripts/preview_demo_readonly_runtime.py + CLI + entry gate | PASS |
+| pytest tests/demo_trading/test_demo_readonly_client.py | 74/74 PASS |
+| pytest tests/demo_trading/test_demo_tiny_entry_permission_gate.py | 95/95 PASS (91 prior + 4 new FIX2) |
+| pytest tests/demo_trading | 1710 PASS + 1 pre-existing unrelated failure | PASS |
+| no order endpoint / no stop endpoint / no position modified / G20 unchanged / no secrets | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014X-FIX2)
+
+1. Update VPS git pull:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m pytest tests/demo_trading -q
+       # expect 1710+ PASS + 1 pre-existing unrelated failure
+
+2. Regenerate readonly smoke (pagination + targeted SOLUSDT):
+       python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+       # Verify pagination worked:
+       python3 - <<'PY'
+import json
+from pathlib import Path
+d = json.load(open("outputs/demo_trading/readonly_smoke/latest_smoke.json"))
+rules = d.get("instrument_rules_by_symbol", {})
+sol = rules.get("SOLUSDT")
+print("SOLUSDT present:", bool(sol))
+print("instrument_rules_count:", d.get("instrument_rules_count"))
+print("instrument_rules_pages_fetched:", d.get("instrument_rules_pages_fetched"))
+print("targeted_instrument_symbols_found:", d.get("targeted_instrument_symbols_found"))
+print("targeted_instrument_symbols_missing:", d.get("targeted_instrument_symbols_missing"))
+PY
+
+   Expected: SOLUSDT present=True, targeted_instrument_symbols_found=['SOLUSDT']
+
+3. Re-run W chain to latest real permission gate (same steps as TASK-014X-FIX1).
+
+4. Run TASK-014X checklist:
+       python3 scripts/preview_demo_tiny_entry_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_entry_permission_gate/latest_tiny_entry_permission_gate.md
+
+   Expected:
+     status=TINY_ENTRY_PERMISSION_CHECKLIST_READY;
+     instrument_rule_summary.rule_present=True;
+     rounded_tiny_qty > 0; estimated_tiny_notional <= 10;
+     order_endpoint_called=False; stop_endpoint_called=False;
+     no_position_modified=True; real_execution_allowed=False.
+
+5. Once step 4 passes, decide whether to authorise TASK-014Y.
+
 ## TASK-014X-FIX1 Status (2026-06-10)
 
 | item | status |

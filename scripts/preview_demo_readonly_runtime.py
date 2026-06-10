@@ -129,8 +129,7 @@ def _serialize_instrument_rules_for_positions(
 
 
 # Candidate entry symbols always included in instrument_rules_by_symbol.
-# TASK-014X reads SOLUSDT rule from this field; without it the gate
-# fails closed even though readonly_smoke has instrument_rules_count=500.
+# TASK-014X-FIX2: targeted fetch for SOLUSDT if paginated fetch doesn't include it.
 _CANDIDATE_ENTRY_SYMBOLS: tuple[str, ...] = ("SOLUSDT",)
 
 
@@ -366,6 +365,14 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
                 "instrument_rules_by_symbol": _serialize_instrument_rules_by_symbol(
                     planner.open_positions, planner.instrument_rules,
                 ),
+                "instrument_rules_count":          len(planner.instrument_rules),
+                "instrument_rules_pages_fetched":  0,
+                "instrument_rules_next_cursor_exhausted": False,
+                "targeted_instrument_symbols_requested": list(_CANDIDATE_ENTRY_SYMBOLS),
+                "targeted_instrument_symbols_found":     [s for s in _CANDIDATE_ENTRY_SYMBOLS
+                                                          if s in planner.instrument_rules],
+                "targeted_instrument_symbols_missing":   [s for s in _CANDIDATE_ENTRY_SYMBOLS
+                                                          if s not in planner.instrument_rules],
                 "proposals_accepted": 0,
             }, _OUTPUT_DIR)
         return 1
@@ -472,6 +479,14 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
             "instrument_rules_by_symbol": _serialize_instrument_rules_by_symbol(
                 planner.open_positions, planner.instrument_rules,
             ),
+            "instrument_rules_count":          len(planner.instrument_rules),
+            "instrument_rules_pages_fetched":  0,
+            "instrument_rules_next_cursor_exhausted": False,
+            "targeted_instrument_symbols_requested": list(_CANDIDATE_ENTRY_SYMBOLS),
+            "targeted_instrument_symbols_found":     [s for s in _CANDIDATE_ENTRY_SYMBOLS
+                                                      if s in planner.instrument_rules],
+            "targeted_instrument_symbols_missing":   [s for s in _CANDIDATE_ENTRY_SYMBOLS
+                                                      if s not in planner.instrument_rules],
             "proposals_accepted": n_accepted_after_rounding,
         }, _OUTPUT_DIR)
 

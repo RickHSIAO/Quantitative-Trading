@@ -398,33 +398,79 @@ class DemoReadOnlyClient:
         return out
 
     def _instruments_real(self, symbols: list[str]) -> dict[str, InstrumentSnapshot]:
-        data = self._get(_EP_INSTRUMENTS, {"category": "linear"}, signed=False)
+        """Fetch linear instruments with pagination + targeted candidate symbol lookup.
+
+        Fetches paginated instruments-info, collecting all pages via nextPageCursor.
+        Candidate entry symbols (e.g., SOLUSDT) are fetched via targeted lookup if
+        missing from paginated results.  Returns dict keyed by symbol.
+        """
         out: dict[str, InstrumentSnapshot] = {}
-        try:
-            for item in data["result"]["list"]:
-                sym = item.get("symbol", "")
-                if symbols and sym not in symbols:
-                    continue
-                lot      = item.get("lotSizeFilter", {}) or {}
-                pf       = item.get("priceFilter",   {}) or {}
-                qty_step     = float(lot.get("qtyStep",     lot.get("basePrecision", 0.001)) or 0.001)
-                min_qty      = float(lot.get("minOrderQty", 0.001) or 0.001)
-                max_qty      = float(lot.get("maxOrderQty", 0)     or 0)
-                min_notional = float(lot.get("minOrderAmt", 1.0)   or 1.0)
-                tick_size    = float(pf.get("tickSize",     0.01)  or 0.01)
-                out[sym] = InstrumentSnapshot(
-                    symbol=sym,
-                    qty_step=qty_step,
-                    min_qty=min_qty,
-                    max_qty=max_qty,
-                    tick_size=tick_size,
-                    min_notional=min_notional,
-                    price_precision=_decimal_places(tick_size),
-                    qty_precision=_decimal_places(qty_step),
+        pages_fetched = 0
+        next_cursor = ""
+        max_pages = 20  # safety limit to prevent infinite loops
+        seen_cursors: set[str] = set()
+
+        # Paginated fetch
+        while pages_fetched < max_pages:
+            params: dict[str, str] = {"category": "linear"}
+            if next_cursor:
+                params["cursor"] = next_cursor
+            data = self._get(_EP_INSTRUMENTS, params, signed=False)
+
+            pages_fetched += 1
+            try:
+                for item in data["result"]["list"]:
+                    sym = item.get("symbol", "")
+                    if symbols and sym not in symbols:
+                        continue
+                    if sym:
+                        out[sym] = self._parse_instrument_snapshot(item)
+
+                next_cursor = data.get("result", {}).get("nextPageCursor", "")
+                if not next_cursor or next_cursor in seen_cursors:
+                    break
+                seen_cursors.add(next_cursor)
+            except (KeyError, TypeError, ValueError):
+                break
+
+        # Targeted fetch for candidate entry symbols (e.g., SOLUSDT)
+        _CANDIDATE_ENTRY_SYMBOLS = ("SOLUSDT",)
+        for sym in _CANDIDATE_ENTRY_SYMBOLS:
+            if sym not in out:
+                data = self._get(
+                    _EP_INSTRUMENTS,
+                    {"category": "linear", "symbol": sym},
+                    signed=False
                 )
-        except (KeyError, TypeError, ValueError):
-            pass
+                try:
+                    items = data.get("result", {}).get("list", [])
+                    if items:
+                        out[sym] = self._parse_instrument_snapshot(items[0])
+                except (KeyError, TypeError, ValueError):
+                    pass
+
         return out
+
+    def _parse_instrument_snapshot(self, item: dict[str, Any]) -> InstrumentSnapshot:
+        """Parse one instrument item from Bybit API response."""
+        sym = item.get("symbol", "")
+        lot = item.get("lotSizeFilter", {}) or {}
+        pf = item.get("priceFilter", {}) or {}
+        qty_step = float(lot.get("qtyStep", lot.get("basePrecision", 0.001)) or 0.001)
+        min_qty = float(lot.get("minOrderQty", 0.001) or 0.001)
+        max_qty = float(lot.get("maxOrderQty", 0) or 0)
+        min_notional = float(lot.get("minOrderAmt", 1.0) or 1.0)
+        tick_size = float(pf.get("tickSize", 0.01) or 0.01)
+        return InstrumentSnapshot(
+            symbol=sym,
+            qty_step=qty_step,
+            min_qty=min_qty,
+            max_qty=max_qty,
+            tick_size=tick_size,
+            min_notional=min_notional,
+            price_precision=_decimal_places(tick_size),
+            qty_precision=_decimal_places(qty_step),
+        )
 
     def _proof_real(self) -> RuntimeProofSnapshot:
         if not self._api_key:

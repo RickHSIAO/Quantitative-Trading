@@ -21,6 +21,68 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014X-FIX2 — Fetch Paginated SOLUSDT Instrument Rule）
+
+Agent: Claude Haiku 4.5
+Command source: Rick direct chat instruction (TASK-014X-FIX2)
+Task: Fix VPS failure where readonly smoke `instrument_rules_by_symbol` had
+      `SOLUSDT=None` even after TASK-014X-FIX1.  Root cause: Bybit
+      instruments-info endpoint returns paginated results (nextPageCursor);
+      the original _instruments_real() only fetched the first page (~500
+      items), but SOLUSDT was not among them.  Fix adds:
+      (a) Pagination support: loop via nextPageCursor up to 20 pages,
+      collecting all results.  (b) Targeted SOLUSDT fetch: if SOLUSDT
+      is not in paginated results, call /v5/market/instruments-info
+      with symbol=SOLUSDT parameter explicitly.  (c) Pagination metadata:
+      latest_smoke.json now includes instrument_rules_count / pages_fetched
+      / next_cursor_exhausted / targeted_symbols_requested / _found / _missing.
+      No network-level changes; still read-only market endpoints only.
+Status before: TASK-014X-FIX1 tests 91/91 PASS locally; VPS still reported
+      instrument_rule_missing_for_selected_symbol (SOLUSDT not in first page).
+Status after: 1710/1710 PASS locally (74 readonly_client + 95 entry_gate +
+      others) + 1 pre-existing unrelated failure.  SOLUSDT fetch now via
+      pagination + targeted lookup strategy.
+Files changed:
+  - src/demo_readonly_client.py       (_instruments_real: pagination loop,
+      targeted SOLUSDT fetch; _parse_instrument_snapshot extracted helper)
+  - scripts/preview_demo_readonly_runtime.py (pagination metadata in
+      latest_smoke.json via both _write_report calls)
+  - tests/demo_trading/test_demo_readonly_client.py
+      (TestPaginationAndTargetedLookup: 4 tests)
+  - tests/demo_trading/test_demo_tiny_entry_permission_gate.py
+      (TestX71–TestX73: 3 tests for pagination metadata + targeted missing)
+  - docs/research/commands/NEXT_ACTION.md (TASK-014X-FIX2 status + VPS steps)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - python -m py_compile src/demo_readonly_client.py                 => OK
+  - python -m py_compile scripts/preview_demo_readonly_runtime.py    => OK
+  - python -m py_compile src/demo_tiny_entry_permission_gate.py      => OK
+  - python -m py_compile scripts/preview_demo_tiny_entry_permission_gate.py
+        => OK
+  - python -m pytest tests/demo_trading/test_demo_readonly_client.py -q
+        => 74 passed
+  - python -m pytest tests/demo_trading/test_demo_tiny_entry_permission_gate.py -q
+        => 95 passed (91 prior + 4 new FIX2)
+  - python -m pytest tests/demo_trading -q
+        => 1710 passed, 1 pre-existing failure
+Outputs:
+  - outputs/demo_trading/readonly_smoke/ (runtime; gitignored)
+Notes:
+  - Pagination loop: max_pages=20, seen_cursors set prevents infinite
+      cycles.  If cursor repeats or is empty, fetch stops.
+  - Targeted SOLUSDT lookup: called if SOLUSDT not in paginated results;
+      uses /v5/market/instruments-info?category=linear&symbol=SOLUSDT.
+  - Pagination metadata: instrument_rules_count, pages_fetched (0 for
+      fixture mode), next_cursor_exhausted, targeted_symbols_requested /
+      _found / _missing (all strings for fixture mode).
+  - _parse_instrument_snapshot factored out so both paginated and targeted
+      paths use same field extraction logic.
+  - No API secrets involved; read-only market endpoints only.
+  - 5 existing demo shorts untouched; G20 unchanged.
+  - Local commit only per Rick durable preference.
+
+---
+
 ### 2026-06-10（TASK-014X-FIX1 — Persist SOLUSDT Instrument Rule for Tiny Entry Gate）
 
 Agent: Claude Sonnet 4.6
