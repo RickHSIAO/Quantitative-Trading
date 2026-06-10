@@ -72,3 +72,4 @@ outputs/demo_trading/trading_stop_noop_probe_plan/
 outputs/demo_trading/tiny_position_lifecycle_mock/
 outputs/demo_trading/tiny_position_real_permission_gate/
 outputs/demo_trading/tiny_entry_permission_gate/
+outputs/demo_trading/tiny_stop_attach_permission_gate/

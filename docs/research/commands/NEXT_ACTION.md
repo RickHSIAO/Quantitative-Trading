@@ -1,5 +1,53 @@
 # Next Action
 
+## TASK-014Y Status (2026-06-10)
+
+| item | status |
+|---|---|
+| src/demo_tiny_stop_attach_permission_gate.py: 7 stages, 49 gates (20 general + 12 stop payload + 6 manual approval + 6 failure + 5 execution guard), 4 status modes, 8 upstream artifact loaders, fail-closed gates frozenset, tick-size alignment helper, dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_stop_attach_permission_gate.py: stop payload preview (category=linear, stopLoss=<stop_price>, tpslMode=Full, slTriggerBy=MarkPrice, positionIdx=0, symbol=SOLUSDT, preview_only=True) | DONE |
+| src/demo_tiny_stop_attach_permission_gate.py: ACCEPTABLE_REAL_PERMISSION_GATE_STATUSES + ACCEPTABLE_TINY_ENTRY_PERMISSION_GATE_STATUSES frozensets | DONE |
+| src/demo_tiny_stop_attach_permission_gate.py: STOP_ATTACH_TOKEN_PATTERN documented as `CONFIRM_DEMO_TINY_STOP_ATTACH_YYYYMMDD_SYMBOL` (string-only, never validated) | DONE |
+| src/demo_tiny_stop_attach_permission_gate.py: next_required_task = "TASK-014Z_tiny_isolated_demo_cleanup_permission_gate" | DONE |
+| scripts/preview_demo_tiny_stop_attach_permission_gate.py: 8 `--from-latest-*` flags incl. `--from-latest-tiny-entry-permission`, `--symbol`, `--allow-real-stop-permission`, `--allow-real-tiny-stop-attach`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_stop_attach_permission_gate/` | DONE |
+| tests/demo_trading/test_demo_tiny_stop_attach_permission_gate.py: 88 tests (Y1-Y63 plus sub-tests) covering status modes, missing artifacts, envelope mismatches, status unacceptable, instrument rule, stop_price + tick alignment, stop payload fields, safety invariants, token gates, guard, report writing, forbidden imports, CLI subprocess, next required task, stage shape, dataclass roundtrip, instrument_rules_by_symbol format, socket-disabled import | DONE |
+| py_compile src/demo_tiny_stop_attach_permission_gate.py + scripts/preview_demo_tiny_stop_attach_permission_gate.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_stop_attach_permission_gate.py | 88/88 PASS |
+| pytest tests/demo_trading | 1798 PASS + 1 pre-existing unrelated failure (test_demo_emergency_close_sender) | PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_stop_attach_permission_gate/` | DONE |
+| no real `/v5/position/trading-stop` / no `/v5/order/create` / no order send / G20 not lifted / no existing position modified / no secrets | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014Y)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_stop_attach_permission_gate.py scripts/preview_demo_tiny_stop_attach_permission_gate.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_stop_attach_permission_gate.py -q
+       # expect 88/88 PASS
+       python3 -m pytest tests/demo_trading -q
+       # expect 1798 PASS + 1 pre-existing unrelated failure
+
+2. Run TASK-014Y stop-attach checklist (after TASK-014X CHECKLIST_READY confirmed):
+       python3 scripts/preview_demo_tiny_stop_attach_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_stop_attach_permission_gate/latest_tiny_stop_attach_permission_gate.md
+
+   Expected:
+     status=TINY_STOP_ATTACH_PERMISSION_CHECKLIST_READY;
+     stop_payload_preview present with tpslMode=Full, slTriggerBy=MarkPrice, positionIdx=0, preview_only=True;
+     stop_endpoint_called=False; order_endpoint_called=False;
+     no_position_modified=True; real_execution_allowed=False;
+     next_required_task=TASK-014Z_tiny_isolated_demo_cleanup_permission_gate.
+
+3. Once step 2 passes, decide whether to authorise TASK-014Z (tiny isolated demo cleanup permission gate).
+
 ## TASK-014X-FIX2 Status (2026-06-10)
 
 | item | status |

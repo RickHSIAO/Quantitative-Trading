@@ -21,6 +21,46 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014Y — Tiny Isolated Demo Stop Attach Permission Gate / Dry-run Only）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014Y)
+Task: Build a pure-computation tiny isolated demo stop-attach permission gate
+      mirroring the TASK-014X (entry gate) pattern. 7 stages, 49 gates split
+      across 5 categories (20 general + 12 stop payload + 6 manual approval +
+      6 failure + 5 execution guard). Loads 8 upstream artifacts including
+      the TASK-014X tiny_entry_permission_gate. Stop payload preview emits
+      category=linear, stopLoss=<stop_price>, tpslMode=Full,
+      slTriggerBy=MarkPrice, positionIdx=0, symbol=SOLUSDT, preview_only=True.
+      Token pattern CONFIRM_DEMO_TINY_STOP_ATTACH_YYYYMMDD_SYMBOL documented
+      as string only. No real /v5/position/trading-stop or /v5/order/create;
+      no order send; G20 stays not lifted; 5 existing demo shorts untouched.
+      next_required_task = TASK-014Z_tiny_isolated_demo_cleanup_permission_gate.
+Status before: TASK-014X-FIX2 DONE
+Status after:  TASK-014Y DONE (local commit)
+Files changed:
+  - NEW src/demo_tiny_stop_attach_permission_gate.py
+  - NEW scripts/preview_demo_tiny_stop_attach_permission_gate.py
+  - NEW tests/demo_trading/test_demo_tiny_stop_attach_permission_gate.py
+  - .gitignore (+ outputs/demo_trading/tiny_stop_attach_permission_gate/)
+  - docs/research/commands/NEXT_ACTION.md (+ TASK-014Y block)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - py_compile src + CLI + tests : PASS
+  - pytest tests/demo_trading/test_demo_tiny_stop_attach_permission_gate.py : 88/88 PASS
+  - pytest tests/demo_trading : 1798 PASS + 1 pre-existing unrelated failure
+    (test_demo_emergency_close_sender::test_dry_run_cli_writes_report)
+Outputs:
+  - none (gate is pure-computation; no artifact written by this commit)
+Notes:
+  - Real demo execution remains gated by G20 (not lifted).
+  - Status mode REAL_STOP_ATTACH_NOT_IMPLEMENTED is the only path when
+    --allow-real-tiny-stop-attach is set; checklist still does not send.
+  - Tick alignment for SOLUSDT (tick_size=0.01): stop_price=61.63 → aligned.
+  - No network sockets touched (verified by socket-disabled subprocess test).
+
+---
+
 ### 2026-06-10（TASK-014X-FIX2 — Fetch Paginated SOLUSDT Instrument Rule）
 
 Agent: Claude Haiku 4.5
