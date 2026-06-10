@@ -1,5 +1,105 @@
 # Next Action
 
+## TASK-014W Status (2026-06-10)
+
+| item | status |
+|---|---|
+| new module: src/demo_tiny_position_real_permission_gate.py (6-stage pure-computation permission gate) | DONE |
+| new CLI: scripts/preview_demo_tiny_position_real_permission_gate.py (--from-latest-readonly/reconciliation/protection/contract/noop-plan/lifecycle / --symbol / --allow-real-permission-gate / --allow-real-tiny-position / --write-report) | DONE |
+| new tests: tests/demo_trading/test_demo_tiny_position_real_permission_gate.py (W1 - W47, 83 tests) | DONE |
+| 41 gate constants exposed (18 general + 6 risk + 7 manual approval + 5 failure + 5 execution guard) | DONE |
+| 4 status constants + 4 mode constants | DONE |
+| 3 approval token patterns documented as strings only (entry / stop-attach / cleanup, never validated) | DONE |
+| tiny_notional_cap=10 USDT; strategy_full_size_qty_ref=12.2 SOL flagged MUST_NOT_BE_REUSED | DONE |
+| --allow-real-permission-gate returns REAL_PERMISSION_GATE_READY_BUT_EXECUTION_DISABLED (no socket) | DONE |
+| --allow-real-tiny-position returns REAL_TINY_POSITION_NOT_IMPLEMENTED (no socket) | DONE |
+| next_required_task = TASK-014X_tiny_isolated_demo_entry_permission_gate | DONE |
+| pytest tests/demo_trading/test_demo_tiny_position_real_permission_gate.py | 83/83 PASS |
+| pytest tests/demo_trading | 1611 PASS + 1 pre-existing unrelated failure (test_demo_emergency_close_sender::test_dry_run_cli_writes_report — fails identically on HEAD baseline, NOT caused by TASK-014W) |
+| no order endpoint / no stop endpoint / no live endpoint / no position modified | CONFIRMED |
+| 5 existing demo shorts (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT) never touched | CONFIRMED |
+| G20 (protected_entry_policy_missing) constant unchanged and not referenced in new module | CONFIRMED |
+| no secret values in module / CLI / report | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014W)
+
+1. Update VPS git pull:
+       git pull
+       python3 -m pytest tests/demo_trading -q
+       # expect 1611 PASS + 1 pre-existing unrelated failure
+       # (test_demo_emergency_close_sender::test_dry_run_cli_writes_report).
+       # That failure is NOT introduced by TASK-014W and must be
+       # tracked separately.
+
+2. VPS Checklist (envelope-only, no network):
+       source .env.demo
+       python3 scripts/preview_demo_tiny_position_real_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_position_real_permission_gate/latest_tiny_position_real_permission_gate.md
+
+   Expected:
+     status=REAL_PERMISSION_CHECKLIST_READY; mode=checklist;
+     real_permission_gate_dry_run_allowed=False;
+     real_execution_allowed=False;
+     real_tiny_position_implemented=False;
+     current_task_real_execution_allowed=False;
+     stop_endpoint_called=False; order_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True;
+     existing_positions_touched=[]; g20_policy_still_in_place=True;
+     g20_lifted=False; tiny_notional <= 10 USDT;
+     within_tiny_notional_cap=True; strategy_full_size_qty_ref=12.2.
+
+3. VPS Permission Gate Dry Run (envelope-only, no network):
+       python3 scripts/preview_demo_tiny_position_real_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --symbol SOLUSDT --allow-real-permission-gate --write-report
+   Expected:
+     status=REAL_PERMISSION_GATE_READY_BUT_EXECUTION_DISABLED;
+     mode=real_permission_gate_dry_run;
+     real_permission_gate_dry_run_allowed=True;
+     real_execution_allowed=False;
+     real_tiny_position_implemented=False;
+     current_task_real_execution_allowed=False;
+     no Bybit endpoint called; existing_positions_touched=[].
+
+4. VPS Real-Guard Sanity (no socket):
+       python3 scripts/preview_demo_tiny_position_real_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --symbol SOLUSDT --allow-real-tiny-position --write-report
+   Expected:
+     status=REAL_TINY_POSITION_NOT_IMPLEMENTED;
+     mode=real_tiny_position_guard;
+     real_execution_allowed=True;
+     real_tiny_position_implemented=False;
+     current_task_real_execution_allowed=False;
+     stop_endpoint_called=False; order_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True;
+     existing_positions_touched=[].
+
+5. VPS Symbol-Collision Sanity (any one of the 5 existing shorts):
+       python3 scripts/preview_demo_tiny_position_real_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --symbol ENAUSDT --write-report
+   Expected: status=FAIL_CLOSED; mode=fail_closed;
+             selected_symbol_collides_with_existing_position
+             present in blocked_gates.
+
+6. Once the four VPS checks above all match, please decide whether
+   to authorise TASK-014X (Tiny Isolated Demo Entry Permission Gate
+   — the first of the three independent confirm-token gates).
+   Until then the demo runtime stays in close-only / readonly +
+   envelope-mock + permission-gate mode.
+
 ## TASK-014V Status (2026-06-10)
 
 | item | status |

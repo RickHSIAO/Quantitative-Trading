@@ -21,6 +21,99 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014W — Tiny Isolated Demo Position Real Execution Permission Gate）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014W)
+Task: Add a pure-computation 6-stage permission gate / manual approval
+      checklist that documents what must be in place before any
+      future real tiny-isolated demo position execution
+      (TASK-014X / -014Y / -014Z). Stages: stage_0_artifact_preflight
+      / stage_1_existing_position_snapshot / stage_2_tiny_risk_cap
+      / stage_3_three_step_manual_approval / stage_4_failure_response
+      / stage_5_real_execution_guard. Three independent confirmation
+      token patterns (entry / stop-attach / cleanup) are documented
+      as strings only; no token validation occurs in this task.
+      tiny_notional_cap=10 USDT; strategy_full_size_qty_ref=12.2 SOL
+      is documented as MUST_NOT_BE_REUSED.  Guarded flags:
+      --allow-real-permission-gate returns
+      REAL_PERMISSION_GATE_READY_BUT_EXECUTION_DISABLED;
+      --allow-real-tiny-position returns
+      REAL_TINY_POSITION_NOT_IMPLEMENTED.  No network, no
+      /v5/order/create, no /v5/position/trading-stop, no close-only,
+      no emergency close, no leverage mutation, no transfers, no
+      G20 lift.
+Status before: TASK-014V verified; tests/demo_trading=1529/1529
+      PASS. NEXT_ACTION pointed at TASK-014W as the next gate task
+      pending Rick authorisation.
+Status after: TASK-014W module + CLI + 83 tests landed locally.
+      tests/demo_trading=1611 PASS + 1 pre-existing unrelated
+      failure (test_demo_emergency_close_sender :: TestCLIIntegration
+      :: test_dry_run_cli_writes_report — failed identically on HEAD
+      baseline, not caused by TASK-014W).  All 83 new W tests PASS;
+      all 77 prior V tests still PASS within the suite.
+Files changed:
+  - src/demo_tiny_position_real_permission_gate.py            (NEW)
+  - scripts/preview_demo_tiny_position_real_permission_gate.py (NEW)
+  - tests/demo_trading/test_demo_tiny_position_real_permission_gate.py (NEW)
+  - .gitignore  (added outputs/demo_trading/tiny_position_real_permission_gate/)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+  - docs/research/commands/NEXT_ACTION.md (status + Next Rick Action)
+Validation:
+  - python -m py_compile src/demo_tiny_position_real_permission_gate.py
+                        scripts/preview_demo_tiny_position_real_permission_gate.py
+                        tests/demo_trading/test_demo_tiny_position_real_permission_gate.py
+                        → OK
+  - python -m pytest tests/demo_trading/test_demo_tiny_position_real_permission_gate.py -q
+                        → 83 passed
+  - python -m pytest tests/demo_trading -q
+                        → 1611 passed, 1 failed (pre-existing,
+                          unrelated to TASK-014W — same failure
+                          observed on HEAD baseline before TASK-014W
+                          files were added)
+  - W35 forbidden-imports scan: PASS (no urllib / requests / httpx /
+    socket / http.client / pybit / src.risk / BybitExecutor /
+    src.demo_new_entry_sender / src.demo_close_only_sender /
+    src.demo_emergency_close_sender /
+    src.demo_protected_new_entry_orchestrator /
+    src.demo_trading_stop_contract_probe /
+    src.demo_trading_stop_noop_probe_plan /
+    src.demo_tiny_position_lifecycle_mock).
+  - W36 network-token / env / signing source scan: PASS.
+  - W37 sender / orchestrator / probe / lifecycle back-coupling
+    source scan: PASS.
+  - W38 socket-disabled import sentinel: PASS.
+  - W39 G20 constant unchanged + not referenced in module: PASS.
+Outputs (when --write-report):
+  - outputs/demo_trading/tiny_position_real_permission_gate/
+        {ts}_tiny_position_real_permission_gate.json
+        {ts}_tiny_position_real_permission_gate.md
+        latest_tiny_position_real_permission_gate.json
+        latest_tiny_position_real_permission_gate.md
+Notes:
+  - 41 GATE_ constants exposed (18 general + 6 risk + 7 manual
+    approval + 5 failure response + 5 execution guard).
+  - 4 status constants (REAL_PERMISSION_CHECKLIST_READY /
+    REAL_PERMISSION_GATE_READY_BUT_EXECUTION_DISABLED /
+    REAL_TINY_POSITION_NOT_IMPLEMENTED / FAIL_CLOSED).
+  - 4 mode constants (checklist / real_permission_gate_dry_run /
+    real_tiny_position_guard / fail_closed).
+  - 3 approval token patterns documented as strings only
+    (CONFIRM_DEMO_TINY_ENTRY_/STOP_ATTACH_/CLEANUP_YYYYMMDD_SYMBOL).
+  - Hard-fail-closed gates frozenset triggers FAIL_CLOSED downgrade
+    regardless of caller flags.
+  - 5 existing demo shorts (ENAUSDT / TIAUSDT / AIXBTUSDT /
+    POLYXUSDT / EDUUSDT) snapshotted by stage_1 and asserted
+    untouched by stage_5 (`existing_positions_touched=[]`).
+  - TASK-014L sender G20 (protected_entry_policy_missing) NOT
+    referenced by module text and NOT lifted; `g20_lifted=False`,
+    `g20_policy_still_in_place=True` in every result envelope.
+  - next_required_task =
+    "TASK-014X_tiny_isolated_demo_entry_permission_gate".
+  - Local commit only — no GitHub push.
+
+---
+
 ### 2026-06-10（TASK-014V — Tiny Isolated Demo Position Lifecycle Mock）
 
 Agent: Claude Opus 4.7
