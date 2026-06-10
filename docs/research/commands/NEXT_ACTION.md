@@ -1,5 +1,120 @@
 # Next Action
 
+## TASK-014X Status (2026-06-10)
+
+| item | status |
+|---|---|
+| new module: src/demo_tiny_entry_permission_gate.py (7-stage pure-computation entry permission gate) | DONE |
+| new CLI: scripts/preview_demo_tiny_entry_permission_gate.py (--from-latest-readonly/reconciliation/protection/contract/noop-plan/lifecycle/real-permission / --symbol / --allow-real-entry-permission / --allow-real-tiny-entry / --write-report) | DONE |
+| new tests: tests/demo_trading/test_demo_tiny_entry_permission_gate.py (X1 - X63, 84 tests) | DONE |
+| 53 gate constants exposed (18 general + 10 instrument + 8 entry payload + 6 manual approval + 6 failure + 5 execution guard) | DONE |
+| 4 status constants + 4 mode constants | DONE |
+| orderLinkId prefix `DRYRUN-TINY-ENTRY-` (string only, never sent) | DONE |
+| Buy / positionIdx=0 / reduceOnly=False payload preview (envelope-only) | DONE |
+| instrument-rule rounding: min_order_qty + qty_step alignment + min_notional bump-up + 10 USDT cap | DONE |
+| tiny_notional_cap=10 USDT; strategy_full_size_qty_ref=12.2 SOL flagged MUST_NOT_BE_REUSED | DONE |
+| upstream real_permission_gate status must be REAL_PERMISSION_CHECKLIST_READY or REAL_PERMISSION_GATE_READY_BUT_EXECUTION_DISABLED | DONE |
+| --allow-real-entry-permission returns TINY_ENTRY_PERMISSION_READY_BUT_EXECUTION_DISABLED (no socket) | DONE |
+| --allow-real-tiny-entry returns REAL_TINY_ENTRY_NOT_IMPLEMENTED (no socket) | DONE |
+| next_required_task = TASK-014Y_tiny_isolated_demo_stop_attach_permission_gate | DONE |
+| py_compile src + CLI | PASS |
+| pytest tests/demo_trading/test_demo_tiny_entry_permission_gate.py | 84/84 PASS |
+| no order endpoint / no stop endpoint / no live endpoint / no position modified | CONFIRMED |
+| 5 existing demo shorts (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT) never touched | CONFIRMED |
+| G20 (protected_entry_policy_missing) constant unchanged and not referenced in new module | CONFIRMED |
+| 12.2 SOL strategy full size rejected; tiny notional cap (10 USDT) enforced | CONFIRMED |
+| no secret values in module / CLI / report | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014X)
+
+1. Update VPS git pull:
+       git pull
+       python3 -m pytest tests/demo_trading -q
+       # expect prior count + 84 new X tests PASS
+       # (1 pre-existing unrelated failure in
+       # test_demo_emergency_close_sender::test_dry_run_cli_writes_report
+       # tracked separately).
+
+2. VPS Checklist (envelope-only, no network):
+       source .env.demo
+       python3 scripts/preview_demo_tiny_entry_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_entry_permission_gate/latest_tiny_entry_permission_gate.md
+
+   Expected:
+     status=TINY_ENTRY_PERMISSION_CHECKLIST_READY; mode=checklist;
+     real_entry_permission_dry_run_allowed=False;
+     real_execution_allowed=False;
+     real_tiny_entry_implemented=False;
+     current_task_real_execution_allowed=False;
+     order_endpoint_called=False; stop_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True;
+     existing_positions_touched=[]; g20_policy_still_in_place=True;
+     g20_lifted=False; tiny_notional <= 10 USDT;
+     within_tiny_notional_cap=True; strategy_full_size_qty_ref=12.2;
+     order_link_id startswith "DRYRUN-TINY-ENTRY-".
+
+   NOTE: readonly_smoke must provide `instrument_rules` for SOLUSDT
+   (min_order_qty / qty_step / tick_size / min_notional_value). If
+   missing, the gate fails closed with
+   instrument_rule_for_selected_symbol_missing.
+
+3. VPS Entry-Permission Dry Run (envelope-only):
+       python3 scripts/preview_demo_tiny_entry_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission \
+           --symbol SOLUSDT --allow-real-entry-permission --write-report
+   Expected:
+     status=TINY_ENTRY_PERMISSION_READY_BUT_EXECUTION_DISABLED;
+     mode=real_entry_permission_dry_run;
+     real_entry_permission_dry_run_allowed=True;
+     real_execution_allowed=False;
+     real_tiny_entry_implemented=False;
+     current_task_real_execution_allowed=False;
+     no Bybit endpoint called; existing_positions_touched=[].
+
+4. VPS Real-Entry-Guard Sanity (no socket):
+       python3 scripts/preview_demo_tiny_entry_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission \
+           --symbol SOLUSDT --allow-real-tiny-entry --write-report
+   Expected:
+     status=REAL_TINY_ENTRY_NOT_IMPLEMENTED;
+     mode=real_tiny_entry_guard;
+     real_execution_allowed=False;
+     real_tiny_entry_requested=True;
+     real_tiny_entry_implemented=False;
+     current_task_real_execution_allowed=False;
+     order_endpoint_called=False; stop_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True;
+     existing_positions_touched=[].
+
+5. VPS Symbol-Collision Sanity (any one of the 5 existing shorts):
+       python3 scripts/preview_demo_tiny_entry_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission \
+           --symbol ENAUSDT --write-report
+   Expected: status=FAIL_CLOSED; mode=fail_closed;
+             selected_symbol_collides_with_existing_position
+             present in blocked_gates.
+
+6. Once the four VPS checks above all match, please decide whether
+   to authorise TASK-014Y (Tiny Isolated Demo Stop-Attach Permission
+   Gate — second of the three independent confirm-token gates).
+   Until then the demo runtime stays in close-only / readonly +
+   envelope-mock + entry-permission-gate mode.
+
 ## TASK-014W-FIX1 Status (2026-06-10)
 
 | item | status |

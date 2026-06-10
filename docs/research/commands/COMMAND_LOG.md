@@ -21,6 +21,86 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014X — Tiny Isolated Demo Entry Permission Gate / Dry-run Only）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014X)
+Task: Add a pure-computation 7-stage entry permission gate /
+      dry-run-only checklist that documents what must be in place
+      before any future real tiny-isolated demo *entry* execution.
+      Stages: stage_0_artifact_preflight
+      / stage_1_existing_position_pre_snapshot
+      / stage_2_instrument_min_step_check
+      / stage_3_entry_payload_preview
+      / stage_4_entry_token_checklist
+      / stage_5_post_entry_verification_plan
+      / stage_6_execution_guard. Instrument-rule rounding pipeline
+      enforces min_order_qty / qty_step alignment, bumps notional up
+      to min_notional_value, and rejects anything above the 10 USDT
+      tiny notional cap.  orderLinkId prefix `DRYRUN-TINY-ENTRY-`
+      is preview-only (never sent).  12.2 SOL strategy full-size qty
+      flagged as MUST_NOT_BE_REUSED. Guarded flags:
+      --allow-real-entry-permission returns
+      TINY_ENTRY_PERMISSION_READY_BUT_EXECUTION_DISABLED;
+      --allow-real-tiny-entry returns
+      REAL_TINY_ENTRY_NOT_IMPLEMENTED.  Upstream
+      real_permission_gate status must already be
+      REAL_PERMISSION_CHECKLIST_READY or
+      REAL_PERMISSION_GATE_READY_BUT_EXECUTION_DISABLED; otherwise
+      FAIL_CLOSED.  No network, no /v5/order/create, no
+      /v5/position/trading-stop, no close-only, no emergency close,
+      no leverage mutation, no transfers, no G20 lift.
+Status before: TASK-014W + TASK-014W-FIX1 verified;
+      tests/demo_trading_tiny_position_real_permission_gate=83/83
+      PASS.  NEXT_ACTION pointed at TASK-014X as the next gate task
+      pending Rick authorisation.
+Status after: TASK-014X module + CLI + 84 tests landed locally.
+      pytest tests/demo_trading/test_demo_tiny_entry_permission_gate.py
+      = 84/84 PASS.  TASK-014W sibling suite still 83/83 PASS.
+Files changed:
+  - src/demo_tiny_entry_permission_gate.py                       (NEW)
+  - scripts/preview_demo_tiny_entry_permission_gate.py            (NEW)
+  - tests/demo_trading/test_demo_tiny_entry_permission_gate.py    (NEW)
+  - .gitignore  (added outputs/demo_trading/tiny_entry_permission_gate/)
+  - docs/research/commands/NEXT_ACTION.md (TASK-014X status block + Rick VPS steps)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - python -m py_compile src/demo_tiny_entry_permission_gate.py            => OK
+  - python -m py_compile scripts/preview_demo_tiny_entry_permission_gate.py => OK
+  - python -m pytest tests/demo_trading/test_demo_tiny_entry_permission_gate.py -q
+        => 84 passed
+  - python -m pytest tests/demo_trading/test_demo_tiny_position_real_permission_gate.py -q
+        => 83 passed (TASK-014W sibling regression check)
+  - python scripts/preview_demo_tiny_entry_permission_gate.py --help => OK
+  - python scripts/preview_demo_tiny_entry_permission_gate.py --write-report
+        => FAIL_CLOSED on missing local upstream artifacts (expected
+        local-dev result; VPS run uses --from-latest-* flags).
+Outputs:
+  - outputs/demo_trading/tiny_entry_permission_gate/  (runtime, gitignored)
+Notes:
+  - 53 gate constants exposed (18 general + 10 instrument + 8 entry
+    payload + 6 manual approval + 6 failure + 5 execution guard).
+  - 4 statuses (TINY_ENTRY_PERMISSION_CHECKLIST_READY /
+    TINY_ENTRY_PERMISSION_READY_BUT_EXECUTION_DISABLED /
+    REAL_TINY_ENTRY_NOT_IMPLEMENTED / FAIL_CLOSED).
+  - 4 modes (checklist / real_entry_permission_dry_run /
+    real_tiny_entry_guard / fail_closed).
+  - Payload preview is envelope-only: Buy / positionIdx=0 /
+    reduceOnly=False / orderLinkId prefixed `DRYRUN-TINY-ENTRY-`.
+    No order envelope is sent to any endpoint.
+  - 5 existing demo shorts (ENAUSDT / TIAUSDT / AIXBTUSDT /
+    POLYXUSDT / EDUUSDT) never touched.  Symbol collision with any
+    of them triggers FAIL_CLOSED.
+  - 12.2 SOL strategy full-size qty rejected (FAIL_CLOSED) when
+    used as input tiny qty; 10 USDT tiny notional cap enforced.
+  - G20 (protected_entry_policy_missing) constant unchanged and not
+    referenced in the new module.
+  - Local commit only per Rick durable preference; not pushed to
+    GitHub.
+  - next_required_task = TASK-014Y_tiny_isolated_demo_stop_attach_permission_gate.
+
+---
+
 ### 2026-06-10（TASK-014W — Tiny Isolated Demo Position Real Execution Permission Gate）
 
 Agent: Claude Opus 4.7
