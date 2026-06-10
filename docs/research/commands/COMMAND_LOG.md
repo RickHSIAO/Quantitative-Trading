@@ -21,6 +21,73 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014Z — Tiny Isolated Demo Cleanup Permission Gate / Dry-run Only）
+
+Agent: Claude Opus 4.7
+Command source: Rick direct chat instruction (TASK-014Z)
+Task: Build a pure-computation tiny isolated demo cleanup (close-only)
+      permission gate mirroring the TASK-014Y (stop-attach gate) pattern.
+      7 stages, 53 GATE_ constants split across 5 categories
+      (22 general + 13 cleanup payload + 6 manual approval + 7 failure +
+      5 execution guard). Loads 9 upstream artifacts including the new
+      TASK-014Y tiny_stop_attach_permission_gate. Cleanup payload preview
+      emits category=linear, symbol=SOLUSDT, side=Sell, orderType=Market,
+      qty=<expected_tiny_qty>=0.1, reduceOnly=True, closeOnTrigger=False,
+      positionIdx=0, orderLinkId=DRYRUN-TINY-CLEANUP-<sym>-<ts>,
+      preview_only=True, endpoint_called=False. expected_tiny_qty derives
+      from entry permission gate `rounded_tiny_qty` (priority) and
+      lifecycle mock `tiny_qty` (fallback); both must agree.
+      Token pattern CONFIRM_DEMO_TINY_CLEANUP_YYYYMMDD_SYMBOL documented
+      as string only; entry / stop-attach tokens explicitly not accepted.
+      No real /v5/order/create or /v5/position/trading-stop; no order
+      send; no close-only sender; no emergency-close sender; no new-entry
+      sender real exec; G20 stays not lifted; 5 existing demo shorts
+      untouched. next_required_task =
+      TASK-014AA_tiny_lifecycle_real_execution_permission_summary.
+Status before: TASK-014Y DONE
+Status after:  TASK-014Z DONE (local commit)
+Files changed:
+  - src/demo_tiny_cleanup_permission_gate.py             (new, ~1120 lines)
+  - scripts/preview_demo_tiny_cleanup_permission_gate.py (new, ~430 lines)
+  - tests/demo_trading/test_demo_tiny_cleanup_permission_gate.py (new, ~1080 lines)
+  - .gitignore                                           (+1 line: tiny_cleanup_permission_gate/)
+  - docs/research/commands/NEXT_ACTION.md                (TASK-014Z status block prepended)
+  - docs/research/commands/COMMAND_LOG.md                (this entry)
+Validation:
+  - py_compile src/demo_tiny_cleanup_permission_gate.py
+      + scripts/preview_demo_tiny_cleanup_permission_gate.py
+      + tests/demo_trading/test_demo_tiny_cleanup_permission_gate.py    PASS
+  - python -m pytest tests/demo_trading/test_demo_tiny_cleanup_permission_gate.py -q
+      100 passed
+  - python -m pytest tests/demo_trading -q
+      1898 passed + 1 pre-existing unrelated failure
+      (tests/demo_trading/test_demo_emergency_close_sender.py
+       TestCLIIntegration.test_dry_run_cli_writes_report --- same failure
+       observed at TASK-014Y validation; unrelated to this task)
+Outputs (local only; .gitignored):
+  - outputs/demo_trading/tiny_cleanup_permission_gate/   (created on first VPS run)
+Notes:
+  - Gate is pure-computation: no urllib / requests / httpx / socket /
+    http.client / pybit / os.environ / dotenv / hmac / hashlib.
+  - Source-scan tests enforce forbidden-import list including
+    src.demo_tiny_stop_attach_permission_gate; CLI imports only the
+    cleanup gate module.
+  - Even with --allow-real-cleanup-permission the result is
+    TINY_CLEANUP_PERMISSION_READY_BUT_EXECUTION_DISABLED with no socket
+    opened.
+  - Even with --allow-real-cleanup the result is
+    REAL_CLEANUP_NOT_IMPLEMENTED with no socket opened.
+  - Hard-fail-closed gate frozenset covers all 9 missing-artifact gates,
+    4 envelope mismatches, lifecycle-not-success, 3 upstream-status
+    unacceptables, symbol missing / collision, qty missing / not_positive
+    / mismatch, cleanup-side / category / symbol mismatches.
+  - Stage-2 self-checks the preview payload (defense in depth): payload
+    flips back through preview_only / category / symbol / side / orderType
+    / reduceOnly / positionIdx / orderLinkId prefix and surfaces a gate
+    on any drift.
+
+---
+
 ### 2026-06-10（TASK-014Y — Tiny Isolated Demo Stop Attach Permission Gate / Dry-run Only）
 
 Agent: Claude Opus 4.7

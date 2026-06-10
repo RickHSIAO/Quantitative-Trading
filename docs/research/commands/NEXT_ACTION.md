@@ -1,5 +1,80 @@
 # Next Action
 
+## TASK-014Z Status (2026-06-10)
+
+| item | status |
+|---|---|
+| src/demo_tiny_cleanup_permission_gate.py: 7 stages, 53 GATE_ constants (22 general + 13 cleanup payload + 6 manual approval + 7 failure + 5 execution guard), 4 status modes, 9 upstream artifact inputs, hard-fail-closed gates frozenset, dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_cleanup_permission_gate.py: cleanup payload preview (category=linear, symbol=SOLUSDT, side=Sell, orderType=Market, qty=<expected_tiny_qty>, reduceOnly=True, closeOnTrigger=False, positionIdx=0, orderLinkId=DRYRUN-TINY-CLEANUP-..., preview_only=True, endpoint_called=False) | DONE |
+| src/demo_tiny_cleanup_permission_gate.py: expected_tiny_qty derives from entry permission gate `rounded_tiny_qty` (priority) and lifecycle mock `tiny_qty` (fallback); both must agree | DONE |
+| src/demo_tiny_cleanup_permission_gate.py: ACCEPTABLE_REAL_PERMISSION_GATE_STATUSES + ACCEPTABLE_TINY_ENTRY_PERMISSION_GATE_STATUSES + ACCEPTABLE_TINY_STOP_ATTACH_PERMISSION_GATE_STATUSES frozensets | DONE |
+| src/demo_tiny_cleanup_permission_gate.py: CLEANUP_TOKEN_PATTERN documented as `CONFIRM_DEMO_TINY_CLEANUP_YYYYMMDD_SYMBOL` (string-only, never validated); entry / stop-attach tokens explicitly not accepted | DONE |
+| src/demo_tiny_cleanup_permission_gate.py: next_required_task = "TASK-014AA_tiny_lifecycle_real_execution_permission_summary" | DONE |
+| scripts/preview_demo_tiny_cleanup_permission_gate.py: 9 `--from-latest-*` flags incl. new `--from-latest-tiny-stop-permission`, `--symbol`, `--allow-real-cleanup-permission`, `--allow-real-cleanup`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_cleanup_permission_gate/` | DONE |
+| tests/demo_trading/test_demo_tiny_cleanup_permission_gate.py: 100 tests (Z1-Z66 + parametrized sub-tests) covering status modes, 9 missing artifacts, envelope mismatches, 3 status unacceptables (each with acceptable-statuses parametrized), expected_tiny_qty derivation / fallback / mismatch / missing, payload field checks (category / symbol / side=Sell / orderType=Market / reduceOnly=True / positionIdx=0 / orderLinkId DRYRUN-TINY-CLEANUP / preview_only / closeOnTrigger=False / qty), safety invariants, token gates, guard, report writing, no-secrets, forbidden imports, no close-only / emergency-close / new-entry sender reuse, no network tokens, CLI subprocess, next required task = 014AA, gate count ≥ 49, always-on gates, stage shape, missing symbol, G20 not lifted, socket-disabled import, dataclass roundtrip with deep-copy, path refs, stage_4 / stage_5 / stage_6 plans, guard safety invariants, stage_1 existing-positions snapshot, stage_0 preflight all-present | DONE |
+| py_compile src/demo_tiny_cleanup_permission_gate.py + scripts/preview_demo_tiny_cleanup_permission_gate.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_cleanup_permission_gate.py | 100/100 PASS |
+| pytest tests/demo_trading | 1898 PASS + 1 pre-existing unrelated failure (test_demo_emergency_close_sender) | PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_cleanup_permission_gate/` | DONE |
+| no real `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no close-only sender / no emergency-close sender / no new-entry sender real exec / G20 not lifted / no existing position modified / no secrets | CONFIRMED |
+| local commit | PENDING |
+
+## Next Rick Action (set by 2026-06-10 TASK-014Z)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_cleanup_permission_gate.py scripts/preview_demo_tiny_cleanup_permission_gate.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_cleanup_permission_gate.py -q
+       # expect 100/100 PASS
+       python3 -m pytest tests/demo_trading -q
+       # expect 1898 PASS + 1 pre-existing unrelated failure
+
+2. Run TASK-014Z cleanup checklist (after TASK-014Y CHECKLIST_READY confirmed):
+       python3 scripts/preview_demo_tiny_cleanup_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_cleanup_permission_gate/latest_tiny_cleanup_permission_gate.md
+
+   Expected:
+     status=TINY_CLEANUP_PERMISSION_CHECKLIST_READY;
+     cleanup_payload_preview present with category=linear, symbol=SOLUSDT,
+       side=Sell, orderType=Market, qty=<expected_tiny_qty>=0.1,
+       reduceOnly=True, closeOnTrigger=False, positionIdx=0,
+       orderLinkId starts with DRYRUN-TINY-CLEANUP, preview_only=True,
+       endpoint_called=False;
+     order_endpoint_called=False; stop_endpoint_called=False;
+     no_position_modified=True; real_execution_allowed=False;
+     next_required_task=TASK-014AA_tiny_lifecycle_real_execution_permission_summary.
+
+3. (Optional) Permission dry-run envelope:
+       python3 scripts/preview_demo_tiny_cleanup_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission \
+           --symbol SOLUSDT --allow-real-cleanup-permission --write-report
+       # expect status=TINY_CLEANUP_PERMISSION_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe --- proves --allow-real-cleanup never executes:
+       python3 scripts/preview_demo_tiny_cleanup_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission \
+           --symbol SOLUSDT --allow-real-cleanup --write-report
+       # expect status=REAL_CLEANUP_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AA
+   (tiny_lifecycle_real_execution_permission_summary).
+
 ## TASK-014Y Status (2026-06-10)
 
 | item | status |
