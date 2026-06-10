@@ -21,6 +21,67 @@ Notes:
 
 ---
 
+### 2026-06-10（TASK-014X-FIX1 — Persist SOLUSDT Instrument Rule for Tiny Entry Gate）
+
+Agent: Claude Sonnet 4.6
+Command source: Rick direct chat instruction (TASK-014X-FIX1)
+Task: Fix VPS failure where TASK-014X stage_2_instrument_min_step_check
+      reported instrument_rule_missing_for_selected_symbol.  Root cause:
+      `_serialize_instrument_rules_for_positions` only serialised rules
+      for symbols with open positions (ENAUSDT/TIAUSDT/AIXBTUSDT/
+      POLYXUSDT/EDUUSDT); SOLUSDT — the intended entry symbol — was
+      never in an open position so its rule was never written to
+      latest_smoke.json.  Fix adds a new `instrument_rules_by_symbol`
+      field that explicitly includes SOLUSDT (and all position symbols)
+      regardless of open position status.  The TASK-014X reader is
+      updated to check `instrument_rules_by_symbol` first before
+      falling back to `instrument_rules`.  7 new tests (X64-X70) cover
+      the new dict-keyed format.
+      No network calls; no order/stop endpoints; G20 unchanged.
+Status before: TASK-014X tests 84/84 PASS locally; VPS run reported
+      FAIL_CLOSED / stage_2_instrument_min_step_check /
+      instrument_rule_missing_for_selected_symbol.
+Status after: TASK-014X tests 91/91 PASS locally (84 prior + 7 new
+      FIX1). Full suite: 1702 PASS + 1 pre-existing unrelated failure
+      (test_demo_emergency_close_sender).
+Files changed:
+  - scripts/preview_demo_readonly_runtime.py  (added _CANDIDATE_ENTRY_SYMBOLS,
+      _serialize_instrument_rules_by_symbol, instrument_rules_by_symbol in
+      both _write_report calls)
+  - src/demo_tiny_entry_permission_gate.py    (_find_instrument_rule updated:
+      checks instrument_rules_by_symbol first, then instrument_rules fallback)
+  - tests/demo_trading/test_demo_tiny_entry_permission_gate.py
+      (added _valid_rules_by_symbol, _readonly_by_sym fixtures;
+       TestX64-TestX70)
+  - docs/research/commands/NEXT_ACTION.md (TASK-014X-FIX1 status + VPS steps)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - python -m py_compile scripts/preview_demo_readonly_runtime.py => OK
+  - python -m py_compile src/demo_tiny_entry_permission_gate.py    => OK
+  - python -m py_compile scripts/preview_demo_tiny_entry_permission_gate.py => OK
+  - python -m pytest tests/demo_trading/test_demo_tiny_entry_permission_gate.py -q
+        => 91 passed (84 prior + 7 new FIX1)
+  - python -m pytest tests/demo_trading -q
+        => 1702 passed, 1 pre-existing failure
+Outputs:
+  - outputs/demo_trading/readonly_smoke/ (runtime; gitignored)
+  - outputs/demo_trading/tiny_entry_permission_gate/ (runtime; gitignored)
+Notes:
+  - instrument_rules_by_symbol schema per symbol:
+      {"symbol": "SOLUSDT", "category": "linear", "min_order_qty": <float>,
+       "qty_step": <float>, "tick_size": <float>, "min_notional": <float>,
+       "min_notional_value": <float>}
+  - _find_instrument_rule priority: instrument_rules_by_symbol (new, VPS
+      real-readonly output) → instrument_rules (list or dict, legacy /
+      test-fixture).  No fabricated fallback.
+  - DemoReadOnlyClient calls /v5/market/instruments-info with
+      category=linear; all returned rules are linear perpetuals, so
+      category="linear" is hardcoded in the serialisation helper.
+  - 5 existing demo shorts untouched; G20 unchanged; no secrets in output.
+  - Local commit only per Rick durable preference; not pushed to GitHub.
+
+---
+
 ### 2026-06-10（TASK-014X — Tiny Isolated Demo Entry Permission Gate / Dry-run Only）
 
 Agent: Claude Opus 4.7

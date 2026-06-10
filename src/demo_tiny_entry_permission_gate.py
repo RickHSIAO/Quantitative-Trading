@@ -469,15 +469,28 @@ def _find_instrument_rule(
 ) -> dict[str, Any] | None:
     """Locate the symbol-specific instrument rule from readonly_smoke.
 
-    Accepts either a list under `instrument_rules` or a dict keyed by
-    symbol.  Returns the matched rule dict, or None.
+    Priority 1: `instrument_rules_by_symbol` (dict keyed by symbol) —
+        written by TASK-014X-FIX1; includes SOLUSDT even when it has no
+        open position.
+    Priority 2: `instrument_rules` (list of dicts or dict keyed by
+        symbol) — legacy / test-fixture format.
+
+    Returns the matched rule dict, or None (gate fails closed).
+    No fallback to fabricated data.
     """
     if not isinstance(readonly_smoke, dict):
         return None
+    sym = (symbol or "").strip().upper()
+
+    by_sym = readonly_smoke.get("instrument_rules_by_symbol", None)
+    if isinstance(by_sym, dict):
+        for k, v in by_sym.items():
+            if str(k).strip().upper() == sym and isinstance(v, dict):
+                return v
+
     rules = readonly_smoke.get("instrument_rules", None)
     if rules is None:
         return None
-    sym = (symbol or "").strip().upper()
     if isinstance(rules, list):
         for row in rules:
             if not isinstance(row, dict):

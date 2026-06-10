@@ -128,6 +128,43 @@ def _serialize_instrument_rules_for_positions(
     return out
 
 
+# Candidate entry symbols always included in instrument_rules_by_symbol.
+# TASK-014X reads SOLUSDT rule from this field; without it the gate
+# fails closed even though readonly_smoke has instrument_rules_count=500.
+_CANDIDATE_ENTRY_SYMBOLS: tuple[str, ...] = ("SOLUSDT",)
+
+
+def _serialize_instrument_rules_by_symbol(
+    positions:     list[DemoOpenPosition],
+    rules:         dict[str, InstrumentRules],
+    extra_symbols: tuple[str, ...] = _CANDIDATE_ENTRY_SYMBOLS,
+) -> dict[str, dict]:
+    """Serialise instrument rules for open-position symbols + extra_symbols.
+
+    Produces a dict keyed by symbol so TASK-014X can look up SOLUSDT even
+    when SOLUSDT has no open position.  All instruments fetched by
+    DemoReadOnlyClient are linear perpetuals, so category is hardcoded.
+    """
+    symbols: set[str] = {p.symbol for p in positions}
+    for s in extra_symbols:
+        symbols.add(s)
+    out: dict[str, dict] = {}
+    for sym in sorted(symbols):
+        r = rules.get(sym)
+        if r is None:
+            continue
+        out[sym] = {
+            "symbol":             sym,
+            "category":           "linear",
+            "min_order_qty":      r.min_qty,
+            "qty_step":           r.qty_step,
+            "tick_size":          r.tick_size,
+            "min_notional":       r.min_notional,
+            "min_notional_value": r.min_notional,
+        }
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Report writer
 # ---------------------------------------------------------------------------
@@ -326,6 +363,9 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
                 "instrument_rules": _serialize_instrument_rules_for_positions(
                     planner.open_positions, planner.instrument_rules,
                 ),
+                "instrument_rules_by_symbol": _serialize_instrument_rules_by_symbol(
+                    planner.open_positions, planner.instrument_rules,
+                ),
                 "proposals_accepted": 0,
             }, _OUTPUT_DIR)
         return 1
@@ -427,6 +467,9 @@ def run_preview(use_real_network: bool = False, write_report: bool = False) -> i
                 planner.open_positions, position_details_source,
             ),
             "instrument_rules": _serialize_instrument_rules_for_positions(
+                planner.open_positions, planner.instrument_rules,
+            ),
+            "instrument_rules_by_symbol": _serialize_instrument_rules_by_symbol(
                 planner.open_positions, planner.instrument_rules,
             ),
             "proposals_accepted": n_accepted_after_rounding,

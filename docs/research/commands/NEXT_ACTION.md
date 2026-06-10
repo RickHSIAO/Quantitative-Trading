@@ -1,5 +1,78 @@
 # Next Action
 
+## TASK-014X-FIX1 Status (2026-06-10)
+
+| item | status |
+|---|---|
+| root cause: `_serialize_instrument_rules_for_positions` only serialised open-position symbols; SOLUSDT never had an open position → never in `instrument_rules` → stage_2 fails closed | FIXED |
+| scripts/preview_demo_readonly_runtime.py: `_serialize_instrument_rules_by_symbol` added (positions + SOLUSDT) | DONE |
+| scripts/preview_demo_readonly_runtime.py: `instrument_rules_by_symbol` added to both _write_report call sites | DONE |
+| src/demo_tiny_entry_permission_gate.py: `_find_instrument_rule` checks `instrument_rules_by_symbol` first, then falls back to `instrument_rules` | DONE |
+| tests X64-X70 (instrument_rules_by_symbol dict format; SOLUSDT absent; min_order_qty / qty_step / tick_size missing; notional cap enforcement) | DONE |
+| py_compile scripts/preview_demo_readonly_runtime.py + src/demo_tiny_entry_permission_gate.py + CLI | PASS |
+| pytest tests/demo_trading/test_demo_tiny_entry_permission_gate.py | 91/91 PASS (84 prior + 7 new FIX1) |
+| pytest tests/demo_trading | 1702 PASS + 1 pre-existing unrelated failure (test_demo_emergency_close_sender) | PASS |
+| no order endpoint / no stop endpoint / no position modified / G20 unchanged / no secrets | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-10 TASK-014X-FIX1)
+
+1. Update VPS git pull:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m pytest tests/demo_trading -q
+       # expect 1702 PASS + 1 pre-existing unrelated failure
+
+2. Regenerate readonly smoke (adds instrument_rules_by_symbol with SOLUSDT):
+       python3 scripts/preview_demo_readonly_runtime.py --real-readonly --write-report
+       # Verify SOLUSDT is present:
+       python3 -c "
+import json; d=json.load(open('outputs/demo_trading/readonly_smoke/latest_smoke.json'))
+r=d.get('instrument_rules_by_symbol',{})
+print('SOLUSDT rule_present:', 'SOLUSDT' in r)
+print('SOLUSDT rule:', r.get('SOLUSDT'))
+"
+
+3. Re-run W chain if needed (reconciliation / protection / contract / noop-plan / lifecycle / real-permission).
+   Skip this step if the existing latest_* files are still valid.
+
+4. Run TASK-014X checklist:
+       python3 scripts/preview_demo_tiny_entry_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_entry_permission_gate/latest_tiny_entry_permission_gate.md
+
+   Expected:
+     status=TINY_ENTRY_PERMISSION_CHECKLIST_READY;
+     instrument_rule_summary.rule_present=True;
+     min_order_qty > 0; qty_step > 0; tick_size > 0;
+     rounded_tiny_qty > 0; estimated_tiny_notional > 0;
+     estimated_tiny_notional <= 10 USDT;
+     entry_payload_preview.preview_only=True;
+     order_endpoint_called=False; stop_endpoint_called=False;
+     no_position_modified=True; real_execution_allowed=False;
+     next_required_task=TASK-014Y_tiny_isolated_demo_stop_attach_permission_gate.
+
+5. Run TASK-014X real-entry-guard sanity:
+       python3 scripts/preview_demo_tiny_entry_permission_gate.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission \
+           --symbol SOLUSDT --allow-real-tiny-entry --write-report
+   Expected:
+     status=REAL_TINY_ENTRY_NOT_IMPLEMENTED;
+     real_tiny_entry_requested=True; real_execution_allowed=False;
+     order_endpoint_called=False; stop_endpoint_called=False;
+     no_position_modified=True.
+
+6. Once steps 4+5 above both match, decide whether to authorise
+   TASK-014Y (Tiny Isolated Demo Stop-Attach Permission Gate).
+
 ## TASK-014X Status (2026-06-10)
 
 | item | status |

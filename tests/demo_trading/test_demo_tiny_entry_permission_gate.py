@@ -1257,3 +1257,129 @@ class TestX63GuardSafetyInvariants:
         assert r.no_live_endpoint is True
         assert r.no_orders_sent is True
         assert r.existing_positions_touched == []
+
+
+# ===========================================================================
+# TASK-014X-FIX1: instrument_rules_by_symbol (VPS real-readonly format)
+# ===========================================================================
+
+def _valid_rules_by_symbol() -> dict:
+    """Mimic the instrument_rules_by_symbol dict produced by preview_demo_readonly_runtime.py."""
+    return {
+        "SOLUSDT": {
+            "symbol":             "SOLUSDT",
+            "category":           "linear",
+            "min_order_qty":      0.1,
+            "qty_step":           0.1,
+            "tick_size":          0.01,
+            "min_notional":       5.0,
+            "min_notional_value": 5.0,
+        }
+    }
+
+
+def _readonly_by_sym(**override) -> dict:
+    """readonly_smoke with instrument_rules_by_symbol (no instrument_rules list)."""
+    base = {
+        "timestamp_utc":         "2026-06-10T10:00:00Z",
+        "endpoint_family":       EXPECTED_ENDPOINT_FAMILY,
+        "account_mode":          EXPECTED_ACCOUNT_MODE,
+        "proof_strength":        EXPECTED_PROOF_STRENGTH,
+        "demo_runtime_verified": True,
+        "equity_usd":            500.0,
+        "available_balance_usd": 400.0,
+        "instrument_rules_by_symbol": _valid_rules_by_symbol(),
+    }
+    base.update(override)
+    return base
+
+
+class TestX64InstrumentRulesBySymbolDictReady:
+    """VPS format: instrument_rules_by_symbol (no instrument_rules list) → READY."""
+
+    def test_checklist_ready(self):
+        r = _run(readonly=_readonly_by_sym())
+        assert r.status == STATUS_CHECKLIST_READY
+        assert r.instrument_rule_summary["rule_present"] is True
+        assert r.instrument_rule_summary["min_order_qty"] == pytest.approx(0.1)
+        assert r.instrument_rule_summary["qty_step"]      == pytest.approx(0.1)
+        assert r.instrument_rule_summary["tick_size"]     == pytest.approx(0.01)
+        assert r.rounded_tiny_qty > 0.0
+        assert r.estimated_tiny_notional > 0.0
+        assert r.estimated_tiny_notional <= TINY_NOTIONAL_CAP_USDT
+        assert r.within_tiny_notional_cap is True
+        assert r.order_endpoint_called  is False
+        assert r.stop_endpoint_called   is False
+        assert r.no_position_modified   is True
+
+
+class TestX65InstrumentRulesBySymbolMissingSOLUSDT:
+    """instrument_rules_by_symbol present but SOLUSDT missing → FAIL_CLOSED."""
+
+    def test_solusdt_absent(self):
+        ro = _readonly_by_sym(instrument_rules_by_symbol={})
+        r = _run(readonly=ro)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_INSTRUMENT_RULE_MISSING in r.blocked_gates
+        assert r.instrument_rule_summary["rule_present"] is False
+
+
+class TestX66InstrumentRulesBySymbolMissingMinOrderQty:
+    """instrument_rules_by_symbol SOLUSDT missing min_order_qty → FAIL_CLOSED."""
+
+    def test_missing_min_order_qty(self):
+        rules = dict(_valid_rules_by_symbol())
+        rules["SOLUSDT"] = {k: v for k, v in rules["SOLUSDT"].items() if k != "min_order_qty"}
+        r = _run(readonly=_readonly_by_sym(instrument_rules_by_symbol=rules))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_MIN_ORDER_QTY_MISSING in r.blocked_gates
+
+
+class TestX67InstrumentRulesBySymbolMissingQtyStep:
+    """instrument_rules_by_symbol SOLUSDT missing qty_step → FAIL_CLOSED."""
+
+    def test_missing_qty_step(self):
+        rules = dict(_valid_rules_by_symbol())
+        rules["SOLUSDT"] = {k: v for k, v in rules["SOLUSDT"].items() if k != "qty_step"}
+        r = _run(readonly=_readonly_by_sym(instrument_rules_by_symbol=rules))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_QTY_STEP_MISSING in r.blocked_gates
+
+
+class TestX68InstrumentRulesBySymbolMissingTickSize:
+    """instrument_rules_by_symbol SOLUSDT missing tick_size → FAIL_CLOSED."""
+
+    def test_missing_tick_size(self):
+        rules = dict(_valid_rules_by_symbol())
+        rules["SOLUSDT"] = {k: v for k, v in rules["SOLUSDT"].items() if k != "tick_size"}
+        r = _run(readonly=_readonly_by_sym(instrument_rules_by_symbol=rules))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_TICK_SIZE_MISSING in r.blocked_gates
+
+
+class TestX69InstrumentRulesBySymbolNotionalOverCap:
+    """instrument_rules_by_symbol: lifecycle qty that pushes notional > 10 USDT → FAIL_CLOSED."""
+
+    def test_over_cap(self):
+        lc = _valid_lifecycle(); lc["tiny_qty"] = 1.0  # 1 * 64.87 = 64.87 USDT
+        r = _run(readonly=_readonly_by_sym(), lifecycle=lc)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ESTIMATED_NOTIONAL_OVER_CAP in r.blocked_gates
+        assert r.order_endpoint_called  is False
+        assert r.stop_endpoint_called   is False
+        assert r.no_position_modified   is True
+
+
+class TestX70InstrumentRulesBySymbolNotionalWithinCap:
+    """instrument_rules_by_symbol: tiny notional <= 10 USDT → pass."""
+
+    def test_within_cap(self):
+        # 0.1 SOL * 64.87 = 6.487 USDT — within 10 USDT cap
+        r = _run(readonly=_readonly_by_sym())
+        assert r.status == STATUS_CHECKLIST_READY
+        assert r.within_tiny_notional_cap is True
+        assert r.estimated_tiny_notional <= TINY_NOTIONAL_CAP_USDT
+        assert r.order_endpoint_called  is False
+        assert r.stop_endpoint_called   is False
+        assert r.no_position_modified   is True
+        assert r.secret_value_observed  is False
