@@ -1,9 +1,76 @@
 # Next Action
 
-> README shared status updated by TASK-014AI (2026-06-11) — see
+> README shared status updated by TASK-014AJ (2026-06-11) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
 > for the cross-agent status board. Code-only sync — no real trading logic
 > added, G20 still active, no real trading enabled.
+
+## TASK-014AJ Status (2026-06-11)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_entry_manual_authorization_design.py: manual-authorization-design-only module (NO sender, NO endpoint calls, NO token validation), 19 upstream artifact inputs (18 from TASK-014AI + AI's entry_real_permission_review output), 4 status modes (TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DESIGN_READY / _BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED), 10 design stages, hard-fail-closed gates frozenset (26 gates), 147 gates total, dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_guarded_entry_manual_authorization_design.py: NO `/v5/order/create`, NO `/v5/position/trading-stop`, NO secret reads, NO HMAC/signature, NO sender adapter, NO real entry execution, NO token validation (token pattern `CONFIRM_DEMO_TINY_ENTRY_YYYYMMDD_SOLUSDT` documented but NEVER validated), NO G20 lift, NO AA-AI module reuse — pure-computation authorization-design envelope (symbol=SOLUSDT, qty=0.1, side=Buy, reduceOnly=False, orderType=Market, positionIdx=0, max_notional_usdt=10, stopLoss=61.18, tpslMode=Full, slTriggerBy=MarkPrice) | DONE |
+| src/demo_tiny_guarded_entry_manual_authorization_design.py: documents 13 required human confirmation flags (--i-understand-this-is-demo-real-execution, --confirm-symbol/side/qty/max-notional-usdt/existing-position-count/existing-symbols/reduce-only/position-idx/order-type/stop-required-after-entry/stop-loss/cleanup-manual-boundary) but NEVER parses/validates them; AI entry_real_permission_review readiness must equal DESIGN_REVIEW_READY_NOT_EXECUTABLE; AE-AI statuses must be in acceptable whitelist | DONE |
+| src/demo_tiny_guarded_entry_manual_authorization_design.py: forbidden flags (--execute-real-entry / --send-order / --place-order / --real-run / --confirm-token / --execute-tiny-entry) deliberately absent from code | DONE |
+| src/demo_tiny_guarded_entry_manual_authorization_design.py: next_required_task = "TASK-014AK_guarded_entry_manual_authorization_dry_run" | DONE |
+| scripts/preview_demo_tiny_guarded_entry_manual_authorization_design.py: 19 `--from-latest-*` flags incl. new `--from-latest-entry-real-permission-review`, `--symbol`, `--allow-design-approval`, `--allow-real-entry-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_manual_authorization_design/` | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_design.py: 116 tests across 86 test classes (AJ1-AJ86) covering 4 status modes, 19 missing-artifact gates, 7 invariant mismatches, 10 stages presence + order, gate count >=147, always-on gates set, G20 not lifted, deep-copy roundtrip, no forbidden imports (incl. AA-AI modules), no sender / network / env / signing tokens, 6 forbidden flags absent, hard-fail gates frozenset, next_required_task = 014AK, status precedence, 13 confirmation flags documented but never validated, 5 protected positions never touched, source-scan safety (tokenize + AST), CLI subprocess exit codes | DONE |
+| py_compile src/demo_tiny_guarded_entry_manual_authorization_design.py + scripts/preview_demo_tiny_guarded_entry_manual_authorization_design.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_design.py | 116/116 PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_manual_authorization_design/` | DONE |
+| no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no permission-gate sender reuse / no AA-AI module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback / no token validation | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-11 TASK-014AJ)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_manual_authorization_design.py scripts/preview_demo_tiny_guarded_entry_manual_authorization_design.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_design.py -q
+       # expect 116/116 PASS
+
+2. Run TASK-014AJ guarded entry manual authorization design (after TASK-014AI
+   guarded entry real permission review confirmed READY):
+       python3 scripts/preview_demo_tiny_guarded_entry_manual_authorization_design.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter --from-latest-guarded-stop-adapter \
+           --from-latest-guarded-cleanup-adapter --from-latest-guarded-lifecycle-summary \
+           --from-latest-entry-real-permission-review \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_guarded_entry_manual_authorization_design/latest_tiny_guarded_entry_manual_authorization_design.md
+
+   Expected:
+     status=TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DESIGN_READY;
+     selected_symbol=SOLUSDT consistent across 19 upstream artifacts;
+     5 protected positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched;
+     real_execution_allowed=False; g20_lifted=False; no_secrets_loaded=True;
+     token_pattern=CONFIRM_DEMO_TINY_ENTRY_YYYYMMDD_SOLUSDT (documented, never validated);
+     next_required_task=TASK-014AK_guarded_entry_manual_authorization_dry_run.
+
+3. (Optional) Design-approval probe:
+       python3 scripts/preview_demo_tiny_guarded_entry_manual_authorization_design.py \
+           [...same 19 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-design-approval --write-report
+       # expect status=TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DESIGN_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe — proves --allow-real-entry-execution never executes:
+       python3 scripts/preview_demo_tiny_guarded_entry_manual_authorization_design.py \
+           [...same 19 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-real-entry-execution --write-report
+       # expect status=REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AK
+   (guarded_entry_manual_authorization_dry_run).
 
 ## TASK-014AI Status (2026-06-11)
 

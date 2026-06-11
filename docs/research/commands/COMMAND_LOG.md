@@ -21,6 +21,58 @@ Notes:
 
 ---
 
+### 2026-06-11（TASK-014AJ — Guarded Entry Manual Authorization Design）
+
+Agent: Claude (Opus)
+Command source: Carry-over TASK-014AJ workorder (sequential safety chain after
+TASK-014AI guarded entry real permission review)
+Task: Implement guarded tiny entry manual-authorization-design module that
+consumes 19 upstream artifacts (TASK-014AI's 18 baseline + AI's own
+entry_real_permission_review output) and emits a pure-computation
+authorization-design verdict — NO sender, NO endpoint calls
+(`/v5/order/create` or `/v5/position/trading-stop`), NO secret reads,
+NO HMAC / signature, NO real entry execution, NO token validation
+(token pattern `CONFIRM_DEMO_TINY_ENTRY_YYYYMMDD_SOLUSDT` documented only
+and NEVER validated), NO AA-AI module reuse, NO G20 lift.
+4 status modes (TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DESIGN_READY /
+_BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED /
+FAIL_CLOSED), 10 design stages, 147 gates, 26 hard-fail gates,
+13 required human confirmation flags documented but NEVER validated.
+
+Status before: TASK-014AI guarded entry real permission review confirmed READY
+Status after: TASK-014AJ guarded entry manual authorization design DONE
+Files changed:
+- `src/demo_tiny_guarded_entry_manual_authorization_design.py` (new, 1702 lines)
+- `scripts/preview_demo_tiny_guarded_entry_manual_authorization_design.py` (new)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_design.py` (new, 116 tests)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014AJ status block prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `.gitignore` (added `outputs/demo_trading/tiny_guarded_entry_manual_authorization_design/`)
+- `README.md` (status board updated)
+
+Validation:
+- py_compile src/demo_tiny_guarded_entry_manual_authorization_design.py → PASS
+- py_compile scripts/preview_demo_tiny_guarded_entry_manual_authorization_design.py → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_design.py → 116/116 PASS
+
+Outputs: outputs/demo_trading/tiny_guarded_entry_manual_authorization_design/
+(gitignored, design-only — no real execution artifacts)
+
+Notes:
+- Pure-computation manual-authorization design — token pattern is documented
+  in the result envelope but NEVER parsed, NEVER validated, NEVER acted upon.
+- 13 required human confirmation flags documented as a future contract for
+  TASK-014AK dry-run consumer but parser/validator deliberately not present.
+- `--allow-design-approval` flips status to _BUT_EXECUTION_DISABLED;
+  `--allow-real-entry-execution` flips to REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED
+  (guard probe — never executes).
+- 5 protected positions (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT)
+  never touched; SOLUSDT collision check is part of preflight gate set.
+- next_required_task = TASK-014AK_guarded_entry_manual_authorization_dry_run.
+- Local commit only — no push (per memory rule).
+
+---
+
 ### 2026-06-11（TASK-014AI — Guarded Entry Real Permission Review）
 
 Agent: Claude (Opus)
