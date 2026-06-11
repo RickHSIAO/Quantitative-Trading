@@ -14,24 +14,24 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AF-DOCS1, 2026-06-11）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AG, 2026-06-11）
 
-共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊純文件同步，
-不改任何 execution logic、不解除 G20、不開啟 real trading。
+共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
+TASK-014AG 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AF |
-| latest_commit | `5b08c26` — `TASK-014AF: add guarded stop attach dry-run adapter` |
-| current_phase | guarded stop-attach-only dry-run adapter completed |
-| next_required_task | `TASK-014AG_guarded_cleanup_only_dry_run_adapter` |
+| latest_completed_task | TASK-014AG |
+| latest_commit | `TASK-014AG: add guarded cleanup dry-run adapter`（local；尚未推遠端） |
+| current_phase | guarded cleanup-only dry-run adapter completed |
+| next_required_task | `TASK-014AH_guarded_tiny_lifecycle_dry_run_summary` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
 | actual stop attach | **FORBIDDEN** |
 | actual cleanup | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `pytest tests/demo_trading -q` → 2652 PASS + 1 pre-existing unrelated emergency_close failure |
+| latest validation | `pytest tests/demo_trading -q` → 2823 PASS + 1 pre-existing unrelated emergency_close failure |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
 
 權威來源（authoritative pointers — 任何不一致以下列檔案為準）：
@@ -41,7 +41,7 @@
 
 提醒（避免三方協作誤觸）：
 
-1. 任何 dry-run adapter（AE / AF / 後續 AG…）皆**不**呼叫 endpoint、**不**讀 secrets、**不**簽 HMAC。
+1. 任何 dry-run adapter（AE / AF / AG / 後續 AH…）皆**不**呼叫 endpoint、**不**讀 secrets、**不**簽 HMAC。
 2. `--allow-real-*-execution` 是 guard probe；source 內部一律回 `REAL_*_EXECUTION_NOT_IMPLEMENTED`，
    不會升級為 real trading。
 3. 升級為 real execution 必須由 Rick 在 `NEXT_ACTION.md` 顯式授權，**不**可由 agent 自動推進。

@@ -79,3 +79,5 @@ outputs/demo_trading/tiny_lifecycle_runner_design/
 outputs/demo_trading/tiny_lifecycle_runner_dry_run/
 outputs/demo_trading/tiny_lifecycle_guarded_runner_design_review/
 outputs/demo_trading/tiny_guarded_entry_dry_run_adapter/
+outputs/demo_trading/tiny_guarded_stop_attach_dry_run_adapter/
+outputs/demo_trading/tiny_guarded_cleanup_dry_run_adapter/

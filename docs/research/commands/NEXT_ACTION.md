@@ -1,9 +1,75 @@
 # Next Action
 
-> README shared status updated by TASK-014AF-DOCS1 (2026-06-11) — see
+> README shared status updated by TASK-014AG (2026-06-11) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
-> for the cross-agent status board. Documentation-only sync — no execution
-> logic changed, G20 still active, no real trading enabled.
+> for the cross-agent status board. Code-only sync — no real trading logic
+> added, G20 still active, no real trading enabled.
+
+## TASK-014AG Status (2026-06-11)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_cleanup_dry_run_adapter.py: cleanup-only dry-run adapter module, 14 upstream artifact inputs (10 baseline + 014AA lifecycle_summary + 014AB runner_design + 014AC runner_dry_run + 014AD guarded_design_review + 014AE guarded_entry_adapter + 014AF guarded_stop_adapter), 3 status modes (TINY_GUARDED_CLEANUP_DRY_RUN_ADAPTER_READY / _BUT_EXECUTION_DISABLED / REAL_CLEANUP_EXECUTION_NOT_IMPLEMENTED), hard-fail-closed gates frozenset (24 gates), dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_guarded_cleanup_dry_run_adapter.py: NO endpoint calls, NO secret reads, NO HMAC/signature, NO preview-to-real conversion, NO sender adapter, NO real cleanup implementation, NO 014AA/AB/AC/AD/AE/AF module reuse — cleanup-only preview envelope (side=Sell, qty=0.1, reduceOnly=True, closeOnTrigger=False, positionIdx=0, orderType=Market, symbol=SOLUSDT, max_notional_usdt=10) | DONE |
+| src/demo_tiny_guarded_cleanup_dry_run_adapter.py: cross-artifact consistency review of selected symbol / category=linear / cleanup-side=Sell / tiny qty / endpoint family=bybit_demo / account_mode=demo / proof_strength=strong / position_details_source=real_readonly / no 5-existing-position collision; 014AD guarded_design_review readiness must equal DESIGN_REVIEW_READY_NOT_EXECUTABLE; 014AE guarded_entry_adapter status must be in acceptable whitelist; 014AF guarded_stop_adapter status must be in acceptable whitelist | DONE |
+| src/demo_tiny_guarded_cleanup_dry_run_adapter.py: forbidden flags (--execute-real-entry / --execute-real-stop / --execute-real-cleanup / --execute-real-lifecycle / --send-order / --place-order / --real-run) deliberately absent from code | DONE |
+| src/demo_tiny_guarded_cleanup_dry_run_adapter.py: next_required_task = "TASK-014AH_guarded_tiny_lifecycle_dry_run_summary" | DONE |
+| scripts/preview_demo_tiny_guarded_cleanup_dry_run_adapter.py: 14 `--from-latest-*` flags incl. new `--from-latest-guarded-stop-adapter`, `--symbol`, `--allow-cleanup-dry-run-approval`, `--allow-real-cleanup-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_cleanup_dry_run_adapter/` | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_cleanup_dry_run_adapter.py: 171 tests across 68 test classes (AG1-AG68) covering 3 status modes, 14 missing-artifact gates, invariant mismatches, guarded review/entry/stop adapter status acceptance, 9 stages presence + order, gate count >=117, always-on gates set, G20 not lifted, deep-copy roundtrip, no forbidden imports (incl. AF module), no sender / network / env / signing tokens, 7 forbidden flags absent, hard-fail gates >=24, next_required_task = 014AH, status precedence, 8 confirmation flags, allowlist/denylist, 5 protected positions never touched, source-scan safety, DRYRUN_TINY_CLEANUP_ orderLinkId prefix, CONFIRM_DEMO_TINY_CLEANUP_ token prefix | DONE |
+| py_compile src/demo_tiny_guarded_cleanup_dry_run_adapter.py + scripts/preview_demo_tiny_guarded_cleanup_dry_run_adapter.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_cleanup_dry_run_adapter.py | 171/171 PASS |
+| pytest tests/demo_trading | 2823 PASS + 1 pre-existing unrelated failure (test_demo_emergency_close_sender::TestCLIIntegration::test_dry_run_cli_writes_report, same as 014AA/AB/AC/AD/AE/AF) |
+| `.gitignore` updated with `outputs/demo_trading/tiny_guarded_cleanup_dry_run_adapter/` (and back-filled `tiny_guarded_stop_attach_dry_run_adapter/`) | DONE |
+| no real cleanup / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no permission-gate sender reuse / no 014AA/AB/AC/AD/AE/AF module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-11 TASK-014AG)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_cleanup_dry_run_adapter.py scripts/preview_demo_tiny_guarded_cleanup_dry_run_adapter.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_cleanup_dry_run_adapter.py -q
+       # expect 171/171 PASS
+       python3 -m pytest tests/demo_trading -q
+       # expect (prior pass count + 171) + 1 pre-existing unrelated failure (test_demo_emergency_close_sender)
+
+2. Run TASK-014AG guarded cleanup-only dry-run adapter checklist (after
+   TASK-014AF guarded stop-attach adapter confirmed READY):
+       python3 scripts/preview_demo_tiny_guarded_cleanup_dry_run_adapter.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter --from-latest-guarded-stop-adapter \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_guarded_cleanup_dry_run_adapter/latest_tiny_guarded_cleanup_dry_run_adapter.md
+
+   Expected:
+     status=TINY_GUARDED_CLEANUP_DRY_RUN_ADAPTER_READY;
+     selected_symbol=SOLUSDT consistent across 14 upstream artifacts;
+     5 protected positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched;
+     real_execution_allowed=False; g20_lifted=False; no_secrets_loaded=True;
+     next_required_task=TASK-014AH_guarded_tiny_lifecycle_dry_run_summary.
+
+3. (Optional) Cleanup-dry-run-approval probe:
+       python3 scripts/preview_demo_tiny_guarded_cleanup_dry_run_adapter.py \
+           [...same 14 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-cleanup-dry-run-approval --write-report
+       # expect status=TINY_GUARDED_CLEANUP_DRY_RUN_ADAPTER_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe — proves --allow-real-cleanup-execution never executes:
+       python3 scripts/preview_demo_tiny_guarded_cleanup_dry_run_adapter.py \
+           [...same 14 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-real-cleanup-execution --write-report
+       # expect status=REAL_CLEANUP_EXECUTION_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AH
+   (guarded_tiny_lifecycle_dry_run_summary).
 
 ## TASK-014AF Status (2026-06-11)
 
