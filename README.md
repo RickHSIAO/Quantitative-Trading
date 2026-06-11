@@ -14,24 +14,24 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AJ, 2026-06-11）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AL, 2026-06-12）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AJ 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AL 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AJ |
-| latest_commit | `TASK-014AJ: add guarded entry manual authorization design`（local；尚未推遠端） |
-| current_phase | guarded entry manual authorization design completed（design-only，token never validated，無實單） |
-| next_required_task | `TASK-014AK_guarded_entry_manual_authorization_dry_run` |
+| latest_completed_task | TASK-014AL |
+| latest_commit | `TASK-014AL: add guarded entry final pre-execution review`（local；尚未推遠端） |
+| current_phase | guarded entry final pre-execution review completed（review-only，token never validated，無實單，no auto-git） |
+| next_required_task | `TASK-014AM` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
 | actual stop attach | **FORBIDDEN** |
 | actual cleanup | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_design.py` → 116 PASS |
+| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_final_pre_execution_review.py` → 104 PASS |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
 | authorization token pattern | `CONFIRM_DEMO_TINY_ENTRY_YYYYMMDD_SOLUSDT`（documented only — NEVER validated） |
 

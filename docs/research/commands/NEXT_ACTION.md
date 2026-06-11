@@ -1,9 +1,80 @@
 # Next Action
 
-> README shared status updated by TASK-014AK (2026-06-12) — see
+> README shared status updated by TASK-014AL (2026-06-12) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
 > for the cross-agent status board. Code-only sync — no real trading logic
 > added, G20 still active, no real trading enabled.
+
+## TASK-014AL Status (2026-06-12)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_entry_final_pre_execution_review.py: review-only module (NO sender, NO endpoint calls, NO real token validation, NO real entry execution, NO auto-git operations), 21 upstream artifact inputs (AA through AK chain), 4 status modes (TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY / _BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED), 11 review stages (STAGE_0 through STAGE_10), hard-fail-closed gates frozenset (29 gates), 152+ gates total, dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_guarded_entry_final_pre_execution_review.py: NO `/v5/order/create`, NO `/v5/position/trading-stop`, NO secret reads, NO HMAC/signature, NO sender adapter, NO real entry execution, NO real token validation (token pattern `CONFIRM_DEMO_TINY_ENTRY_YYYYMMDD_SOLUSDT` documented only, never re.match'd), NO G20 lift, NO AA-AK module reuse, NO auto git commit / push / branch / tag — pure-computation review envelope (symbol=SOLUSDT, qty=0.1, side=Buy, reduceOnly=False, orderType=Market, positionIdx=0, max_notional_usdt=10, stopLoss=61.18, tpslMode=Full, slTriggerBy=MarkPrice) | DONE |
+| src/demo_tiny_guarded_entry_final_pre_execution_review.py: documents 13 required human confirmation flags but NEVER parses/validates them; AK entry_manual_authorization_dry_run status must be ACCEPTABLE, readiness must be NOT_EXECUTABLE, dry_run_authorization_result must equal DOCUMENTED_ONLY_NOT_AUTHORIZED; AE-AK statuses must be in acceptable whitelist; `--expected-commit-hash` documented but never validated | DONE |
+| src/demo_tiny_guarded_entry_final_pre_execution_review.py: forbidden flags (--execute-real-entry / --send-order / --place-order / --real-run / --confirm-token / --execute-tiny-entry / --auto-commit / --git-commit / --auto-push / --git-push) deliberately absent from code | DONE |
+| src/demo_tiny_guarded_entry_final_pre_execution_review.py: next_required_task = "TASK-014AM" | DONE |
+| scripts/preview_demo_tiny_guarded_entry_final_pre_execution_review.py: 21 `--from-latest-*` flags incl. new `--from-latest-entry-manual-auth-dry-run`, `--symbol`, `--expected-commit-hash`, `--allow-review-approval`, `--allow-real-entry-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_final_pre_execution_review/`; NO auto git operations | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_entry_final_pre_execution_review.py: 104 tests across 87 test classes (AL1-AL87) covering 4 status modes, 21 missing-artifact gates, endpoint/account/symbol invariants, AK dry-run status/readiness/auth_result acceptance, 11 stages presence + order, deep-copy roundtrip, source-scan safety (AST + tokenize), forbidden flag absence in src + preview (incl. auto-git flags), 5 protected positions untouched, G20 never lifted, token pattern documented-only never validated, 13 required flags doc, next_required_task = 014AM, status precedence, frozenset whitelists, endpoint allow/denylists, forbidden log fields, expected commit hash documented but not validated, no auto-git in src + preview, HARD_FAIL_GATES expansion to 29 gates, CLI subprocess exit codes, report artifacts written, `repo_tmp_path` Windows ACL workaround | DONE |
+| py_compile src/demo_tiny_guarded_entry_final_pre_execution_review.py + scripts/preview_demo_tiny_guarded_entry_final_pre_execution_review.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_final_pre_execution_review.py | 104/104 PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_final_pre_execution_review/` | DONE |
+| no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no permission-gate sender reuse / no AA-AK module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback / no real token validation / no auto git commit / no auto git push | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-12 TASK-014AL)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_final_pre_execution_review.py scripts/preview_demo_tiny_guarded_entry_final_pre_execution_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_final_pre_execution_review.py -q
+       # expect 104/104 PASS
+
+2. Run TASK-014AL guarded entry final pre-execution review (after TASK-014AK
+   guarded entry manual authorization dry-run confirmed READY):
+       python3 scripts/preview_demo_tiny_guarded_entry_final_pre_execution_review.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter --from-latest-guarded-stop-adapter \
+           --from-latest-guarded-cleanup-adapter --from-latest-guarded-lifecycle-summary \
+           --from-latest-entry-real-permission-review \
+           --from-latest-entry-manual-auth-design \
+           --from-latest-entry-manual-auth-dry-run \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_guarded_entry_final_pre_execution_review/latest_tiny_guarded_entry_final_pre_execution_review.md
+
+   Expected:
+     status=TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY;
+     selected_symbol=SOLUSDT consistent across 21 upstream artifacts;
+     5 protected positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched;
+     real_execution_allowed=False; g20_lifted=False; no_secrets_loaded=True;
+     token_validation_simulated=True; token_validated=False; real_token_validated=False;
+     dry_run_authorization_result=DOCUMENTED_ONLY_NOT_AUTHORIZED;
+     no_auto_git_operations=True;
+     next_required_task=TASK-014AM.
+
+3. (Optional) Review-approval probe:
+       python3 scripts/preview_demo_tiny_guarded_entry_final_pre_execution_review.py \
+           [...same 21 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-review-approval --write-report
+       # expect status=TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe — proves --allow-real-entry-execution never executes:
+       python3 scripts/preview_demo_tiny_guarded_entry_final_pre_execution_review.py \
+           [...same 21 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-real-entry-execution --write-report
+       # expect status=REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED, no socket opened, no git operations
+
+5. Once step 2 passes, decide whether to authorise TASK-014AM
+   (next guarded-lifecycle phase).
 
 ## TASK-014AK Status (2026-06-12)
 
