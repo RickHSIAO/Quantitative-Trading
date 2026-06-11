@@ -21,6 +21,57 @@ Notes:
 
 ---
 
+### 2026-06-11（TASK-014AF — Guarded Stop-attach-only Dry-run Adapter）
+
+Agent: Claude (Opus)
+Command source: Carry-over TASK-014AF workorder (sequential safety chain after TASK-014AE guarded entry adapter)
+Task: Implement stop-attach-only dry-run adapter module that consumes the 014AE
+guarded entry adapter + 12 upstream artifacts and emits a preview-only
+stop-attach envelope (stopLoss=61.18, tpslMode=Full, slTriggerBy=MarkPrice,
+positionIdx=0, category=linear, symbol=SOLUSDT, side=long, qty=0.1) — NO
+endpoint calls, NO secret reads, NO HMAC/signature, NO preview-to-real
+conversion, NO sender adapter, NO real stop-attach implementation, NO
+014AA/AB/AC/AD/AE module reuse. 4 status modes
+(TINY_GUARDED_STOP_ATTACH_DRY_RUN_ADAPTER_READY / _BUT_EXECUTION_DISABLED /
+REAL_STOP_ATTACH_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED), 13 upstream
+artifacts, cross-artifact consistency review (selected symbol /
+category=linear / stop-attach-side / tiny qty / entry reference /
+endpoint family=bybit_demo / account_mode=demo / proof_strength=strong /
+position_details_source=real_readonly / no existing position collision /
+AD readiness=DESIGN_REVIEW_READY_NOT_EXECUTABLE / AE entry adapter status
+in acceptable whitelist), 7 forbidden flags absent (--execute-real-entry /
+--execute-real-stop / --execute-real-cleanup / --execute-real-lifecycle /
+--send-order / --place-order / --real-run), next_required_task =
+TASK-014AG_guarded_cleanup_only_dry_run_adapter.
+Status before: TASK-014AE DONE (guarded entry adapter) → TASK-014AF PENDING
+Status after: TASK-014AF code + tests + docs DONE (local commit DONE — push pending VPS rollout)
+Files changed:
+  - src/demo_tiny_guarded_stop_attach_dry_run_adapter.py (NEW)
+  - scripts/preview_demo_tiny_guarded_stop_attach_dry_run_adapter.py (NEW)
+  - tests/demo_trading/test_demo_tiny_guarded_stop_attach_dry_run_adapter.py (NEW, 159 tests across 65 classes AF1-AF65)
+  - .gitignore (already covers outputs/demo_trading/tiny_guarded_stop_attach_dry_run_adapter/ at line 80)
+  - docs/research/commands/NEXT_ACTION.md (prepend TASK-014AF status + Next Rick Action)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - python -m py_compile src/...py scripts/...py tests/...py → OK
+  - python -m pytest tests/demo_trading/test_demo_tiny_guarded_stop_attach_dry_run_adapter.py -q
+    → 159/159 PASS (0.93s)
+  - python -m pytest tests/demo_trading -q → 2652 PASS + 1 pre-existing
+    unrelated failure (test_demo_emergency_close_sender::TestCLIIntegration::test_dry_run_cli_writes_report
+    — same as 014AA/AB/AC/AD/AE, NOT caused by 014AF)
+Outputs: outputs/demo_trading/tiny_guarded_stop_attach_dry_run_adapter/
+(gitignored, runtime-only)
+Notes: Stop-attach-only dry-run adapter — emits preview envelope only. No
+socket / no env reads / no signing tokens / no live endpoint fallback. main.py
+/ src/risk.py / BybitExecutor untouched. G20 sender policy still in place. No
+existing position modified (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT
+protected list verified). No sender reuse from any of TASK-014W/X/Y/Z/AA/AB/AC/AD/AE
+modules — adapter reads upstream artifacts only. Source patch: added
+GATE_SELECTED_SYMBOL_NOT_SOLUSDT to _HARD_FAIL_GATES (now 22 hard-fail
+gates) so non-SOLUSDT symbol selection triggers FAIL_CLOSED.
+
+---
+
 ### 2026-06-11（TASK-014AE — Guarded Entry-only Dry-run Adapter）
 
 Agent: Claude (Opus)

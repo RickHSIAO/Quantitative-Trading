@@ -1,5 +1,82 @@
 # Next Action
 
+## TASK-014AF Status (2026-06-11)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_stop_attach_dry_run_adapter.py: stop-attach-only dry-run adapter module, 13 upstream artifact inputs (10 baseline + 014AA lifecycle_summary + 014AB runner_design + 014AC runner_dry_run + 014AD guarded_design_review + 014AE guarded_entry_adapter), 4 status modes (TINY_GUARDED_STOP_ATTACH_DRY_RUN_ADAPTER_READY / _BUT_EXECUTION_DISABLED / REAL_STOP_ATTACH_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED), hard-fail-closed gates frozenset (22 gates incl. selected_symbol_not_solusdt), dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_guarded_stop_attach_dry_run_adapter.py: NO endpoint calls, NO secret reads, NO HMAC/signature, NO preview-to-real conversion, NO sender adapter, NO real stop-attach implementation, NO 014AA/AB/AC/AD/AE module reuse — stop-attach-only preview envelope (stopLoss=61.18, tpslMode=Full, slTriggerBy=MarkPrice, positionIdx=0, category=linear, symbol=SOLUSDT, side=long, qty=0.1) | DONE |
+| src/demo_tiny_guarded_stop_attach_dry_run_adapter.py: cross-artifact consistency review of selected symbol / category=linear / stop-attach-side / tiny qty / entry reference / endpoint family=bybit_demo / account_mode=demo / proof_strength=strong / position_details_source=real_readonly / no existing-position collision; 014AD guarded_design_review readiness must equal DESIGN_REVIEW_READY_NOT_EXECUTABLE; 014AE guarded_entry_adapter status must be in acceptable whitelist | DONE |
+| src/demo_tiny_guarded_stop_attach_dry_run_adapter.py: forbidden flags (--execute-real-entry / --execute-real-stop / --execute-real-cleanup / --execute-real-lifecycle / --send-order / --place-order / --real-run) deliberately absent from code | DONE |
+| src/demo_tiny_guarded_stop_attach_dry_run_adapter.py: next_required_task = "TASK-014AG_guarded_cleanup_only_dry_run_adapter" | DONE |
+| scripts/preview_demo_tiny_guarded_stop_attach_dry_run_adapter.py: 13 `--from-latest-*` flags incl. new `--from-latest-guarded-entry-adapter`, `--symbol`, `--allow-stop-dry-run-approval`, `--allow-real-stop-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_stop_attach_dry_run_adapter/` | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_stop_attach_dry_run_adapter.py: 159 tests across 65 test classes (AF1-AF65) covering 4 status modes, 13 missing-artifact gates, invariant mismatches, guarded review status/readiness mismatches, guarded entry adapter status acceptance, 9 stages presence + order, gate count >=111, always-on gates set, G20 not lifted, deep-copy roundtrip, no forbidden imports (incl. AE module), no sender / network / env / signing tokens, 7 forbidden flags absent, hard-fail gates >=21, next_required_task = 014AG, status precedence, 7 confirmation flags, allowlist/denylist, dedup, source-scan safety | DONE |
+| py_compile src/demo_tiny_guarded_stop_attach_dry_run_adapter.py + scripts/preview_demo_tiny_guarded_stop_attach_dry_run_adapter.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_stop_attach_dry_run_adapter.py | 159/159 PASS |
+| pytest tests/demo_trading | 2652 PASS + 1 pre-existing unrelated failure (test_demo_emergency_close_sender::TestCLIIntegration::test_dry_run_cli_writes_report, same as 014AA/AB/AC/AD/AE) |
+| `.gitignore` already covers `outputs/demo_trading/tiny_guarded_stop_attach_dry_run_adapter/` (line 80) | CONFIRMED |
+| no real stop attach / no `/v5/position/trading-stop` / no `/v5/order/create` / no order send / no permission-gate sender reuse / no 014AA/AB/AC/AD/AE module reuse / G20 not lifted / no existing position modified / no secrets / no HMAC / no signature header / no live endpoint fallback | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-11 TASK-014AF)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_stop_attach_dry_run_adapter.py scripts/preview_demo_tiny_guarded_stop_attach_dry_run_adapter.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_stop_attach_dry_run_adapter.py -q
+       # expect 159/159 PASS
+       python3 -m pytest tests/demo_trading -q
+       # expect (prior pass count + 159) + 1 pre-existing unrelated failure (test_demo_emergency_close_sender)
+
+2. Run TASK-014AF guarded stop-attach-only dry-run adapter checklist (after
+   TASK-014AE guarded entry adapter confirmed READY):
+       python3 scripts/preview_demo_tiny_guarded_stop_attach_dry_run_adapter.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-stop-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_guarded_stop_attach_dry_run_adapter/latest_tiny_guarded_stop_attach_dry_run_adapter.md
+
+   Expected:
+     status=TINY_GUARDED_STOP_ATTACH_DRY_RUN_ADAPTER_READY;
+     selected_symbol=SOLUSDT consistent across 13 upstream artifacts;
+     real_execution_allowed=False; g20_lifted=False; no_secrets_loaded=True;
+     next_required_task=TASK-014AG_guarded_cleanup_only_dry_run_adapter.
+
+3. (Optional) Stop-dry-run-approval probe:
+       python3 scripts/preview_demo_tiny_guarded_stop_attach_dry_run_adapter.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-stop-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter \
+           --symbol SOLUSDT --allow-stop-dry-run-approval --write-report
+       # expect status=TINY_GUARDED_STOP_ATTACH_DRY_RUN_ADAPTER_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe — proves --allow-real-stop-execution never executes:
+       python3 scripts/preview_demo_tiny_guarded_stop_attach_dry_run_adapter.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-stop-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter \
+           --symbol SOLUSDT --allow-real-stop-execution --write-report
+       # expect status=REAL_STOP_ATTACH_EXECUTION_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AG
+   (guarded_cleanup_only_dry_run_adapter).
+
 ## TASK-014AE Status (2026-06-11)
 
 | item | status |
