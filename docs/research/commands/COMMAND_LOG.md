@@ -21,6 +21,52 @@ Notes:
 
 ---
 
+### 2026-06-11（TASK-014AE — Guarded Entry-only Dry-run Adapter）
+
+Agent: Claude (Opus)
+Command source: Carry-over TASK-014AE workorder (sequential safety chain after TASK-014AD guarded design review)
+Task: Implement entry-only dry-run adapter module that consumes the 014AD
+guarded-runner design review + 11 upstream artifacts and emits a preview-only
+entry order envelope (side=Buy, qty=0.1, reduceOnly=False, positionIdx=0,
+orderType=Market, max_notional_usdt=10) — NO endpoint calls, NO secret reads,
+NO HMAC/signature, NO preview-to-real conversion, NO sender adapter, NO real
+entry implementation, NO 014AA/AB/AC/AD module reuse. 4 status modes
+(TINY_GUARDED_ENTRY_DRY_RUN_ADAPTER_READY / _BUT_EXECUTION_DISABLED /
+REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED), 12 upstream artifacts,
+cross-artifact consistency review (selected symbol / category=linear /
+entry side=Buy / tiny qty / entry reference / endpoint family=bybit_demo /
+account_mode=demo / proof_strength=strong / position_details_source=real_readonly
+/ no existing position collision / AD readiness=DESIGN_REVIEW_READY_NOT_EXECUTABLE),
+7 forbidden flags absent (--execute-real-entry / --execute-real-stop /
+--execute-real-cleanup / --execute-real-lifecycle / --send-order / --place-order /
+--real-run), next_required_task = TASK-014AF.
+Status before: TASK-014AD DONE (guarded design review) → TASK-014AE PENDING
+Status after: TASK-014AE code + tests + docs DONE (local commit DONE — push pending VPS rollout)
+Files changed:
+  - src/demo_tiny_guarded_entry_dry_run_adapter.py (NEW, 1383 lines)
+  - scripts/preview_demo_tiny_guarded_entry_dry_run_adapter.py (NEW)
+  - tests/demo_trading/test_demo_tiny_guarded_entry_dry_run_adapter.py (NEW, 145 tests)
+  - .gitignore (added outputs/demo_trading/tiny_guarded_entry_dry_run_adapter/)
+  - docs/research/commands/NEXT_ACTION.md (prepend TASK-014AE status + Next Rick Action)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - python -m py_compile src/...py scripts/...py tests/...py → OK
+  - python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_dry_run_adapter.py -q
+    → 145/145 PASS (0.70s)
+  - python -m pytest tests/demo_trading -q → 2493 PASS + 1 pre-existing
+    unrelated failure (test_demo_emergency_close_sender::TestCLIIntegration::test_dry_run_cli_writes_report
+    — same as 014AA/AB/AC/AD, NOT caused by 014AE)
+Outputs: outputs/demo_trading/tiny_guarded_entry_dry_run_adapter/
+(gitignored, runtime-only)
+Notes: Entry-only dry-run adapter — emits preview envelope only. No socket /
+no env reads / no signing tokens / no live endpoint fallback. main.py /
+src/risk.py / BybitExecutor untouched. G20 sender policy still in place. No
+existing position modified (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT
+protected list verified). No sender reuse from any of TASK-014W/X/Y/Z/AA/AB/AC/AD
+modules — review reads upstream artifacts only.
+
+---
+
 ### 2026-06-11（TASK-014AD — Tiny Lifecycle Real Execution Guarded Runner Design Review）
 
 Agent: Claude (Opus)
