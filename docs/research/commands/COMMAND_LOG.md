@@ -21,6 +21,36 @@ Notes:
 
 ---
 
+### 2026-06-11（TASK-014AF-DOCS1 — Sync shared project status docs after TASK-014AF）
+
+Agent: Claude (Opus)
+Command source: Rick direct chat instruction (post TASK-014AF local commit)
+Task: Documentation-only sync. Added a `Demo Trading Guarded Lifecycle Status`
+section to README.md so the 3-party collaboration (Rick + ChatGPT +
+Claude/Codex/Opus) shares a single status board covering
+latest_completed_task / latest_commit / current_phase / next_required_task /
+real_execution_allowed / forbidden actions / G20 status / authoritative
+pointers. Added a README sync note above the TASK-014AF status block in
+NEXT_ACTION.md. Added this entry to COMMAND_LOG.md.
+Status before: TASK-014AF DONE (local commit 5b08c26) → README not yet synced
+Status after: README shared status board live; NEXT_ACTION.md + COMMAND_LOG.md
+              cross-linked; local commit DONE — push pending per Rick policy.
+Files changed:
+  - README.md (added Demo Trading Guarded Lifecycle Status section)
+  - docs/research/commands/NEXT_ACTION.md (added README sync note)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - git diff --name-only → README.md + 2 docs only (no src/scripts/tests/main/risk/BybitExecutor change)
+  - git diff --check → clean
+Outputs: none (no runtime artifacts; documentation-only)
+Notes: Documentation-only sync — NO execution logic change. NO change to src/,
+scripts/, tests/, main.py, src/risk.py, BybitExecutor. NO new endpoint call.
+NO secrets read. G20 sender policy still active. outputs/ not modified.
+Protected positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched.
+next_required_task remains TASK-014AG_guarded_cleanup_only_dry_run_adapter.
+
+---
+
 ### 2026-06-11（TASK-014AF — Guarded Stop-attach-only Dry-run Adapter）
 
 Agent: Claude (Opus)

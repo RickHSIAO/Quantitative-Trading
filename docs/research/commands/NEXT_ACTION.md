@@ -1,5 +1,10 @@
 # Next Action
 
+> README shared status updated by TASK-014AF-DOCS1 (2026-06-11) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
+> for the cross-agent status board. Documentation-only sync — no execution
+> logic changed, G20 still active, no real trading enabled.
+
 ## TASK-014AF Status (2026-06-11)
 
 | item | status |
