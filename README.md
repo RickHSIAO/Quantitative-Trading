@@ -14,24 +14,24 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AG, 2026-06-11）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AH, 2026-06-11）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AG 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AH 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AG |
-| latest_commit | `TASK-014AG: add guarded cleanup dry-run adapter`（local；尚未推遠端） |
-| current_phase | guarded cleanup-only dry-run adapter completed |
-| next_required_task | `TASK-014AH_guarded_tiny_lifecycle_dry_run_summary` |
+| latest_completed_task | TASK-014AH |
+| latest_commit | `TASK-014AH: add guarded lifecycle dry-run summary`（local；尚未推遠端） |
+| current_phase | guarded lifecycle dry-run summary completed |
+| next_required_task | `TASK-014AI_guarded_entry_real_permission_review` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
 | actual stop attach | **FORBIDDEN** |
 | actual cleanup | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `pytest tests/demo_trading -q` → 2823 PASS + 1 pre-existing unrelated emergency_close failure |
+| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_lifecycle_dry_run_summary.py` → 123 PASS |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
 
 權威來源（authoritative pointers — 任何不一致以下列檔案為準）：

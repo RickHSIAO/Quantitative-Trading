@@ -21,6 +21,64 @@ Notes:
 
 ---
 
+### 2026-06-11（TASK-014AH — Guarded Lifecycle Dry-run Summary）
+
+Agent: Claude (Opus)
+Command source: Carry-over TASK-014AH workorder (sequential safety chain after
+TASK-014AG guarded cleanup-only dry-run adapter)
+Task: Implement guarded tiny lifecycle dry-run summary module that consumes
+the 014AE/AF/AG guarded adapters + 014 baseline artifacts (17 upstream total)
+and emits a pure-computation summary envelope — NO real runner, NO entry /
+stop / cleanup execution, NO endpoint calls, NO secret reads, NO HMAC /
+signature, NO preview-to-real conversion, NO 014AA/AB/AC/AD/AE/AF/AG module
+reuse. 4 status modes (TINY_GUARDED_LIFECYCLE_DRY_RUN_SUMMARY_READY /
+_BUT_EXECUTION_DISABLED / REAL_LIFECYCLE_EXECUTION_NOT_IMPLEMENTED /
+FAIL_CLOSED), 17 upstream artifacts, cross-adapter consistency review
+(selected symbol / category=linear / qty=0.1 / entry side=Buy / stop=61.18 /
+entry_reference=64.4 / cleanup side=Sell / endpoint family=bybit_demo /
+account_mode=demo / proof_strength=strong /
+position_details_source=real_readonly / no 5-existing-position collision /
+AD readiness=DESIGN_REVIEW_READY_NOT_EXECUTABLE / AE entry adapter status
+in acceptable whitelist / AF stop adapter status in acceptable whitelist /
+AG cleanup adapter status in acceptable whitelist), 7 forbidden flags absent
+(--execute-real-entry / --execute-real-stop / --execute-real-cleanup /
+--execute-real-lifecycle / --send-order / --place-order / --real-run), 9
+checklist stages (stage_0_artifact_preflight through
+stage_8_final_lifecycle_summary_verdict), 124 gate constants across the
+9 stages, >=28 hard-fail gates, next_required_task =
+TASK-014AI_guarded_entry_real_permission_review.
+Status before: TASK-014AG DONE (guarded cleanup adapter) → TASK-014AH PENDING
+Status after: TASK-014AH code + tests + docs DONE (local commit DONE — push pending VPS rollout)
+Files changed:
+  - src/demo_tiny_guarded_lifecycle_dry_run_summary.py (NEW)
+  - scripts/preview_demo_tiny_guarded_lifecycle_dry_run_summary.py (NEW)
+  - tests/demo_trading/test_demo_tiny_guarded_lifecycle_dry_run_summary.py (NEW)
+  - README.md (Demo Trading Guarded Lifecycle Status board updated to AH)
+  - docs/research/commands/NEXT_ACTION.md (prepended TASK-014AH block + Next Rick Action)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+  - .gitignore (added outputs/demo_trading/tiny_guarded_lifecycle_dry_run_summary/)
+Validation:
+  - python -m py_compile src/demo_tiny_guarded_lifecycle_dry_run_summary.py
+    scripts/preview_demo_tiny_guarded_lifecycle_dry_run_summary.py
+    tests/demo_trading/test_demo_tiny_guarded_lifecycle_dry_run_summary.py → PASS
+  - python -m pytest
+    tests/demo_trading/test_demo_tiny_guarded_lifecycle_dry_run_summary.py
+    → 123/123 PASS
+Outputs: (no runtime output yet — written by `--write-report` to
+  outputs/demo_trading/tiny_guarded_lifecycle_dry_run_summary/, gitignored)
+Notes:
+  - G20 sender policy still active; main.py / src/risk.py / BybitExecutor
+    untouched.
+  - 5 protected positions (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT /
+    EDUUSDT) never touched.
+  - Real lifecycle execution remains FORBIDDEN — `--allow-real-lifecycle-execution`
+    is a guard probe that returns REAL_LIFECYCLE_EXECUTION_NOT_IMPLEMENTED.
+  - No new endpoint families introduced; no signing tokens, no env reads,
+    no socket opens, no `/v5/*` calls.
+  - Local commit only; push pending Rick instruction.
+
+---
+
 ### 2026-06-11（TASK-014AG — Guarded Cleanup-only Dry-run Adapter）
 
 Agent: Claude (Opus)

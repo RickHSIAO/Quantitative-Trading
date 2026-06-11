@@ -1,9 +1,74 @@
 # Next Action
 
-> README shared status updated by TASK-014AG (2026-06-11) — see
+> README shared status updated by TASK-014AH (2026-06-11) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
 > for the cross-agent status board. Code-only sync — no real trading logic
 > added, G20 still active, no real trading enabled.
+
+## TASK-014AH Status (2026-06-11)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_lifecycle_dry_run_summary.py: guarded lifecycle dry-run summary module, 17 upstream artifact inputs (10 baseline + 014AA lifecycle_summary + 014AB runner_design + 014AC runner_dry_run + 014AD guarded_design_review + 014AE guarded_entry_adapter + 014AF guarded_stop_adapter + 014AG guarded_cleanup_adapter), 4 status modes (TINY_GUARDED_LIFECYCLE_DRY_RUN_SUMMARY_READY / _BUT_EXECUTION_DISABLED / REAL_LIFECYCLE_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED), 9 checklist stages, hard-fail-closed gates frozenset (>=28 gates), dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_guarded_lifecycle_dry_run_summary.py: NO endpoint calls, NO secret reads, NO HMAC/signature, NO preview-to-real conversion, NO sender adapter, NO real lifecycle execution, NO 014AA/AB/AC/AD/AE/AF/AG module reuse — pure-computation summary envelope (symbol=SOLUSDT, category=linear, qty=0.1, entry_side=Buy, stop=61.18, entry_reference=64.4, cleanup_side=Sell, reduceOnly=True, positionIdx=0, orderType=Market, max_notional_usdt=10) | DONE |
+| src/demo_tiny_guarded_lifecycle_dry_run_summary.py: cross-adapter consistency review of selected symbol / category=linear / qty / entry side / stop level / cleanup side / endpoint family=bybit_demo / account_mode=demo / proof_strength=strong / position_details_source=real_readonly / no 5-existing-position collision; 014AD guarded_design_review readiness must equal DESIGN_REVIEW_READY_NOT_EXECUTABLE; 014AE/AF/AG adapter statuses must be in acceptable whitelist | DONE |
+| src/demo_tiny_guarded_lifecycle_dry_run_summary.py: forbidden flags (--execute-real-entry / --execute-real-stop / --execute-real-cleanup / --execute-real-lifecycle / --send-order / --place-order / --real-run) deliberately absent from code | DONE |
+| src/demo_tiny_guarded_lifecycle_dry_run_summary.py: next_required_task = "TASK-014AI_guarded_entry_real_permission_review" | DONE |
+| scripts/preview_demo_tiny_guarded_lifecycle_dry_run_summary.py: 17 `--from-latest-*` flags incl. AE/AF/AG adapters, `--symbol`, `--allow-summary-approval`, `--allow-real-lifecycle-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_lifecycle_dry_run_summary/` | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_lifecycle_dry_run_summary.py: 123 tests across 80 test classes (AH1-AH80) covering 4 status modes, 17 missing-artifact gates, invariant mismatches, AE/AF/AG adapter status acceptance, 9 stages presence + order, gate count >=123, always-on gates set, G20 not lifted, deep-copy roundtrip, no forbidden imports (incl. AE/AF/AG modules), no sender / network / env / signing tokens, 7 forbidden flags absent, hard-fail gates >=28, next_required_task = 014AI, status precedence, 5 protected positions never touched, source-scan safety (tokenize + AST), CLI subprocess exit codes | DONE |
+| py_compile src/demo_tiny_guarded_lifecycle_dry_run_summary.py + scripts/preview_demo_tiny_guarded_lifecycle_dry_run_summary.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_lifecycle_dry_run_summary.py | 123/123 PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_guarded_lifecycle_dry_run_summary/` | DONE |
+| no real lifecycle / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no permission-gate sender reuse / no 014AA/AB/AC/AD/AE/AF/AG module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-11 TASK-014AH)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_lifecycle_dry_run_summary.py scripts/preview_demo_tiny_guarded_lifecycle_dry_run_summary.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_lifecycle_dry_run_summary.py -q
+       # expect 123/123 PASS
+
+2. Run TASK-014AH guarded lifecycle dry-run summary checklist (after
+   TASK-014AG guarded cleanup adapter confirmed READY):
+       python3 scripts/preview_demo_tiny_guarded_lifecycle_dry_run_summary.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter --from-latest-guarded-stop-adapter \
+           --from-latest-guarded-cleanup-adapter \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_guarded_lifecycle_dry_run_summary/latest_tiny_guarded_lifecycle_dry_run_summary.md
+
+   Expected:
+     status=TINY_GUARDED_LIFECYCLE_DRY_RUN_SUMMARY_READY;
+     selected_symbol=SOLUSDT consistent across 17 upstream artifacts;
+     5 protected positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched;
+     real_execution_allowed=False; g20_lifted=False; no_secrets_loaded=True;
+     next_required_task=TASK-014AI_guarded_entry_real_permission_review.
+
+3. (Optional) Summary-approval probe:
+       python3 scripts/preview_demo_tiny_guarded_lifecycle_dry_run_summary.py \
+           [...same 17 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-summary-approval --write-report
+       # expect status=TINY_GUARDED_LIFECYCLE_DRY_RUN_SUMMARY_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe — proves --allow-real-lifecycle-execution never executes:
+       python3 scripts/preview_demo_tiny_guarded_lifecycle_dry_run_summary.py \
+           [...same 17 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-real-lifecycle-execution --write-report
+       # expect status=REAL_LIFECYCLE_EXECUTION_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AI
+   (guarded_entry_real_permission_review).
 
 ## TASK-014AG Status (2026-06-11)
 
