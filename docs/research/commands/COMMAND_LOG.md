@@ -21,6 +21,54 @@ Notes:
 
 ---
 
+### 2026-06-12（TASK-014AK — Guarded Entry Manual Authorization Dry-run）
+
+Agent: Claude (Opus)
+Command source: Carry-over TASK-014AK workorder (sequential safety chain after
+TASK-014AJ guarded entry manual authorization design)
+Task: Implement guarded tiny entry manual-authorization-dry-run module that
+consumes 20 upstream artifacts (TASK-014AJ's 19 baseline + AJ's own
+entry_manual_authorization_design output) and emits a pure-computation
+authorization-dry-run verdict — NO sender, NO endpoint calls
+(`/v5/order/create` or `/v5/position/trading-stop`), NO secret reads,
+NO HMAC / signature, NO real entry execution, NO real token validation
+(token pattern `CONFIRM_DEMO_TINY_ENTRY_YYYYMMDD_SOLUSDT` simulated only:
+token_validation_simulated=True, token_validated=False,
+real_token_validated=False, dry_run_authorization_result=
+DOCUMENTED_ONLY_NOT_AUTHORIZED), NO AA-AJ module reuse, NO G20 lift.
+4 status modes (TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DRY_RUN_READY /
+_BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED /
+FAIL_CLOSED), 10 dry-run stages, 156+ gates, 27 hard-fail gates,
+13 required human confirmation flags documented but NEVER validated.
+
+Status before: TASK-014AJ guarded entry manual authorization design confirmed READY
+Status after: TASK-014AK guarded entry manual authorization dry-run DONE
+Files changed:
+- `src/demo_tiny_guarded_entry_manual_authorization_dry_run.py` (new, 1774 lines)
+- `scripts/preview_demo_tiny_guarded_entry_manual_authorization_dry_run.py` (new)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_dry_run.py` (new, 76 tests)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014AK status block prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+- `.gitignore` (added `outputs/demo_trading/tiny_guarded_entry_manual_authorization_dry_run/` and `outputs/_test_scratch/`)
+
+Validation:
+- py_compile src/demo_tiny_guarded_entry_manual_authorization_dry_run.py → PASS
+- py_compile scripts/preview_demo_tiny_guarded_entry_manual_authorization_dry_run.py → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_dry_run.py → 76/76 PASS
+
+Outputs: outputs/demo_trading/tiny_guarded_entry_manual_authorization_dry_run/
+(gitignored, dry-run-only — no real execution artifacts; token documented only,
+never validated)
+
+Notes:
+- next_required_task = TASK-014AL_guarded_entry_final_pre_execution_review
+- TASK-014L sender G20 (protected_entry_policy_missing) is NOT lifted here.
+- The 5 existing demo positions (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT /
+  EDUUSDT) remain untouched throughout this dry-run.
+- Local commit only — no push (per project memory feedback_git_push).
+
+---
+
 ### 2026-06-11（TASK-014AJ — Guarded Entry Manual Authorization Design）
 
 Agent: Claude (Opus)

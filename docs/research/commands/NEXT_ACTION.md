@@ -1,9 +1,78 @@
 # Next Action
 
-> README shared status updated by TASK-014AJ (2026-06-11) — see
+> README shared status updated by TASK-014AK (2026-06-12) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
 > for the cross-agent status board. Code-only sync — no real trading logic
 > added, G20 still active, no real trading enabled.
+
+## TASK-014AK Status (2026-06-12)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_entry_manual_authorization_dry_run.py: manual-authorization-dry-run-only module (NO sender, NO endpoint calls, NO real token validation, NO real entry execution), 20 upstream artifact inputs (19 from TASK-014AJ + AJ's entry_manual_authorization_design output), 4 status modes (TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DRY_RUN_READY / _BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED), 10 dry-run stages, hard-fail-closed gates frozenset (27 gates), 156+ gates total, dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_guarded_entry_manual_authorization_dry_run.py: NO `/v5/order/create`, NO `/v5/position/trading-stop`, NO secret reads, NO HMAC/signature, NO sender adapter, NO real entry execution, token pattern `CONFIRM_DEMO_TINY_ENTRY_YYYYMMDD_SOLUSDT` simulated only (token_validation_simulated=True, token_validated=False, real_token_validated=False, dry_run_authorization_result=DOCUMENTED_ONLY_NOT_AUTHORIZED), NO G20 lift, NO AA-AJ module reuse — pure-computation authorization-dry-run envelope (symbol=SOLUSDT, qty=0.1, side=Buy, reduceOnly=False, orderType=Market, positionIdx=0, max_notional_usdt=10, stopLoss=61.18, tpslMode=Full, slTriggerBy=MarkPrice) | DONE |
+| src/demo_tiny_guarded_entry_manual_authorization_dry_run.py: documents 13 required human confirmation flags but NEVER parses/validates them; AJ entry_manual_authorization_design readiness must equal DESIGN_REVIEW_READY_NOT_EXECUTABLE; AE-AJ statuses must be in acceptable whitelist | DONE |
+| src/demo_tiny_guarded_entry_manual_authorization_dry_run.py: forbidden flags (--execute-real-entry / --send-order / --place-order / --real-run / --confirm-token / --execute-tiny-entry) deliberately absent from code | DONE |
+| src/demo_tiny_guarded_entry_manual_authorization_dry_run.py: next_required_task = "TASK-014AL_guarded_entry_final_pre_execution_review" | DONE |
+| scripts/preview_demo_tiny_guarded_entry_manual_authorization_dry_run.py: 20 `--from-latest-*` flags incl. new `--from-latest-entry-manual-auth-design`, `--symbol`, `--allow-dry-run-approval`, `--allow-real-entry-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_manual_authorization_dry_run/` | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_dry_run.py: 76 tests across ~60 test classes (AK1-AK64) covering 4 status modes, 20 missing-artifact gates, endpoint/account/symbol invariants, AJ design status/readiness acceptance, 10 stages presence + order, deep-copy roundtrip, source-scan safety (AST + tokenize), 6 forbidden flag absence in preview (argparse-scoped), forbidden flags in src, 5 protected positions untouched, G20 never lifted, token pattern documented-only never validated via re.match, 13 required flags doc, next_required_task = 014AL, status precedence, frozenset whitelists, endpoint allow/denylists, forbidden log fields, dry-run expected values, CLI subprocess exit codes, report artifacts written | DONE |
+| py_compile src/demo_tiny_guarded_entry_manual_authorization_dry_run.py + scripts/preview_demo_tiny_guarded_entry_manual_authorization_dry_run.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_dry_run.py | 76/76 PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_manual_authorization_dry_run/` + `outputs/_test_scratch/` | DONE |
+| no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no permission-gate sender reuse / no AA-AJ module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback / no real token validation | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-12 TASK-014AK)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_manual_authorization_dry_run.py scripts/preview_demo_tiny_guarded_entry_manual_authorization_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_manual_authorization_dry_run.py -q
+       # expect 76/76 PASS
+
+2. Run TASK-014AK guarded entry manual authorization dry-run (after TASK-014AJ
+   guarded entry manual authorization design confirmed READY):
+       python3 scripts/preview_demo_tiny_guarded_entry_manual_authorization_dry_run.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter --from-latest-guarded-stop-adapter \
+           --from-latest-guarded-cleanup-adapter --from-latest-guarded-lifecycle-summary \
+           --from-latest-entry-real-permission-review \
+           --from-latest-entry-manual-auth-design \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_guarded_entry_manual_authorization_dry_run/latest_tiny_guarded_entry_manual_authorization_dry_run.md
+
+   Expected:
+     status=TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DRY_RUN_READY;
+     selected_symbol=SOLUSDT consistent across 20 upstream artifacts;
+     5 protected positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched;
+     real_execution_allowed=False; g20_lifted=False; no_secrets_loaded=True;
+     token_validation_simulated=True; token_validated=False; real_token_validated=False;
+     dry_run_authorization_result=DOCUMENTED_ONLY_NOT_AUTHORIZED;
+     next_required_task=TASK-014AL_guarded_entry_final_pre_execution_review.
+
+3. (Optional) Dry-run-approval probe:
+       python3 scripts/preview_demo_tiny_guarded_entry_manual_authorization_dry_run.py \
+           [...same 20 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-dry-run-approval --write-report
+       # expect status=TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DRY_RUN_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe — proves --allow-real-entry-execution never executes:
+       python3 scripts/preview_demo_tiny_guarded_entry_manual_authorization_dry_run.py \
+           [...same 20 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-real-entry-execution --write-report
+       # expect status=REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AL
+   (guarded_entry_final_pre_execution_review).
 
 ## TASK-014AJ Status (2026-06-11)
 
