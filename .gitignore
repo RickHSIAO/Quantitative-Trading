@@ -77,3 +77,4 @@ outputs/demo_trading/tiny_cleanup_permission_gate/
 outputs/demo_trading/tiny_lifecycle_real_execution_summary/
 outputs/demo_trading/tiny_lifecycle_runner_design/
 outputs/demo_trading/tiny_lifecycle_runner_dry_run/
+outputs/demo_trading/tiny_lifecycle_guarded_runner_design_review/

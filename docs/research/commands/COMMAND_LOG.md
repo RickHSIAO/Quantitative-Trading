@@ -21,6 +21,51 @@ Notes:
 
 ---
 
+### 2026-06-11（TASK-014AD — Tiny Lifecycle Real Execution Guarded Runner Design Review）
+
+Agent: Claude (Opus)
+Command source: Carry-over TASK-014AD workorder (sequential safety chain after TASK-014AC dry-run runner)
+Task: Implement design-review-only module that reviews the 014AC dry-run
+runner + 014AB runner design against the 10 baseline lifecycle artifacts —
+NO endpoint calls, NO secret reads, NO HMAC/signature, NO preview-to-real
+conversion, NO sender adapter, NO real runner implementation. 4 status modes
+(TINY_LIFECYCLE_GUARDED_RUNNER_DESIGN_REVIEW_READY /
+_BUT_EXECUTION_DISABLED / REAL_RUNNER_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED),
+13 upstream artifacts, cross-artifact consistency review (selected symbol /
+category=linear / entry side=Buy / cleanup side=Sell / tiny qty / stop price /
+entry reference / endpoint family=bybit_demo / account_mode=demo /
+proof_strength=strong / position_details_source=real_readonly / no existing
+position collision), 6 forbidden flags absent (--execute-real-* / --send-order /
+--place-order), next_required_task = TASK-014AE.
+Status before: TASK-014AC DONE (dry-run runner) → TASK-014AD PENDING
+Status after: TASK-014AD code + tests + docs DONE (local commit DONE — push pending VPS rollout)
+Files changed:
+  - src/demo_tiny_lifecycle_guarded_runner_design_review.py (NEW, 1380 lines)
+  - scripts/preview_demo_tiny_lifecycle_guarded_runner_design_review.py (NEW, 722 lines)
+  - tests/demo_trading/test_demo_tiny_lifecycle_guarded_runner_design_review.py (NEW, 156 tests)
+  - .gitignore (added outputs/demo_trading/tiny_lifecycle_guarded_runner_design_review/)
+  - docs/research/commands/NEXT_ACTION.md (prepend TASK-014AD status + Next Rick Action)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - python -m py_compile src/...py scripts/...py tests/...py → OK
+  - python -m pytest tests/demo_trading/test_demo_tiny_lifecycle_guarded_runner_design_review.py -q
+    → 156/156 PASS (0.55s)
+  - python -m pytest tests/demo_trading -q → 2348 PASS + 1 pre-existing
+    unrelated failure (test_demo_emergency_close_sender::TestCLIIntegration::test_dry_run_cli_writes_report
+    — same as 014AA/AB/AC, NOT caused by 014AD)
+Outputs: outputs/demo_trading/tiny_lifecycle_guarded_runner_design_review/
+(gitignored, runtime-only)
+Notes: Design review only. No socket / no env reads / no signing tokens / no
+live endpoint fallback. main.py / src/risk.py / BybitExecutor untouched.
+G20 sender policy still in place. No existing position modified. No sender
+reuse from any of TASK-014AA/AB/AC modules — review reads upstream artifacts
+only. Working tree had been polluted by an accidental `git stash pop` of
+`stash@{0}: On main: WIP after TASK-007 before push`; cleaned via
+`git reset --hard HEAD` while preserving the 3 untracked AD files; the
+old stash@{0} was left intact (not dropped, not re-popped).
+
+---
+
 ### 2026-06-10（TASK-014AC — Tiny Lifecycle Runner Implementation / Dry-run Only）
 
 Agent: Claude (Opus)
