@@ -82,3 +82,4 @@ outputs/demo_trading/tiny_guarded_entry_dry_run_adapter/
 outputs/demo_trading/tiny_guarded_stop_attach_dry_run_adapter/
 outputs/demo_trading/tiny_guarded_cleanup_dry_run_adapter/
 outputs/demo_trading/tiny_guarded_lifecycle_dry_run_summary/
+outputs/demo_trading/tiny_guarded_entry_real_permission_review/

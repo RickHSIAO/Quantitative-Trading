@@ -21,6 +21,67 @@ Notes:
 
 ---
 
+### 2026-06-11（TASK-014AI — Guarded Entry Real Permission Review）
+
+Agent: Claude (Opus)
+Command source: Carry-over TASK-014AI workorder (sequential safety chain after
+TASK-014AH guarded lifecycle dry-run summary)
+Task: Implement guarded tiny entry real-permission review module that consumes
+the 014AE/AF/AG guarded adapters + 014AH guarded lifecycle summary + 014
+baseline artifacts (18 upstream total) and emits a pure-computation
+permission-review verdict — NO sender, NO endpoint calls (`/v5/order/create`
+or `/v5/position/trading-stop`), NO secret reads, NO HMAC / signature, NO
+real entry execution, NO AA/AB/AC/AD/AE/AF/AG/AH module reuse, NO G20 lift.
+4 status modes (TINY_GUARDED_ENTRY_REAL_PERMISSION_REVIEW_READY /
+_BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED /
+FAIL_CLOSED), 18 upstream artifacts, cross-adapter real-permission review
+(selected symbol=SOLUSDT / category=linear / qty=0.1 / side=Buy /
+reduceOnly=False / endpoint family=bybit_demo / account_mode=demo /
+proof_strength=strong / position_details_source=real_readonly / no
+5-existing-position collision / AD readiness=DESIGN_REVIEW_READY_NOT_EXECUTABLE
+/ AH readiness_conclusion=DESIGN_REVIEW_READY_NOT_EXECUTABLE / acceptable
+AE/AF/AG/AH statuses), hard-fail-closed gates frozenset (27 gates), 125+
+total GATE_* constants, entry envelope (symbol=SOLUSDT, qty=0.1, side=Buy,
+reduceOnly=False, orderType=Market, positionIdx=0, max_notional=10), post-
+entry protection envelope (stopLoss=61.18, tpslMode=Full,
+slTriggerBy=MarkPrice), 8 confirmation flags documented (incl.
+CONFIRM_DEMO_TINY_ ENTRY_YYYYMMDD_SYMBOL token pattern), preview CLI with
+18 `--from-latest-*` flags + `--allow-review-approval` +
+`--allow-real-entry-execution` (guard probe — returns
+REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED, never executes), 5 protected
+positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never touched.
+
+Status before: TASK-014AH READY (guarded lifecycle dry-run summary committed
+as cef6fbd)
+Status after: TASK-014AI DONE — guarded entry real permission review module
++ preview CLI + 111-test suite committed locally; next_required_task =
+TASK-014AJ_guarded_entry_manual_authorization_design
+Files changed:
+  - src/demo_tiny_guarded_entry_real_permission_review.py (NEW; 1560 lines)
+  - scripts/preview_demo_tiny_guarded_entry_real_permission_review.py (NEW)
+  - tests/demo_trading/test_demo_tiny_guarded_entry_real_permission_review.py (NEW; 111 tests / 83 classes)
+  - .gitignore (+1 line: outputs/demo_trading/tiny_guarded_entry_real_permission_review/)
+  - README.md (Demo Trading Guarded Lifecycle Status board updated to TASK-014AI)
+  - docs/research/commands/NEXT_ACTION.md (TASK-014AI status block prepended; next Rick action steps documented)
+  - docs/research/commands/COMMAND_LOG.md (this entry)
+Validation:
+  - python -m py_compile src/demo_tiny_guarded_entry_real_permission_review.py → OK
+  - python -m py_compile scripts/preview_demo_tiny_guarded_entry_real_permission_review.py → OK
+  - python -m py_compile tests/demo_trading/test_demo_tiny_guarded_entry_real_permission_review.py → OK
+  - pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_permission_review.py → 111/111 PASS (after 2 minor test-side adjustments: GATE count assertion changed from ==125 to >=125 since module emits 126 GATE_* constants; AST safety test narrowed to network-attr calls only so it doesn't flag dict.get)
+Outputs: None committed (review artifacts written to gitignored
+outputs/demo_trading/tiny_guarded_entry_real_permission_review/ when CLI run)
+Notes:
+  - No real entry, no `/v5/order/create`, no `/v5/position/trading-stop`, no
+    order send, no permission-gate sender reuse, no AA/AB/AC/AD/AE/AF/AG/AH
+    module reuse, G20 not lifted, 5 existing positions
+    (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified, no
+    secrets, no HMAC, no signature header, no live endpoint fallback.
+  - main.py / src/risk.py / BybitExecutor untouched.
+  - Memory rule honored: local commit only, no push to GitHub remote.
+
+---
+
 ### 2026-06-11（TASK-014AH — Guarded Lifecycle Dry-run Summary）
 
 Agent: Claude (Opus)

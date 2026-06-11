@@ -1,9 +1,74 @@
 # Next Action
 
-> README shared status updated by TASK-014AH (2026-06-11) — see
+> README shared status updated by TASK-014AI (2026-06-11) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
 > for the cross-agent status board. Code-only sync — no real trading logic
 > added, G20 still active, no real trading enabled.
+
+## TASK-014AI Status (2026-06-11)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_entry_real_permission_review.py: permission-review-only module (NO sender, NO endpoint calls), 18 upstream artifact inputs (10 baseline + AA lifecycle_summary + AB runner_design + AC runner_dry_run + AD guarded_design_review + AE guarded_entry_adapter + AF guarded_stop_adapter + AG guarded_cleanup_adapter + AH guarded_lifecycle_summary), 4 status modes (TINY_GUARDED_ENTRY_REAL_PERMISSION_REVIEW_READY / _BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED), 9 review stages, hard-fail-closed gates frozenset (27 gates), dataclass result with deep-copy `to_dict()` | DONE |
+| src/demo_tiny_guarded_entry_real_permission_review.py: NO `/v5/order/create`, NO `/v5/position/trading-stop`, NO secret reads, NO HMAC/signature, NO sender adapter, NO real entry execution, NO AA/AB/AC/AD/AE/AF/AG/AH module reuse — pure-computation review envelope (symbol=SOLUSDT, qty=0.1, side=Buy, reduceOnly=False, orderType=Market, positionIdx=0, max_notional_usdt=10, stopLoss=61.18, tpslMode=Full, slTriggerBy=MarkPrice) | DONE |
+| src/demo_tiny_guarded_entry_real_permission_review.py: reviews real-permission conditions (selected symbol / category=linear / qty / side / endpoint family=bybit_demo / account_mode=demo / proof_strength=strong / position_details_source=real_readonly / no 5-existing-position collision); AD readiness must equal DESIGN_REVIEW_READY_NOT_EXECUTABLE; AE/AF/AG/AH statuses must be in acceptable whitelist; AH readiness_conclusion=DESIGN_REVIEW_READY_NOT_EXECUTABLE | DONE |
+| src/demo_tiny_guarded_entry_real_permission_review.py: forbidden flags (--execute-real-entry / --execute-real-stop / --execute-real-cleanup / --execute-real-lifecycle / --send-order / --place-order / --real-run) deliberately absent from code | DONE |
+| src/demo_tiny_guarded_entry_real_permission_review.py: next_required_task = "TASK-014AJ_guarded_entry_manual_authorization_design" | DONE |
+| scripts/preview_demo_tiny_guarded_entry_real_permission_review.py: 18 `--from-latest-*` flags incl. new `--from-latest-guarded-lifecycle-summary`, `--symbol`, `--allow-review-approval`, `--allow-real-entry-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_real_permission_review/` | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_entry_real_permission_review.py: 111 tests across 83 test classes (AI1-AI83) covering 4 status modes, 18 missing-artifact gates, invariant mismatches, AE/AF/AG/AH adapter+summary status acceptance, 9 stages presence + order, gate count >=125, always-on gates set, G20 not lifted, deep-copy roundtrip, no forbidden imports (incl. AA-AH modules), no sender / network / env / signing tokens, 7 forbidden flags absent, hard-fail gates frozenset, next_required_task = 014AJ, status precedence, 8 confirmation flags, 5 protected positions never touched, source-scan safety (tokenize + AST), CLI subprocess exit codes | DONE |
+| py_compile src/demo_tiny_guarded_entry_real_permission_review.py + scripts/preview_demo_tiny_guarded_entry_real_permission_review.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_permission_review.py | 111/111 PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_real_permission_review/` | DONE |
+| no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no permission-gate sender reuse / no AA/AB/AC/AD/AE/AF/AG/AH module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-11 TASK-014AI)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_permission_review.py scripts/preview_demo_tiny_guarded_entry_real_permission_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_permission_review.py -q
+       # expect 111/111 PASS
+
+2. Run TASK-014AI guarded entry real permission review (after TASK-014AH
+   guarded lifecycle dry-run summary confirmed READY):
+       python3 scripts/preview_demo_tiny_guarded_entry_real_permission_review.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter --from-latest-guarded-stop-adapter \
+           --from-latest-guarded-cleanup-adapter --from-latest-guarded-lifecycle-summary \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_guarded_entry_real_permission_review/latest_tiny_guarded_entry_real_permission_review.md
+
+   Expected:
+     status=TINY_GUARDED_ENTRY_REAL_PERMISSION_REVIEW_READY;
+     selected_symbol=SOLUSDT consistent across 18 upstream artifacts;
+     5 protected positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched;
+     real_execution_allowed=False; g20_lifted=False; no_secrets_loaded=True;
+     next_required_task=TASK-014AJ_guarded_entry_manual_authorization_design.
+
+3. (Optional) Review-approval probe:
+       python3 scripts/preview_demo_tiny_guarded_entry_real_permission_review.py \
+           [...same 18 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-review-approval --write-report
+       # expect status=TINY_GUARDED_ENTRY_REAL_PERMISSION_REVIEW_READY_BUT_EXECUTION_DISABLED
+
+4. (Optional) Guard probe — proves --allow-real-entry-execution never executes:
+       python3 scripts/preview_demo_tiny_guarded_entry_real_permission_review.py \
+           [...same 18 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-real-entry-execution --write-report
+       # expect status=REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED, no socket opened
+
+5. Once step 2 passes, decide whether to authorise TASK-014AJ
+   (guarded_entry_manual_authorization_design).
 
 ## TASK-014AH Status (2026-06-11)
 
