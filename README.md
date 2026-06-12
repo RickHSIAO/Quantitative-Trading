@@ -14,26 +14,28 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AL, 2026-06-12）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AM-DOCS1, 2026-06-12）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AL 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AM-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AL |
-| latest_commit | `TASK-014AL: add guarded entry final pre-execution review`（local；尚未推遠端） |
-| current_phase | guarded entry final pre-execution review completed（review-only，token never validated，無實單，no auto-git） |
-| next_required_task | `TASK-014AM` |
+| latest_completed_task | TASK-014AM |
+| latest_commit | `fdf46df` — `TASK-014AM: add guarded entry real execution manual approval gate`（local；尚未推遠端） |
+| current_phase | guarded entry real execution manual approval gate completed（manual-approval-gate-only，EXACT_APPROVAL_PHRASE + 12 REQUIRED_MANUAL_APPROVAL_INPUTS never validated，無實單，無 sender，no auto-git） |
+| next_required_task | `TASK-014AN_guarded_entry_real_execution_adapter_design` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
 | actual stop attach | **FORBIDDEN** |
 | actual cleanup | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_final_pre_execution_review.py` → 104 PASS |
+| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_manual_approval_gate.py` → 114 PASS |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
 | authorization token pattern | `CONFIRM_DEMO_TINY_ENTRY_YYYYMMDD_SOLUSDT`（documented only — NEVER validated） |
+| exact approval phrase | `I AUTHORIZE DEMO TINY ENTRY GATE ONLY FOR SOLUSDT BUY 0.1 MAX 10 USDT; NO ORDER MAY BE SENT BY TASK-014AM`（documented only — NEVER compared） |
+| audit response_status | `APPROVAL_GATE_NOT_SENT`（無任何 outbound request） |
 
 權威來源（authoritative pointers — 任何不一致以下列檔案為準）：
 

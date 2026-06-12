@@ -21,6 +21,131 @@ Notes:
 
 ---
 
+### 2026-06-12（TASK-014AM-DOCS1 — Manual Approval Gate Docs Sync）
+
+Agent: Claude (Opus)
+Command source: Rick chat instruction "Before push/VPS validation, please fix
+TASK-014AM docs sync" (2026-06-12)
+Task: Synchronize cross-agent docs for TASK-014AM — update README Demo Trading
+Guarded Lifecycle Status board to point at TASK-014AM / commit `fdf46df` and
+record TASK-014AM event in COMMAND_LOG; verify NEXT_ACTION.md TASK-014AM
+section is intact. No code changes, no execution logic, no G20 lift, no
+endpoint calls, no secret reads, no real entry execution.
+
+Status before: TASK-014AM source/preview/tests/.gitignore/NEXT_ACTION committed
+locally as `fdf46df` but README + COMMAND_LOG not yet synced
+Status after: TASK-014AM-DOCS1 docs sync DONE; cross-agent board points at
+TASK-014AM / `fdf46df`; next_required_task =
+TASK-014AN_guarded_entry_real_execution_adapter_design
+Files changed:
+- `README.md` (Demo Trading Guarded Lifecycle Status board updated to
+  TASK-014AM — latest_completed_task, latest_commit `fdf46df`, current_phase,
+  next_required_task, latest validation 114 PASS, EXACT_APPROVAL_PHRASE row,
+  audit response_status row)
+- `docs/research/commands/COMMAND_LOG.md` (this entry + TASK-014AM entry)
+
+Validation:
+- py_compile src/demo_tiny_guarded_entry_real_execution_manual_approval_gate.py → PASS
+- py_compile scripts/preview_demo_tiny_guarded_entry_real_execution_manual_approval_gate.py → PASS
+- py_compile tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_manual_approval_gate.py → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_manual_approval_gate.py → 114/114 PASS
+
+Outputs: docs-only — no runtime artifacts produced
+
+Safety confirmations:
+- no real order placed / no `/v5/order/create` call / no
+  `/v5/position/trading-stop` call
+- no sender adapter introduced / no AA-AL module reuse
+- no endpoint call / no socket opened
+- no secrets read / no `.env*` read / no `os.environ` access
+- no HMAC / no signature header
+- no G20 lift — TASK-014L `protected_entry_policy_missing` remains active
+- no position modification — 5 protected positions
+  (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT) untouched
+- no auto git commit / push / branch / tag
+- no real token validation / no real exact phrase validation / no real
+  approval-input validation
+
+Notes:
+- next_required_task = TASK-014AN_guarded_entry_real_execution_adapter_design
+- Local commit only per project memory `feedback_git_push.md`; remote push
+  deferred until Rick explicit instruction.
+
+---
+
+### 2026-06-12（TASK-014AM — Guarded Entry Real Execution Manual Approval Gate）
+
+Agent: Claude (Opus)
+Command source: Carry-over TASK-014AM workorder (sequential safety chain after
+TASK-014AL guarded entry final pre-execution review). Rick chat instruction:
+"全包：preview + tests + ignore + NEXT_ACTION + commit"
+Task: Implement guarded tiny entry real execution **manual approval gate**
+module that consumes 22 upstream artifacts (AA through AL chain — AL's 21
+baseline + AL's own entry_final_pre_execution_review output) and emits a
+pure-computation manual-approval-gate verdict — NO sender, NO endpoint calls
+(`/v5/order/create` or `/v5/position/trading-stop`), NO secret reads, NO
+HMAC / signature, NO real entry execution, NO real token validation (token
+pattern `CONFIRM_DEMO_TINY_ENTRY_YYYYMMDD_SOLUSDT` documented only, never
+re.match'd), NO real exact phrase validation (EXACT_APPROVAL_PHRASE
+`I AUTHORIZE DEMO TINY ENTRY GATE ONLY FOR SOLUSDT BUY 0.1 MAX 10 USDT;
+NO ORDER MAY BE SENT BY TASK-014AM` documented only, never compared), NO
+real approval-input validation (12 REQUIRED_MANUAL_APPROVAL_INPUTS = 1
+phrase + 11 REQUIRED_CONFIRM_FLAGS documented only, never parsed), NO AA-AL
+module reuse, NO G20 lift, NO auto-git operations.
+4 status modes (TINY_GUARDED_ENTRY_REAL_EXECUTION_MANUAL_APPROVAL_GATE_READY
+/ _BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED /
+FAIL_CLOSED), 11 manual-approval-gate stages (STAGE_0 through STAGE_10),
+31 hard-fail gates, ORDER_LINK_ID_PREFIX = `APPROVAL_GATE_TINY_ENTRY_`
+exposed (documented only), audit_artifacts.response_status =
+`APPROVAL_GATE_NOT_SENT`.
+
+Status before: TASK-014AL guarded entry final pre-execution review confirmed READY
+Status after: TASK-014AM guarded entry real execution manual approval gate DONE
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_manual_approval_gate.py` (new, 1912 lines)
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_manual_approval_gate.py` (new)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_manual_approval_gate.py` (new, 114 tests across 88 classes AM1-AM88)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014AM status block prepended)
+- `.gitignore` (added `outputs/demo_trading/tiny_guarded_entry_real_execution_manual_approval_gate/`)
+
+Validation:
+- py_compile src/demo_tiny_guarded_entry_real_execution_manual_approval_gate.py → PASS
+- py_compile scripts/preview_demo_tiny_guarded_entry_real_execution_manual_approval_gate.py → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_manual_approval_gate.py → 114/114 PASS (focused)
+
+Local commit: `fdf46df` —
+`TASK-014AM: add guarded entry real execution manual approval gate`
+(5 files changed, +4824 / -1)
+
+Outputs: outputs/demo_trading/tiny_guarded_entry_real_execution_manual_approval_gate/
+(gitignored, manual-approval-gate-only — no real execution artifacts;
+token / phrase / approval inputs documented only, never validated; no
+auto-git artifacts produced)
+
+Safety confirmations:
+- no real order placed / no `/v5/order/create` call / no
+  `/v5/position/trading-stop` call
+- no sender adapter introduced / no AA-AL module reuse
+- no endpoint call / no socket / urllib / requests / httpx / http.client import
+- no secrets read / no `.env*` read / no `os.environ` access
+- no HMAC / no signature header
+- no G20 lift — TASK-014L `protected_entry_policy_missing` remains active
+- no position modification — 5 protected positions
+  (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT) untouched
+- no auto git commit / push / branch / tag (preview owns zero git surface)
+
+Notes:
+- next_required_task = TASK-014AN_guarded_entry_real_execution_adapter_design
+- TASK-014L sender G20 (protected_entry_policy_missing) is NOT lifted here.
+- The 5 existing demo positions (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT /
+  EDUUSDT) remain untouched throughout this manual approval gate.
+- README + COMMAND_LOG docs sync handled by follow-up TASK-014AM-DOCS1
+  (see entry above).
+- Local commit produced under explicit task instruction; remote push deferred
+  per project memory `feedback_git_push.md`.
+
+---
+
 ### 2026-06-12（TASK-014AL — Guarded Entry Final Pre-execution Review）
 
 Agent: Claude (Opus)
