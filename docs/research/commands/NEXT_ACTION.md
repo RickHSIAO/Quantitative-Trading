@@ -1,9 +1,92 @@
 # Next Action
 
-> README shared status updated by TASK-014AO (2026-06-12) — see
+> README shared status updated by TASK-014AP (2026-06-12) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
 > for the cross-agent status board. Code-only sync — no real trading logic
 > added, G20 still active, no real trading enabled.
+
+## TASK-014AP Status (2026-06-12)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py: readiness-review-only module (NO sender, NO executable adapter, NO `send` method, NO endpoint calls, NO real entry execution, NO real token / phrase / approval-input validation, NO auto-git operations, NO AA-AO module reuse), 25 upstream artifact inputs (the 24 AO upstream artifacts + AO's entry_adapter_dry_run output), 4 status modes (TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_READINESS_REVIEW_READY / _READY_BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED), 12 readiness-review stages (STAGE_0 through STAGE_11), hard-fail-closed gates frozenset (47 gates), 15 ACCEPTABLE_*_STATUSES frozensets incl. ACCEPTABLE_ENTRY_ADAPTER_DRY_RUN_STATUSES, dataclass result with deep-copy `to_dict()` covering 12 sub-dict fields (readiness_review_scope / chain_readiness_summary / implementation_preconditions_review / forbidden_implementation_surface_review / secret_signing_transport_readiness_review / manual_approval_revalidation_review / stop_cleanup_readiness_review / risk_and_idempotency_readiness_review / failure_and_abort_readiness_review / documentation_sync_review / final_implementation_readiness_verdict / audit_artifacts) | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py: NO `/v5/order/create`, NO `/v5/position/trading-stop`, NO secret reads, NO HMAC/signature, NO sender adapter, NO executable adapter surface, NO `send` method, NO real entry execution, NO urllib/requests/httpx/socket/http.client imports, NO G20 lift, NO AA-AO module reuse, NO auto git commit / push / branch / tag — pure-computation readiness-review envelope (ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter, ADAPTER_CONTRACT_VERSION=readiness_review_v1, CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1, CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1, ADAPTER_RESPONSE_STATUS=READINESS_REVIEW_NOT_SENT, ORDER_LINK_ID_PREFIX=READINESS_REVIEW_TINY_ENTRY_, IMPLEMENTATION_READINESS_CONCLUSION=READY_FOR_IMPLEMENTATION_DESIGN_NOT_EXECUTION, symbol=SOLUSDT, qty=0.1, side=Buy, reduceOnly=False, orderType=Market, positionIdx=0, max_notional_usdt=10, stopLoss=61.18, tpslMode=Full, slTriggerBy=MarkPrice) | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py: AO entry_adapter_dry_run status / dry_run_grants_execution / adapter_grants_execution / adapter_implementation_included / adapter_execution_included / no_send_method / audit_artifacts.response_status must all be ACCEPTABLE (gate fails closed if dry_run_grants_execution / adapter_grants_execution / implementation_included / execution_included is True or no_send_method is False); AE-AO statuses must be in 15 acceptable whitelist frozensets; `--expected-commit-hash` documented but never validated | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py: forbidden flags (--execute-real-lifecycle / --execute-real-entry / --execute-real-stop / --execute-real-cleanup / --send-order / --place-order / --real-run / --confirm-token / --execute-tiny-entry / --auto-commit / --git-commit / --auto-push / --git-push) deliberately absent from code; only `--allow-readiness-review` and `--allow-real-entry-execution` exposed (both never execute real orders) | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py: next_required_task = "TASK-014AQ_guarded_entry_real_execution_adapter_implementation_design"; audit_artifacts.response_status = "READINESS_REVIEW_NOT_SENT"; final_implementation_readiness_verdict.implementation_readiness_conclusion = "READY_FOR_IMPLEMENTATION_DESIGN_NOT_EXECUTION" | DONE |
+| scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py: 25 `--from-latest-*` flags incl. new `--from-latest-entry-adapter-dry-run`, `--symbol`, `--expected-commit-hash`, `--allow-readiness-review`, `--allow-real-entry-execution`, `--write-report`; `run_execute()` callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_implementation_readiness_review/`; NO auto git operations | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py: 124 tests covering 4 status modes, 25 missing-artifact gates, endpoint/account/symbol invariants, AO adapter-dry-run status/grants/implementation/execution/no-send-method/audit-response acceptance, 12 stages presence + order, deep-copy roundtrip, AST + tokenize source-scan safety (no urllib/requests/httpx/socket/http.client/HMAC/signing/dotenv/env-var-read/sender/main/risk/BybitExecutor/pybit/executable adapter send/place_order/execute methods/13 forbidden flags in src + preview incl. auto-git flags), 5 protected positions untouched, G20 never lifted, no AA-AO module reuse, next_required_task = 014AQ, 15 frozenset whitelists, endpoint allow/denylists, forbidden log fields, no auto-git in src + preview, HARD_FAIL_GATES expansion to 47 gates, ADAPTER_NAME / ADAPTER_CONTRACT_VERSION / CONSUMED_DRY_RUN_CONTRACT_VERSION / CONSUMED_DESIGN_CONTRACT_VERSION / ADAPTER_RESPONSE_STATUS / ORDER_LINK_ID_PREFIX / IMPLEMENTATION_READINESS_CONCLUSION exposed, CLI subprocess exit codes, report artifacts written, `repo_tmp_path` Windows ACL workaround | DONE |
+| py_compile src/demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py + scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py + tests | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py | 124/124 PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_implementation_readiness_review/` | DONE |
+| no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no sender adapter / no executable adapter surface / no `send` / `place_order` / `execute` method / no AA-AO module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback / no real token / phrase / approval-input validation / no auto git commit / no auto git push | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-12 TASK-014AP)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py -q
+       # expect 124/124 PASS
+
+2. Run TASK-014AP guarded entry real execution adapter implementation readiness review (after
+   TASK-014AO guarded entry real execution adapter dry-run confirmed READY):
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter --from-latest-guarded-stop-adapter \
+           --from-latest-guarded-cleanup-adapter --from-latest-guarded-lifecycle-summary \
+           --from-latest-entry-real-permission-review \
+           --from-latest-entry-manual-auth-design \
+           --from-latest-entry-manual-auth-dry-run \
+           --from-latest-entry-final-pre-execution-review \
+           --from-latest-entry-manual-approval-gate \
+           --from-latest-entry-adapter-design \
+           --from-latest-entry-adapter-dry-run \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_implementation_readiness_review/latest_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.md
+
+   Expected:
+     status=TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_READINESS_REVIEW_READY;
+     selected_symbol=SOLUSDT consistent across 25 upstream artifacts;
+     5 protected positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched;
+     real_execution_allowed=False; real_entry_implemented=False;
+     readiness_review_only=True; adapter_implementation_included=False;
+     adapter_execution_included=False; readiness_review_grants_execution=False;
+     adapter_grants_execution=False; send_allowed=False;
+     order_endpoint_called=False; stop_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True;
+     no_secrets_loaded=True; g20_lifted=False;
+     g20_policy_still_in_place=True;
+     audit_artifacts.response_status=READINESS_REVIEW_NOT_SENT;
+     final_implementation_readiness_verdict.implementation_readiness_conclusion=READY_FOR_IMPLEMENTATION_DESIGN_NOT_EXECUTION;
+     no_auto_git_operations=True;
+     next_required_task=TASK-014AQ_guarded_entry_real_execution_adapter_implementation_design.
+
+3. (Optional) Readiness-review probe:
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py \
+           [...same 25 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-readiness-review --write-report
+       # expect status=..._READY_BUT_EXECUTION_DISABLED, real_execution_allowed=False
+
+4. (Optional) Guard probe — proves --allow-real-entry-execution never executes:
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py \
+           [...same 25 --from-latest-* flags...] \
+           --symbol SOLUSDT --allow-real-entry-execution --write-report
+       # expect status=REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED, no socket opened, no git operations
+
+5. Once step 2 passes, decide whether to authorise TASK-014AQ
+   (guarded entry real execution adapter implementation design —
+   next phase; still no real execution).
 
 ## TASK-014AO Status (2026-06-12)
 

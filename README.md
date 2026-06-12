@@ -14,28 +14,29 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AO-DOCS1, 2026-06-12）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AP, 2026-06-12）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AO-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AP 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AO |
-| latest_commit | `8303fdc` — `TASK-014AO: add guarded entry real execution adapter dry-run`（local；尚未推遠端） |
-| current_phase | guarded entry real execution adapter dry-run completed（adapter-dry-run-only，consumes AN design contract `design_only_v1`，無 sender，無 executable adapter，無 `send` / `place_order` / `execute` method，未驗證任何 token / phrase / approval input，無實單，no auto-git） |
-| next_required_task | `TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review` |
+| latest_completed_task | TASK-014AP |
+| latest_commit | `pending` — `TASK-014AP: add guarded entry real execution adapter implementation readiness review`（local；尚未推遠端） |
+| current_phase | guarded entry real execution adapter implementation readiness review completed（readiness-review-only，consumes AO dry-run contract `dry_run_v1` + AN design contract `design_only_v1`，無 sender，無 executable adapter，無 `send` / `place_order` / `execute` method，未驗證任何 token / phrase / approval input，無實單，no auto-git） |
+| next_required_task | `TASK-014AQ_guarded_entry_real_execution_adapter_implementation_design` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
 | actual stop attach | **FORBIDDEN** |
 | actual cleanup | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_dry_run.py` → 139 PASS |
+| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.py` → 124 PASS |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
-| adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=dry_run_v1`、`CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
-| order link id prefix | `ADAPTER_DRY_RUN_TINY_ENTRY_`（dry-run label — 永不會作為 real order client id 送出） |
-| audit response_status | `ADAPTER_DRY_RUN_NOT_SENT`（無任何 outbound request） |
+| adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=readiness_review_v1`、`CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1`、`CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
+| order link id prefix | `READINESS_REVIEW_TINY_ENTRY_`（readiness-review label — 永不會作為 real order client id 送出） |
+| audit response_status | `READINESS_REVIEW_NOT_SENT`（無任何 outbound request） |
+| implementation_readiness_conclusion | `READY_FOR_IMPLEMENTATION_DESIGN_NOT_EXECUTION`（documented only — 仍不授權任何 real execution；下一步是 TASK-014AQ implementation **design**，不是實作或執行） |
 
 權威來源（authoritative pointers — 任何不一致以下列檔案為準）：
 
