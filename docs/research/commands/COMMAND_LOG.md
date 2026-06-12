@@ -21,6 +21,79 @@ Notes:
 
 ---
 
+### 2026-06-12（TASK-014AO — Guarded Entry Real Execution Adapter Dry-run）
+
+Agent: Claude (Opus)
+Command source: Rick chat instruction
+"請建立 TASK-014AO：Guarded Entry Real Execution Adapter Dry-run" (2026-06-12)
+Task: Add `src/demo_tiny_guarded_entry_real_execution_adapter_dry_run.py` as
+an adapter-dry-run-only module that simulates the FUTURE real tiny entry
+execution adapter's input / output / error / audit flow without implementing
+the adapter and without executing anything. The module DOES NOT implement the
+adapter, does not import any sender / private client / network primitive,
+does not call `/v5/order/create`, does not call `/v5/position/trading-stop`,
+does not read secrets, does not sign anything, does not lift TASK-014L G20,
+does not validate any token / phrase / approval input, does not treat any
+token / phrase / input as authorization, does not expose any executable
+adapter `send` / `place_order` / `execute` method, does not touch any
+existing protected demo position, and does not auto-commit / auto-push git.
+
+Inputs: 24 upstream artifacts — the 23 AN upstream artifacts plus AN's own
+guarded entry real execution adapter design output (`entry_adapter_design`).
+
+Status before: TASK-014AN-DOCS1 cross-agent docs synced (commit `6819407`)
+Status after: TASK-014AO guarded entry real execution adapter dry-run
+committed locally; next_required_task =
+TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review
+
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_adapter_dry_run.py` (new — adapter-dry-run-only module; 13 stages STAGE_0..STAGE_12; 4 statuses TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DRY_RUN_READY / _READY_BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED / FAIL_CLOSED; 4 modes adapter_dry_run_checklist / adapter_dry_run_approval / real_entry_execution_guard / fail_closed; HARD_FAIL_GATES frozenset = 40 gates; dataclass result with deep-copy `to_dict()` covering 13 sub-dict fields adapter_dry_run_scope / adapter_dry_run_contract / dry_run_input_validation_simulation / dry_run_request_envelope / entry_payload_dry_run_preview / dry_run_response_simulation / secret_and_signature_dry_run_boundary / stop_cleanup_dry_run_boundary / forbidden_execution_surface_dry_run / failure_and_abort_adapter_dry_run / documentation_sync_review / audit_artifacts / final_adapter_dry_run_verdict; ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter; ADAPTER_CONTRACT_VERSION=dry_run_v1; CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1; ADAPTER_RESPONSE_STATUS=ADAPTER_DRY_RUN_NOT_SENT; ORDER_LINK_ID_PREFIX=ADAPTER_DRY_RUN_TINY_ENTRY_; 14 ACCEPTABLE_*_STATUSES frozensets incl. ACCEPTABLE_ENTRY_ADAPTER_DESIGN_STATUSES; no urllib/requests/httpx/socket/http.client/HMAC/signing/dotenv/env-var-read/sender/main/risk/BybitExecutor/pybit; no executable adapter surface; no `send` / `place_order` / `execute` method; no auto-git)
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_dry_run.py` (new — 24 `--from-latest-*` flags incl. `--from-latest-entry-adapter-design`; `--symbol`; `--expected-commit-hash`; `--allow-adapter-dry-run`; `--allow-real-entry-execution`; `--write-report`; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_dry_run/`; `run_execute()` callable from tests; no auto-git)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_dry_run.py` (new — 139 tests covering 4 status modes, 24 missing-artifact gates, endpoint/account/symbol invariants, AN adapter-design status / readiness / grants / implementation / execution / no-send-method acceptance, 13 stages presence + order, deep-copy roundtrip, AST+tokenize source-scan safety, forbidden flag absence in src + preview, 5 protected positions untouched, G20 never lifted, no AA-AN module reuse, next_required_task = 014AP, 14 frozenset whitelists, endpoint allow/denylists, forbidden log fields, no auto-git in src + preview, HARD_FAIL_GATES expansion to 40 gates, ADAPTER_NAME / ADAPTER_CONTRACT_VERSION / CONSUMED_DESIGN_CONTRACT_VERSION / ADAPTER_RESPONSE_STATUS / ORDER_LINK_ID_PREFIX exposed, CLI subprocess exit codes, report artifacts written, `repo_tmp_path` Windows ACL workaround)
+- `.gitignore` (add `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_dry_run/`)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014AO Status + Next Rick Action block inserted above TASK-014AN)
+- `README.md` (Demo Trading Guarded Lifecycle Status board updated to TASK-014AO — latest_completed_task, latest_commit pending, current_phase, next_required_task=TASK-014AP, latest validation 139 PASS, adapter identity / order link id prefix / audit response_status rows)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+
+Validation:
+- py_compile src/demo_tiny_guarded_entry_real_execution_adapter_dry_run.py → PASS
+- py_compile scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_dry_run.py → PASS
+- py_compile tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_dry_run.py → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_dry_run.py → 139/139 PASS
+
+Known unrelated pre-existing failure:
+`tests/demo_trading/test_demo_emergency_close_sender.py::TestCLIIntegration::test_dry_run_cli_writes_report` — NOT attributable to TASK-014AO.
+
+Outputs: code-only — no runtime artifacts produced at task time
+
+Safety confirmations:
+- no real order placed / no `/v5/order/create` call / no `/v5/position/trading-stop` call
+- no sender adapter introduced / no executable adapter surface / no `send` / `place_order` / `execute` method / no AA-AN module reuse
+- no endpoint call / no socket opened / no urllib / no requests / no httpx / no http.client
+- no secrets read / no `.env*` read / no `os.environ` access / no dotenv
+- no HMAC / no signature header / no signing primitive
+- no real token / phrase / approval-input validation (all documented only)
+- no live endpoint fallback / no base url switch
+- TASK-014L G20 sender policy still active (no protected_entry_policy_missing lift)
+- 5 protected demo positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified
+- main.py / src/risk.py / BybitExecutor untouched
+- no auto git commit / no auto git push / no auto branch / no auto tag
+
+Notes:
+- next_required_task = `TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review`
+  (the next step is a readiness review, still no real execution).
+- `--allow-adapter-dry-run` only flips status to
+  `..._READY_BUT_EXECUTION_DISABLED` (still no real execution path).
+- `--allow-real-entry-execution` only flips status to
+  `REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED` (proves the guard never executes a
+  real order — no socket opened, no git operations).
+- Adapter contract documented only; no Python class with `send` / `place_order` /
+  `execute` method is exported. The dataclass result reflects the dry-run
+  simulation, not an invocation. CONSUMED_DESIGN_CONTRACT_VERSION enforces
+  upstream-chain integrity with TASK-014AN's `design_only_v1`.
+
+---
+
 ### 2026-06-12（TASK-014AN-DOCS1 — Adapter Design Docs Sync）
 
 Agent: Claude (Opus)

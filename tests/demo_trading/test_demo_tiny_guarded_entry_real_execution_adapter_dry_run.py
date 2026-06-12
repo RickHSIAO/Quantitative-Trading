@@ -1,0 +1,2283 @@
+"""
+tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_dry_run.py
+TASK-014AO: Guarded Tiny Entry Real Execution Adapter Dry-run tests.
+
+Covers adapter_dry_run_checklist / adapter_dry_run_approval /
+real_entry_execution_guard / fail_closed paths; all 13 stages; 24-artifact
+preflight contract (the 23 from TASK-014AN + AN's own
+entry_adapter_design output); adapter contract / input-validation-simulation
+/ request-envelope / payload-preview / response-simulation / secret-and-
+signature dry-run boundary / stop-cleanup dry-run boundary / forbidden
+execution surface dry-run / failure-and-abort dry-run / documentation-sync
+review / audit-artifacts / final-adapter-dry-run-verdict sub-dicts;
+dry-run-only template (no sender adapter, no `send` method, signature_present
+False, private_headers empty, send_allowed False); failure / abort adapter
+dry-run (FAIL_CLOSED / MANUAL_REVIEW_REQUIRED); documentation sync plan
+(commit hash documented only, NO auto-commit / NO auto-push); status
+precedence; source-scan safety (no urlopen / no forbidden imports / no
+signing / no os.environ / no AA-AN module reuse / no real sender / no auto
+git); report artifacts; forbidden-flag absence (--execute-real-* /
+--send-order / --place-order / --real-run / --confirm-token / --auto-commit
+/ --git-commit / --auto-push / --git-push); the invariant that
+TASK-014L sender G20 (protected_entry_policy_missing) still blocks
+--execute-new-entry and is NOT lifted here; next_required_task points at
+TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review.
+"""
+from __future__ import annotations
+
+import ast
+import json
+import shutil
+import subprocess
+import sys
+import tokenize
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+@pytest.fixture
+def repo_tmp_path():
+    """Repo-local scratch directory (avoids Windows ACL / non-ASCII path issues)."""
+    root = ROOT / "outputs" / "_test_scratch"
+    root.mkdir(parents=True, exist_ok=True)
+    d = root / f"ao_{uuid.uuid4().hex}"
+    d.mkdir()
+    try:
+        yield d
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+from src.demo_tiny_guarded_entry_real_execution_adapter_dry_run import (
+    ACCEPTABLE_ENTRY_ADAPTER_DESIGN_STATUSES,
+    ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES,
+    ACCEPTABLE_ENTRY_MANUAL_APPROVAL_GATE_STATUSES,
+    ACCEPTABLE_ENTRY_MANUAL_AUTH_DESIGN_STATUSES,
+    ACCEPTABLE_ENTRY_MANUAL_AUTH_DRY_RUN_STATUSES,
+    ACCEPTABLE_ENTRY_REAL_PERMISSION_REVIEW_STATUSES,
+    ACCEPTABLE_GUARDED_CLEANUP_ADAPTER_STATUSES,
+    ACCEPTABLE_GUARDED_DESIGN_REVIEW_STATUSES,
+    ACCEPTABLE_GUARDED_ENTRY_ADAPTER_STATUSES,
+    ACCEPTABLE_GUARDED_LIFECYCLE_SUMMARY_STATUSES,
+    ACCEPTABLE_GUARDED_STOP_ADAPTER_STATUSES,
+    ACCEPTABLE_LIFECYCLE_SUMMARY_STATUSES,
+    ACCEPTABLE_RUNNER_DESIGN_STATUSES,
+    ACCEPTABLE_RUNNER_DRY_RUN_STATUSES,
+    ADAPTER_CONTRACT_VERSION,
+    ADAPTER_NAME,
+    ADAPTER_RESPONSE_STATUS,
+    ALL_STAGES,
+    BASE_URL_DEMO_REF,
+    BASE_URL_LIVE_REF,
+    CONSUMED_DESIGN_CONTRACT_VERSION,
+    DEFAULT_SELECTED_SYMBOL,
+    DEMO_ENDPOINT_ALLOWLIST,
+    DESIGN_EXPECTED_CATEGORY,
+    DESIGN_EXPECTED_CLOSE_ON_TRIGGER,
+    DESIGN_EXPECTED_ENTRY_REFERENCE,
+    DESIGN_EXPECTED_ENTRY_SIDE,
+    DESIGN_EXPECTED_ESTIMATED_NOTIONAL,
+    DESIGN_EXPECTED_EXISTING_COUNT,
+    DESIGN_EXPECTED_MAX_NOTIONAL_USDT,
+    DESIGN_EXPECTED_MIN_ORDER_QTY,
+    DESIGN_EXPECTED_ORDER_TYPE,
+    DESIGN_EXPECTED_POSITION_IDX,
+    DESIGN_EXPECTED_QTY,
+    DESIGN_EXPECTED_QTY_STEP,
+    DESIGN_EXPECTED_REDUCE_ONLY,
+    DESIGN_EXPECTED_SL_TRIGGER_BY,
+    DESIGN_EXPECTED_STOP_LOSS,
+    DESIGN_EXPECTED_SYMBOL,
+    DESIGN_EXPECTED_TPSL_MODE,
+    DRY_RUN_AUTHORIZATION_RESULT,
+    DemoTinyGuardedEntryRealExecutionAdapterDryRun,
+    EXISTING_POSITION_SYMBOLS,
+    EXPECTED_ACCOUNT_MODE,
+    EXPECTED_ENDPOINT_FAMILY,
+    EXPECTED_INSTRUMENT_CATEGORY,
+    EXPECTED_LIFECYCLE_STATUS,
+    EXPECTED_POSITION_DETAILS_SOURCE,
+    EXPECTED_PROOF_STRENGTH,
+    FORBIDDEN_LOG_FIELDS,
+    LIVE_ENDPOINT_DENYLIST,
+    MODE_DRY_RUN_APPROVAL,
+    MODE_DRY_RUN_CHECKLIST,
+    MODE_FAIL_CLOSED,
+    MODE_REAL_ENTRY_EXEC_GUARD,
+    ORDER_CREATE_PATH_REF,
+    ORDER_LINK_ID_PREFIX,
+    READINESS_CONCLUSION_NOT_EXECUTABLE,
+    STAGE_0_ARTIFACT_PREFLIGHT,
+    STAGE_1_ADAPTER_DRY_RUN_SCOPE,
+    STAGE_2_ADAPTER_DRY_RUN_CONTRACT,
+    STAGE_3_DRY_RUN_INPUT_VALIDATION_SIMULATION,
+    STAGE_4_DRY_RUN_REQUEST_ENVELOPE,
+    STAGE_5_ENTRY_PAYLOAD_DRY_RUN_PREVIEW,
+    STAGE_6_DRY_RUN_RESPONSE_SIMULATION,
+    STAGE_7_SECRET_AND_SIGNATURE_DRY_RUN_BOUNDARY,
+    STAGE_8_STOP_CLEANUP_DRY_RUN_BOUNDARY,
+    STAGE_9_FORBIDDEN_EXECUTION_SURFACE_DRY_RUN,
+    STAGE_10_FAILURE_AND_ABORT_ADAPTER_DRY_RUN,
+    STAGE_11_DOCUMENTATION_SYNC_REVIEW,
+    STAGE_12_FINAL_ADAPTER_DRY_RUN_VERDICT,
+    STATUS_DRY_RUN_READY,
+    STATUS_DRY_RUN_READY_EXEC_DISABLED,
+    STATUS_FAIL_CLOSED,
+    STATUS_REAL_ENTRY_NOT_IMPL,
+    TRADING_STOP_PATH_REF,
+    TinyGuardedEntryRealExecutionAdapterDryRunResult,
+    GATE_ACCOUNT_MODE_NOT_DEMO,
+    GATE_CONTRACT_MISSING,
+    GATE_ENDPOINT_FAMILY_NOT_BYBIT_DEMO,
+    GATE_ENTRY_ADAPTER_DESIGN_EXECUTION_INCLUDED,
+    GATE_ENTRY_ADAPTER_DESIGN_GRANTS_EXECUTION,
+    GATE_ENTRY_ADAPTER_DESIGN_IMPLEMENTATION_INCLUDED,
+    GATE_ENTRY_ADAPTER_DESIGN_MISSING,
+    GATE_ENTRY_ADAPTER_DESIGN_READINESS_EXECUTABLE,
+    GATE_ENTRY_ADAPTER_DESIGN_STATUS_UNACCEPTABLE,
+    GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING,
+    GATE_ENTRY_MANUAL_APPROVAL_GATE_GRANTS_EXECUTION,
+    GATE_ENTRY_MANUAL_APPROVAL_GATE_INPUTS_ALREADY_VALIDATED,
+    GATE_ENTRY_MANUAL_APPROVAL_GATE_MISSING,
+    GATE_ENTRY_MANUAL_APPROVAL_GATE_PHRASE_ALREADY_VALIDATED,
+    GATE_ENTRY_MANUAL_APPROVAL_GATE_READINESS_EXECUTABLE,
+    GATE_ENTRY_MANUAL_APPROVAL_GATE_STATUS_UNACCEPTABLE,
+    GATE_ENTRY_MANUAL_AUTH_DESIGN_MISSING,
+    GATE_ENTRY_MANUAL_AUTH_DRY_RUN_MISSING,
+    GATE_ENTRY_REAL_PERMISSION_REVIEW_MISSING,
+    GATE_GUARDED_CLEANUP_ADAPTER_MISSING,
+    GATE_GUARDED_DESIGN_REVIEW_MISSING,
+    GATE_GUARDED_ENTRY_ADAPTER_MISSING,
+    GATE_GUARDED_LIFECYCLE_SUMMARY_MISSING,
+    GATE_GUARDED_STOP_ADAPTER_MISSING,
+    GATE_LIFECYCLE_MOCK_MISSING,
+    GATE_LIFECYCLE_SUMMARY_MISSING,
+    GATE_NOOP_PLAN_MISSING,
+    GATE_PROTECTION_MISSING,
+    GATE_REAL_PERMISSION_GATE_MISSING,
+    GATE_RECONCILIATION_MISSING,
+    GATE_READONLY_SMOKE_MISSING,
+    GATE_RUNNER_DESIGN_MISSING,
+    GATE_RUNNER_DRY_RUN_MISSING,
+    GATE_SELECTED_SYMBOL_NOT_SOLUSDT,
+    GATE_SOLUSDT_EXISTS_FAIL_CLOSED,
+    GATE_TINY_CLEANUP_PERMISSION_GATE_MISSING,
+    GATE_TINY_ENTRY_PERMISSION_GATE_MISSING,
+    GATE_TINY_STOP_PERMISSION_GATE_MISSING,
+)
+
+_TEST_NOW = datetime(2026, 6, 12, 10, 0, 0, tzinfo=timezone.utc)
+
+ROOT_PATH = ROOT
+SRC_PATH = ROOT_PATH / "src" / "demo_tiny_guarded_entry_real_execution_adapter_dry_run.py"
+PREVIEW_PATH = (
+    ROOT_PATH / "scripts"
+    / "preview_demo_tiny_guarded_entry_real_execution_adapter_dry_run.py"
+)
+
+
+# ===========================================================================
+# Fixtures
+# ===========================================================================
+
+def _valid_readonly() -> dict:
+    return {
+        "timestamp_utc":          "2026-06-12T10:00:00Z",
+        "endpoint_family":        EXPECTED_ENDPOINT_FAMILY,
+        "account_mode":           EXPECTED_ACCOUNT_MODE,
+        "proof_strength":         EXPECTED_PROOF_STRENGTH,
+        "demo_runtime_verified":  True,
+        "equity_usd":             500.0,
+        "available_balance_usd":  400.0,
+    }
+
+
+def _valid_reconciliation() -> dict:
+    return {
+        "timestamp_utc":           "2026-06-12T10:05:00Z",
+        "mode":                    EXPECTED_POSITION_DETAILS_SOURCE,
+        "position_details_source": EXPECTED_POSITION_DETAILS_SOURCE,
+        "open_positions_count":    5,
+        "positions": [
+            {"symbol": "ENAUSDT",   "side": "short", "quantity": 100.0, "entry_price": 0.5, "stop_price": 0.0},
+            {"symbol": "TIAUSDT",   "side": "short", "quantity": 50.0,  "entry_price": 2.0, "stop_price": 0.0},
+            {"symbol": "AIXBTUSDT", "side": "short", "quantity": 200.0, "entry_price": 0.3, "stop_price": 0.0},
+            {"symbol": "POLYXUSDT", "side": "short", "quantity": 300.0, "entry_price": 0.2, "stop_price": 0.0},
+            {"symbol": "EDUUSDT",   "side": "short", "quantity": 400.0, "entry_price": 0.4, "stop_price": 0.0},
+        ],
+    }
+
+
+def _valid_protection() -> dict:
+    return {
+        "timestamp_utc":          "2026-06-12T11:00:00Z",
+        "selected_symbol":        "SOLUSDT",
+        "selected_side":          "long",
+        "selected_qty":           DESIGN_EXPECTED_QTY,
+        "entry_reference_price":  DESIGN_EXPECTED_ENTRY_REFERENCE,
+        "stop_price":             DESIGN_EXPECTED_STOP_LOSS,
+        "protected_entry_status": "PREVIEW_ONLY",
+        "preview_only":           True,
+    }
+
+
+def _valid_contract() -> dict:
+    return {
+        "timestamp_utc":      "2026-06-12T11:30:00Z",
+        "mode":               "preview",
+        "selected_symbol":    "SOLUSDT",
+        "path":               TRADING_STOP_PATH_REF,
+        "method":             "POST",
+        "real_probe_allowed": False,
+        "status":             "TRADING_STOP_CONTRACT_PREVIEW_OK",
+    }
+
+
+def _valid_noop_plan() -> dict:
+    return {
+        "timestamp_utc":     "2026-06-12T11:45:00Z",
+        "mode":              "plan",
+        "selected_symbol":   "SOLUSDT",
+        "recommended_path":  "real_tiny_position_with_stop_lifecycle",
+        "status":            "NOOP_PROBE_PLAN_READY",
+    }
+
+
+def _valid_lifecycle() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:55:00Z",
+        "mode":                      "mock_lifecycle",
+        "selected_symbol":           "SOLUSDT",
+        "side":                      "long",
+        "tiny_qty":                  DESIGN_EXPECTED_QTY,
+        "tiny_notional":             DESIGN_EXPECTED_ESTIMATED_NOTIONAL,
+        "entry_reference_price":     DESIGN_EXPECTED_ENTRY_REFERENCE,
+        "stop_price":                DESIGN_EXPECTED_STOP_LOSS,
+        "status":                    EXPECTED_LIFECYCLE_STATUS,
+        "failed_phase":              "",
+        "dangling_tiny_position":    False,
+        "existing_positions_touched": [],
+    }
+
+
+def _valid_real_permission_gate() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:58:00Z",
+        "mode":                      "checklist",
+        "selected_symbol":           "SOLUSDT",
+        "existing_position_symbols": list(EXISTING_POSITION_SYMBOLS),
+        "status":                    "REAL_PERMISSION_CHECKLIST_READY",
+        "real_execution_allowed":              False,
+        "real_tiny_position_implemented":      False,
+        "current_task_real_execution_allowed": False,
+    }
+
+
+def _valid_tiny_entry_permission_gate() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:58:30Z",
+        "mode":                      "checklist",
+        "selected_symbol":           "SOLUSDT",
+        "existing_position_symbols": list(EXISTING_POSITION_SYMBOLS),
+        "status":                    "TINY_ENTRY_PERMISSION_CHECKLIST_READY",
+        "entry_side":                "Buy",
+        "real_execution_allowed":              False,
+        "current_task_real_execution_allowed": False,
+    }
+
+
+def _valid_tiny_stop_permission_gate() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:58:45Z",
+        "mode":                      "checklist",
+        "selected_symbol":           "SOLUSDT",
+        "existing_position_symbols": list(EXISTING_POSITION_SYMBOLS),
+        "status":                    "TINY_STOP_ATTACH_PERMISSION_CHECKLIST_READY",
+        "real_execution_allowed":              False,
+        "current_task_real_execution_allowed": False,
+    }
+
+
+def _valid_tiny_cleanup_permission_gate() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:59:00Z",
+        "mode":                      "checklist",
+        "selected_symbol":           "SOLUSDT",
+        "existing_position_symbols": list(EXISTING_POSITION_SYMBOLS),
+        "status":                    "TINY_CLEANUP_PERMISSION_CHECKLIST_READY",
+        "cleanup_side":              "Sell",
+        "real_execution_allowed":              False,
+        "current_task_real_execution_allowed": False,
+    }
+
+
+def _valid_lifecycle_summary() -> dict:
+    return {
+        "timestamp_utc":                  "2026-06-12T11:59:55Z",
+        "mode":                           "checklist",
+        "selected_symbol":                "SOLUSDT",
+        "status":                         "TINY_LIFECYCLE_PERMISSION_SUMMARY_READY",
+        "real_execution_allowed":              False,
+        "real_lifecycle_runner_implemented":   False,
+        "current_task_real_execution_allowed": False,
+    }
+
+
+def _valid_runner_design() -> dict:
+    return {
+        "timestamp_utc":                  "2026-06-12T11:59:58Z",
+        "mode":                           "design_checklist",
+        "selected_symbol":                "SOLUSDT",
+        "status":                         "TINY_LIFECYCLE_RUNNER_DESIGN_READY",
+        "real_execution_allowed":              False,
+        "real_runner_implemented":             False,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_runner_dry_run() -> dict:
+    return {
+        "timestamp_utc":                  "2026-06-12T11:59:59Z",
+        "mode":                           "dry_run_checklist",
+        "selected_symbol":                "SOLUSDT",
+        "status":                         "TINY_LIFECYCLE_RUNNER_DRY_RUN_READY",
+        "real_execution_allowed":              False,
+        "real_runner_implemented":             False,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_guarded_design_review() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:59:59.5Z",
+        "mode":                      "design_review_checklist",
+        "selected_symbol":           "SOLUSDT",
+        "status":                    "TINY_LIFECYCLE_GUARDED_RUNNER_DESIGN_REVIEW_READY",
+        "readiness_conclusion":      READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "real_execution_allowed":              False,
+        "real_runner_implemented":             False,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_guarded_entry_adapter() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:59:59.7Z",
+        "mode":                      "entry_adapter_checklist",
+        "selected_symbol":           "SOLUSDT",
+        "status":                    "TINY_GUARDED_ENTRY_DRY_RUN_ADAPTER_READY",
+        "readiness_conclusion":      READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "real_execution_allowed":              False,
+        "real_entry_implemented":              False,
+        "guarded_entry_dry_run_adapter":       True,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_guarded_stop_adapter() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:59:59.8Z",
+        "mode":                      "stop_adapter_checklist",
+        "selected_symbol":           "SOLUSDT",
+        "status":                    "TINY_GUARDED_STOP_ATTACH_DRY_RUN_ADAPTER_READY",
+        "readiness_conclusion":      READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "real_execution_allowed":              False,
+        "real_stop_attach_implemented":        False,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_guarded_cleanup_adapter() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:59:59.9Z",
+        "mode":                      "cleanup_adapter_checklist",
+        "selected_symbol":           "SOLUSDT",
+        "status":                    "TINY_GUARDED_CLEANUP_DRY_RUN_ADAPTER_READY",
+        "readiness_conclusion":      READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "real_execution_allowed":              False,
+        "real_cleanup_implemented":            False,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_guarded_lifecycle_summary() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:59:59.95Z",
+        "mode":                      "summary_checklist",
+        "selected_symbol":           "SOLUSDT",
+        "status":                    "TINY_GUARDED_LIFECYCLE_DRY_RUN_SUMMARY_READY",
+        "readiness_conclusion":      READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "real_execution_allowed":              False,
+        "real_runner_implemented":             False,
+        "guarded_lifecycle_dry_run_summary":   True,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_entry_real_permission_review() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:59:59.99Z",
+        "mode":                      "permission_review_checklist",
+        "selected_symbol":           "SOLUSDT",
+        "status":                    "TINY_GUARDED_ENTRY_REAL_PERMISSION_REVIEW_READY",
+        "readiness_conclusion":      READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "real_execution_allowed":              False,
+        "real_entry_implemented":              False,
+        "guarded_entry_real_permission_review": True,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_entry_manual_auth_design() -> dict:
+    return {
+        "timestamp_utc":             "2026-06-12T11:59:59.995Z",
+        "mode":                      "authorization_design_checklist",
+        "selected_symbol":           "SOLUSDT",
+        "status":                    "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DESIGN_READY",
+        "readiness_conclusion":      READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "real_execution_allowed":              False,
+        "real_entry_implemented":              False,
+        "guarded_entry_manual_authorization_design": True,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_entry_manual_auth_dry_run() -> dict:
+    return {
+        "timestamp_utc":                "2026-06-12T11:59:59.999Z",
+        "mode":                         "authorization_dry_run_checklist",
+        "selected_symbol":              "SOLUSDT",
+        "status":                       "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DRY_RUN_READY",
+        "readiness_conclusion":         READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "dry_run_authorization_result": DRY_RUN_AUTHORIZATION_RESULT,
+        "real_execution_allowed":              False,
+        "real_entry_implemented":              False,
+        "guarded_entry_manual_authorization_dry_run": True,
+        "authorization_dry_run_only":          True,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_entry_final_pre_execution_review() -> dict:
+    return {
+        "timestamp_utc":                "2026-06-12T11:59:59.9995Z",
+        "mode":                         "final_pre_execution_review_checklist",
+        "selected_symbol":              "SOLUSDT",
+        "status":                       "TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY",
+        "readiness_conclusion":         READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "dry_run_authorization_result": DRY_RUN_AUTHORIZATION_RESULT,
+        "real_execution_allowed":              False,
+        "real_entry_implemented":              False,
+        "guarded_entry_final_pre_execution_review": True,
+        "final_pre_execution_review_only":     True,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+    }
+
+
+def _valid_entry_manual_approval_gate() -> dict:
+    return {
+        "timestamp_utc":                "2026-06-12T11:59:59.9999Z",
+        "mode":                         "manual_approval_gate_checklist",
+        "selected_symbol":              "SOLUSDT",
+        "selected_position": {
+            "symbol":            "SOLUSDT",
+            "side":              "Buy",
+            "qty":               DESIGN_EXPECTED_QTY,
+            "entry_reference":   DESIGN_EXPECTED_ENTRY_REFERENCE,
+            "stop_loss":         DESIGN_EXPECTED_STOP_LOSS,
+        },
+        "endpoint_family":              EXPECTED_ENDPOINT_FAMILY,
+        "account_mode":                 EXPECTED_ACCOUNT_MODE,
+        "status":                       "TINY_GUARDED_ENTRY_REAL_EXECUTION_MANUAL_APPROVAL_GATE_READY",
+        "readiness_conclusion":         READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "dry_run_authorization_result": DRY_RUN_AUTHORIZATION_RESULT,
+        "approval_grants_execution":    False,
+        "exact_phrase_validated":       False,
+        "approval_inputs_validated":    False,
+        "manual_approval_gate_only":    True,
+        "real_execution_allowed":              False,
+        "real_entry_implemented":              False,
+        "guarded_entry_real_execution_manual_approval_gate": True,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+        "no_secrets_loaded":                   True,
+        "no_auto_git_operations":              True,
+        "expected_commit_hash":         "0000000000000000000000000000000000000000",
+        "next_required_task":           "TASK-014AN_guarded_entry_real_execution_adapter_design",
+    }
+
+
+def _valid_entry_adapter_design() -> dict:
+    """The 24th (and newest) upstream artifact: TASK-014AN's output."""
+    return {
+        "timestamp_utc":                "2026-06-12T11:59:59.99995Z",
+        "mode":                         "adapter_design_checklist",
+        "selected_symbol":              "SOLUSDT",
+        "status":                       "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DESIGN_READY",
+        "readiness_conclusion":         READINESS_CONCLUSION_NOT_EXECUTABLE,
+        "dry_run_authorization_result": DRY_RUN_AUTHORIZATION_RESULT,
+        "adapter_name":                 ADAPTER_NAME,
+        "adapter_contract_version":     "design_only_v1",
+        "adapter_grants_execution":     False,
+        "adapter_implementation_included": False,
+        "adapter_execution_included":   False,
+        "approval_gate_grants_execution": False,
+        "adapter_design_only":          True,
+        "real_execution_allowed":              False,
+        "real_entry_implemented":              False,
+        "guarded_entry_real_execution_adapter_design": True,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+        "no_secrets_loaded":                   True,
+        "no_auto_git_operations":              True,
+        "expected_commit_hash":         "0000000000000000000000000000000000000000",
+        "next_required_task":           "TASK-014AO_guarded_entry_real_execution_adapter_dry_run",
+    }
+
+
+def _read_code_only(path: Path) -> str:
+    tokens: list[str] = []
+    with open(path, "rb") as fh:
+        for tok in tokenize.tokenize(fh.readline):
+            if tok.type in (
+                tokenize.STRING, tokenize.COMMENT,
+                tokenize.ENCODING, tokenize.NEWLINE, tokenize.NL,
+                tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER,
+            ):
+                continue
+            tokens.append(tok.string)
+    return " ".join(tokens)
+
+
+def _review() -> DemoTinyGuardedEntryRealExecutionAdapterDryRun:
+    return DemoTinyGuardedEntryRealExecutionAdapterDryRun()
+
+
+_UNSET = object()
+
+
+def _run(
+    *,
+    readonly=_UNSET, recon=_UNSET, protection=_UNSET, contract=_UNSET,
+    noop_plan=_UNSET, lifecycle=_UNSET, real_permission_gate=_UNSET,
+    tiny_entry_permission_gate=_UNSET,
+    tiny_stop_permission_gate=_UNSET,
+    tiny_cleanup_permission_gate=_UNSET,
+    lifecycle_summary=_UNSET,
+    runner_design=_UNSET,
+    runner_dry_run=_UNSET,
+    guarded_design_review=_UNSET,
+    guarded_entry_adapter=_UNSET,
+    guarded_stop_adapter=_UNSET,
+    guarded_cleanup_adapter=_UNSET,
+    guarded_lifecycle_summary=_UNSET,
+    entry_real_permission_review=_UNSET,
+    entry_manual_authorization_design=_UNSET,
+    entry_manual_authorization_dry_run=_UNSET,
+    entry_final_pre_execution_review=_UNSET,
+    entry_manual_approval_gate=_UNSET,
+    entry_adapter_design=_UNSET,
+    symbol=DEFAULT_SELECTED_SYMBOL,
+    expected_commit_hash="",
+    current_commit_hash="",
+    allow_adapter_dry_run=False,
+    allow_real_entry_execution=False,
+    _now=_TEST_NOW,
+) -> TinyGuardedEntryRealExecutionAdapterDryRunResult:
+    return _review().run_review(
+        readonly_smoke=_valid_readonly()                                          if readonly                              is _UNSET else readonly,
+        reconciliation=_valid_reconciliation()                                    if recon                                 is _UNSET else recon,
+        protection=_valid_protection()                                            if protection                            is _UNSET else protection,
+        contract=_valid_contract()                                                if contract                              is _UNSET else contract,
+        noop_plan=_valid_noop_plan()                                              if noop_plan                             is _UNSET else noop_plan,
+        lifecycle_mock=_valid_lifecycle()                                         if lifecycle                             is _UNSET else lifecycle,
+        real_permission_gate=_valid_real_permission_gate()                        if real_permission_gate                  is _UNSET else real_permission_gate,
+        tiny_entry_permission_gate=_valid_tiny_entry_permission_gate()            if tiny_entry_permission_gate            is _UNSET else tiny_entry_permission_gate,
+        tiny_stop_permission_gate=_valid_tiny_stop_permission_gate()              if tiny_stop_permission_gate             is _UNSET else tiny_stop_permission_gate,
+        tiny_cleanup_permission_gate=_valid_tiny_cleanup_permission_gate()        if tiny_cleanup_permission_gate          is _UNSET else tiny_cleanup_permission_gate,
+        lifecycle_summary=_valid_lifecycle_summary()                              if lifecycle_summary                     is _UNSET else lifecycle_summary,
+        runner_design=_valid_runner_design()                                      if runner_design                         is _UNSET else runner_design,
+        runner_dry_run=_valid_runner_dry_run()                                    if runner_dry_run                        is _UNSET else runner_dry_run,
+        guarded_design_review=_valid_guarded_design_review()                      if guarded_design_review                 is _UNSET else guarded_design_review,
+        guarded_entry_adapter=_valid_guarded_entry_adapter()                      if guarded_entry_adapter                 is _UNSET else guarded_entry_adapter,
+        guarded_stop_adapter=_valid_guarded_stop_adapter()                        if guarded_stop_adapter                  is _UNSET else guarded_stop_adapter,
+        guarded_cleanup_adapter=_valid_guarded_cleanup_adapter()                  if guarded_cleanup_adapter               is _UNSET else guarded_cleanup_adapter,
+        guarded_lifecycle_summary=_valid_guarded_lifecycle_summary()              if guarded_lifecycle_summary             is _UNSET else guarded_lifecycle_summary,
+        entry_real_permission_review=_valid_entry_real_permission_review()        if entry_real_permission_review          is _UNSET else entry_real_permission_review,
+        entry_manual_authorization_design=_valid_entry_manual_auth_design()       if entry_manual_authorization_design     is _UNSET else entry_manual_authorization_design,
+        entry_manual_authorization_dry_run=_valid_entry_manual_auth_dry_run()     if entry_manual_authorization_dry_run    is _UNSET else entry_manual_authorization_dry_run,
+        entry_final_pre_execution_review=_valid_entry_final_pre_execution_review() if entry_final_pre_execution_review     is _UNSET else entry_final_pre_execution_review,
+        entry_manual_approval_gate=_valid_entry_manual_approval_gate()            if entry_manual_approval_gate            is _UNSET else entry_manual_approval_gate,
+        entry_adapter_design=_valid_entry_adapter_design()                        if entry_adapter_design                  is _UNSET else entry_adapter_design,
+        symbol=symbol,
+        expected_commit_hash=expected_commit_hash,
+        current_commit_hash=current_commit_hash,
+        allow_adapter_dry_run=allow_adapter_dry_run,
+        allow_real_entry_execution=allow_real_entry_execution,
+        _now=_now,
+    )
+
+
+# ===========================================================================
+# AO1-AO4: Status modes
+# ===========================================================================
+
+class TestAO1DryRunReady:
+    def test_checklist_solusdt(self):
+        r = _run(symbol="SOLUSDT")
+        assert r.status == STATUS_DRY_RUN_READY
+        assert r.mode == MODE_DRY_RUN_CHECKLIST
+        assert r.selected_symbol == "SOLUSDT"
+        assert r.failed_stage == ""
+        from src.demo_tiny_guarded_entry_real_execution_adapter_dry_run import _HARD_FAIL_GATES
+        assert not any(g in _HARD_FAIL_GATES for g in r.blocked_gates)
+        assert r.real_execution_allowed is False
+        assert r.real_entry_implemented is False
+        assert r.guarded_entry_real_execution_adapter_dry_run is True
+        assert r.adapter_dry_run_only is True
+        assert r.adapter_implementation_included is False
+        assert r.adapter_execution_included is False
+        assert r.dry_run_grants_execution is False
+        assert r.adapter_grants_execution is False
+        assert r.approval_gate_grants_execution is False
+        assert r.g20_lifted is False
+        assert r.g20_policy_still_in_place is True
+        assert r.next_required_task == "TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review"
+
+
+class TestAO2DryRunApproval:
+    def test_approval_yields_exec_disabled(self):
+        r = _run(symbol="SOLUSDT", allow_adapter_dry_run=True)
+        assert r.status == STATUS_DRY_RUN_READY_EXEC_DISABLED
+        assert r.mode == MODE_DRY_RUN_APPROVAL
+        assert r.adapter_dry_run_allowed is True
+        assert r.real_execution_allowed is False
+        assert r.real_entry_implemented is False
+        assert r.readiness_conclusion == READINESS_CONCLUSION_NOT_EXECUTABLE
+        assert r.g20_lifted is False
+
+
+class TestAO3RealEntryExecutionGuard:
+    def test_allow_real_entry_returns_not_implemented(self):
+        r = _run(symbol="SOLUSDT", allow_real_entry_execution=True)
+        assert r.status == STATUS_REAL_ENTRY_NOT_IMPL
+        assert r.mode == MODE_REAL_ENTRY_EXEC_GUARD
+        assert r.real_entry_execution_requested is True
+        assert r.real_execution_allowed is False
+        assert r.real_entry_implemented is False
+        assert r.no_orders_sent is True
+        assert r.no_position_modified is True
+        assert r.send_allowed is False
+        assert r.order_endpoint_called is False
+        assert r.stop_endpoint_called is False
+        assert r.g20_lifted is False
+
+
+class TestAO4FailClosedWrongSymbol:
+    def test_wrong_symbol_fails_closed(self):
+        r = _run(symbol="BTCUSDT")
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.mode == MODE_FAIL_CLOSED
+        assert GATE_SELECTED_SYMBOL_NOT_SOLUSDT in r.blocked_gates
+
+
+# ===========================================================================
+# AO5-AO28: 24 missing-artifact gates
+# ===========================================================================
+
+class TestAO5MissingReadonly:
+    def test_missing_readonly_blocked(self):
+        r = _run(readonly=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_READONLY_SMOKE_MISSING in r.blocked_gates
+
+
+class TestAO6MissingReconciliation:
+    def test_missing_recon_blocked(self):
+        r = _run(recon=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_RECONCILIATION_MISSING in r.blocked_gates
+
+
+class TestAO7MissingProtection:
+    def test_missing_protection_blocked(self):
+        r = _run(protection=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_PROTECTION_MISSING in r.blocked_gates
+
+
+class TestAO8MissingContract:
+    def test_missing_contract_blocked(self):
+        r = _run(contract=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_CONTRACT_MISSING in r.blocked_gates
+
+
+class TestAO9MissingNoopPlan:
+    def test_missing_noop_plan_blocked(self):
+        r = _run(noop_plan=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_NOOP_PLAN_MISSING in r.blocked_gates
+
+
+class TestAO10MissingLifecycle:
+    def test_missing_lifecycle_blocked(self):
+        r = _run(lifecycle=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_LIFECYCLE_MOCK_MISSING in r.blocked_gates
+
+
+class TestAO11MissingRealPermissionGate:
+    def test_missing_real_perm_blocked(self):
+        r = _run(real_permission_gate=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_REAL_PERMISSION_GATE_MISSING in r.blocked_gates
+
+
+class TestAO12MissingTinyEntryPermissionGate:
+    def test_missing_tiny_entry_perm_blocked(self):
+        r = _run(tiny_entry_permission_gate=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_TINY_ENTRY_PERMISSION_GATE_MISSING in r.blocked_gates
+
+
+class TestAO13MissingTinyStopPermissionGate:
+    def test_missing_tiny_stop_perm_blocked(self):
+        r = _run(tiny_stop_permission_gate=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_TINY_STOP_PERMISSION_GATE_MISSING in r.blocked_gates
+
+
+class TestAO14MissingTinyCleanupPermissionGate:
+    def test_missing_tiny_cleanup_perm_blocked(self):
+        r = _run(tiny_cleanup_permission_gate=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_TINY_CLEANUP_PERMISSION_GATE_MISSING in r.blocked_gates
+
+
+class TestAO15MissingLifecycleSummary:
+    def test_missing_lifecycle_summary_blocked(self):
+        r = _run(lifecycle_summary=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_LIFECYCLE_SUMMARY_MISSING in r.blocked_gates
+
+
+class TestAO16MissingRunnerDesign:
+    def test_missing_runner_design_blocked(self):
+        r = _run(runner_design=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_RUNNER_DESIGN_MISSING in r.blocked_gates
+
+
+class TestAO17MissingRunnerDryRun:
+    def test_missing_runner_dry_run_blocked(self):
+        r = _run(runner_dry_run=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_RUNNER_DRY_RUN_MISSING in r.blocked_gates
+
+
+class TestAO18MissingGuardedDesignReview:
+    def test_missing_guarded_design_review_blocked(self):
+        r = _run(guarded_design_review=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_GUARDED_DESIGN_REVIEW_MISSING in r.blocked_gates
+
+
+class TestAO19MissingGuardedEntryAdapter:
+    def test_missing_guarded_entry_adapter_blocked(self):
+        r = _run(guarded_entry_adapter=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_GUARDED_ENTRY_ADAPTER_MISSING in r.blocked_gates
+
+
+class TestAO20MissingGuardedStopAdapter:
+    def test_missing_guarded_stop_adapter_blocked(self):
+        r = _run(guarded_stop_adapter=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_GUARDED_STOP_ADAPTER_MISSING in r.blocked_gates
+
+
+class TestAO21MissingGuardedCleanupAdapter:
+    def test_missing_guarded_cleanup_adapter_blocked(self):
+        r = _run(guarded_cleanup_adapter=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_GUARDED_CLEANUP_ADAPTER_MISSING in r.blocked_gates
+
+
+class TestAO22MissingGuardedLifecycleSummary:
+    def test_missing_guarded_lifecycle_summary_blocked(self):
+        r = _run(guarded_lifecycle_summary=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_GUARDED_LIFECYCLE_SUMMARY_MISSING in r.blocked_gates
+
+
+class TestAO23MissingEntryRealPermissionReview:
+    def test_missing_entry_real_perm_review_blocked(self):
+        r = _run(entry_real_permission_review=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_REAL_PERMISSION_REVIEW_MISSING in r.blocked_gates
+
+
+class TestAO24MissingEntryManualAuthDesign:
+    def test_missing_entry_manual_auth_design_blocked(self):
+        r = _run(entry_manual_authorization_design=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_MANUAL_AUTH_DESIGN_MISSING in r.blocked_gates
+
+
+class TestAO25MissingEntryManualAuthDryRun:
+    def test_missing_entry_manual_auth_dry_run_blocked(self):
+        r = _run(entry_manual_authorization_dry_run=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_MANUAL_AUTH_DRY_RUN_MISSING in r.blocked_gates
+
+
+class TestAO26MissingEntryFinalPreExecutionReview:
+    def test_missing_entry_final_pre_execution_review_blocked(self):
+        r = _run(entry_final_pre_execution_review=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING in r.blocked_gates
+
+
+class TestAO27MissingEntryManualApprovalGate:
+    def test_missing_entry_manual_approval_gate_blocked(self):
+        r = _run(entry_manual_approval_gate=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_MISSING in r.blocked_gates
+
+
+class TestAO28MissingEntryAdapterDesign:
+    """The 24th (and newest) upstream artifact: TASK-014AN's output."""
+    def test_missing_entry_adapter_design_blocked(self):
+        r = _run(entry_adapter_design=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_ADAPTER_DESIGN_MISSING in r.blocked_gates
+
+
+# ===========================================================================
+# AO29-AO31: Endpoint / account / symbol invariants
+# ===========================================================================
+
+class TestAO29EndpointFamilyMismatch:
+    def test_wrong_endpoint_family_blocked(self):
+        bad = _valid_readonly()
+        bad["endpoint_family"] = "bybit_live"
+        r = _run(readonly=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENDPOINT_FAMILY_NOT_BYBIT_DEMO in r.blocked_gates
+
+
+class TestAO30AccountModeMismatch:
+    def test_wrong_account_mode_blocked(self):
+        bad = _valid_readonly()
+        bad["account_mode"] = "live"
+        r = _run(readonly=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ACCOUNT_MODE_NOT_DEMO in r.blocked_gates
+
+
+class TestAO31WrongSymbol:
+    def test_wrong_symbol_blocked(self):
+        r = _run(symbol="BTCUSDT")
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_SELECTED_SYMBOL_NOT_SOLUSDT in r.blocked_gates
+
+
+# ===========================================================================
+# AO32-AO36: AM manual-approval-gate acceptance gates
+# ===========================================================================
+
+class TestAO32EntryManualApprovalGateStatusUnacceptable:
+    def test_unacceptable_status_blocked(self):
+        bad = _valid_entry_manual_approval_gate()
+        bad["status"] = "SOMETHING_UNEXPECTED"
+        r = _run(entry_manual_approval_gate=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_STATUS_UNACCEPTABLE in r.blocked_gates
+
+
+class TestAO33EntryManualApprovalGateReadinessExecutable:
+    def test_executable_readiness_blocked(self):
+        bad = _valid_entry_manual_approval_gate()
+        bad["readiness_conclusion"] = "REAL_ENTRY_EXECUTION_AUTHORIZED"
+        r = _run(entry_manual_approval_gate=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_READINESS_EXECUTABLE in r.blocked_gates
+
+
+class TestAO34EntryManualApprovalGateGrantsExecution:
+    def test_grants_execution_true_blocked(self):
+        bad = _valid_entry_manual_approval_gate()
+        bad["approval_grants_execution"] = True
+        r = _run(entry_manual_approval_gate=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_GRANTS_EXECUTION in r.blocked_gates
+
+
+class TestAO35EntryManualApprovalGatePhraseAlreadyValidated:
+    def test_phrase_validated_true_blocked(self):
+        bad = _valid_entry_manual_approval_gate()
+        bad["exact_phrase_validated"] = True
+        r = _run(entry_manual_approval_gate=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_PHRASE_ALREADY_VALIDATED in r.blocked_gates
+
+
+class TestAO36EntryManualApprovalGateInputsAlreadyValidated:
+    def test_inputs_validated_true_blocked(self):
+        bad = _valid_entry_manual_approval_gate()
+        bad["approval_inputs_validated"] = True
+        r = _run(entry_manual_approval_gate=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_INPUTS_ALREADY_VALIDATED in r.blocked_gates
+
+
+# ===========================================================================
+# AO37-AO41: AN adapter-design acceptance gates (NEW)
+# ===========================================================================
+
+class TestAO37EntryAdapterDesignStatusUnacceptable:
+    def test_unacceptable_status_blocked(self):
+        bad = _valid_entry_adapter_design()
+        bad["status"] = "SOMETHING_UNEXPECTED"
+        r = _run(entry_adapter_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_ADAPTER_DESIGN_STATUS_UNACCEPTABLE in r.blocked_gates
+
+
+class TestAO38EntryAdapterDesignReadinessExecutable:
+    def test_executable_readiness_blocked(self):
+        bad = _valid_entry_adapter_design()
+        bad["readiness_conclusion"] = "REAL_ENTRY_EXECUTION_AUTHORIZED"
+        r = _run(entry_adapter_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_ADAPTER_DESIGN_READINESS_EXECUTABLE in r.blocked_gates
+
+
+class TestAO39EntryAdapterDesignGrantsExecution:
+    def test_grants_execution_true_blocked(self):
+        bad = _valid_entry_adapter_design()
+        bad["adapter_grants_execution"] = True
+        r = _run(entry_adapter_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_ADAPTER_DESIGN_GRANTS_EXECUTION in r.blocked_gates
+
+
+class TestAO40EntryAdapterDesignImplementationIncluded:
+    def test_implementation_included_blocked(self):
+        bad = _valid_entry_adapter_design()
+        bad["adapter_implementation_included"] = True
+        r = _run(entry_adapter_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_ADAPTER_DESIGN_IMPLEMENTATION_INCLUDED in r.blocked_gates
+
+
+class TestAO41EntryAdapterDesignExecutionIncluded:
+    def test_execution_included_blocked(self):
+        bad = _valid_entry_adapter_design()
+        bad["adapter_execution_included"] = True
+        r = _run(entry_adapter_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_ADAPTER_DESIGN_EXECUTION_INCLUDED in r.blocked_gates
+
+
+# ===========================================================================
+# AO42: Stage presence + order (13 stages)
+# ===========================================================================
+
+class TestAO42StageOrder:
+    def test_stages_present_in_order(self):
+        r = _run()
+        assert r.stage_order == list(ALL_STAGES)
+        assert r.stage_order == [
+            STAGE_0_ARTIFACT_PREFLIGHT,
+            STAGE_1_ADAPTER_DRY_RUN_SCOPE,
+            STAGE_2_ADAPTER_DRY_RUN_CONTRACT,
+            STAGE_3_DRY_RUN_INPUT_VALIDATION_SIMULATION,
+            STAGE_4_DRY_RUN_REQUEST_ENVELOPE,
+            STAGE_5_ENTRY_PAYLOAD_DRY_RUN_PREVIEW,
+            STAGE_6_DRY_RUN_RESPONSE_SIMULATION,
+            STAGE_7_SECRET_AND_SIGNATURE_DRY_RUN_BOUNDARY,
+            STAGE_8_STOP_CLEANUP_DRY_RUN_BOUNDARY,
+            STAGE_9_FORBIDDEN_EXECUTION_SURFACE_DRY_RUN,
+            STAGE_10_FAILURE_AND_ABORT_ADAPTER_DRY_RUN,
+            STAGE_11_DOCUMENTATION_SYNC_REVIEW,
+            STAGE_12_FINAL_ADAPTER_DRY_RUN_VERDICT,
+        ]
+        for stage_id in r.stage_order:
+            assert stage_id in r.stages
+            assert "summary" in r.stages[stage_id]
+
+    def test_thirteen_stages(self):
+        assert len(ALL_STAGES) == 13
+
+
+# ===========================================================================
+# AO43: Deep-copy roundtrip + to_dict
+# ===========================================================================
+
+class TestAO43DictRoundtrip:
+    def test_to_dict_is_json_serializable(self):
+        r = _run()
+        d = r.to_dict()
+        text = json.dumps(d)
+        parsed = json.loads(text)
+        assert parsed["status"] == STATUS_DRY_RUN_READY
+        assert parsed["selected_symbol"] == "SOLUSDT"
+        assert parsed["g20_lifted"] is False
+        assert parsed["real_entry_implemented"] is False
+        assert parsed["adapter_dry_run_only"] is True
+        assert parsed["guarded_entry_real_execution_adapter_dry_run"] is True
+        assert parsed["next_required_task"] == "TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review"
+
+    def test_to_dict_is_deep_copied(self):
+        r = _run()
+        d1 = r.to_dict()
+        d2 = r.to_dict()
+        d1["stages"]["mutated"] = True
+        assert "mutated" not in d2["stages"]
+        d1["existing_position_symbols"].append("FAKE")
+        assert "FAKE" not in d2["existing_position_symbols"]
+
+
+# ===========================================================================
+# AO44-AO50: Source-scan safety
+# ===========================================================================
+
+class TestAO44NoForbiddenImports:
+    def test_module_no_forbidden_imports(self):
+        tree = ast.parse(SRC_PATH.read_text(encoding="utf-8"))
+        bad: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    bad.add(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                bad.add(node.module or "")
+        forbidden = {
+            "urllib", "urllib.request", "urllib.parse",
+            "requests", "httpx", "http", "http.client", "socket",
+            "ssl", "hashlib", "hmac", "secrets", "os.path",
+            "dotenv", "pybit",
+            "main", "src.risk", "src.bybit_executor",
+            "src.demo_tiny_position_lifecycle_mock",
+            "src.demo_tiny_position_real_permission_gate",
+            "src.demo_tiny_entry_permission_gate",
+            "src.demo_tiny_stop_attach_permission_gate",
+            "src.demo_tiny_cleanup_permission_gate",
+            "src.demo_tiny_lifecycle_real_execution_summary",
+            "src.demo_tiny_lifecycle_runner_design",
+            "src.demo_tiny_lifecycle_runner_dry_run",
+            "src.demo_tiny_lifecycle_guarded_runner_design_review",
+            "src.demo_tiny_guarded_entry_dry_run_adapter",
+            "src.demo_tiny_guarded_stop_attach_dry_run_adapter",
+            "src.demo_tiny_guarded_cleanup_dry_run_adapter",
+            "src.demo_tiny_guarded_lifecycle_dry_run_summary",
+            "src.demo_tiny_guarded_entry_real_permission_review",
+            "src.demo_tiny_guarded_entry_manual_authorization_design",
+            "src.demo_tiny_guarded_entry_manual_authorization_dry_run",
+            "src.demo_tiny_guarded_entry_final_pre_execution_review",
+            "src.demo_tiny_guarded_entry_real_execution_manual_approval_gate",
+            "src.demo_tiny_guarded_entry_real_execution_adapter_design",
+        }
+        assert not (bad & forbidden), f"forbidden imports leaked: {bad & forbidden}"
+
+
+class TestAO45NoNetworkSymbols:
+    def test_no_socket_or_urlopen_or_http_client_in_code(self):
+        code_tokens = _read_code_only(SRC_PATH)
+        for forbidden in (
+            "urlopen", "Request", "HTTPSConnection", "HTTPConnection",
+            "socket.socket", "ssl.create_default_context",
+        ):
+            assert forbidden not in code_tokens, f"{forbidden} leaked into code"
+
+
+class TestAO46NoEnvOrDotenvReads:
+    def test_no_environ_or_dotenv_calls(self):
+        code_tokens = _read_code_only(SRC_PATH)
+        for forbidden in (
+            "os.environ", "environ", "getenv",
+            "load_dotenv", "dotenv_values",
+        ):
+            assert forbidden not in code_tokens, f"{forbidden} leaked into code"
+
+
+class TestAO47NoSigningTokens:
+    def test_no_hmac_or_signature_construction(self):
+        code_tokens = _read_code_only(SRC_PATH)
+        for forbidden in (
+            "hmac.new", "hashlib.sha256", "hashlib.sha512",
+            "X-BAPI-SIGN", "X-BAPI-API-KEY",
+            "BybitExecutor(",
+            "pybit.unified_trading", "HTTP(",
+        ):
+            assert forbidden not in code_tokens, f"{forbidden} leaked into code"
+
+
+class TestAO48NoRealSenderInvocation:
+    def test_no_order_or_stop_endpoint_call(self):
+        code_tokens = _read_code_only(SRC_PATH)
+        for forbidden in (
+            "place_order", "submit_order", "send_order",
+            "set_trading_stop", "amend_order", "cancel_order",
+        ):
+            assert forbidden not in code_tokens, f"{forbidden} leaked into code"
+
+
+class TestAO49PathRefsAreStringConstants:
+    def test_endpoint_paths_only_appear_as_string_constants(self):
+        text = SRC_PATH.read_text(encoding="utf-8")
+        assert ORDER_CREATE_PATH_REF in text
+        assert TRADING_STOP_PATH_REF in text
+        code_tokens = _read_code_only(SRC_PATH)
+        assert ORDER_CREATE_PATH_REF not in code_tokens
+        assert TRADING_STOP_PATH_REF not in code_tokens
+
+
+class TestAO50NoAutoGitInSrc:
+    """No automatic git operations from src module."""
+    def test_no_subprocess_or_git_calls(self):
+        code_tokens = _read_code_only(SRC_PATH)
+        for forbidden in (
+            "subprocess.run", "subprocess.Popen", "subprocess.call",
+            "subprocess.check_output", "subprocess.check_call",
+            "os.system", "git.Repo",
+        ):
+            assert forbidden not in code_tokens, f"{forbidden} leaked into src"
+
+
+# ===========================================================================
+# AO51-AO60: Forbidden flag absence in preview
+# ===========================================================================
+
+def _preview_add_argument_lines() -> str:
+    """Return only the lines inside add_argument() calls of the preview CLI."""
+    text = PREVIEW_PATH.read_text(encoding="utf-8")
+    out: list[str] = []
+    in_call = False
+    depth = 0
+    for line in text.splitlines():
+        if "add_argument(" in line:
+            in_call = True
+            depth = line.count("(") - line.count(")")
+            out.append(line)
+            if depth <= 0:
+                in_call = False
+            continue
+        if in_call:
+            out.append(line)
+            depth += line.count("(") - line.count(")")
+            if depth <= 0:
+                in_call = False
+    return "\n".join(out)
+
+
+class TestAO51NoExecuteRealEntryFlag:
+    def test_preview_has_no_execute_real_entry_flag(self):
+        assert "--execute-real-entry" not in _preview_add_argument_lines()
+
+
+class TestAO52NoSendOrderFlag:
+    def test_preview_has_no_send_order_flag(self):
+        assert "--send-order" not in _preview_add_argument_lines()
+
+
+class TestAO53NoPlaceOrderFlag:
+    def test_preview_has_no_place_order_flag(self):
+        assert "--place-order" not in _preview_add_argument_lines()
+
+
+class TestAO54NoRealRunFlag:
+    def test_preview_has_no_real_run_flag(self):
+        assert "--real-run" not in _preview_add_argument_lines()
+
+
+class TestAO55NoConfirmTokenFlag:
+    def test_preview_has_no_confirm_token_flag(self):
+        assert "--confirm-token" not in _preview_add_argument_lines()
+
+
+class TestAO56NoExecuteTinyEntryFlag:
+    def test_preview_has_no_execute_tiny_entry_flag(self):
+        assert "--execute-tiny-entry" not in _preview_add_argument_lines()
+
+
+class TestAO57NoAutoCommitFlag:
+    def test_preview_has_no_auto_commit_flag(self):
+        assert "--auto-commit" not in _preview_add_argument_lines()
+
+
+class TestAO58NoGitCommitFlag:
+    def test_preview_has_no_git_commit_flag(self):
+        assert "--git-commit" not in _preview_add_argument_lines()
+
+
+class TestAO59NoAutoPushFlag:
+    def test_preview_has_no_auto_push_flag(self):
+        assert "--auto-push" not in _preview_add_argument_lines()
+
+
+class TestAO60NoGitPushFlag:
+    def test_preview_has_no_git_push_flag(self):
+        assert "--git-push" not in _preview_add_argument_lines()
+
+
+# ===========================================================================
+# AO61: Forbidden flag absence in src too
+# ===========================================================================
+
+class TestAO61NoForbiddenFlagsInSrc:
+    def test_src_has_no_real_execute_flag_parsing(self):
+        text = SRC_PATH.read_text(encoding="utf-8")
+        for forbidden in (
+            "--execute-real-entry", "--send-order", "--place-order",
+            "--real-run", "--execute-tiny-entry",
+            "--auto-commit", "--git-commit", "--auto-push", "--git-push",
+        ):
+            assert forbidden not in text, f"{forbidden} leaked into src"
+
+
+# ===========================================================================
+# AO62: 5 protected positions never appear as "touched"
+# ===========================================================================
+
+class TestAO62ProtectedPositionsUntouched:
+    def test_existing_positions_touched_is_empty(self):
+        r = _run()
+        assert r.existing_positions_touched == []
+        for sym in EXISTING_POSITION_SYMBOLS:
+            assert sym not in r.existing_positions_touched
+
+    def test_no_position_modified_flag(self):
+        r = _run()
+        assert r.no_position_modified is True
+
+
+# ===========================================================================
+# AO63: G20 never lifted (any mode)
+# ===========================================================================
+
+class TestAO63G20NotLifted:
+    def test_g20_not_lifted_in_checklist(self):
+        r = _run()
+        assert r.g20_lifted is False
+        assert r.g20_policy_still_in_place is True
+
+    def test_g20_not_lifted_in_approval(self):
+        r = _run(allow_adapter_dry_run=True)
+        assert r.g20_lifted is False
+        assert r.g20_policy_still_in_place is True
+
+    def test_g20_not_lifted_in_real_entry_guard(self):
+        r = _run(allow_real_entry_execution=True)
+        assert r.g20_lifted is False
+        assert r.g20_policy_still_in_place is True
+
+
+# ===========================================================================
+# AO64: Safety invariants set
+# ===========================================================================
+
+class TestAO64SafetyInvariants:
+    def test_invariants(self):
+        r = _run()
+        assert r.send_allowed is False
+        assert r.order_endpoint_called is False
+        assert r.stop_endpoint_called is False
+        assert r.no_live_endpoint is True
+        assert r.no_orders_sent is True
+        assert r.no_batch_order is True
+        assert r.no_close_only_path is True
+        assert r.emergency_close_invoked is False
+        assert r.leverage_mutated is False
+        assert r.transfer_invoked is False
+        assert r.no_secrets_loaded is True
+        assert r.secret_value_observed is False
+
+
+# ===========================================================================
+# AO65: Adapter contract identity exposed
+# ===========================================================================
+
+class TestAO65AdapterContractIdentity:
+    def test_adapter_name_and_version(self):
+        r = _run()
+        assert r.adapter_name == ADAPTER_NAME
+        assert r.adapter_contract_version == ADAPTER_CONTRACT_VERSION
+        assert r.consumed_design_contract_version == CONSUMED_DESIGN_CONTRACT_VERSION
+        assert r.order_link_id_prefix == ORDER_LINK_ID_PREFIX
+        assert ADAPTER_NAME == "GuardedTinyEntryRealExecutionAdapter"
+        assert ADAPTER_CONTRACT_VERSION == "dry_run_v1"
+        assert CONSUMED_DESIGN_CONTRACT_VERSION == "design_only_v1"
+        assert ADAPTER_RESPONSE_STATUS == "ADAPTER_DRY_RUN_NOT_SENT"
+        assert ORDER_LINK_ID_PREFIX == "ADAPTER_DRY_RUN_TINY_ENTRY_"
+
+
+# ===========================================================================
+# AO66: next_required_task points at TASK-014AP
+# ===========================================================================
+
+class TestAO66NextRequiredTask:
+    def test_next_required_task(self):
+        r = _run()
+        assert r.next_required_task == "TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review"
+
+
+# ===========================================================================
+# AO67: Status precedence
+# ===========================================================================
+
+class TestAO67StatusPrecedence:
+    def test_fail_closed_overrides_real_entry_guard(self):
+        r = _run(readonly=None, allow_real_entry_execution=True)
+        assert r.status == STATUS_FAIL_CLOSED
+
+    def test_fail_closed_overrides_approval(self):
+        r = _run(readonly=None, allow_adapter_dry_run=True)
+        assert r.status == STATUS_FAIL_CLOSED
+
+    def test_real_entry_guard_takes_priority_over_approval(self):
+        r = _run(allow_adapter_dry_run=True, allow_real_entry_execution=True)
+        assert r.status == STATUS_REAL_ENTRY_NOT_IMPL
+
+
+# ===========================================================================
+# AO68: Acceptable status whitelists are frozen (14 frozensets)
+# ===========================================================================
+
+class TestAO68AcceptableStatusFrozensets:
+    def test_entry_adapter_design_statuses_frozen(self):
+        assert isinstance(ACCEPTABLE_ENTRY_ADAPTER_DESIGN_STATUSES, frozenset)
+        assert "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DESIGN_READY" \
+            in ACCEPTABLE_ENTRY_ADAPTER_DESIGN_STATUSES
+
+    def test_entry_manual_approval_gate_statuses_frozen(self):
+        assert isinstance(ACCEPTABLE_ENTRY_MANUAL_APPROVAL_GATE_STATUSES, frozenset)
+        assert "TINY_GUARDED_ENTRY_REAL_EXECUTION_MANUAL_APPROVAL_GATE_READY" \
+            in ACCEPTABLE_ENTRY_MANUAL_APPROVAL_GATE_STATUSES
+
+    def test_entry_final_pre_execution_review_statuses_frozen(self):
+        assert isinstance(ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES, frozenset)
+        assert "TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY" \
+            in ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES
+
+    def test_entry_manual_auth_dry_run_statuses_frozen(self):
+        assert isinstance(ACCEPTABLE_ENTRY_MANUAL_AUTH_DRY_RUN_STATUSES, frozenset)
+        assert "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DRY_RUN_READY" \
+            in ACCEPTABLE_ENTRY_MANUAL_AUTH_DRY_RUN_STATUSES
+
+    def test_entry_manual_auth_design_statuses_frozen(self):
+        assert isinstance(ACCEPTABLE_ENTRY_MANUAL_AUTH_DESIGN_STATUSES, frozenset)
+        assert "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DESIGN_READY" \
+            in ACCEPTABLE_ENTRY_MANUAL_AUTH_DESIGN_STATUSES
+
+    def test_all_fourteen_whitelists_are_frozen(self):
+        whitelists = (
+            ACCEPTABLE_LIFECYCLE_SUMMARY_STATUSES,
+            ACCEPTABLE_RUNNER_DESIGN_STATUSES,
+            ACCEPTABLE_RUNNER_DRY_RUN_STATUSES,
+            ACCEPTABLE_GUARDED_DESIGN_REVIEW_STATUSES,
+            ACCEPTABLE_GUARDED_ENTRY_ADAPTER_STATUSES,
+            ACCEPTABLE_GUARDED_STOP_ADAPTER_STATUSES,
+            ACCEPTABLE_GUARDED_CLEANUP_ADAPTER_STATUSES,
+            ACCEPTABLE_GUARDED_LIFECYCLE_SUMMARY_STATUSES,
+            ACCEPTABLE_ENTRY_REAL_PERMISSION_REVIEW_STATUSES,
+            ACCEPTABLE_ENTRY_MANUAL_AUTH_DESIGN_STATUSES,
+            ACCEPTABLE_ENTRY_MANUAL_AUTH_DRY_RUN_STATUSES,
+            ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES,
+            ACCEPTABLE_ENTRY_MANUAL_APPROVAL_GATE_STATUSES,
+            ACCEPTABLE_ENTRY_ADAPTER_DESIGN_STATUSES,
+        )
+        assert len(whitelists) == 14
+        for fs in whitelists:
+            assert isinstance(fs, frozenset)
+
+
+# ===========================================================================
+# AO69: Expected upstream invariants exposed
+# ===========================================================================
+
+class TestAO69ExpectedUpstreamInvariants:
+    def test_expected_constants(self):
+        assert EXPECTED_ENDPOINT_FAMILY == "bybit_demo"
+        assert EXPECTED_ACCOUNT_MODE == "demo"
+        assert EXPECTED_PROOF_STRENGTH == "STRONG"
+        assert EXPECTED_POSITION_DETAILS_SOURCE == "real_readonly"
+        assert EXPECTED_LIFECYCLE_STATUS == "MOCK_TINY_LIFECYCLE_SUCCESS"
+        assert EXPECTED_INSTRUMENT_CATEGORY == "linear"
+
+
+# ===========================================================================
+# AO70: Endpoint allow/deny lists
+# ===========================================================================
+
+class TestAO70EndpointAllowDenyLists:
+    def test_demo_allowlist(self):
+        assert BASE_URL_DEMO_REF in DEMO_ENDPOINT_ALLOWLIST
+        assert BASE_URL_LIVE_REF not in DEMO_ENDPOINT_ALLOWLIST
+
+    def test_live_denylist(self):
+        assert BASE_URL_LIVE_REF in LIVE_ENDPOINT_DENYLIST
+        assert BASE_URL_DEMO_REF not in LIVE_ENDPOINT_DENYLIST
+
+
+# ===========================================================================
+# AO71: Forbidden log fields documented
+# ===========================================================================
+
+class TestAO71ForbiddenLogFields:
+    def test_forbidden_log_fields_documented(self):
+        assert "api_key_value" in FORBIDDEN_LOG_FIELDS
+        assert "api_secret_value" in FORBIDDEN_LOG_FIELDS
+        assert "signature_value" in FORBIDDEN_LOG_FIELDS
+
+
+# ===========================================================================
+# AO72: Design expected values for documentation
+# ===========================================================================
+
+class TestAO72DesignExpectedValues:
+    def test_design_expected_constants(self):
+        assert DESIGN_EXPECTED_SYMBOL == "SOLUSDT"
+        assert DESIGN_EXPECTED_CATEGORY == "linear"
+        assert DESIGN_EXPECTED_ENTRY_SIDE == "Buy"
+        assert DESIGN_EXPECTED_QTY == 0.1
+        assert DESIGN_EXPECTED_QTY_STEP == 0.1
+        assert DESIGN_EXPECTED_MIN_ORDER_QTY == 0.1
+        assert DESIGN_EXPECTED_MAX_NOTIONAL_USDT == 10.0
+        assert DESIGN_EXPECTED_POSITION_IDX == 0
+        assert DESIGN_EXPECTED_REDUCE_ONLY is False
+        assert DESIGN_EXPECTED_CLOSE_ON_TRIGGER is False
+        assert DESIGN_EXPECTED_ORDER_TYPE == "Market"
+        assert DESIGN_EXPECTED_STOP_LOSS == 61.18
+        assert DESIGN_EXPECTED_TPSL_MODE == "Full"
+        assert DESIGN_EXPECTED_SL_TRIGGER_BY == "MarkPrice"
+        assert DESIGN_EXPECTED_EXISTING_COUNT == 5
+        assert ORDER_LINK_ID_PREFIX.startswith("ADAPTER_DRY_RUN_TINY_ENTRY")
+
+
+# ===========================================================================
+# AO73: Upstream statuses captured in result (incl. NEW AN adapter-design fields)
+# ===========================================================================
+
+class TestAO73UpstreamStatusCapture:
+    def test_upstream_statuses_propagated(self):
+        r = _run()
+        assert r.upstream_lifecycle_summary_status == "TINY_LIFECYCLE_PERMISSION_SUMMARY_READY"
+        assert r.upstream_runner_design_status == "TINY_LIFECYCLE_RUNNER_DESIGN_READY"
+        assert r.upstream_runner_dry_run_status == "TINY_LIFECYCLE_RUNNER_DRY_RUN_READY"
+        assert r.upstream_guarded_design_review_status == "TINY_LIFECYCLE_GUARDED_RUNNER_DESIGN_REVIEW_READY"
+        assert r.upstream_guarded_entry_adapter_status == "TINY_GUARDED_ENTRY_DRY_RUN_ADAPTER_READY"
+        assert r.upstream_guarded_stop_adapter_status == "TINY_GUARDED_STOP_ATTACH_DRY_RUN_ADAPTER_READY"
+        assert r.upstream_guarded_cleanup_adapter_status == "TINY_GUARDED_CLEANUP_DRY_RUN_ADAPTER_READY"
+        assert r.upstream_guarded_lifecycle_summary_status == "TINY_GUARDED_LIFECYCLE_DRY_RUN_SUMMARY_READY"
+        assert r.upstream_entry_real_permission_review_status == "TINY_GUARDED_ENTRY_REAL_PERMISSION_REVIEW_READY"
+        assert r.upstream_entry_manual_auth_design_status == "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DESIGN_READY"
+        assert r.upstream_entry_manual_auth_dry_run_status \
+            == "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DRY_RUN_READY"
+        assert r.upstream_entry_final_pre_execution_review_status \
+            == "TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY"
+        assert r.upstream_entry_manual_approval_gate_status \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_MANUAL_APPROVAL_GATE_READY"
+        assert r.upstream_entry_manual_approval_gate_readiness_conclusion \
+            == READINESS_CONCLUSION_NOT_EXECUTABLE
+        assert r.upstream_entry_manual_approval_gate_approval_grants_execution is False
+        assert r.upstream_entry_manual_approval_gate_exact_phrase_validated is False
+        assert r.upstream_entry_manual_approval_gate_approval_inputs_validated is False
+        assert r.upstream_entry_adapter_design_status \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DESIGN_READY"
+        assert r.upstream_entry_adapter_design_readiness_conclusion \
+            == READINESS_CONCLUSION_NOT_EXECUTABLE
+        assert r.upstream_entry_adapter_design_grants_execution is False
+        assert r.upstream_entry_adapter_design_implementation_included is False
+        assert r.upstream_entry_adapter_design_execution_included is False
+
+
+# ===========================================================================
+# AO74: CLI subprocess exit codes
+# ===========================================================================
+
+class TestAO74CLIExitCodes:
+    def test_help_exits_zero(self):
+        result = subprocess.run(
+            [sys.executable, str(PREVIEW_PATH), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        assert "adapter" in result.stdout.lower() or "dry-run" in result.stdout.lower() or "dry_run" in result.stdout.lower()
+
+    def test_missing_artifacts_exits_one(self, repo_tmp_path):
+        empty = repo_tmp_path / "empty"
+        empty.mkdir()
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_dry_run import (
+            run_execute,
+        )
+        rc = run_execute(
+            symbol="SOLUSDT",
+            readonly_dir=empty, reconciliation_dir=empty, protection_dir=empty,
+            contract_dir=empty, noop_plan_dir=empty, lifecycle_dir=empty,
+            real_permission_dir=empty, tiny_entry_dir=empty, tiny_stop_dir=empty,
+            tiny_cleanup_dir=empty, lifecycle_summary_dir=empty,
+            runner_design_dir=empty, runner_dry_run_dir=empty,
+            guarded_design_review_dir=empty, guarded_entry_adapter_dir=empty,
+            guarded_stop_adapter_dir=empty, guarded_cleanup_adapter_dir=empty,
+            guarded_lifecycle_summary_dir=empty,
+            entry_real_permission_review_dir=empty,
+            entry_manual_auth_design_dir=empty,
+            entry_manual_auth_dry_run_dir=empty,
+            entry_final_pre_execution_review_dir=empty,
+            entry_manual_approval_gate_dir=empty,
+            entry_adapter_design_dir=empty,
+            output_dir=repo_tmp_path / "out",
+        )
+        assert rc == 1
+
+
+# ===========================================================================
+# AO75: run_execute writes JSON + MD reports
+# ===========================================================================
+
+class TestAO75ReportArtifacts:
+    def test_write_report_creates_files(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_dry_run import (
+            _write_report,
+        )
+        r = _run()
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_dry_run"
+        latest_json = out_dir / f"latest_{base}.json"
+        latest_md   = out_dir / f"latest_{base}.md"
+        assert latest_json.exists()
+        assert latest_md.exists()
+        parsed = json.loads(latest_json.read_text(encoding="utf-8"))
+        assert parsed["status"] == STATUS_DRY_RUN_READY
+        md_text = latest_md.read_text(encoding="utf-8")
+        assert "TASK-014AO" in md_text
+        assert ADAPTER_NAME in md_text
+
+
+# ===========================================================================
+# AO76: real_execution_allowed never True regardless of inputs
+# ===========================================================================
+
+class TestAO76RealExecutionNeverAllowed:
+    def test_real_execution_allowed_false_even_with_real_entry_flag(self):
+        r = _run(allow_real_entry_execution=True)
+        assert r.real_execution_allowed is False
+        assert r.real_entry_implemented is False
+        assert r.entry_execution_included is False
+        assert r.stop_execution_included is False
+        assert r.cleanup_execution_included is False
+        assert r.full_lifecycle_execution_included is False
+        assert r.current_task_real_execution_allowed is False
+
+
+# ===========================================================================
+# AO77: Existing position symbols documented in result
+# ===========================================================================
+
+class TestAO77ExistingPositionSymbols:
+    def test_existing_position_symbols_reflect_recon(self):
+        r = _run()
+        for sym in EXISTING_POSITION_SYMBOLS:
+            assert sym in r.existing_position_symbols
+
+
+# ===========================================================================
+# AO78: Expected commit hash documented (never validated as match)
+# ===========================================================================
+
+class TestAO78ExpectedCommitHashDocumentedOnly:
+    def test_expected_commit_hash_stored_in_result(self):
+        r = _run(expected_commit_hash="abc123def4567890")
+        assert r.expected_commit_hash == "abc123def4567890"
+
+    def test_current_commit_hash_stored_in_result(self):
+        r = _run(current_commit_hash="fedcba9876543210")
+        assert r.current_commit_hash == "fedcba9876543210"
+
+    def test_review_does_not_invoke_git_subprocess(self):
+        """The review must NEVER call git itself; current_commit_hash is documented only."""
+        code_tokens = _read_code_only(SRC_PATH)
+        for forbidden in (
+            "subprocess.run", "subprocess.Popen", "subprocess.check_output",
+            "subprocess.call", "git rev-parse",
+        ):
+            assert forbidden not in code_tokens
+
+
+# ===========================================================================
+# AO79: SOLUSDT already exists -> blocked gate
+# ===========================================================================
+
+class TestAO79SolusdtAlreadyExists:
+    def test_solusdt_exists_triggers_fail_closed_gate(self):
+        bad = _valid_reconciliation()
+        bad["positions"].append({
+            "symbol": "SOLUSDT", "side": "long", "quantity": 0.1,
+            "entry_price": 64.4, "stop_price": 61.18,
+        })
+        r = _run(recon=bad)
+        assert GATE_SOLUSDT_EXISTS_FAIL_CLOSED in r.blocked_gates
+
+
+# ===========================================================================
+# AO80: All 13 stages have non-empty summaries
+# ===========================================================================
+
+class TestAO80StagePayloads:
+    def test_stages_have_summaries(self):
+        r = _run()
+        for stage_id in r.stage_order:
+            env = r.stages[stage_id]
+            assert "summary" in env
+            assert isinstance(env["summary"], str)
+            assert env["summary"] != ""
+
+
+# ===========================================================================
+# AO81: final_adapter_dry_run_verdict completeness
+# ===========================================================================
+
+class TestAO81FinalVerdictCompleteness:
+    def test_verdict_contains_required_fields(self):
+        r = _run()
+        v = r.final_adapter_dry_run_verdict
+        assert v["adapter_dry_run_allowed"] is False
+        assert v["real_entry_execution_requested"] is False
+        assert v["real_execution_allowed"] is False
+        assert v["real_entry_implemented"] is False
+        assert v["guarded_entry_real_execution_adapter_dry_run"] is True
+        assert v["adapter_dry_run_only"] is True
+        assert v["adapter_implementation_included"] is False
+        assert v["adapter_execution_included"] is False
+        assert v["dry_run_grants_execution"] is False
+        assert v["adapter_grants_execution"] is False
+        assert v["approval_gate_grants_execution"] is False
+        assert v["entry_execution_included"] is False
+        assert v["stop_execution_included"] is False
+        assert v["cleanup_execution_included"] is False
+        assert v["full_lifecycle_execution_included"] is False
+        assert v["current_task_real_execution_allowed"] is False
+        assert v["readiness_conclusion"] == READINESS_CONCLUSION_NOT_EXECUTABLE
+        assert v["dry_run_authorization_result"] == DRY_RUN_AUTHORIZATION_RESULT
+        assert v["g20_policy_still_in_place"] is True
+        assert v["g20_lifted"] is False
+        assert v["status"] == STATUS_DRY_RUN_READY
+        assert v["mode"] == MODE_DRY_RUN_CHECKLIST
+        assert v["next_required_task"] == "TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review"
+
+
+# ===========================================================================
+# AO82: audit_artifacts is sanitized + no_secrets
+# ===========================================================================
+
+class TestAO82AuditArtifactsSanitized:
+    def test_audit_artifacts_sanitized_flag(self):
+        r = _run()
+        assert r.audit_artifacts.get("sanitized") is True
+        assert r.audit_artifacts.get("no_secrets") is True
+        assert r.audit_artifacts.get("response_from_exchange") is False
+        assert r.audit_artifacts.get("response_status") == ADAPTER_RESPONSE_STATUS
+
+
+# ===========================================================================
+# AO83: documentation_sync_review present
+# ===========================================================================
+
+class TestAO83DocumentationSyncReview:
+    def test_documentation_sync_review_present(self):
+        r = _run(expected_commit_hash="abc1234")
+        d = r.documentation_sync_review
+        assert isinstance(d, dict)
+        assert d  # non-empty
+
+
+# ===========================================================================
+# AO84: src module is properly self-contained (uses only stdlib + dataclasses)
+# ===========================================================================
+
+class TestAO84SrcSelfContained:
+    def test_only_stdlib_imports(self):
+        tree = ast.parse(SRC_PATH.read_text(encoding="utf-8"))
+        modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    modules.add(alias.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    modules.add(node.module.split(".")[0])
+        allowed = {
+            "__future__", "copy", "dataclasses", "datetime",
+            "typing", "collections", "json", "math", "re",
+        }
+        leaked = modules - allowed
+        assert not leaked, f"unexpected imports: {leaked}"
+
+
+# ===========================================================================
+# AO85: adapter_dry_run_allowed flag isolated
+# ===========================================================================
+
+class TestAO85AdapterDryRunAllowedIsolated:
+    def test_default_approval_false(self):
+        r = _run()
+        assert r.adapter_dry_run_allowed is False
+
+    def test_approval_true_when_flagged(self):
+        r = _run(allow_adapter_dry_run=True)
+        assert r.adapter_dry_run_allowed is True
+
+
+# ===========================================================================
+# AO86: SOLUSDT absent from existing positions in default fixture
+# ===========================================================================
+
+class TestAO86SolusdtAbsent:
+    def test_solusdt_absent_before_entry(self):
+        r = _run()
+        assert "SOLUSDT" not in r.existing_position_symbols
+
+
+# ===========================================================================
+# AO87: 5 expected protected symbols present in default fixture
+# ===========================================================================
+
+class TestAO87ProtectedSymbolsPresent:
+    def test_protected_symbols_observed(self):
+        r = _run()
+        for sym in ("ENAUSDT", "TIAUSDT", "AIXBTUSDT", "POLYXUSDT", "EDUUSDT"):
+            assert sym in r.existing_position_symbols
+
+
+# ===========================================================================
+# AO88: approval gate still keeps readiness NOT_EXECUTABLE
+# ===========================================================================
+
+class TestAO88ApprovalGateReadinessUnchanged:
+    def test_readiness_unchanged_under_approval(self):
+        r = _run(allow_adapter_dry_run=True)
+        assert r.readiness_conclusion == READINESS_CONCLUSION_NOT_EXECUTABLE
+        assert r.dry_run_authorization_result == DRY_RUN_AUTHORIZATION_RESULT
+
+
+# ===========================================================================
+# AO89: real entry guard still keeps readiness NOT_EXECUTABLE
+# ===========================================================================
+
+class TestAO89RealEntryGuardReadinessUnchanged:
+    def test_readiness_unchanged_under_real_entry_guard(self):
+        r = _run(allow_real_entry_execution=True)
+        assert r.readiness_conclusion == READINESS_CONCLUSION_NOT_EXECUTABLE
+        assert r.dry_run_authorization_result == DRY_RUN_AUTHORIZATION_RESULT
+
+
+# ===========================================================================
+# AO90: Stage 1 adapter_dry_run_scope present
+# ===========================================================================
+
+class TestAO90AdapterDryRunScope:
+    def test_scope_is_dict_and_documented(self):
+        r = _run()
+        assert isinstance(r.adapter_dry_run_scope, dict)
+        assert r.adapter_dry_run_scope  # non-empty
+
+
+# ===========================================================================
+# AO91: HARD_FAIL_GATES contains the 6 AM-acceptance + 5 AN-acceptance gates
+# ===========================================================================
+
+class TestAO91HardFailGatesIncludeApprovalAndAdapterDesignGates:
+    def test_approval_gate_gates_are_hard_fail(self):
+        from src.demo_tiny_guarded_entry_real_execution_adapter_dry_run import _HARD_FAIL_GATES
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_MISSING in _HARD_FAIL_GATES
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_STATUS_UNACCEPTABLE in _HARD_FAIL_GATES
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_READINESS_EXECUTABLE in _HARD_FAIL_GATES
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_GRANTS_EXECUTION in _HARD_FAIL_GATES
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_PHRASE_ALREADY_VALIDATED in _HARD_FAIL_GATES
+        assert GATE_ENTRY_MANUAL_APPROVAL_GATE_INPUTS_ALREADY_VALIDATED in _HARD_FAIL_GATES
+
+    def test_adapter_design_gates_are_hard_fail(self):
+        from src.demo_tiny_guarded_entry_real_execution_adapter_dry_run import _HARD_FAIL_GATES
+        assert GATE_ENTRY_ADAPTER_DESIGN_MISSING in _HARD_FAIL_GATES
+        assert GATE_ENTRY_ADAPTER_DESIGN_STATUS_UNACCEPTABLE in _HARD_FAIL_GATES
+        assert GATE_ENTRY_ADAPTER_DESIGN_READINESS_EXECUTABLE in _HARD_FAIL_GATES
+        assert GATE_ENTRY_ADAPTER_DESIGN_GRANTS_EXECUTION in _HARD_FAIL_GATES
+        assert GATE_ENTRY_ADAPTER_DESIGN_IMPLEMENTATION_INCLUDED in _HARD_FAIL_GATES
+        assert GATE_ENTRY_ADAPTER_DESIGN_EXECUTION_INCLUDED in _HARD_FAIL_GATES
+
+
+# ===========================================================================
+# AO92: Status precedence — solusdt-exists + allow_real_entry_execution
+# ===========================================================================
+
+class TestAO92SolusdtExistsWithRealEntryFlag:
+    def test_solusdt_exists_gate_still_documented_under_real_entry_guard(self):
+        bad = _valid_reconciliation()
+        bad["positions"].append({
+            "symbol": "SOLUSDT", "side": "long", "quantity": 0.1,
+            "entry_price": 64.4, "stop_price": 61.18,
+        })
+        r = _run(recon=bad, allow_real_entry_execution=True)
+        assert GATE_SOLUSDT_EXISTS_FAIL_CLOSED in r.blocked_gates
+
+
+# ===========================================================================
+# AO93: 13 adapter-dry-run sub-dicts present
+# ===========================================================================
+
+class TestAO93AdapterDryRunSubDictsPresent:
+    def test_adapter_dry_run_scope_is_dict(self):
+        r = _run()
+        assert isinstance(r.adapter_dry_run_scope, dict)
+        assert r.adapter_dry_run_scope
+
+    def test_adapter_dry_run_contract_is_dict(self):
+        r = _run()
+        assert isinstance(r.adapter_dry_run_contract, dict)
+        assert r.adapter_dry_run_contract
+
+    def test_dry_run_input_validation_simulation_is_dict(self):
+        r = _run()
+        assert isinstance(r.dry_run_input_validation_simulation, dict)
+        assert r.dry_run_input_validation_simulation
+
+    def test_dry_run_request_envelope_is_dict(self):
+        r = _run()
+        assert isinstance(r.dry_run_request_envelope, dict)
+        assert r.dry_run_request_envelope
+
+    def test_entry_payload_dry_run_preview_is_dict(self):
+        r = _run()
+        assert isinstance(r.entry_payload_dry_run_preview, dict)
+        assert r.entry_payload_dry_run_preview
+
+    def test_dry_run_response_simulation_is_dict(self):
+        r = _run()
+        assert isinstance(r.dry_run_response_simulation, dict)
+        assert r.dry_run_response_simulation
+
+    def test_secret_and_signature_dry_run_boundary_is_dict(self):
+        r = _run()
+        assert isinstance(r.secret_and_signature_dry_run_boundary, dict)
+        assert r.secret_and_signature_dry_run_boundary
+
+    def test_stop_cleanup_dry_run_boundary_is_dict(self):
+        r = _run()
+        assert isinstance(r.stop_cleanup_dry_run_boundary, dict)
+        assert r.stop_cleanup_dry_run_boundary
+
+    def test_forbidden_execution_surface_dry_run_is_dict(self):
+        r = _run()
+        assert isinstance(r.forbidden_execution_surface_dry_run, dict)
+        assert r.forbidden_execution_surface_dry_run
+
+    def test_failure_and_abort_adapter_dry_run_is_dict(self):
+        r = _run()
+        assert isinstance(r.failure_and_abort_adapter_dry_run, dict)
+        assert r.failure_and_abort_adapter_dry_run
+
+    def test_documentation_sync_review_is_dict(self):
+        r = _run()
+        assert isinstance(r.documentation_sync_review, dict)
+        assert r.documentation_sync_review
+
+    def test_audit_artifacts_is_dict(self):
+        r = _run()
+        assert isinstance(r.audit_artifacts, dict)
+        assert r.audit_artifacts
+
+    def test_final_adapter_dry_run_verdict_is_dict(self):
+        r = _run()
+        assert isinstance(r.final_adapter_dry_run_verdict, dict)
+        assert r.final_adapter_dry_run_verdict
+
+
+# ===========================================================================
+# AO94: order_link_id_prefix exposed and consistent
+# ===========================================================================
+
+class TestAO94OrderLinkIdPrefix:
+    def test_order_link_id_prefix(self):
+        r = _run()
+        assert r.order_link_id_prefix == ORDER_LINK_ID_PREFIX
+
+
+# ===========================================================================
+# AO95: HARD_FAIL_GATES total count = 40
+# ===========================================================================
+
+class TestAO95HardFailGatesCount:
+    def test_hard_fail_gates_size(self):
+        from src.demo_tiny_guarded_entry_real_execution_adapter_dry_run import _HARD_FAIL_GATES
+        # 40 hard-fail gates:
+        # 24 missing-artifact + 4 invariant (endpoint/account/proof/source) +
+        # 6 approval-gate-acceptance + 5 adapter-design-acceptance +
+        # selected_symbol_not_solusdt + solusdt_already_exists.
+        # Note: GATE_ENTRY_MANUAL_APPROVAL_GATE_STATUS_UNACCEPTABLE counts in
+        # both AM and approval families, ditto for readiness.  Total = 40.
+        assert len(_HARD_FAIL_GATES) == 40
+
+
+# ===========================================================================
+# AO96: Adapter contract gates documented (dry-run-only; never executed)
+# ===========================================================================
+
+class TestAO96AdapterDryRunContractDetails:
+    def test_contract_has_no_send_and_no_signature(self):
+        r = _run()
+        c = r.adapter_dry_run_contract
+        assert c["adapter_has_no_send_method"] is True
+        assert c["adapter_has_no_private_client"] is True
+        assert c["adapter_has_no_signature_method"] is True
+        assert c["adapter_has_no_secret_loader"] is True
+        assert c["adapter_has_no_network_transport"] is True
+        assert c["adapter_contract_does_not_execute"] is True
+        assert c["adapter_contract_requires_future_task_implementation"] is True
+        assert c["adapter_name"] == ADAPTER_NAME
+        assert c["adapter_contract_version"] == ADAPTER_CONTRACT_VERSION
+        assert c["consumed_design_contract_version"] == CONSUMED_DESIGN_CONTRACT_VERSION
+
+
+# ===========================================================================
+# AO97: Input validation simulation references SOLUSDT / 0.1 / Buy / Market
+# ===========================================================================
+
+class TestAO97DryRunInputValidationSimulation:
+    def test_input_validation_simulation_fields(self):
+        r = _run()
+        s = r.dry_run_input_validation_simulation
+        assert s["symbol"] == "SOLUSDT"
+        assert s["category"] == "linear"
+        assert s["side"] == "Buy"
+        assert s["qty"] == 0.1
+        assert s["orderType"] == "Market"
+        assert s["reduceOnly"] is False
+        assert s["closeOnTrigger"] is False
+        assert s["positionIdx"] == 0
+        assert s["max_notional_usdt"] == 10.0
+        assert s["input_validation_simulated_only"] is True
+        assert s["input_validation_does_not_authorize_execution"] is True
+
+
+# ===========================================================================
+# AO98: Dry-run response simulation states no send / no signature / no headers
+# ===========================================================================
+
+class TestAO98DryRunResponseSimulation:
+    def test_response_simulation_fields(self):
+        r = _run()
+        o = r.dry_run_response_simulation
+        assert o["response_status"] == ADAPTER_RESPONSE_STATUS
+        assert o["response_from_exchange"] is False
+        assert o["exchange_order_id"] is None
+        assert o["order_link_id_prefix"] == ORDER_LINK_ID_PREFIX
+        assert o["send_allowed"] is False
+        assert o["endpoint_called"] is False
+        assert o["order_endpoint_called"] is False
+        assert o["stop_endpoint_called"] is False
+        assert o["real_payload"] is False
+        assert o["signature_present"] is False
+        assert o["private_headers"] == []
+        assert o["no_secrets"] is True
+        assert o["sanitized"] is True
+        assert o["no_position_modified"] is True
+        assert o["simulated_only"] is True
+
+
+# ===========================================================================
+# AO99: Entry payload preview is dry-run-only (no signature / no send)
+# ===========================================================================
+
+class TestAO99EntryPayloadDryRunPreview:
+    def test_payload_preview_dry_run_only(self):
+        r = _run()
+        p = r.entry_payload_dry_run_preview
+        assert p["preview_only"] is True
+        assert p["adapter_dry_run_only"] is True
+        assert p["send_allowed"] is False
+        assert p["endpoint_called"] is False
+        assert p["real_payload"] is False
+        assert p["signature_present"] is False
+        assert p["private_headers"] == []
+        assert p["sender_adapter_invoked"] is False
+        assert p["symbol"] == "SOLUSDT"
+        assert p["side"] == "Buy"
+        assert p["qty"] == 0.1
+        assert p["orderType"] == "Market"
+        assert p["category"] == "linear"
+        assert p["orderLinkId_prefix"] == ORDER_LINK_ID_PREFIX
+
+
+# ===========================================================================
+# AO100: Secret / signature boundary documents future-task-only secrets
+# ===========================================================================
+
+class TestAO100SecretSignatureDryRunBoundary:
+    def test_secret_and_signature_dry_run_boundary(self):
+        r = _run()
+        s = r.secret_and_signature_dry_run_boundary
+        assert s["secrets_required_in_future_task"] is True
+        assert s["secrets_loaded_in_this_task"] is False
+        assert s["env_read_in_this_task"] is False
+        assert s["dotenv_called_in_this_task"] is False
+        assert s["hmac_signature_created"] is False
+        assert s["signature_header_created"] is False
+        assert s["private_headers_created"] is False
+        assert s["api_key_value_observed"] is False
+        assert s["api_secret_value_observed"] is False
+        assert s["signing_requires_future_task"] is True
+        assert s["secret_redaction_required"] is True
+        for f in FORBIDDEN_LOG_FIELDS:
+            assert f in s["forbidden_log_fields"]
+
+
+# ===========================================================================
+# AO101: Stop / cleanup boundary keeps them separate manual gates
+# ===========================================================================
+
+class TestAO101StopCleanupDryRunBoundary:
+    def test_stop_cleanup_dry_run_boundary(self):
+        r = _run()
+        b = r.stop_cleanup_dry_run_boundary
+        assert b["stop_attach_required_after_entry"] is True
+        assert b["stop_attach_not_included_in_this_task"] is True
+        assert b["stop_loss"] == DESIGN_EXPECTED_STOP_LOSS
+        assert b["tpsl_mode"] == DESIGN_EXPECTED_TPSL_MODE
+        assert b["sl_trigger_by"] == DESIGN_EXPECTED_SL_TRIGGER_BY
+        assert b["cleanup_not_included_in_this_task"] is True
+        assert b["cleanup_separate_manual_boundary"] is True
+        assert b["no_automatic_stop_attach"] is True
+        assert b["no_automatic_cleanup"] is True
+        assert b["no_automatic_emergency_close"] is True
+        assert b["future_adapter_must_not_auto_attach_stop"] is True
+        assert b["future_adapter_must_require_separate_stop_task"] is True
+
+
+# ===========================================================================
+# AO102: Forbidden execution surface dry-run documents no-* invariants
+# ===========================================================================
+
+class TestAO102ForbiddenExecutionSurfaceDryRun:
+    def test_forbidden_execution_surface_dry_run(self):
+        r = _run()
+        f = r.forbidden_execution_surface_dry_run
+        assert f["no_real_sender"] is True
+        assert f["no_bybit_private_client"] is True
+        assert f["no_signed_request"] is True
+        assert f["no_env_secret_load"] is True
+        assert f["no_order_endpoint"] is True
+        assert f["no_trading_stop_endpoint"] is True
+        assert f["no_close_only_fallback"] is True
+        assert f["no_emergency_close_fallback"] is True
+        assert f["no_socket"] is True
+        assert f["no_requests_httpx_urllib_http_client"] is True
+        assert f["no_batch_order"] is True
+        assert f["no_leverage_mutation"] is True
+        assert f["no_transfer"] is True
+        assert f["no_webhook_trigger"] is True
+        assert f["no_discord_trigger"] is True
+        assert f["no_notion_trigger"] is True
+        assert f["no_cron_scheduler_or_background_loop"] is True
+        assert f["no_executable_adapter"] is True
+        assert f["no_send_method"] is True
+        assert f["no_private_transport"] is True
+
+
+# ===========================================================================
+# AO103: Failure / abort adapter dry-run FAIL_CLOSED / MANUAL_REVIEW
+# ===========================================================================
+
+class TestAO103FailureAndAbortAdapterDryRun:
+    def test_failure_and_abort_adapter_dry_run(self):
+        r = _run()
+        f = r.failure_and_abort_adapter_dry_run
+        assert f["missing_artifact"] == "FAIL_CLOSED"
+        assert f["stale_readonly"] == "FAIL_CLOSED"
+        assert f["manual_approval_gate_stale"] == "FAIL_CLOSED"
+        assert f["approval_grants_execution_true"] == "FAIL_CLOSED"
+        assert f["phrase_already_validated"] == "FAIL_CLOSED"
+        assert f["inputs_already_validated"] == "FAIL_CLOSED"
+        assert f["adapter_design_grants_execution_true"] == "FAIL_CLOSED"
+        assert f["adapter_design_implementation_included_true"] == "FAIL_CLOSED"
+        assert f["adapter_design_execution_included_true"] == "FAIL_CLOSED"
+        assert f["solusdt_already_exists"] == "FAIL_CLOSED"
+        assert f["protected_position_mismatch"] == "MANUAL_REVIEW_REQUIRED"
+        assert f["notional_cap_exceeded"] == "FAIL_CLOSED"
+        assert f["qty_mismatch"] == "FAIL_CLOSED"
+        assert f["side_mismatch"] == "FAIL_CLOSED"
+        assert f["reduce_only_mismatch"] == "FAIL_CLOSED"
+        assert f["live_endpoint_detected"] == "FAIL_CLOSED"
+        assert f["secret_emission_detected"] == "FAIL_CLOSED"
+        assert f["network_primitive_detected"] == "FAIL_CLOSED"
+        assert f["sender_adapter_detected"] == "FAIL_CLOSED"
+        assert f["executable_adapter_detected"] == "FAIL_CLOSED"
+        assert f["any_g20_lift_attempt"] == "FAIL_CLOSED"
+        assert f["any_auto_execution_attempt"] == "FAIL_CLOSED"
+        assert f["manual_intervention_only"] is True
+
+
+# ===========================================================================
+# AO104: Documentation sync references next task AP
+# ===========================================================================
+
+class TestAO104DocumentationSyncNextTaskAP:
+    def test_documentation_sync_references_ap(self):
+        r = _run()
+        d = r.documentation_sync_review
+        assert d["next_required_task"] == "TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review"
+        assert d["readme_status_board_sync_required"] is True
+        assert d["next_action_sync_required"] is True
+        assert d["command_log_sync_required"] is True
+        assert d["forbidden_status_sync_required"] is True
+        assert d["next_required_task_sync_required"] is True
+        assert d["markdown_read_in_this_module"] is False
+
+
+# ===========================================================================
+# AO105: Adapter dry-run scope flags consistent with verdict
+# ===========================================================================
+
+class TestAO105AdapterDryRunScopeFlags:
+    def test_adapter_dry_run_scope_flags(self):
+        r = _run()
+        s = r.adapter_dry_run_scope
+        assert s["guarded_entry_real_execution_adapter_dry_run"] is True
+        assert s["adapter_dry_run_only"] is True
+        assert s["adapter_implementation_included"] is False
+        assert s["adapter_execution_included"] is False
+        assert s["entry_execution_included"] is False
+        assert s["stop_execution_included"] is False
+        assert s["cleanup_execution_included"] is False
+        assert s["full_lifecycle_execution_included"] is False
+        assert s["real_entry_implemented"] is False
+        assert s["real_execution_allowed"] is False
+        assert s["dry_run_grants_execution"] is False
+        assert s["adapter_grants_execution"] is False
+        assert s["approval_gate_grants_execution"] is False
+        assert s["send_allowed"] is False
+        assert s["order_endpoint_called"] is False
+        assert s["stop_endpoint_called"] is False
+        assert s["no_endpoint_invoked_in_this_task"] is True
+        assert s["no_position_modified"] is True
+        assert s["no_secrets_loaded"] is True
+        assert s["g20_policy_still_in_place"] is True
+        assert s["g20_lifted"] is False
+        assert s["next_required_task"] == "TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review"
+
+
+# ===========================================================================
+# AO106: Preview script (source-scan safety)
+# ===========================================================================
+
+class TestAO106PreviewNoForbiddenImports:
+    def test_preview_no_forbidden_imports(self):
+        tree = ast.parse(PREVIEW_PATH.read_text(encoding="utf-8"))
+        bad: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    bad.add(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                bad.add(node.module or "")
+        forbidden = {
+            "urllib", "urllib.request", "urllib.parse",
+            "requests", "httpx", "http", "http.client", "socket",
+            "ssl", "hmac", "pybit",
+            "main", "src.risk", "src.bybit_executor",
+        }
+        assert not (bad & forbidden), f"forbidden imports leaked in preview: {bad & forbidden}"
+
+
+# ===========================================================================
+# AO107: Preview has no auto-git operations
+# ===========================================================================
+
+class TestAO107PreviewNoAutoGit:
+    def test_preview_does_not_invoke_git(self):
+        code_tokens = _read_code_only(PREVIEW_PATH)
+        for forbidden in (
+            "git.Repo", "git rev-parse",
+        ):
+            assert forbidden not in code_tokens, f"{forbidden} leaked into preview"
+
+
+# ===========================================================================
+# AO108: Result is dataclass with expected sub-dict field names (13 sub-dicts)
+# ===========================================================================
+
+class TestAO108ResultDataclassFields:
+    def test_result_has_13_subdicts(self):
+        r = _run()
+        expected_subdicts = (
+            "adapter_dry_run_scope",
+            "adapter_dry_run_contract",
+            "dry_run_input_validation_simulation",
+            "dry_run_request_envelope",
+            "entry_payload_dry_run_preview",
+            "dry_run_response_simulation",
+            "secret_and_signature_dry_run_boundary",
+            "stop_cleanup_dry_run_boundary",
+            "forbidden_execution_surface_dry_run",
+            "failure_and_abort_adapter_dry_run",
+            "documentation_sync_review",
+            "audit_artifacts",
+            "final_adapter_dry_run_verdict",
+        )
+        assert len(expected_subdicts) == 13
+        for name in expected_subdicts:
+            assert hasattr(r, name)
+            assert isinstance(getattr(r, name), dict)
+
+
+# ===========================================================================
+# AO109: Dry-run request envelope sub-dict fields
+# ===========================================================================
+
+class TestAO109DryRunRequestEnvelope:
+    def test_request_envelope_preview_only(self):
+        r = _run()
+        e = r.dry_run_request_envelope
+        assert e["preview_only"] is True
+        assert e["request_not_sent"] is True
+        assert e["endpoint_path_ref"] == ORDER_CREATE_PATH_REF
+        assert e["base_url_ref"] == BASE_URL_DEMO_REF
+        assert e["signature_present"] is False
+        assert e["private_headers"] == []
+        assert e["no_secret_values"] is True

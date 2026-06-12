@@ -14,28 +14,28 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AN-DOCS1, 2026-06-12）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AO, 2026-06-12）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AN-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AO 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AN |
-| latest_commit | `ed58b34` — `TASK-014AN: add guarded entry real execution adapter design`（local；尚未推遠端） |
-| current_phase | guarded entry real execution adapter design completed（adapter-design-only，無 sender，無 executable adapter，無 `send` method，未驗證任何 token / phrase / approval input，無實單，no auto-git） |
-| next_required_task | `TASK-014AO_guarded_entry_real_execution_adapter_dry_run` |
+| latest_completed_task | TASK-014AO |
+| latest_commit | `pending` — `TASK-014AO: add guarded entry real execution adapter dry-run`（local；尚未推遠端；hash 待 commit 後補） |
+| current_phase | guarded entry real execution adapter dry-run completed（adapter-dry-run-only，consumes AN design contract `design_only_v1`，無 sender，無 executable adapter，無 `send` / `place_order` / `execute` method，未驗證任何 token / phrase / approval input，無實單，no auto-git） |
+| next_required_task | `TASK-014AP_guarded_entry_real_execution_adapter_implementation_readiness_review` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
 | actual stop attach | **FORBIDDEN** |
 | actual cleanup | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_design.py` → 129 PASS |
+| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_dry_run.py` → 139 PASS |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
-| adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
-| order link id prefix | `ADAPTER_DESIGN_TINY_ENTRY_`（design-only label — 永不會作為 real order client id 送出） |
-| audit response_status | `ADAPTER_DESIGN_NOT_SENT`（無任何 outbound request） |
+| adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=dry_run_v1`、`CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
+| order link id prefix | `ADAPTER_DRY_RUN_TINY_ENTRY_`（dry-run label — 永不會作為 real order client id 送出） |
+| audit response_status | `ADAPTER_DRY_RUN_NOT_SENT`（無任何 outbound request） |
 
 權威來源（authoritative pointers — 任何不一致以下列檔案為準）：
 
