@@ -21,6 +21,58 @@ Notes:
 
 ---
 
+### 2026-06-12（TASK-014AN-DOCS1 — Adapter Design Docs Sync）
+
+Agent: Claude (Opus)
+Command source: Rick chat instruction "Before push/VPS validation, please
+create TASK-014AN-DOCS1" (2026-06-12)
+Task: Synchronize cross-agent docs for TASK-014AN — fill in the actual local
+commit hash `ed58b34` into the README Demo Trading Guarded Lifecycle Status
+board (previously `pending`) and the COMMAND_LOG TASK-014AN entry; record this
+TASK-014AN-DOCS1 event in COMMAND_LOG; verify NEXT_ACTION.md TASK-014AN
+section is intact with VPS validation commands. No code changes, no execution
+logic, no G20 lift, no endpoint calls, no secret reads, no real entry
+execution, no executable sender path added.
+
+Status before: TASK-014AN source/preview/tests/.gitignore/NEXT_ACTION/README/
+COMMAND_LOG committed locally as `ed58b34` but README + COMMAND_LOG still
+showed `pending` for the AN commit hash
+Status after: TASK-014AN-DOCS1 docs sync DONE; cross-agent board points at
+TASK-014AN / `ed58b34`; next_required_task =
+TASK-014AO_guarded_entry_real_execution_adapter_dry_run
+Files changed:
+- `README.md` (Demo Trading Guarded Lifecycle Status board:
+  banner updated to "updated by TASK-014AN-DOCS1, 2026-06-12";
+  `latest_commit` updated from `pending` → `ed58b34`)
+- `docs/research/commands/COMMAND_LOG.md` (this DOCS1 entry +
+  TASK-014AN entry's `README.md` files-changed line updated to reflect
+  the filled-in `ed58b34` hash)
+
+Validation:
+- py_compile src/demo_tiny_guarded_entry_real_execution_adapter_design.py → PASS
+- py_compile scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_design.py → PASS
+- py_compile tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_design.py → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_design.py → 129/129 PASS
+
+Outputs: docs-only — no runtime artifacts produced
+
+Safety confirmations:
+- no real order placed / no `/v5/order/create` call / no `/v5/position/trading-stop` call
+- no sender adapter introduced / no executable adapter surface / no `send` method
+- no endpoint call / no socket opened / no urllib / no requests / no httpx / no http.client
+- no secrets read / no `.env*` read / no `os.environ` access / no dotenv
+- no HMAC / no signature header / no signing primitive
+- TASK-014L G20 sender policy still active (no protected_entry_policy_missing lift)
+- 5 protected demo positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified
+- main.py / src/risk.py / BybitExecutor untouched
+- no auto git commit / no auto git push / no auto branch / no auto tag
+
+Notes:
+- Local commit only; push pending Rick instruction.
+- next_required_task remains `TASK-014AO_guarded_entry_real_execution_adapter_dry_run`.
+
+---
+
 ### 2026-06-12（TASK-014AN — Guarded Entry Real Execution Adapter Design）
 
 Agent: Claude (Opus)
@@ -52,7 +104,7 @@ Files changed:
 - `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_design.py` (new — 129 tests covering 4 status modes, 23 missing-artifact gates, endpoint/account/symbol invariants, AM approval-gate status/readiness/grants/phrase/inputs acceptance, 12 stages presence + order, deep-copy roundtrip, AST + tokenize source-scan safety, forbidden flag absence in src + preview, 5 protected positions untouched, G20 never lifted, no AA-AM module reuse, next_required_task = 014AO, 13 frozenset whitelists, endpoint allow/denylists, forbidden log fields, no auto-git in src + preview, HARD_FAIL_GATES expansion to 33 gates, ADAPTER_NAME / ADAPTER_CONTRACT_VERSION / ADAPTER_RESPONSE_STATUS / ORDER_LINK_ID_PREFIX exposed, CLI subprocess exit codes, report artifacts written, `repo_tmp_path` Windows ACL workaround)
 - `.gitignore` (add `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_design/`)
 - `docs/research/commands/NEXT_ACTION.md` (TASK-014AN Status + Next Rick Action block inserted above TASK-014AM)
-- `README.md` (Demo Trading Guarded Lifecycle Status board updated to TASK-014AN — latest_completed_task, latest_commit pending, current_phase, next_required_task=TASK-014AO, latest validation 129 PASS, adapter identity / order link id prefix / audit response_status rows)
+- `README.md` (Demo Trading Guarded Lifecycle Status board updated to TASK-014AN — latest_completed_task, latest_commit `ed58b34` (filled in by TASK-014AN-DOCS1), current_phase, next_required_task=TASK-014AO, latest validation 129 PASS, adapter identity / order link id prefix / audit response_status rows)
 - `docs/research/commands/COMMAND_LOG.md` (this entry)
 
 Validation:

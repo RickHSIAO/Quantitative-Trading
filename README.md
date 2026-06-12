@@ -14,15 +14,15 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AN, 2026-06-12）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AN-DOCS1, 2026-06-12）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AN 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AN-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
 | latest_completed_task | TASK-014AN |
-| latest_commit | `pending` — `TASK-014AN: add guarded entry real execution adapter design`（local；尚未推遠端；hash 待 commit 後補） |
+| latest_commit | `ed58b34` — `TASK-014AN: add guarded entry real execution adapter design`（local；尚未推遠端） |
 | current_phase | guarded entry real execution adapter design completed（adapter-design-only，無 sender，無 executable adapter，無 `send` method，未驗證任何 token / phrase / approval input，無實單，no auto-git） |
 | next_required_task | `TASK-014AO_guarded_entry_real_execution_adapter_dry_run` |
 | real_execution_allowed | **False** |
