@@ -1,14 +1,17 @@
 # Next Action
 
-> README shared status updated by TASK-014AR-FIX2 (2026-06-14) — see
+> README shared status updated by TASK-014AR-FIX3 (2026-06-14) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
 > for the cross-agent status board. Code-only sync — no real trading logic
 > added, G20 still active, no real trading enabled.
 
-## TASK-014AR Status (2026-06-13, updated by TASK-014AR-FIX2 2026-06-14)
+## TASK-014AR Status (2026-06-13, updated by TASK-014AR-FIX3 2026-06-14)
 
 | item | status |
 |---|---|
+| TASK-014AR-FIX3 (CLI help test hardened): `TestARFIX2CLIBannerSaysStaticSkeleton` assertion on `"TASK-014AQ implementation design output"` failed on VPS Linux due to argparse line-wrapping breaking the exact substring. Fixed by normalizing whitespace (`" ".join(combined.split())`) and asserting individual tokens (`"STATIC SKELETON DESIGN"`, `"TASK-014AQ"`, `"implementation design"`, `"static skeleton"`, `"TASK-014AS"`) instead of the full unwrapped phrase. No behavior change, no trading logic change, no gates change, no endpoint/secret/sender change. | DONE |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py | 175/175 PASS (post-FIX3) |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py (regression) | 138/138 PASS |
 | TASK-014AR-FIX2 (schema label cleanup): mode renamed to `static_skeleton_design_checklist` / `static_skeleton_design_approval` (legacy `MODE_IMPLEMENTATION_DESIGN_CHECKLIST` / `_APPROVAL` retained as back-compat aliases pointing at the same strings); markdown/report title now reads "Tiny Guarded Entry Real Execution Adapter Static Skeleton Design (TASK-014AR)"; new output-facing aliases on `to_dict()` + `audit_artifacts` + stage_1 + stage_13: `static_skeleton_design_conclusion=STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE`, `final_static_skeleton_design_verdict`, `static_skeleton_design_scope`, `static_skeleton_design_authorization_result`; stage_1 summary now says "Assert static skeleton design scope"; stage_13 summary now says "Final static skeleton design verdict"; scope_summary rewritten to "TASK-014AR consumes TASK-014AQ implementation design output at runtime and produces a STATIC SKELETON DESIGN for TASK-014AS"; legacy `implementation_design_*` keys preserved as backward-compatible aliases | DONE |
 | All safety behavior unchanged: AQ runtime consumption intact, all 8 LIVE `entry_implementation_design_*` fail-closed gates active, 62-gate `_HARD_FAIL_GATES` frozenset unchanged, status string `TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_STATIC_SKELETON_DESIGN_READY` unchanged, next_required_task `TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run` unchanged | CONFIRMED |
 | pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py | 175/175 PASS (143 original + 16 AR-FIX1 + 16 AR-FIX2 schema label tests) |

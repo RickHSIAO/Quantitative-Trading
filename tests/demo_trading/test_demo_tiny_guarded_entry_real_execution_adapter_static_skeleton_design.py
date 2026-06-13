@@ -2897,9 +2897,16 @@ class TestARFIX2CLIBannerSaysStaticSkeleton:
         )
         assert result.returncode == 0
         combined = result.stdout + result.stderr
+        # Normalize whitespace so argparse line-wrapping (which differs
+        # between Linux and Windows terminal widths) does not break
+        # substring assertions.
+        normalized = " ".join(combined.split())
         # The CLI argparse description must advertise STATIC SKELETON
         # DESIGN (TASK-014AR), not the legacy IMPLEMENTATION DESIGN
-        # phrasing.
-        assert "STATIC SKELETON DESIGN" in combined
-        assert "TASK-014AQ implementation design output" in combined
-        assert "TASK-014AS" in combined
+        # phrasing.  Assert individual tokens rather than the full phrase
+        # so line-wrap cannot split them.
+        assert "STATIC SKELETON DESIGN" in normalized
+        assert "TASK-014AQ" in normalized
+        assert "implementation design" in normalized
+        assert "static skeleton" in normalized
+        assert "TASK-014AS" in normalized

@@ -21,6 +21,87 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AR-FIX3 — Harden Static Skeleton CLI Help Test）
+
+Agent: Claude (Sonnet)
+Command source: Rick chat instruction "Proceed with TASK-014AR-FIX3 now.
+VPS validation for TASK-014AR-FIX2 failed only on one brittle CLI help
+assertion: TestARFIX2CLIBannerSaysStaticSkeleton::test_cli_help_does_not_
+advertise_implementation_design_only — AssertionError: assert
+'TASK-014AQ implementation design output' in combined." (2026-06-14)
+Task: Fix the brittle cross-platform CLI help test. On VPS Linux, argparse
+wraps the `description=` string at a different terminal width than
+Windows, breaking the exact multi-word substring
+`"TASK-014AQ implementation design output"`. Fix by normalizing
+whitespace in the combined stdout+stderr string before asserting
+(`" ".join(combined.split())`) and replacing the single long-phrase
+assertion with individual token assertions:
+  - `"STATIC SKELETON DESIGN"` (all-caps phrase, not split by wrapping)
+  - `"TASK-014AQ"` (single token)
+  - `"implementation design"` (two adjacent lowercase words)
+  - `"static skeleton"` (two adjacent lowercase words)
+  - `"TASK-014AS"` (single token)
+No trading logic changed. No runtime artifact consumption changed. No
+gates changed. No endpoint / secret / sender behavior changed. No
+adapter class added. No `send` / `place_order` / `execute` method
+added. No G20 lift. No main.py / src/risk.py / BybitExecutor
+modification. No position modification.
+
+Status before: TASK-014AR-FIX2-DOCS1 `b963956` on origin/main; VPS
+pytest 174/175 PASSED — only TestARFIX2CLIBannerSaysStaticSkeleton
+failed due to argparse line-wrap on Linux
+Status after: TASK-014AR-FIX3 test hardened; 175/175 PASS locally +
+expected 175/175 PASS on VPS; next_required_task =
+TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run
+
+Files changed:
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (TestARFIX2CLIBannerSaysStaticSkeleton: replaced single-phrase
+  assertion `assert "TASK-014AQ implementation design output" in
+  combined` with whitespace-normalized `normalized = " ".join(
+  combined.split())` and five individual token assertions against
+  `normalized`; kept `result.returncode == 0` check unchanged)
+- `docs/research/commands/NEXT_ACTION.md`
+  (banner updated to "updated by TASK-014AR-FIX3 (2026-06-14)";
+  new TASK-014AR Status block at top of AR section documenting
+  FIX3; pytest count updated to 175/175 PASS post-FIX3)
+- `README.md`
+  (banner updated to "updated by TASK-014AR-FIX3, 2026-06-14";
+  `latest_completed_task` → TASK-014AR-FIX3;
+  `latest_commit` → FIX3 message;
+  `current_phase` updated to mention CLI help test hardened)
+- `docs/research/commands/COMMAND_LOG.md` (this TASK-014AR-FIX3 entry)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` → 175/175 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` → 138/138 PASS (AQ regression intact)
+
+Outputs: none (docs-only + one test edit; no runtime artifacts produced)
+
+Safety confirmations:
+- no real order placed / no `/v5/order/create` call / no `/v5/position/trading-stop` call
+- no sender adapter introduced / no executable adapter surface / no adapter class added / no `send` / `place_order` / `execute` method
+- no endpoint call / no socket opened / no urllib / no requests / no httpx / no http.client
+- no secrets read / no `.env*` read / no `os.environ` access / no dotenv
+- no HMAC / no signature header / no signing primitive
+- TASK-014L G20 sender policy still active (no protected_entry_policy_missing lift)
+- 5 protected demo positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified
+- main.py / src/risk.py / BybitExecutor untouched
+- no auto git commit / no auto git push / no auto branch / no auto tag
+
+Notes:
+- Root cause: argparse formats `description=` with `textwrap.wrap` at
+  the current terminal width. On Linux VPS the width differs from
+  Windows, so the string `"TASK-014AQ implementation design output"`
+  was split across two wrapped lines as `"TASK-014AQ implementation\n
+  design output"`, making the raw substring assertion fail. The fix
+  is standard: collapse all whitespace before asserting.
+- Local commit only; push pending Rick instruction.
+- next_required_task remains `TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run`.
+
+---
+
 ### 2026-06-14（TASK-014AR-FIX2-DOCS1 — Sync Static Skeleton Schema Label Docs）
 
 Agent: Claude (Sonnet)
