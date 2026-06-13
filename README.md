@@ -14,15 +14,15 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AR-FIX3, 2026-06-14）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AR-FIX3-DOCS1, 2026-06-14）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AR-FIX3 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AR-FIX3-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
 | latest_completed_task | TASK-014AR-FIX3 |
-| latest_commit | local — `TASK-014AR-FIX3: harden static skeleton CLI help test`（local；尚未推遠端） |
+| latest_commit | local — `c8cef5a` — `TASK-014AR-FIX3: harden static skeleton CLI help test`（local；尚未推遠端） |
 | current_phase | guarded entry real execution adapter static skeleton CLI help test hardened（cross-platform argparse whitespace normalization; **TASK-014AR runtime 主動 consume TASK-014AQ 產出的 `entry_implementation_design` artifact**：27 upstream artifacts、`CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1`、8 個 LIVE `entry_implementation_design_*` fail-closed gates。**FIX2 schema 標籤清理**：mode 現為 `static_skeleton_design_checklist` / `static_skeleton_design_approval`；markdown/report title 為 "Static Skeleton Design"；output 新增 `static_skeleton_design_conclusion=STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE` / `final_static_skeleton_design_verdict` / `static_skeleton_design_scope` 三個明確別名；舊有 `implementation_design_*` 欄位保留為 backward-compatible 別名；無 sender，無 executable adapter，無 `send` / `place_order` / `execute` method，無實單，no auto-git） |
 | next_required_task | `TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run` |
 | real_execution_allowed | **False** |

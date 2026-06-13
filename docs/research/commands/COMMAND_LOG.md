@@ -21,6 +21,62 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AR-FIX3-DOCS1 — Sync Static Skeleton CLI Help Test Docs）
+
+Agent: Claude (Sonnet)
+Command source: Rick chat instruction "Proceed with TASK-014AR-FIX3-DOCS1
+now, before push/VPS validation." (2026-06-14)
+Task: Synchronize cross-agent docs for TASK-014AR-FIX3 — fill in the
+actual local commit hash `c8cef5a` into the README Demo Trading
+Guarded Lifecycle Status board; update banner to "TASK-014AR-FIX3-
+DOCS1, 2026-06-14"; add this TASK-014AR-FIX3-DOCS1 event in
+COMMAND_LOG; verify NEXT_ACTION.md TASK-014AR-FIX3 status block and
+VPS validation commands are intact. No code changes, no execution
+logic, no G20 lift, no endpoint calls, no secret reads, no real entry
+execution, no executable sender path added, no `send` /
+`place_order` / `execute` method introduced, no adapter class added,
+no main.py / src/risk.py / BybitExecutor modification, no position
+modification.
+
+Status before: TASK-014AR-FIX3 committed locally as `c8cef5a` but
+README board showed the commit message without an explicit hash and
+banner still read "updated by TASK-014AR-FIX3, 2026-06-14"
+Status after: TASK-014AR-FIX3-DOCS1 docs sync DONE; cross-agent board
+points at TASK-014AR-FIX3 / `c8cef5a`; next_required_task =
+TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run
+
+Files changed:
+- `README.md` (Demo Trading Guarded Lifecycle Status board:
+  banner updated to "updated by TASK-014AR-FIX3-DOCS1, 2026-06-14";
+  `latest_completed_task` → TASK-014AR-FIX3;
+  `latest_commit` updated to include explicit hash `c8cef5a`)
+- `docs/research/commands/COMMAND_LOG.md` (this TASK-014AR-FIX3-DOCS1
+  entry)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` → 175/175 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` → 138/138 PASS (AQ regression intact)
+
+Outputs: docs-only — no runtime artifacts produced
+
+Safety confirmations:
+- no real order placed / no `/v5/order/create` call / no `/v5/position/trading-stop` call
+- no sender adapter introduced / no executable adapter surface / no adapter class added / no `send` / `place_order` / `execute` method
+- no endpoint call / no socket opened / no urllib / no requests / no httpx / no http.client
+- no secrets read / no `.env*` read / no `os.environ` access / no dotenv
+- no HMAC / no signature header / no signing primitive
+- TASK-014L G20 sender policy still active (no protected_entry_policy_missing lift)
+- 5 protected demo positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified
+- main.py / src/risk.py / BybitExecutor untouched
+- no auto git commit / no auto git push / no auto branch / no auto tag
+
+Notes:
+- Local commit only; push pending Rick instruction.
+- next_required_task remains `TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run`.
+
+---
+
 ### 2026-06-14（TASK-014AR-FIX3 — Harden Static Skeleton CLI Help Test）
 
 Agent: Claude (Sonnet)
