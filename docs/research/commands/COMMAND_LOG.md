@@ -21,6 +21,111 @@ Notes:
 
 ---
 
+### 2026-06-12（TASK-014AQ — Guarded Entry Real Execution Adapter Implementation Design）
+
+Agent: Claude (Opus)
+Command source: Rick chat instruction
+"請建立 TASK-014AQ：Guarded Entry Real Execution Adapter Implementation Design" (2026-06-12)
+Task: Add `src/demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py`
+as an implementation-design-only module that consumes the AP readiness-review
+artifact and the full AI→AP safety chain to produce a static implementation
+design (module boundary, request construction, transport, secret/signing,
+response/error handling, manual approval, stop/cleanup handoff, risk/
+idempotency/audit, forbidden surface, failure policy) for the FUTURE TASK-014AR
+static-skeleton design phase. The module DOES NOT implement the adapter, does
+not import any sender / private client / network primitive, does not call
+`/v5/order/create`, does not call `/v5/position/trading-stop`, does not read
+secrets, does not sign anything, does not lift TASK-014L G20, does not
+validate any token / phrase / approval input, does not treat any token /
+phrase / input as authorization, does not expose any executable adapter
+`send` / `place_order` / `execute` method, does not touch any existing
+protected demo position, and does not auto-commit / auto-push git.
+
+Inputs: 26 upstream artifacts — the 25 AP upstream artifacts plus AP's own
+guarded entry real execution adapter implementation readiness review output
+(`entry_implementation_readiness_review`).
+
+Status before: TASK-014AP-DOCS1 cross-agent docs synced (commit `3630055`)
+Status after: TASK-014AQ guarded entry real execution adapter implementation
+design committed locally; next_required_task =
+TASK-014AR_guarded_entry_real_execution_adapter_static_skeleton_design
+
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py` (new — 2190 lines; implementation-design-only module, 26 upstream artifact inputs, 4 status modes, 14 stages STAGE_0..STAGE_13, HARD_FAIL_GATES frozenset of 54 gates, 16 ACCEPTABLE_*_STATUSES frozensets incl. ACCEPTABLE_ENTRY_IMPLEMENTATION_READINESS_REVIEW_STATUSES, dataclass result with deep-copy to_dict() covering 14 sub-dict fields (artifact_preflight / implementation_design_scope / static_module_boundary_design / request_construction_design / transport_and_endpoint_design / secret_and_signing_design / response_and_error_handling_design / manual_approval_and_authorization_design / stop_cleanup_handoff_design / risk_idempotency_and_audit_design / forbidden_implementation_surface_design / failure_and_abort_implementation_design / documentation_sync_review / final_implementation_design_verdict); NO `/v5/order/create` invocation, NO `/v5/position/trading-stop` invocation, NO secret reads, NO HMAC/signature, NO sender adapter, NO executable adapter surface, NO `send` / `place_order` / `execute` method, NO real entry execution, NO urllib/requests/httpx/socket/http.client imports, NO G20 lift, NO AA-AP module reuse, NO auto git operations; ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter, ADAPTER_CONTRACT_VERSION=implementation_design_v1, CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1, CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1, CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1, ADAPTER_RESPONSE_STATUS=IMPLEMENTATION_DESIGN_NOT_SENT, ORDER_LINK_ID_PREFIX=IMPLEMENTATION_DESIGN_TINY_ENTRY_, IMPLEMENTATION_DESIGN_CONCLUSION=IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE; next_required_task = TASK-014AR_guarded_entry_real_execution_adapter_static_skeleton_design)
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py` (new — 1306 lines; 26 `--from-latest-*` flags incl. new `--from-latest-entry-implementation-readiness-review`, `--symbol`, `--expected-commit-hash` documented-only, `--allow-implementation-design`, `--allow-real-entry-execution`, `--write-report`; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_implementation_design/`; NO auto git operations)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py` (new — 2354 lines, 138 tests covering 4 status modes, 26 missing-artifact gates, endpoint/account/symbol invariants, AP implementation-readiness-review status/conclusion/grants/implementation/execution/send-allowed/audit-response acceptance, 14 stages presence + order, deep-copy roundtrip, AST + tokenize source-scan safety, 5 protected positions untouched, G20 never lifted, no AA-AP module reuse, next_required_task = TASK-014AR, 16 frozenset whitelists, HARD_FAIL_GATES expansion to 54 gates, identity constants exposed, CLI subprocess exit codes, report artifacts written, repo_tmp_path Windows ACL workaround)
+- `.gitignore` (added `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_implementation_design/`)
+- `docs/research/commands/NEXT_ACTION.md` (inserted TASK-014AQ status block + Next Rick Action section above TASK-014AP block; banner updated to "updated by TASK-014AQ, 2026-06-12")
+- `README.md` (Demo Trading Guarded Lifecycle Status board: banner → "updated by TASK-014AQ, 2026-06-12"; latest_completed_task → TASK-014AQ; latest_commit → `pending` (to be filled by TASK-014AQ-DOCS1); current_phase → guarded entry real execution adapter implementation design completed; next_required_task → TASK-014AR; latest validation → 138 PASS; adapter identity adds CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1, ADAPTER_CONTRACT_VERSION=implementation_design_v1; order link id prefix → IMPLEMENTATION_DESIGN_TINY_ENTRY_; audit response_status → IMPLEMENTATION_DESIGN_NOT_SENT; row renamed implementation_design_conclusion=IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE)
+- `docs/research/commands/COMMAND_LOG.md` (this TASK-014AQ entry)
+
+Validation:
+- py_compile src/demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py → PASS
+- py_compile scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py → PASS
+- py_compile tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py → 138/138 PASS
+
+Known pre-existing unrelated failure (NOT caused by TASK-014AQ):
+- tests/demo_trading/test_demo_emergency_close_sender.py::TestCLIIntegration::test_dry_run_cli_writes_report
+
+Outputs: design-only — runtime artifacts (when run) will be written to
+`outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_implementation_design/`
+(gitignored). The design output contains:
+- adapter implementation contract (documented, not instantiated)
+- static module boundary design (no executable class/method)
+- request construction design (endpoint_path_ref="/v5/order/create" reference
+  only, base_url_ref="https://api-demo.bybit.com" reference only, live
+  endpoint denylist documented)
+- transport / endpoint design (transport required-in-future-task, not
+  implemented here)
+- secret / signing design (documented as required-for-future, not implemented)
+- response / error handling design (response_status=IMPLEMENTATION_DESIGN_NOT_SENT,
+  exchange_order_id=None)
+- manual approval / authorization design (phrase / token / inputs required-in-
+  future-task, not validated here)
+- stop / cleanup handoff design (separate future task)
+- risk / idempotency / audit design (max_notional_usdt=10, ORDER_LINK_ID_PREFIX=
+  IMPLEMENTATION_DESIGN_TINY_ENTRY_ documented — never sent)
+- forbidden implementation surface design (no sender / no send / no place_order
+  / no execute / no private transport)
+- failure / abort implementation design (fail-closed semantics documented)
+- documentation sync review (this TASK-014AQ entry + README + NEXT_ACTION)
+- final implementation design verdict (implementation_design_conclusion=
+  IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE)
+- audit artifacts (response_status=IMPLEMENTATION_DESIGN_NOT_SENT,
+  next_required_task=TASK-014AR_guarded_entry_real_execution_adapter_static_skeleton_design)
+
+Safety confirmations:
+- no real order placed / no `/v5/order/create` call / no `/v5/position/trading-stop` call
+- no sender adapter introduced / no executable adapter surface / no `send` / `place_order` / `execute` method
+- no endpoint call / no socket opened / no urllib / no requests / no httpx / no http.client
+- no secrets read / no `.env*` read / no `os.environ` access / no dotenv
+- no HMAC / no signature header / no signing primitive
+- no AA-AP module reuse (no `from src.demo_tiny_*` imports in new module)
+- TASK-014L G20 sender policy still active (no protected_entry_policy_missing lift)
+- 5 protected demo positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified
+- main.py / src/risk.py / BybitExecutor untouched
+- no auto git commit / no auto git push / no auto branch / no auto tag
+- `--allow-real-entry-execution` flag exists only to PROVE the guard rejects
+  it with `REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED`; flag never triggers any
+  network / endpoint / order / secret / signing / sender code path
+- `implementation_design_conclusion=IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE`
+  is documented only — it does NOT authorize any real execution; the next
+  task TASK-014AR is a static-skeleton DESIGN task, not implementation, not
+  execution
+- no real sender / close-only sender / emergency-close sender / new-entry
+  sender / trading-stop adapter called or imported
+
+Notes:
+- Local commit only; push pending Rick instruction.
+- next_required_task = `TASK-014AR_guarded_entry_real_execution_adapter_static_skeleton_design`.
+- HARD_FAIL_GATES = 54 (26 missing-artifact + chain acceptance gates for
+  AM/AN/AO/AP + readiness conclusion gate + implementation_design_only flags
+  + symbol/qty/side/reduceOnly mismatch gates).
+- Tests = 138 PASS (above the 99 baseline target per Rick's spec).
+
+---
+
 ### 2026-06-12（TASK-014AP-DOCS1 — Adapter Implementation Readiness Review Docs Sync）
 
 Agent: Claude (Opus)
