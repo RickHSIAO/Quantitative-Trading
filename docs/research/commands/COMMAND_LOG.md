@@ -21,6 +21,71 @@ Notes:
 
 ---
 
+### 2026-06-13（TASK-014AR-FIX1-DOCS1 — Sync Static Skeleton Artifact Wiring Docs）
+
+Agent: Claude (Opus)
+Command source: Rick chat instruction "Proceed with TASK-014AR-FIX1-DOCS1
+now, before push/VPS validation." (2026-06-13)
+Task: Synchronize cross-agent docs for TASK-014AR-FIX1 — fill in the
+actual local commit hash `e8a3f4c` into the README Demo Trading Guarded
+Lifecycle Status board; update `latest_completed_task` to TASK-014AR-FIX1
+and `current_phase` to "guarded entry real execution adapter static
+skeleton design fixed and wired to implementation design artifact";
+add this TASK-014AR-FIX1-DOCS1 event in COMMAND_LOG; verify
+NEXT_ACTION.md TASK-014AR-FIX1 status block and VPS validation
+commands are intact. No code changes, no execution logic, no G20 lift,
+no endpoint calls, no secret reads, no real entry execution, no
+executable sender path added, no `send` / `place_order` / `execute`
+method introduced, no adapter class added, no main.py / src/risk.py /
+BybitExecutor modification, no position modification.
+
+Status before: TASK-014AR-FIX1 source/preview/tests/docs committed
+locally as `e8a3f4c` but README board still pointed at the commit
+message string without an explicit hash, and `latest_completed_task`
+still read "TASK-014AR（已由 TASK-014AR-FIX1 補正）" rather than
+TASK-014AR-FIX1 directly
+Status after: TASK-014AR-FIX1-DOCS1 docs sync DONE; cross-agent board
+points at TASK-014AR-FIX1 / `e8a3f4c`; `current_phase` explicitly
+declares static skeleton design fixed and wired to implementation
+design artifact; next_required_task =
+TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run
+
+Files changed:
+- `README.md` (Demo Trading Guarded Lifecycle Status board:
+  banner updated to "updated by TASK-014AR-FIX1-DOCS1, 2026-06-13";
+  `latest_completed_task` updated to TASK-014AR-FIX1;
+  `latest_commit` updated to include explicit hash `e8a3f4c`;
+  `current_phase` rewritten to "guarded entry real execution adapter
+  static skeleton design fixed and wired to implementation design
+  artifact"; `latest_validation` augmented with AQ regression line
+  138 PASS)
+- `docs/research/commands/COMMAND_LOG.md` (this TASK-014AR-FIX1-DOCS1
+  entry)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` → 159/159 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` → 138/138 PASS (AQ regression intact)
+
+Outputs: docs-only — no runtime artifacts produced
+
+Safety confirmations:
+- no real order placed / no `/v5/order/create` call / no `/v5/position/trading-stop` call
+- no sender adapter introduced / no executable adapter surface / no adapter class added / no `send` / `place_order` / `execute` method
+- no endpoint call / no socket opened / no urllib / no requests / no httpx / no http.client
+- no secrets read / no `.env*` read / no `os.environ` access / no dotenv
+- no HMAC / no signature header / no signing primitive
+- TASK-014L G20 sender policy still active (no protected_entry_policy_missing lift)
+- 5 protected demo positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified
+- main.py / src/risk.py / BybitExecutor untouched
+- no auto git commit / no auto git push / no auto branch / no auto tag
+
+Notes:
+- Local commit only; push pending Rick instruction.
+- next_required_task remains `TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run`.
+
+---
+
 ### 2026-06-13（TASK-014AR-FIX1 — Wire Static Skeleton Design to Implementation Design Artifact）
 
 Agent: Claude (Opus)
