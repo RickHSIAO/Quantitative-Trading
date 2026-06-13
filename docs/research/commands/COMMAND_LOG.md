@@ -21,6 +21,125 @@ Notes:
 
 ---
 
+### 2026-06-13（TASK-014AR — Guarded Entry Real Execution Adapter Static Skeleton Design）
+
+Agent: Claude (Opus)
+Command source: Rick chat instruction "I explicitly authorize TASK-014AR now.
+Proceed with TASK-014AR: Guarded Entry Real Execution Adapter Static Skeleton
+Design." (2026-06-13)
+Task: Add static-skeleton-design-only module
+`src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+that mirrors the TASK-014AQ implementation-design contract and forward-
+declares the AQ → AR consumption surface for TASK-014AS: new constant
+`CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION = "implementation_design_v1"`,
+new frozenset `ACCEPTABLE_ENTRY_IMPLEMENTATION_DESIGN_STATUSES`
+(TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_READY /
+_READY_BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED), and
+eight new gate identifiers (`entry_implementation_design_missing`,
+`_status_unacceptable`, `_grants_execution_true`,
+`_adapter_implementation_included_true`, `_adapter_execution_included_true`,
+`_send_allowed_true`, `_conclusion_mismatch`,
+`_response_status_unacceptable`) all registered in `_HARD_FAIL_GATES` ready
+to be wired by TASK-014AS dry-run. ADAPTER_CONTRACT_VERSION advanced to
+`static_skeleton_design_v1`; ADAPTER_RESPONSE_STATUS = `STATIC_SKELETON_
+DESIGN_NOT_SENT`; ORDER_LINK_ID_PREFIX = `STATIC_SKELETON_DESIGN_TINY_ENTRY_`;
+STATIC_SKELETON_DESIGN_CONCLUSION = `STATIC_SKELETON_DESIGN_READY_NOT_
+EXECUTABLE`. NO sender, NO executable adapter, NO `send` / `place_order` /
+`execute` method, NO real entry execution, NO endpoint calls, NO secrets, NO
+HMAC, NO signing, NO AA-AQ module reuse, NO auto-git operations, G20 still
+active, 5 protected positions (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT /
+EDUUSDT) untouched. Local commit only — no push.
+
+Status before: TASK-014AQ DONE (commit `9513cdb`), VPS validated 138/138 PASS,
+status=TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_READY,
+next_required_task = TASK-014AR_guarded_entry_real_execution_adapter_static_
+skeleton_design
+Status after: TASK-014AR static-skeleton-design module + preview + 143-test
+suite + .gitignore + NEXT_ACTION + README + COMMAND_LOG committed locally;
+next_required_task = TASK-014AS_guarded_entry_real_execution_adapter_static_
+skeleton_dry_run
+
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (new — 2200+ LOC; 14 stages STAGE_0..STAGE_13; 62-gate `_HARD_FAIL_GATES`
+  frozenset incl. 8 new forward-declared `entry_implementation_design_*`
+  gates; 17 ACCEPTABLE_*_STATUSES frozensets incl. new
+  ACCEPTABLE_ENTRY_IMPLEMENTATION_DESIGN_STATUSES; dataclass result with
+  deep-copy `to_dict()` over 14 sub-dict fields; ADAPTER_NAME =
+  `GuardedTinyEntryRealExecutionAdapter`; ADAPTER_CONTRACT_VERSION =
+  `static_skeleton_design_v1`; CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION
+  = `implementation_design_v1`; ADAPTER_RESPONSE_STATUS =
+  `STATIC_SKELETON_DESIGN_NOT_SENT`; ORDER_LINK_ID_PREFIX =
+  `STATIC_SKELETON_DESIGN_TINY_ENTRY_`; STATIC_SKELETON_DESIGN_CONCLUSION =
+  `STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE`; `__all__` exports updated
+  with the new constants and gates)
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (new — 1300+ LOC; CLI flags mirror AQ preview;
+  writes `{ts}_*` + `latest_*` JSON+MD to
+  `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_static_skeleton_design/`;
+  NO auto-git operations; NO forbidden execution flags)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (new — 2400+ LOC; 143 tests; new
+  TestAR122ConsumedImplementationDesignContractVersion,
+  TestAR123AcceptableEntryImplementationDesignStatuses,
+  TestAR124AQAcceptanceGateIdentifiersDeclared classes validate forward-
+  declared AQ-consumption surface; preserves all 138 mechanical mirror
+  tests from the AQ template)
+- `.gitignore`
+  (added `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_static_skeleton_design/`)
+- `docs/research/commands/NEXT_ACTION.md`
+  (new TASK-014AR Status block at top; banner advanced from
+  "updated by TASK-014AQ (2026-06-12)" → "updated by TASK-014AR
+  (2026-06-13)"; new "Next Rick Action (set by 2026-06-13 TASK-014AR)"
+  with VPS pull / validate / optional preview / decide-AS-authorization
+  steps)
+- `README.md`
+  (Demo Trading Guarded Lifecycle Status board banner updated to
+  "updated by TASK-014AR, 2026-06-13"; `latest_completed_task` →
+  TASK-014AR; `current_phase` advanced to "guarded entry real execution
+  adapter static skeleton design completed"; `next_required_task` →
+  TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run;
+  `latest_validation` → `pytest ...static_skeleton_design.py` → 143 PASS;
+  adapter identity updated to `static_skeleton_design_v1` +
+  CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION; order link id prefix →
+  `STATIC_SKELETON_DESIGN_TINY_ENTRY_`; audit response_status →
+  `STATIC_SKELETON_DESIGN_NOT_SENT`; static_skeleton_design_conclusion →
+  `STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE`)
+- `docs/research/commands/COMMAND_LOG.md` (this TASK-014AR entry)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → 143/143 PASS
+- AST + tokenize source-scan safety preserved: no urllib / requests / httpx /
+  socket / http.client / hmac / hashlib / dotenv / os.environ / sender /
+  main / risk / BybitExecutor / pybit / executable adapter `send` /
+  `place_order` / `execute` methods / forbidden flags / AA-AQ module reuse /
+  auto-git in src OR preview
+- ADAPTER_CONTRACT_VERSION = `static_skeleton_design_v1`
+- CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION = `implementation_design_v1`
+- ADAPTER_RESPONSE_STATUS = `STATIC_SKELETON_DESIGN_NOT_SENT`
+- ORDER_LINK_ID_PREFIX = `STATIC_SKELETON_DESIGN_TINY_ENTRY_`
+- STATIC_SKELETON_DESIGN_CONCLUSION = `STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE`
+
+Outputs: none (runtime preview not invoked locally; outputs dir gitignored).
+
+Notes:
+- TASK-014AR scope deliberately narrow: STATIC SKELETON DESIGN ONLY —
+  forward-declares the AQ → AR consumption surface (1 constant + 1 frozenset +
+  8 gate identifiers) as well-formed identifiers in `_HARD_FAIL_GATES` and
+  `__all__`, validated by 5 new tests. The actual runtime wiring (parsing
+  the AQ artifact, populating dataclass fields from it, triggering the new
+  gates against AQ output) is intentionally deferred to TASK-014AS guarded
+  entry real execution adapter static skeleton dry-run. This preserves the
+  fail-closed invariant chain AN → AO → AP → AQ → AR → AS without enabling
+  any real execution.
+- G20 sender policy unchanged. Five protected positions never touched. No
+  endpoint called. No secret read. No HMAC. No signature. No real order. No
+  auto-git operations. Local commit only; remote push deferred to Rick's
+  explicit instruction.
+
+---
+
 ### 2026-06-12（TASK-014AQ-DOCS1 — Adapter Implementation Design Docs Sync）
 
 Agent: Claude (Opus)

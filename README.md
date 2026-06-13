@@ -14,29 +14,29 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AQ-DOCS1, 2026-06-12）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AR, 2026-06-13）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AQ-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AR 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AQ |
-| latest_commit | `9513cdb` — `TASK-014AQ: add guarded entry real execution adapter implementation design`（local；尚未推遠端） |
-| current_phase | guarded entry real execution adapter implementation design completed（implementation-design-only，consumes AP readiness contract `readiness_review_v1` + AO dry-run contract `dry_run_v1` + AN design contract `design_only_v1`，無 sender，無 executable adapter，無 `send` / `place_order` / `execute` method，未驗證任何 token / phrase / approval input，無實單，no auto-git） |
-| next_required_task | `TASK-014AR_guarded_entry_real_execution_adapter_static_skeleton_design` |
+| latest_completed_task | TASK-014AR |
+| latest_commit | local — `TASK-014AR: add guarded entry real execution adapter static skeleton design`（local；尚未推遠端） |
+| current_phase | guarded entry real execution adapter static skeleton design completed（static-skeleton-design-only，forward-declares CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=`implementation_design_v1` + ACCEPTABLE_ENTRY_IMPLEMENTATION_DESIGN_STATUSES + 8 `entry_implementation_design_*` gate identifiers for TASK-014AS to wire；無 sender，無 executable adapter，無 `send` / `place_order` / `execute` method，無實單，no auto-git） |
+| next_required_task | `TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
 | actual stop attach | **FORBIDDEN** |
 | actual cleanup | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py` → 138 PASS |
+| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → 143 PASS |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
-| adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=implementation_design_v1`、`CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1`、`CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1`、`CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
-| order link id prefix | `IMPLEMENTATION_DESIGN_TINY_ENTRY_`（implementation-design label — 永不會作為 real order client id 送出） |
-| audit response_status | `IMPLEMENTATION_DESIGN_NOT_SENT`（無任何 outbound request） |
-| implementation_design_conclusion | `IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE`（documented only — 仍不授權任何 real execution；下一步是 TASK-014AR static skeleton **design**，不是實作或執行） |
+| adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=static_skeleton_design_v1`、`CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1`、`CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1`、`CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1`、`CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
+| order link id prefix | `STATIC_SKELETON_DESIGN_TINY_ENTRY_`（static-skeleton-design label — 永不會作為 real order client id 送出） |
+| audit response_status | `STATIC_SKELETON_DESIGN_NOT_SENT`（無任何 outbound request） |
+| static_skeleton_design_conclusion | `STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE`（documented only — 仍不授權任何 real execution；下一步是 TASK-014AS static skeleton **dry-run**，仍不是實作或執行） |
 
 權威來源（authoritative pointers — 任何不一致以下列檔案為準）：
 
