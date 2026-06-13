@@ -762,6 +762,14 @@ class TinyGuardedEntryRealExecutionAdapterStaticSkeletonDesignResult:
     upstream_entry_implementation_readiness_review_send_allowed:        bool = False
     upstream_entry_implementation_readiness_review_conclusion:          str = ""
     upstream_entry_implementation_readiness_review_response_status:     str = ""
+    upstream_entry_implementation_design_status:                        str = ""
+    upstream_entry_implementation_design_grants_execution:              bool = False
+    upstream_entry_implementation_design_adapter_implementation_included: bool = False
+    upstream_entry_implementation_design_adapter_execution_included:    bool = False
+    upstream_entry_implementation_design_send_allowed:                  bool = False
+    upstream_entry_implementation_design_conclusion:                    str = ""
+    upstream_entry_implementation_design_response_status:               str = ""
+    consumed_implementation_design_contract_version:                    str = CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION
 
     blocked_gates:                list[str] = field(default_factory=list)
     failed_stage:                 str  = ""
@@ -899,6 +907,22 @@ class TinyGuardedEntryRealExecutionAdapterStaticSkeletonDesignResult:
                 self.upstream_entry_implementation_readiness_review_conclusion,
             "upstream_entry_implementation_readiness_review_response_status":
                 self.upstream_entry_implementation_readiness_review_response_status,
+            "upstream_entry_implementation_design_status":
+                self.upstream_entry_implementation_design_status,
+            "upstream_entry_implementation_design_grants_execution":
+                self.upstream_entry_implementation_design_grants_execution,
+            "upstream_entry_implementation_design_adapter_implementation_included":
+                self.upstream_entry_implementation_design_adapter_implementation_included,
+            "upstream_entry_implementation_design_adapter_execution_included":
+                self.upstream_entry_implementation_design_adapter_execution_included,
+            "upstream_entry_implementation_design_send_allowed":
+                self.upstream_entry_implementation_design_send_allowed,
+            "upstream_entry_implementation_design_conclusion":
+                self.upstream_entry_implementation_design_conclusion,
+            "upstream_entry_implementation_design_response_status":
+                self.upstream_entry_implementation_design_response_status,
+            "consumed_implementation_design_contract_version":
+                self.consumed_implementation_design_contract_version,
             "blocked_gates":                             list(self.blocked_gates),
             "failed_stage":                              self.failed_stage,
             "status":                                    self.status,
@@ -1029,6 +1053,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
         entry_adapter_design:                 dict[str, Any] | None,
         entry_adapter_dry_run:                dict[str, Any] | None,
         entry_implementation_readiness_review: dict[str, Any] | None,
+        entry_implementation_design:          dict[str, Any] | None,
         symbol:                               str  = DEFAULT_SELECTED_SYMBOL,
         expected_commit_hash:                 str  = "",
         current_commit_hash:                  str  = "",
@@ -1082,6 +1107,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
             "entry_adapter_design":    isinstance(entry_adapter_design, dict) and bool(entry_adapter_design),
             "entry_adapter_dry_run":   isinstance(entry_adapter_dry_run, dict) and bool(entry_adapter_dry_run),
             "entry_impl_readiness":    isinstance(entry_implementation_readiness_review, dict) and bool(entry_implementation_readiness_review),
+            "entry_impl_design":       isinstance(entry_implementation_design, dict) and bool(entry_implementation_design),
         }
 
         endpoint_family = _safe_str((readonly_smoke or {}).get("endpoint_family", ""))
@@ -1178,7 +1204,35 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
             _apr_audit.get("response_status", apr.get("response_status", ""))
         )
 
-        # Missing-artifact gates (26)
+        # AQ implementation-design fields (NEW for TASK-014AR — 27th artifact)
+        aqd = entry_implementation_design or {}
+        entry_impl_design_status = _safe_str(aqd.get("status", ""))
+        entry_impl_design_grants = _safe_bool(
+            aqd.get("implementation_design_grants_execution", False)
+        )
+        entry_impl_design_impl = _safe_bool(
+            aqd.get("adapter_implementation_included", False)
+        )
+        entry_impl_design_exec = _safe_bool(
+            aqd.get("adapter_execution_included", False)
+        )
+        entry_impl_design_send_allowed = _safe_bool(
+            aqd.get("send_allowed", False)
+        )
+        # Conclusion may be at top-level or inside final_implementation_design_verdict
+        _aqd_verdict = aqd.get("final_implementation_design_verdict") if isinstance(
+            aqd.get("final_implementation_design_verdict"), dict
+        ) else {}
+        entry_impl_design_conclusion = _safe_str(
+            aqd.get("implementation_design_conclusion",
+                    _aqd_verdict.get("implementation_design_conclusion", ""))
+        )
+        _aqd_audit = aqd.get("audit_artifacts") if isinstance(aqd.get("audit_artifacts"), dict) else {}
+        entry_impl_design_response_status = _safe_str(
+            _aqd_audit.get("response_status", aqd.get("response_status", ""))
+        )
+
+        # Missing-artifact gates (27)
         if not present_flags["readonly"]:           blocked.append(GATE_READONLY_SMOKE_MISSING)
         if not present_flags["recon"]:              blocked.append(GATE_RECONCILIATION_MISSING)
         if not present_flags["protection"]:         blocked.append(GATE_PROTECTION_MISSING)
@@ -1205,6 +1259,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
         if not present_flags["entry_adapter_design"]: blocked.append(GATE_ENTRY_ADAPTER_DESIGN_MISSING)
         if not present_flags["entry_adapter_dry_run"]: blocked.append(GATE_ENTRY_ADAPTER_DRY_RUN_MISSING)
         if not present_flags["entry_impl_readiness"]: blocked.append(GATE_ENTRY_IMPLEMENTATION_READINESS_REVIEW_MISSING)
+        if not present_flags["entry_impl_design"]:  blocked.append(GATE_ENTRY_IMPLEMENTATION_DESIGN_MISSING)
 
         if present_flags["readonly"] and endpoint_family and endpoint_family != EXPECTED_ENDPOINT_FAMILY:
             blocked.append(GATE_ENDPOINT_FAMILY_NOT_BYBIT_DEMO)
@@ -1281,12 +1336,38 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
         ):
             blocked.append(GATE_ENTRY_IMPLEMENTATION_READINESS_REVIEW_RESPONSE_STATUS_UNACCEPTABLE)
 
+        # AQ acceptance (NEW — TASK-014AR consumes AQ implementation design at runtime)
+        if present_flags["entry_impl_design"] and entry_impl_design_status and (
+            entry_impl_design_status not in ACCEPTABLE_ENTRY_IMPLEMENTATION_DESIGN_STATUSES
+        ):
+            blocked.append(GATE_ENTRY_IMPLEMENTATION_DESIGN_STATUS_UNACCEPTABLE)
+        if present_flags["entry_impl_design"] and entry_impl_design_grants:
+            blocked.append(GATE_ENTRY_IMPLEMENTATION_DESIGN_GRANTS_EXECUTION)
+        if present_flags["entry_impl_design"] and entry_impl_design_impl:
+            blocked.append(GATE_ENTRY_IMPLEMENTATION_DESIGN_IMPLEMENTATION_INCLUDED)
+        if present_flags["entry_impl_design"] and entry_impl_design_exec:
+            blocked.append(GATE_ENTRY_IMPLEMENTATION_DESIGN_EXECUTION_INCLUDED)
+        if present_flags["entry_impl_design"] and entry_impl_design_send_allowed:
+            blocked.append(GATE_ENTRY_IMPLEMENTATION_DESIGN_SEND_ALLOWED)
+        if (
+            present_flags["entry_impl_design"]
+            and entry_impl_design_conclusion
+            and entry_impl_design_conclusion != "IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE"
+        ):
+            blocked.append(GATE_ENTRY_IMPLEMENTATION_DESIGN_CONCLUSION_MISMATCH)
+        if (
+            present_flags["entry_impl_design"]
+            and entry_impl_design_response_status
+            and entry_impl_design_response_status != "IMPLEMENTATION_DESIGN_NOT_SENT"
+        ):
+            blocked.append(GATE_ENTRY_IMPLEMENTATION_DESIGN_RESPONSE_STATUS_UNACCEPTABLE)
+
         if sym and sym != DESIGN_EXPECTED_SYMBOL:
             blocked.append(GATE_SELECTED_SYMBOL_NOT_SOLUSDT)
 
         stages[STAGE_0_ARTIFACT_PREFLIGHT] = {
             "stage":   STAGE_0_ARTIFACT_PREFLIGHT,
-            "summary": "Validate 26 upstream artifacts + runtime proof envelope + AM / AN / AO / AP acceptance flags.",
+            "summary": "Validate 27 upstream artifacts + runtime proof envelope + AM / AN / AO / AP / AQ acceptance flags.",
             "present_flags":                     dict(present_flags),
             "endpoint_family_observed":          endpoint_family,
             "endpoint_family_expected":          EXPECTED_ENDPOINT_FAMILY,
@@ -1304,6 +1385,12 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
             "entry_impl_readiness_review_response_status_observed":  entry_impl_readiness_response_status,
             "entry_impl_readiness_review_status_acceptable":         sorted(
                 ACCEPTABLE_ENTRY_IMPLEMENTATION_READINESS_REVIEW_STATUSES
+            ),
+            "entry_implementation_design_status_observed":           entry_impl_design_status,
+            "entry_implementation_design_conclusion_observed":       entry_impl_design_conclusion,
+            "entry_implementation_design_response_status_observed":  entry_impl_design_response_status,
+            "entry_implementation_design_status_acceptable":         sorted(
+                ACCEPTABLE_ENTRY_IMPLEMENTATION_DESIGN_STATUSES
             ),
             "selected_symbol":                   sym,
             "selected_symbol_expected":          DESIGN_EXPECTED_SYMBOL,
@@ -1809,6 +1896,22 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
             "sanitized":                              True,
             "no_secrets":                             True,
             "forbidden_log_fields":                   list(FORBIDDEN_LOG_FIELDS),
+            "consumed_implementation_design_contract_version":
+                CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION,
+            "upstream_entry_implementation_design_status":
+                entry_impl_design_status,
+            "upstream_entry_implementation_design_grants_execution":
+                entry_impl_design_grants,
+            "upstream_entry_implementation_design_adapter_implementation_included":
+                entry_impl_design_impl,
+            "upstream_entry_implementation_design_adapter_execution_included":
+                entry_impl_design_exec,
+            "upstream_entry_implementation_design_send_allowed":
+                entry_impl_design_send_allowed,
+            "upstream_entry_implementation_design_conclusion":
+                entry_impl_design_conclusion,
+            "upstream_entry_implementation_design_response_status":
+                entry_impl_design_response_status,
             "next_required_task":                     NEXT_REQUIRED_TASK,
         }
 
@@ -1912,6 +2015,14 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
             upstream_entry_implementation_readiness_review_send_allowed=entry_impl_readiness_send_allowed,
             upstream_entry_implementation_readiness_review_conclusion=entry_impl_readiness_conclusion,
             upstream_entry_implementation_readiness_review_response_status=entry_impl_readiness_response_status,
+            upstream_entry_implementation_design_status=entry_impl_design_status,
+            upstream_entry_implementation_design_grants_execution=entry_impl_design_grants,
+            upstream_entry_implementation_design_adapter_implementation_included=entry_impl_design_impl,
+            upstream_entry_implementation_design_adapter_execution_included=entry_impl_design_exec,
+            upstream_entry_implementation_design_send_allowed=entry_impl_design_send_allowed,
+            upstream_entry_implementation_design_conclusion=entry_impl_design_conclusion,
+            upstream_entry_implementation_design_response_status=entry_impl_design_response_status,
+            consumed_implementation_design_contract_version=CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION,
             blocked_gates=unique,
             failed_stage=failed_stage,
             status=status_out,
@@ -1981,6 +2092,14 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
             GATE_ENTRY_IMPLEMENTATION_READINESS_REVIEW_SEND_ALLOWED,
             GATE_ENTRY_IMPLEMENTATION_READINESS_REVIEW_CONCLUSION_MISMATCH,
             GATE_ENTRY_IMPLEMENTATION_READINESS_REVIEW_RESPONSE_STATUS_UNACCEPTABLE,
+            GATE_ENTRY_IMPLEMENTATION_DESIGN_MISSING,
+            GATE_ENTRY_IMPLEMENTATION_DESIGN_STATUS_UNACCEPTABLE,
+            GATE_ENTRY_IMPLEMENTATION_DESIGN_GRANTS_EXECUTION,
+            GATE_ENTRY_IMPLEMENTATION_DESIGN_IMPLEMENTATION_INCLUDED,
+            GATE_ENTRY_IMPLEMENTATION_DESIGN_EXECUTION_INCLUDED,
+            GATE_ENTRY_IMPLEMENTATION_DESIGN_SEND_ALLOWED,
+            GATE_ENTRY_IMPLEMENTATION_DESIGN_CONCLUSION_MISMATCH,
+            GATE_ENTRY_IMPLEMENTATION_DESIGN_RESPONSE_STATUS_UNACCEPTABLE,
             GATE_SELECTED_SYMBOL_NOT_SOLUSDT,
             GATE_SOLUSDT_EXISTS_FAIL_CLOSED,
         }

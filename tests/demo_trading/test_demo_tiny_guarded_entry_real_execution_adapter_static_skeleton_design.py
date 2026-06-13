@@ -657,6 +657,47 @@ def _valid_entry_implementation_readiness_review() -> dict:
     }
 
 
+def _valid_entry_implementation_design() -> dict:
+    """The 27th (newest) upstream artifact: TASK-014AQ's output."""
+    return {
+        "timestamp_utc":                "2026-06-12T23:59:59.9999995Z",
+        "mode":                         "implementation_design_checklist",
+        "selected_symbol":              "SOLUSDT",
+        "status":                       "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_READY",
+        "adapter_name":                 ADAPTER_NAME,
+        "adapter_contract_version":     "implementation_design_v1",
+        "consumed_readiness_contract_version": "readiness_review_v1",
+        "consumed_dry_run_contract_version": "dry_run_v1",
+        "consumed_design_contract_version": "design_only_v1",
+        "implementation_design_grants_execution": False,
+        "adapter_implementation_included": False,
+        "adapter_execution_included":   False,
+        "send_allowed":                 False,
+        "implementation_design_conclusion": "IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE",
+        "implementation_design_only":   True,
+        "real_execution_allowed":              False,
+        "real_entry_implemented":              False,
+        "guarded_entry_real_execution_adapter_implementation_design": True,
+        "current_task_real_execution_allowed": False,
+        "g20_policy_still_in_place":           True,
+        "g20_lifted":                          False,
+        "no_secrets_loaded":                   True,
+        "no_auto_git_operations":              True,
+        "expected_commit_hash":         "0000000000000000000000000000000000000000",
+        "audit_artifacts": {
+            "response_status": "IMPLEMENTATION_DESIGN_NOT_SENT",
+        },
+        "final_implementation_design_verdict": {
+            "implementation_design_conclusion": "IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE",
+            "implementation_design_grants_execution": False,
+            "adapter_implementation_included": False,
+            "adapter_execution_included": False,
+            "send_allowed": False,
+        },
+        "next_required_task":           "TASK-014AR_guarded_entry_real_execution_adapter_static_skeleton_design",
+    }
+
+
 def _read_code_only(path: Path) -> str:
     tokens: list[str] = []
     with open(path, "rb") as fh:
@@ -701,6 +742,7 @@ def _run(
     entry_adapter_design=_UNSET,
     entry_adapter_dry_run=_UNSET,
     entry_implementation_readiness_review=_UNSET,
+    entry_implementation_design=_UNSET,
     symbol=DEFAULT_SELECTED_SYMBOL,
     expected_commit_hash="",
     current_commit_hash="",
@@ -735,6 +777,7 @@ def _run(
         entry_adapter_design=_valid_entry_adapter_design()                        if entry_adapter_design                  is _UNSET else entry_adapter_design,
         entry_adapter_dry_run=_valid_entry_adapter_dry_run()                      if entry_adapter_dry_run                 is _UNSET else entry_adapter_dry_run,
         entry_implementation_readiness_review=_valid_entry_implementation_readiness_review() if entry_implementation_readiness_review is _UNSET else entry_implementation_readiness_review,
+        entry_implementation_design=_valid_entry_implementation_design() if entry_implementation_design is _UNSET else entry_implementation_design,
         symbol=symbol,
         expected_commit_hash=expected_commit_hash,
         current_commit_hash=current_commit_hash,
@@ -1829,6 +1872,7 @@ class TestAQ88CLIExitCodes:
             entry_adapter_design_dir=empty,
             entry_adapter_dry_run_dir=empty,
             entry_implementation_readiness_review_dir=empty,
+            entry_implementation_design_dir=empty,
             output_dir=repo_tmp_path / "out",
         )
         assert rc == 1
@@ -2426,3 +2470,201 @@ class TestAR124AQAcceptanceGateIdentifiersDeclared:
             GATE_ENTRY_IMPLEMENTATION_DESIGN_RESPONSE_STATUS_UNACCEPTABLE,
         }
         assert len(gates) == 8
+
+
+# ===========================================================================
+# AR-FIX1: TASK-014AR runtime-consumes TASK-014AQ implementation design output
+# (AQ becomes the 27th upstream artifact; AQ acceptance gates are LIVE)
+# ===========================================================================
+
+class TestARFIX1AQRuntimeConsumptionPropagatesFields:
+    def test_valid_run_propagates_aq_fields_into_result(self):
+        r = _run()
+        assert r.status == STATUS_IMPLEMENTATION_DESIGN_READY
+        assert r.upstream_entry_implementation_design_status \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_READY"
+        assert r.upstream_entry_implementation_design_grants_execution is False
+        assert r.upstream_entry_implementation_design_adapter_implementation_included is False
+        assert r.upstream_entry_implementation_design_adapter_execution_included is False
+        assert r.upstream_entry_implementation_design_send_allowed is False
+        assert r.upstream_entry_implementation_design_conclusion \
+            == "IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE"
+        assert r.upstream_entry_implementation_design_response_status \
+            == "IMPLEMENTATION_DESIGN_NOT_SENT"
+        assert r.consumed_implementation_design_contract_version == "implementation_design_v1"
+
+    def test_to_dict_exposes_aq_fields(self):
+        r = _run()
+        d = r.to_dict()
+        assert d["upstream_entry_implementation_design_status"] \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_READY"
+        assert d["upstream_entry_implementation_design_conclusion"] \
+            == "IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE"
+        assert d["upstream_entry_implementation_design_response_status"] \
+            == "IMPLEMENTATION_DESIGN_NOT_SENT"
+        assert d["consumed_implementation_design_contract_version"] \
+            == "implementation_design_v1"
+
+    def test_audit_artifacts_includes_aq_fields(self):
+        r = _run()
+        a = r.audit_artifacts
+        assert a["upstream_entry_implementation_design_status"] \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_READY"
+        assert a["upstream_entry_implementation_design_conclusion"] \
+            == "IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE"
+        assert a["upstream_entry_implementation_design_response_status"] \
+            == "IMPLEMENTATION_DESIGN_NOT_SENT"
+        assert a["consumed_implementation_design_contract_version"] \
+            == "implementation_design_v1"
+
+
+class TestARFIX1AQMissingFailsClosed:
+    def test_none_entry_implementation_design_fails_closed(self):
+        r = _run(entry_implementation_design=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_MISSING in r.blocked_gates
+
+
+class TestARFIX1AQStatusUnacceptableFailsClosed:
+    def test_unacceptable_status_blocked(self):
+        bad = _valid_entry_implementation_design()
+        bad["status"] = "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_UNEXPECTED"
+        r = _run(entry_implementation_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_STATUS_UNACCEPTABLE in r.blocked_gates
+
+
+class TestARFIX1AQGrantsExecutionFailsClosed:
+    def test_grants_execution_true_blocked(self):
+        bad = _valid_entry_implementation_design()
+        bad["implementation_design_grants_execution"] = True
+        r = _run(entry_implementation_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_GRANTS_EXECUTION in r.blocked_gates
+
+
+class TestARFIX1AQImplementationIncludedFailsClosed:
+    def test_implementation_included_true_blocked(self):
+        bad = _valid_entry_implementation_design()
+        bad["adapter_implementation_included"] = True
+        r = _run(entry_implementation_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_IMPLEMENTATION_INCLUDED in r.blocked_gates
+
+
+class TestARFIX1AQExecutionIncludedFailsClosed:
+    def test_execution_included_true_blocked(self):
+        bad = _valid_entry_implementation_design()
+        bad["adapter_execution_included"] = True
+        r = _run(entry_implementation_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_EXECUTION_INCLUDED in r.blocked_gates
+
+
+class TestARFIX1AQSendAllowedFailsClosed:
+    def test_send_allowed_true_blocked(self):
+        bad = _valid_entry_implementation_design()
+        bad["send_allowed"] = True
+        r = _run(entry_implementation_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_SEND_ALLOWED in r.blocked_gates
+
+
+class TestARFIX1AQConclusionMismatchFailsClosed:
+    def test_top_level_conclusion_mismatch_blocked(self):
+        bad = _valid_entry_implementation_design()
+        bad["implementation_design_conclusion"] = "SOMETHING_ELSE"
+        bad["final_implementation_design_verdict"]["implementation_design_conclusion"] = "SOMETHING_ELSE"
+        r = _run(entry_implementation_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_CONCLUSION_MISMATCH in r.blocked_gates
+
+    def test_nested_conclusion_fallback_is_consumed(self):
+        bad = _valid_entry_implementation_design()
+        bad.pop("implementation_design_conclusion", None)
+        bad["final_implementation_design_verdict"]["implementation_design_conclusion"] = "SOMETHING_ELSE"
+        r = _run(entry_implementation_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_CONCLUSION_MISMATCH in r.blocked_gates
+
+
+class TestARFIX1AQResponseStatusMismatchFailsClosed:
+    def test_response_status_mismatch_blocked(self):
+        bad = _valid_entry_implementation_design()
+        bad["audit_artifacts"]["response_status"] = "SOMETHING_ELSE"
+        r = _run(entry_implementation_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_RESPONSE_STATUS_UNACCEPTABLE in r.blocked_gates
+
+    def test_top_level_response_status_fallback_is_consumed(self):
+        bad = _valid_entry_implementation_design()
+        bad["audit_artifacts"] = {}
+        bad["response_status"] = "SOMETHING_ELSE"
+        r = _run(entry_implementation_design=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert GATE_ENTRY_IMPLEMENTATION_DESIGN_RESPONSE_STATUS_UNACCEPTABLE in r.blocked_gates
+
+
+class TestARFIX1PreviewCLISubprocess:
+    """Subprocess-level smoke that the new --from-latest-entry-implementation-design
+    flag is parsed and that --help still exits 0 with it documented."""
+
+    def test_help_includes_new_flag(self):
+        result = subprocess.run(
+            [sys.executable, str(PREVIEW_PATH), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0
+        assert "--from-latest-entry-implementation-design" in result.stdout
+
+    def test_missing_aq_artifact_exits_one(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design import (
+            run_execute,
+        )
+        empty = repo_tmp_path / "empty"
+        empty.mkdir()
+        rc = run_execute(
+            symbol="SOLUSDT",
+            readonly_dir=empty, reconciliation_dir=empty, protection_dir=empty,
+            contract_dir=empty, noop_plan_dir=empty, lifecycle_dir=empty,
+            real_permission_dir=empty, tiny_entry_dir=empty, tiny_stop_dir=empty,
+            tiny_cleanup_dir=empty, lifecycle_summary_dir=empty,
+            runner_design_dir=empty, runner_dry_run_dir=empty,
+            guarded_design_review_dir=empty, guarded_entry_adapter_dir=empty,
+            guarded_stop_adapter_dir=empty, guarded_cleanup_adapter_dir=empty,
+            guarded_lifecycle_summary_dir=empty,
+            entry_real_permission_review_dir=empty,
+            entry_manual_auth_design_dir=empty,
+            entry_manual_auth_dry_run_dir=empty,
+            entry_final_pre_execution_review_dir=empty,
+            entry_manual_approval_gate_dir=empty,
+            entry_adapter_design_dir=empty,
+            entry_adapter_dry_run_dir=empty,
+            entry_implementation_readiness_review_dir=empty,
+            entry_implementation_design_dir=empty,
+            output_dir=repo_tmp_path / "out",
+        )
+        assert rc == 1
+
+
+class TestARFIX1ReportArtifactIncludesAQFields:
+    def test_report_artifact_includes_aq_upstream_fields(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design import (
+            _write_report,
+        )
+        r = _run()
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_static_skeleton_design"
+        latest_json = out_dir / f"latest_{base}.json"
+        parsed = json.loads(latest_json.read_text(encoding="utf-8"))
+        assert parsed["upstream_entry_implementation_design_status"] \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_READY"
+        assert parsed["upstream_entry_implementation_design_conclusion"] \
+            == "IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE"
+        assert parsed["upstream_entry_implementation_design_response_status"] \
+            == "IMPLEMENTATION_DESIGN_NOT_SENT"
+        assert parsed["consumed_implementation_design_contract_version"] \
+            == "implementation_design_v1"

@@ -32,6 +32,7 @@ Usage (IMPLEMENTATION DESIGN CHECKLIST --- default, no network,
     --from-latest-entry-adapter-design \\
     --from-latest-entry-adapter-dry-run \\
     --from-latest-entry-implementation-readiness-review \\
+    --from-latest-entry-implementation-design \\
     --symbol SOLUSDT \\
     [--expected-commit-hash <hash>] \\
     [--write-report]
@@ -225,6 +226,12 @@ _DEFAULT_ENTRY_IMPLEMENTATION_READINESS_REVIEW_DIR = (
     / "outputs"
     / "demo_trading"
     / "tiny_guarded_entry_real_execution_adapter_implementation_readiness_review"
+)
+_DEFAULT_ENTRY_IMPLEMENTATION_DESIGN_DIR = (
+    ROOT
+    / "outputs"
+    / "demo_trading"
+    / "tiny_guarded_entry_real_execution_adapter_implementation_design"
 )
 _DEFAULT_OUTPUT_DIR          = (
     ROOT
@@ -421,6 +428,15 @@ def load_latest_entry_implementation_readiness_review(
     return _load_json(
         entry_implementation_readiness_review_dir
         / "latest_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.json"
+    )
+
+
+def load_latest_entry_implementation_design(
+    entry_implementation_design_dir: Path,
+) -> dict | None:
+    return _load_json(
+        entry_implementation_design_dir
+        / "latest_tiny_guarded_entry_real_execution_adapter_implementation_design.json"
     )
 
 
@@ -844,6 +860,7 @@ def run_execute(
     entry_adapter_design_dir:          Path | None = None,
     entry_adapter_dry_run_dir:         Path | None = None,
     entry_implementation_readiness_review_dir: Path | None = None,
+    entry_implementation_design_dir:   Path | None = None,
     output_dir:                        Path | None = None,
     _now:                              datetime | None = None,
 ) -> int:
@@ -899,6 +916,10 @@ def run_execute(
         entry_implementation_readiness_review_dir
         or _DEFAULT_ENTRY_IMPLEMENTATION_READINESS_REVIEW_DIR
     )
+    _entry_impl_design_dir = (
+        entry_implementation_design_dir
+        or _DEFAULT_ENTRY_IMPLEMENTATION_DESIGN_DIR
+    )
     _out_dir              = output_dir                  or _DEFAULT_OUTPUT_DIR
 
     print(_SEP)
@@ -943,6 +964,9 @@ def run_execute(
     entry_adapter_dry_run     = load_latest_entry_adapter_dry_run(_entry_adapter_dry_run_dir2)
     entry_implementation_readiness_review = (
         load_latest_entry_implementation_readiness_review(_entry_impl_readiness_dir)
+    )
+    entry_implementation_design = (
+        load_latest_entry_implementation_design(_entry_impl_design_dir)
     )
 
     missing: list[str] = []
@@ -1056,6 +1080,13 @@ def run_execute(
                 / "latest_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.json"
             )
         )
+    if entry_implementation_design is None:
+        missing.append(
+            str(
+                _entry_impl_design_dir
+                / "latest_tiny_guarded_entry_real_execution_adapter_implementation_design.json"
+            )
+        )
 
     if missing:
         print("\n[FAIL CLOSED] Missing upstream artifact(s):")
@@ -1097,6 +1128,7 @@ def run_execute(
     print(f"  entry_adapter_design_src            : {_entry_adapter_design_dir / 'latest_tiny_guarded_entry_real_execution_adapter_design.json'}")
     print(f"  entry_adapter_dry_run_src           : {_entry_adapter_dry_run_dir2 / 'latest_tiny_guarded_entry_real_execution_adapter_dry_run.json'}")
     print(f"  entry_implementation_readiness_review_src: {_entry_impl_readiness_dir / 'latest_tiny_guarded_entry_real_execution_adapter_implementation_readiness_review.json'}")
+    print(f"  entry_implementation_design_src     : {_entry_impl_design_dir / 'latest_tiny_guarded_entry_real_execution_adapter_implementation_design.json'}")
 
     gate = DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign()
     result = gate.run_design(
@@ -1126,6 +1158,7 @@ def run_execute(
         entry_adapter_design=entry_adapter_design,
         entry_adapter_dry_run=entry_adapter_dry_run,
         entry_implementation_readiness_review=entry_implementation_readiness_review,
+        entry_implementation_design=entry_implementation_design,
         symbol=symbol,
         expected_commit_hash=expected_commit_hash,
         allow_implementation_design=allow_implementation_design,
@@ -1257,6 +1290,11 @@ def main() -> None:
                               "implementation readiness review JSON "
                               "(TASK-014AP artifact) from "
                               "outputs/.../tiny_guarded_entry_real_execution_adapter_implementation_readiness_review/."))
+    parser.add_argument("--from-latest-entry-implementation-design", action="store_true",
+                        help=("Read tiny guarded entry real execution adapter "
+                              "implementation design JSON "
+                              "(TASK-014AQ artifact) from "
+                              "outputs/.../tiny_guarded_entry_real_execution_adapter_implementation_design/."))
     parser.add_argument("--symbol", default=DEFAULT_SELECTED_SYMBOL,
                         metavar="SYMBOL",
                         help=("Symbol to design against.  "

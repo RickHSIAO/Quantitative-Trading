@@ -21,6 +21,129 @@ Notes:
 
 ---
 
+### 2026-06-13（TASK-014AR-FIX1 — Wire Static Skeleton Design to Implementation Design Artifact）
+
+Agent: Claude (Opus)
+Command source: Rick chat instruction "Proceed with TASK-014AR-FIX1 now.
+TASK-014AR commit `9de11fe` exists locally, but the final report has an
+unacceptable scope caveat that runtime wiring is deferred to TASK-014AS."
+(2026-06-13)
+Task: Fix TASK-014AR scope so that the static-skeleton-design module
+actively CONSUMES the TASK-014AQ `entry_implementation_design` artifact at
+runtime (not just forward-declares identifiers). Wire `run_design()` to
+accept a new `entry_implementation_design: dict[str, Any] | None`
+parameter, register `entry_impl_design` in `present_flags`, parse seven AQ
+fields (status / implementation_design_grants_execution /
+adapter_implementation_included / adapter_execution_included /
+send_allowed / implementation_design_conclusion with top-level OR nested
+`final_implementation_design_verdict.implementation_design_conclusion`
+fallback / `audit_artifacts.response_status` with top-level
+`response_status` fallback), and add eight LIVE hard fail-closed gates
+(`entry_implementation_design_missing`,
+`entry_implementation_design_status_unacceptable`,
+`entry_implementation_design_grants_execution_true`,
+`entry_implementation_design_implementation_included_true`,
+`entry_implementation_design_execution_included_true`,
+`entry_implementation_design_send_allowed_true`,
+`entry_implementation_design_conclusion_mismatch`,
+`entry_implementation_design_response_status_unacceptable`). Extend the
+dataclass with seven new `upstream_entry_implementation_design_*` fields
+plus `consumed_implementation_design_contract_version`, expose them via
+`to_dict()` + `audit_artifacts`, and classify the new gates into the
+`stage_0_set` of `_first_failed_stage`. Extend preview with
+`_DEFAULT_ENTRY_IMPLEMENTATION_DESIGN_DIR`,
+`load_latest_entry_implementation_design`, and a new
+`--from-latest-entry-implementation-design` CLI flag. NO endpoint, NO
+secret, NO sender, NO adapter class, NO `send` / `place_order` /
+`execute`, NO G20 lift, NO main.py / src/risk.py / BybitExecutor
+modification.
+
+Status before: TASK-014AR committed locally as `9de11fe`, but the final
+report deferred AQ runtime wiring to TASK-014AS — unacceptable per Rick
+Status after: TASK-014AR-FIX1 wired AQ artifact at runtime; 27 upstream
+artifacts; 8 LIVE entry_implementation_design_* gates; 159 PASS;
+next_required_task = TASK-014AS_guarded_entry_real_execution_adapter_
+static_skeleton_dry_run
+
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (added `entry_implementation_design` parameter to `run_design()`;
+  added `entry_impl_design` to `present_flags`; AQ field parsing with
+  conclusion top-level/nested fallback and response_status
+  audit_artifacts/top-level fallback; eight LIVE hard fail-closed gates;
+  seven new dataclass `upstream_entry_implementation_design_*` fields
+  plus `consumed_implementation_design_contract_version`; `to_dict()`
+  exposes all eight; `audit_artifacts` exposes all eight; stage_0
+  summary updated from "26 upstream artifacts" to "27 upstream
+  artifacts"; eight new gates added to `stage_0_set` in
+  `_first_failed_stage`)
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (added `_DEFAULT_ENTRY_IMPLEMENTATION_DESIGN_DIR`;
+  `load_latest_entry_implementation_design()` loader for
+  `latest_tiny_guarded_entry_real_execution_adapter_implementation_design.json`;
+  `entry_implementation_design_dir` parameter on `run_execute()`;
+  passes parsed AQ artifact to `run_design()`;
+  `--from-latest-entry-implementation-design` CLI flag; module
+  docstring updated)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (`_valid_entry_implementation_design()` fixture mirroring AP;
+  `entry_implementation_design=_UNSET` parameter on `_run()` helper;
+  updated existing TestAQ88 `test_missing_artifacts_exits_one` to pass
+  empty AQ dir; 16 new AR-FIX1 test classes: 3 propagation tests, 1
+  missing, 6 acceptance-gate scenarios, 2 conclusion-mismatch tests
+  covering top-level + nested fallback, 2 response_status-mismatch
+  tests covering audit + top-level fallback, 2 CLI subprocess tests,
+  1 report-artifact test)
+- `docs/research/commands/NEXT_ACTION.md`
+  (banner advanced to "TASK-014AR Status (2026-06-13, updated by
+  TASK-014AR-FIX1 same day)"; AQ consumption item rewritten as
+  "CONSUMED AT RUNTIME (FIX1)"; preview item updated to 27 flags +
+  new run_execute param; tests item updated to 159 tests with the 16
+  new AR-FIX1 descriptions; validation count updated to 159/159 PASS
+  with AQ regression 138/138 line; step 1 expectation updated to
+  "159/159 PASS (post-FIX1)"; step 2 command appended with
+  `--from-latest-entry-implementation-design`; step 3 rewritten
+  without the "deferred to AS" caveat)
+- `README.md`
+  (Demo Trading Guarded Lifecycle Status board banner updated to
+  "updated by TASK-014AR-FIX1, 2026-06-13"; `latest_commit` updated
+  to FIX1 message; `current_phase` rewritten to remove the "for
+  TASK-014AS to wire" caveat — now describes 27 upstream artifacts +
+  active AQ runtime consumption + 8 LIVE gates; `latest_validation` →
+  159 PASS)
+- `docs/research/commands/COMMAND_LOG.md` (this TASK-014AR-FIX1 entry)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → 159/159 PASS (143 original + 16 new AR-FIX1)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py` → 138/138 PASS (AQ regression intact)
+- AST + tokenize source-scan safety preserved: no urllib / requests /
+  httpx / socket / http.client / hmac / hashlib / dotenv / os.environ /
+  sender / main / risk / BybitExecutor / pybit / executable adapter
+  `send` / `place_order` / `execute` methods / forbidden flags /
+  AA-AQ module reuse / auto-git in src OR preview
+- ADAPTER_CONTRACT_VERSION = `static_skeleton_design_v1` (unchanged)
+- CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION = `implementation_design_v1` (now actively consumed at runtime)
+- ADAPTER_RESPONSE_STATUS = `STATIC_SKELETON_DESIGN_NOT_SENT` (unchanged)
+- ORDER_LINK_ID_PREFIX = `STATIC_SKELETON_DESIGN_TINY_ENTRY_` (unchanged)
+- STATIC_SKELETON_DESIGN_CONCLUSION = `STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE` (unchanged)
+
+Outputs: none (runtime preview not invoked locally; outputs dir gitignored).
+
+Notes:
+- TASK-014AR-FIX1 closes the scope caveat from TASK-014AR: the static
+  skeleton design module now ACTIVELY CONSUMES TASK-014AQ output at
+  runtime via 8 LIVE `entry_implementation_design_*` fail-closed gates.
+  Missing AQ artifact or any acceptance-field mismatch → FAIL_CLOSED.
+  The AN → AO → AP → AQ → AR fail-closed invariant chain is fully
+  wired; the only remaining downstream is TASK-014AS dry-run.
+- G20 sender policy unchanged. Five protected positions never touched.
+  No endpoint called. No secret read. No HMAC. No signature. No real
+  order. No auto-git operations. Local commit only; remote push
+  deferred to Rick's explicit instruction.
+
+---
+
 ### 2026-06-13（TASK-014AR — Guarded Entry Real Execution Adapter Static Skeleton Design）
 
 Agent: Claude (Opus)
