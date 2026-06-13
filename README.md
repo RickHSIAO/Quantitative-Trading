@@ -14,16 +14,16 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AR-FIX1-DOCS1, 2026-06-13）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AR-FIX2, 2026-06-13）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AR-FIX1-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AR-FIX2 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AR-FIX1 |
-| latest_commit | local — `e8a3f4c` — `TASK-014AR-FIX1: wire static skeleton design to implementation design artifact`（local；尚未推遠端） |
-| current_phase | guarded entry real execution adapter static skeleton design fixed and wired to implementation design artifact（**TASK-014AR 現已於 runtime 主動 consume TASK-014AQ 產出的 `entry_implementation_design` artifact**：27 upstream artifacts、`CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1`、`ACCEPTABLE_ENTRY_IMPLEMENTATION_DESIGN_STATUSES` 過濾 status、8 個 LIVE `entry_implementation_design_*` fail-closed gates；entry_implementation_design 缺失或不安全即 FAIL_CLOSED；無 sender，無 executable adapter，無 `send` / `place_order` / `execute` method，無實單，no auto-git） |
+| latest_completed_task | TASK-014AR-FIX2 |
+| latest_commit | local — `TASK-014AR-FIX2: clean static skeleton report schema labels`（local；尚未推遠端） |
+| current_phase | guarded entry real execution adapter static skeleton design fixed and wired to implementation design artifact（**TASK-014AR runtime 主動 consume TASK-014AQ 產出的 `entry_implementation_design` artifact**：27 upstream artifacts、`CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1`、`ACCEPTABLE_ENTRY_IMPLEMENTATION_DESIGN_STATUSES` 過濾 status、8 個 LIVE `entry_implementation_design_*` fail-closed gates；entry_implementation_design 缺失或不安全即 FAIL_CLOSED。**FIX2 schema 標籤清理**：mode 現為 `static_skeleton_design_checklist` / `static_skeleton_design_approval`；markdown/report title 為 "Static Skeleton Design"；output 新增 `static_skeleton_design_conclusion=STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE` / `final_static_skeleton_design_verdict` / `static_skeleton_design_scope` 三個明確別名；舊有 `implementation_design_*` 欄位保留為 backward-compatible 別名；scope_summary 明確說明「AR consumes AQ output and produces static skeleton design for AS」。安全行為、AQ runtime consumption、所有 fail-closed gates 不變；無 sender，無 executable adapter，無 `send` / `place_order` / `execute` method，無實單，no auto-git） |
 | next_required_task | `TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
@@ -31,7 +31,7 @@ TASK-014AR-FIX1-DOCS1 同步更新；不改任何 execution logic、不解除 G2
 | actual cleanup | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → 159 PASS（143 原始 + 16 個 AR-FIX1 新測試）；AQ regression `pytest ...implementation_design.py` → 138 PASS |
+| latest validation | `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → 175 PASS（143 原始 + 16 個 AR-FIX1 + 16 個 AR-FIX2 schema label 測試）；AQ regression `pytest ...implementation_design.py` → 138 PASS |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
 | adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=static_skeleton_design_v1`、`CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1`、`CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1`、`CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1`、`CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
 | order link id prefix | `STATIC_SKELETON_DESIGN_TINY_ENTRY_`（static-skeleton-design label — 永不會作為 real order client id 送出） |

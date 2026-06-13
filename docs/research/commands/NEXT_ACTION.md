@@ -1,9 +1,18 @@
 # Next Action
 
-> README shared status updated by TASK-014AR (2026-06-13) — see
+> README shared status updated by TASK-014AR-FIX2 (2026-06-14) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
 > for the cross-agent status board. Code-only sync — no real trading logic
 > added, G20 still active, no real trading enabled.
+
+## TASK-014AR Status (2026-06-13, updated by TASK-014AR-FIX2 2026-06-14)
+
+| item | status |
+|---|---|
+| TASK-014AR-FIX2 (schema label cleanup): mode renamed to `static_skeleton_design_checklist` / `static_skeleton_design_approval` (legacy `MODE_IMPLEMENTATION_DESIGN_CHECKLIST` / `_APPROVAL` retained as back-compat aliases pointing at the same strings); markdown/report title now reads "Tiny Guarded Entry Real Execution Adapter Static Skeleton Design (TASK-014AR)"; new output-facing aliases on `to_dict()` + `audit_artifacts` + stage_1 + stage_13: `static_skeleton_design_conclusion=STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE`, `final_static_skeleton_design_verdict`, `static_skeleton_design_scope`, `static_skeleton_design_authorization_result`; stage_1 summary now says "Assert static skeleton design scope"; stage_13 summary now says "Final static skeleton design verdict"; scope_summary rewritten to "TASK-014AR consumes TASK-014AQ implementation design output at runtime and produces a STATIC SKELETON DESIGN for TASK-014AS"; legacy `implementation_design_*` keys preserved as backward-compatible aliases | DONE |
+| All safety behavior unchanged: AQ runtime consumption intact, all 8 LIVE `entry_implementation_design_*` fail-closed gates active, 62-gate `_HARD_FAIL_GATES` frozenset unchanged, status string `TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_STATIC_SKELETON_DESIGN_READY` unchanged, next_required_task `TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run` unchanged | CONFIRMED |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py | 175/175 PASS (143 original + 16 AR-FIX1 + 16 AR-FIX2 schema label tests) |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py (regression) | 138/138 PASS |
 
 ## TASK-014AR Status (2026-06-13, updated by TASK-014AR-FIX1 same day)
 
@@ -17,7 +26,7 @@
 | scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py: **27** `--from-latest-*` flags (incl. new `--from-latest-entry-implementation-design`), `--symbol`, `--expected-commit-hash`, `--allow-implementation-design`, `--allow-real-entry-execution`, `--write-report`; `run_execute()` callable from tests (now also accepts `entry_implementation_design_dir`); loads `latest_tiny_guarded_entry_real_execution_adapter_implementation_design.json` and passes the artifact through to `run_design(entry_implementation_design=...)`; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_static_skeleton_design/`; NO auto git operations | DONE |
 | tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py: **159** tests covering 4 status modes, missing-artifact gates (incl. new GATE_ENTRY_IMPLEMENTATION_DESIGN_MISSING), endpoint/account/symbol invariants, all 14 stages presence + order, deep-copy roundtrip, AST + tokenize source-scan safety, 5 protected positions untouched, G20 never lifted, no AA-AQ module reuse, next_required_task = 014AS, 17 frozenset whitelists incl. ACCEPTABLE_ENTRY_IMPLEMENTATION_DESIGN_STATUSES, CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION = "implementation_design_v1", 8 LIVE AQ-consumption gates **plus 16 new AR-FIX1 tests** validating: AQ field propagation into result/to_dict/audit_artifacts, missing AQ → FAIL_CLOSED, status unacceptable → FAIL_CLOSED, grants_execution → FAIL_CLOSED, implementation_included → FAIL_CLOSED, execution_included → FAIL_CLOSED, send_allowed → FAIL_CLOSED, conclusion mismatch (top-level + nested fallback) → FAIL_CLOSED, response_status mismatch (`audit_artifacts.response_status` + top-level fallback) → FAIL_CLOSED, CLI --help exposes `--from-latest-entry-implementation-design`, missing AQ artifact via run_execute → exit 1, report artifact JSON includes `upstream_entry_implementation_design_*` fields | DONE |
 | py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py + scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py | PASS |
-| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py | 159/159 PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py | 175/175 PASS (post-FIX2) |
 | pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py (regression) | 138/138 PASS |
 | `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_static_skeleton_design/` | DONE |
 | no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no sender adapter / no executable adapter surface / no `send` / `place_order` / `execute` method / no AA-AQ module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback / no real token / phrase / approval-input validation / no auto git commit / no auto git push | CONFIRMED |
@@ -32,7 +41,7 @@
        source .env.demo
        python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py
        python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q
-       # expect 159/159 PASS (post-FIX1)
+       # expect 175/175 PASS (post-FIX2)
 
 2. (Optional) Run TASK-014AR static skeleton design preview:
        python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py \

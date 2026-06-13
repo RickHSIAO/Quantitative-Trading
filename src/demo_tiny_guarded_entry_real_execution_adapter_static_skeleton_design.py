@@ -1,29 +1,37 @@
 """
 src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py
-TASK-014AR: Guarded Entry Real Execution Adapter Implementation
+TASK-014AR: Guarded Entry Real Execution Adapter Static Skeleton
             Design.
 
-Design-only module. This task consumes TASK-014AP's implementation
-readiness review output (and the 25 upstream artifacts AP already
-consumed) and produces an implementation DESIGN for the FUTURE
-TASK-014AR adapter static skeleton design. It documents the
-module boundary, the request construction, the transport / endpoint
-design, the secret / signing design, the response / error handling
-design, the manual approval / authorization design, the stop /
-cleanup handoff design, the risk / idempotency / audit design, the
-forbidden implementation surface design, the failure / abort
-implementation design, and a documentation sync review.  It does
-NOT implement the adapter, does NOT import any sender / private
-client / network primitive, does NOT call /v5/order/create, does
-NOT call /v5/position/trading-stop, does NOT read secrets, does
-NOT sign anything, does NOT lift TASK-014L G20, does NOT validate
-any token / phrase / approval input, does NOT treat any token /
-phrase / input as authorization, does NOT touch any existing
-protected demo position, and does NOT auto-commit / auto-push git.
+Static-skeleton-design-only module. This task consumes TASK-014AQ's
+guarded entry real execution adapter implementation DESIGN artifact
+at runtime (plus the 26 upstream artifacts AQ already consumed) and
+produces a STATIC SKELETON DESIGN for TASK-014AS (the future static
+skeleton dry-run). It documents the static module boundary, the
+request construction, the transport / endpoint design, the secret /
+signing design, the response / error handling design, the manual
+approval / authorization design, the stop / cleanup handoff design,
+the risk / idempotency / audit design, the forbidden implementation
+surface design, the failure / abort implementation design, and a
+documentation sync review. It does NOT implement the adapter, does
+NOT import any sender / private client / network primitive, does
+NOT call /v5/order/create, does NOT call /v5/position/trading-stop,
+does NOT read secrets, does NOT sign anything, does NOT lift
+TASK-014L G20, does NOT validate any token / phrase / approval
+input, does NOT treat any token / phrase / input as authorization,
+does NOT touch any existing protected demo position, and does NOT
+auto-commit / auto-push git.
 
-Inputs: 26 upstream artifacts (the 25 from TASK-014AP + AP's own
+Output-facing labels (TASK-014AR-FIX2): the verdict label is
+`static_skeleton_design_conclusion=STATIC_SKELETON_DESIGN_READY_NOT_
+EXECUTABLE`. Backward-compatible aliases are kept on the result
+object (`implementation_design_conclusion`,
+`final_implementation_design_verdict`, `implementation_design_scope`)
+so older tests / downstream docs continue to work.
+
+Inputs: 27 upstream artifacts (the 26 from TASK-014AQ + AQ's own
         guarded entry real execution adapter implementation
-        readiness review output).
+        design output).
 
 Stages:
   stage_0_artifact_preflight
@@ -42,8 +50,8 @@ Stages:
   stage_13_final_implementation_design_verdict
 
 Modes:
-  implementation_design_checklist  --- default
-  implementation_design_approval   --- --allow-implementation-design
+  static_skeleton_design_checklist --- default
+  static_skeleton_design_approval  --- --allow-implementation-design
   real_entry_execution_guard       --- --allow-real-entry-execution
   fail_closed                      --- upstream failed
 
@@ -148,10 +156,18 @@ STATUS_IMPLEMENTATION_DESIGN_READY_EXEC_DISABLED = (
 STATUS_REAL_ENTRY_NOT_IMPL = "REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED"
 STATUS_FAIL_CLOSED         = "FAIL_CLOSED"
 
-MODE_IMPLEMENTATION_DESIGN_CHECKLIST = "implementation_design_checklist"
-MODE_IMPLEMENTATION_DESIGN_APPROVAL  = "implementation_design_approval"
-MODE_REAL_ENTRY_EXEC_GUARD           = "real_entry_execution_guard"
-MODE_FAIL_CLOSED                     = "fail_closed"
+MODE_STATIC_SKELETON_DESIGN_CHECKLIST = "static_skeleton_design_checklist"
+MODE_STATIC_SKELETON_DESIGN_APPROVAL  = "static_skeleton_design_approval"
+MODE_REAL_ENTRY_EXEC_GUARD            = "real_entry_execution_guard"
+MODE_FAIL_CLOSED                      = "fail_closed"
+
+# Backward-compatible aliases (TASK-014AR-FIX2): older callers / docs
+# referenced the legacy implementation_design_* mode identifiers. The mode
+# string emitted by this module is now the static_skeleton_design_* form,
+# but the original identifier names continue to resolve to the same value
+# so they remain safe to import.
+MODE_IMPLEMENTATION_DESIGN_CHECKLIST  = MODE_STATIC_SKELETON_DESIGN_CHECKLIST
+MODE_IMPLEMENTATION_DESIGN_APPROVAL   = MODE_STATIC_SKELETON_DESIGN_APPROVAL
 
 STATIC_SKELETON_DESIGN_CONCLUSION = "STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE"
 STATIC_SKELETON_DESIGN_AUTHORIZATION_RESULT = "DOCUMENTED_ONLY_NOT_AUTHORIZED"
@@ -787,6 +803,7 @@ class TinyGuardedEntryRealExecutionAdapterStaticSkeletonDesignResult:
             "stage_order":                               list(self.stage_order),
             "artifact_preflight":                        dict(self.stages.get(STAGE_0_ARTIFACT_PREFLIGHT, {})),
             "implementation_design_scope":               dict(self.implementation_design_scope),
+            "static_skeleton_design_scope":              dict(self.implementation_design_scope),
             "static_module_boundary_design":             dict(self.static_module_boundary_design),
             "request_construction_design":               dict(self.request_construction_design),
             "transport_and_endpoint_design":             dict(self.transport_and_endpoint_design),
@@ -799,6 +816,7 @@ class TinyGuardedEntryRealExecutionAdapterStaticSkeletonDesignResult:
             "failure_and_abort_implementation_design":   dict(self.failure_and_abort_implementation_design),
             "documentation_sync_review":                 dict(self.documentation_sync_review),
             "final_implementation_design_verdict":       dict(self.final_implementation_design_verdict),
+            "final_static_skeleton_design_verdict":      dict(self.final_implementation_design_verdict),
             "audit_artifacts":                           dict(self.audit_artifacts),
             "adapter_name":                              self.adapter_name,
             "adapter_contract_version":                  self.adapter_contract_version,
@@ -826,7 +844,9 @@ class TinyGuardedEntryRealExecutionAdapterStaticSkeletonDesignResult:
             "full_lifecycle_execution_included":         self.full_lifecycle_execution_included,
             "current_task_real_execution_allowed":       self.current_task_real_execution_allowed,
             "implementation_design_conclusion":          self.implementation_design_conclusion,
+            "static_skeleton_design_conclusion":         self.implementation_design_conclusion,
             "implementation_design_authorization_result": self.implementation_design_authorization_result,
+            "static_skeleton_design_authorization_result": self.implementation_design_authorization_result,
             "order_create_path_ref":                     self.order_create_path_ref,
             "trading_stop_path_ref":                     self.trading_stop_path_ref,
             "base_url_ref":                              self.base_url_ref,
@@ -1066,9 +1086,9 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
         if allow_real_entry_execution:
             mode = MODE_REAL_ENTRY_EXEC_GUARD
         elif allow_implementation_design:
-            mode = MODE_IMPLEMENTATION_DESIGN_APPROVAL
+            mode = MODE_STATIC_SKELETON_DESIGN_APPROVAL
         else:
-            mode = MODE_IMPLEMENTATION_DESIGN_CHECKLIST
+            mode = MODE_STATIC_SKELETON_DESIGN_CHECKLIST
 
         blocked: list[str] = []
         stages:  dict[str, dict[str, Any]] = {}
@@ -1425,9 +1445,9 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
             "g20_lifted":                            False,
             "next_required_task":                    NEXT_REQUIRED_TASK,
             "scope_summary": (
-                "TASK-014AR consumes TASK-014AP's implementation readiness "
-                "review output and produces an implementation DESIGN for "
-                "TASK-014AR (the future static skeleton design). It "
+                "TASK-014AR consumes TASK-014AQ implementation design "
+                "output at runtime and produces a STATIC SKELETON DESIGN "
+                "for TASK-014AS (the future static skeleton dry-run). It "
                 "documents the static module boundary, request "
                 "construction, transport / endpoint design, secret / "
                 "signing design, response / error handling design, "
@@ -1446,8 +1466,9 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
         }
         stages[STAGE_1_IMPLEMENTATION_DESIGN_SCOPE] = {
             "stage":   STAGE_1_IMPLEMENTATION_DESIGN_SCOPE,
-            "summary": "Assert implementation design scope (design-only, no implementation, no execution).",
+            "summary": "Assert static skeleton design scope (design-only, no implementation, no execution).",
             "implementation_design_scope":           implementation_design_scope,
+            "static_skeleton_design_scope":          implementation_design_scope,
         }
         blocked.append(GATE_IMPLEMENTATION_DESIGN_ONLY)
         blocked.append(GATE_ADAPTER_IMPLEMENTATION_NOT_INCLUDED)
@@ -1833,11 +1854,11 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
         elif allow_implementation_design:
             failed_stage = ""
             status_out = STATUS_IMPLEMENTATION_DESIGN_READY_EXEC_DISABLED
-            mode_out   = MODE_IMPLEMENTATION_DESIGN_APPROVAL
+            mode_out   = MODE_STATIC_SKELETON_DESIGN_APPROVAL
         else:
             failed_stage = ""
             status_out = STATUS_IMPLEMENTATION_DESIGN_READY
-            mode_out   = MODE_IMPLEMENTATION_DESIGN_CHECKLIST
+            mode_out   = MODE_STATIC_SKELETON_DESIGN_CHECKLIST
 
         final_implementation_design_verdict: dict[str, Any] = {
             "implementation_design_allowed":        allow_implementation_design,
@@ -1859,7 +1880,9 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
             "full_lifecycle_execution_included":    False,
             "current_task_real_execution_allowed":  False,
             "implementation_design_conclusion":     STATIC_SKELETON_DESIGN_CONCLUSION,
+            "static_skeleton_design_conclusion":    STATIC_SKELETON_DESIGN_CONCLUSION,
             "implementation_design_authorization_result": STATIC_SKELETON_DESIGN_AUTHORIZATION_RESULT,
+            "static_skeleton_design_authorization_result": STATIC_SKELETON_DESIGN_AUTHORIZATION_RESULT,
             "g20_policy_still_in_place":            True,
             "g20_lifted":                           False,
             "no_real_order_endpoint":               True,
@@ -1878,6 +1901,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
 
         audit_artifacts: dict[str, Any] = {
             "implementation_design_scope":             dict(implementation_design_scope),
+            "static_skeleton_design_scope":            dict(implementation_design_scope),
             "static_module_boundary_design":           dict(static_module_boundary_design),
             "request_construction_design":             dict(request_construction_design),
             "transport_and_endpoint_design":           dict(transport_and_endpoint_design),
@@ -1890,6 +1914,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
             "failure_and_abort_implementation_design": dict(failure_and_abort_implementation_design),
             "documentation_sync_review":               dict(documentation_sync_review),
             "final_implementation_design_verdict":     dict(final_implementation_design_verdict),
+            "final_static_skeleton_design_verdict":    dict(final_implementation_design_verdict),
             "response_status":                        ADAPTER_RESPONSE_STATUS,
             "response_from_exchange":                 False,
             "exchange_order_id":                      None,
@@ -1917,10 +1942,12 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDesign:
 
         stages[STAGE_13_FINAL_IMPLEMENTATION_DESIGN_VERDICT] = {
             "stage":   STAGE_13_FINAL_IMPLEMENTATION_DESIGN_VERDICT,
-            "summary": "Final implementation design verdict + permanent execution guard + audit artifacts.",
+            "summary": "Final static skeleton design verdict + permanent execution guard + audit artifacts.",
             "final_implementation_design_verdict":   final_implementation_design_verdict,
+            "final_static_skeleton_design_verdict":  final_implementation_design_verdict,
             "audit_artifacts":                       dict(audit_artifacts),
             "implementation_design_conclusion":      STATIC_SKELETON_DESIGN_CONCLUSION,
+            "static_skeleton_design_conclusion":     STATIC_SKELETON_DESIGN_CONCLUSION,
         }
 
         return TinyGuardedEntryRealExecutionAdapterStaticSkeletonDesignResult(
@@ -2193,6 +2220,8 @@ __all__ = [
     "STATUS_IMPLEMENTATION_DESIGN_READY_EXEC_DISABLED",
     "STATUS_REAL_ENTRY_NOT_IMPL",
     "STATUS_FAIL_CLOSED",
+    "MODE_STATIC_SKELETON_DESIGN_CHECKLIST",
+    "MODE_STATIC_SKELETON_DESIGN_APPROVAL",
     "MODE_IMPLEMENTATION_DESIGN_CHECKLIST",
     "MODE_IMPLEMENTATION_DESIGN_APPROVAL",
     "MODE_REAL_ENTRY_EXEC_GUARD",

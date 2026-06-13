@@ -117,6 +117,8 @@ from src.demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design i
     MODE_FAIL_CLOSED,
     MODE_IMPLEMENTATION_DESIGN_APPROVAL,
     MODE_IMPLEMENTATION_DESIGN_CHECKLIST,
+    MODE_STATIC_SKELETON_DESIGN_APPROVAL,
+    MODE_STATIC_SKELETON_DESIGN_CHECKLIST,
     MODE_REAL_ENTRY_EXEC_GUARD,
     NEXT_REQUIRED_TASK,
     ORDER_CREATE_PATH_REF,
@@ -2668,3 +2670,236 @@ class TestARFIX1ReportArtifactIncludesAQFields:
             == "IMPLEMENTATION_DESIGN_NOT_SENT"
         assert parsed["consumed_implementation_design_contract_version"] \
             == "implementation_design_v1"
+
+
+# ===========================================================================
+# AR-FIX2: Static skeleton report schema label cleanup
+# ---------------------------------------------------------------------------
+# These tests verify that the report-facing labels emitted by TASK-014AR
+# now use STATIC SKELETON DESIGN terminology, that the new aliases are
+# present on the result dict and audit artifacts, that the legacy
+# implementation_design_* aliases still resolve (backward compatibility),
+# and that TASK-014AQ's implementation design output continues to be
+# consumed at runtime. The status string, next_required_task, and all
+# safety invariants are unchanged.
+# ===========================================================================
+
+
+class TestARFIX2ModeStringIsStaticSkeleton:
+    def test_default_mode_is_static_skeleton_checklist(self):
+        r = _run(symbol="SOLUSDT")
+        assert r.mode == "static_skeleton_design_checklist"
+        assert r.mode == MODE_STATIC_SKELETON_DESIGN_CHECKLIST
+
+    def test_legacy_mode_alias_still_resolves(self):
+        # MODE_IMPLEMENTATION_DESIGN_CHECKLIST is a back-compat alias
+        # that must equal the static_skeleton_design_checklist string.
+        assert MODE_IMPLEMENTATION_DESIGN_CHECKLIST \
+            == MODE_STATIC_SKELETON_DESIGN_CHECKLIST \
+            == "static_skeleton_design_checklist"
+
+    def test_approval_mode_is_static_skeleton_approval(self):
+        r = _run(symbol="SOLUSDT", allow_implementation_design=True)
+        assert r.mode == "static_skeleton_design_approval"
+        assert r.mode == MODE_STATIC_SKELETON_DESIGN_APPROVAL
+        assert MODE_IMPLEMENTATION_DESIGN_APPROVAL \
+            == MODE_STATIC_SKELETON_DESIGN_APPROVAL
+
+
+class TestARFIX2StatusUnchanged:
+    def test_status_remains_static_skeleton_design_ready(self):
+        r = _run(symbol="SOLUSDT")
+        assert r.status \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_STATIC_SKELETON_DESIGN_READY"
+        assert r.status == STATUS_IMPLEMENTATION_DESIGN_READY
+
+
+class TestARFIX2NextRequiredTaskUnchanged:
+    def test_next_required_task_is_AS(self):
+        r = _run(symbol="SOLUSDT")
+        assert r.next_required_task \
+            == "TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run"
+        assert r.next_required_task == NEXT_REQUIRED_TASK
+
+
+class TestARFIX2SafetyFlagsRemainForbidden:
+    def test_all_safety_flags_remain_false(self):
+        r = _run(symbol="SOLUSDT")
+        assert r.real_execution_allowed is False
+        assert r.real_entry_implemented is False
+        assert r.implementation_design_grants_execution is False
+        assert r.adapter_implementation_included is False
+        assert r.adapter_execution_included is False
+        assert r.entry_execution_included is False
+        assert r.stop_execution_included is False
+        assert r.cleanup_execution_included is False
+        assert r.full_lifecycle_execution_included is False
+        assert r.send_allowed is False
+        assert r.order_endpoint_called is False
+        assert r.stop_endpoint_called is False
+        assert r.no_position_modified is True
+        assert r.no_live_endpoint is True
+        assert r.no_orders_sent is True
+        assert r.g20_policy_still_in_place is True
+        assert r.g20_lifted is False
+        assert r.no_secrets_loaded is True
+
+
+class TestARFIX2StaticSkeletonConclusionAlias:
+    def test_to_dict_exposes_static_skeleton_conclusion_alias(self):
+        r = _run(symbol="SOLUSDT")
+        d = r.to_dict()
+        assert d["static_skeleton_design_conclusion"] \
+            == "STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE"
+        # Legacy implementation_design_conclusion alias must still resolve
+        # to the same value.
+        assert d["implementation_design_conclusion"] \
+            == d["static_skeleton_design_conclusion"]
+
+
+class TestARFIX2StaticSkeletonAuthorizationResultAlias:
+    def test_to_dict_exposes_static_skeleton_authorization_result_alias(self):
+        r = _run(symbol="SOLUSDT")
+        d = r.to_dict()
+        assert d["static_skeleton_design_authorization_result"] \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+        assert d["implementation_design_authorization_result"] \
+            == d["static_skeleton_design_authorization_result"]
+
+
+class TestARFIX2StaticSkeletonScopeAlias:
+    def test_to_dict_exposes_static_skeleton_scope_alias(self):
+        r = _run(symbol="SOLUSDT")
+        d = r.to_dict()
+        assert "static_skeleton_design_scope" in d
+        # Alias content must equal the legacy implementation_design_scope.
+        assert d["static_skeleton_design_scope"] \
+            == d["implementation_design_scope"]
+        # Scope summary text now says AR consumes AQ output and produces
+        # static skeleton design for AS.
+        summary = d["static_skeleton_design_scope"]["scope_summary"]
+        assert "TASK-014AQ" in summary
+        assert "STATIC SKELETON DESIGN" in summary
+        assert "TASK-014AS" in summary
+
+
+class TestARFIX2FinalStaticSkeletonVerdictAlias:
+    def test_to_dict_exposes_final_static_skeleton_design_verdict_alias(self):
+        r = _run(symbol="SOLUSDT")
+        d = r.to_dict()
+        assert "final_static_skeleton_design_verdict" in d
+        assert d["final_static_skeleton_design_verdict"] \
+            == d["final_implementation_design_verdict"]
+        verdict = d["final_static_skeleton_design_verdict"]
+        assert verdict["static_skeleton_design_conclusion"] \
+            == "STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE"
+        assert verdict["implementation_design_conclusion"] \
+            == verdict["static_skeleton_design_conclusion"]
+
+
+class TestARFIX2AuditArtifactsHaveStaticSkeletonAliases:
+    def test_audit_artifacts_contain_static_skeleton_aliases(self):
+        r = _run(symbol="SOLUSDT")
+        a = r.audit_artifacts
+        assert "static_skeleton_design_scope" in a
+        assert "final_static_skeleton_design_verdict" in a
+        assert a["static_skeleton_design_scope"] \
+            == a["implementation_design_scope"]
+        assert a["final_static_skeleton_design_verdict"] \
+            == a["final_implementation_design_verdict"]
+
+
+class TestARFIX2Stage1SummaryUsesStaticSkeleton:
+    def test_stage_1_summary_mentions_static_skeleton(self):
+        r = _run(symbol="SOLUSDT")
+        s1 = r.stages[STAGE_1_IMPLEMENTATION_DESIGN_SCOPE]
+        assert "static skeleton design scope" in s1["summary"]
+        # Legacy implementation_design_scope key still present.
+        assert "implementation_design_scope" in s1
+        # New alias also present.
+        assert "static_skeleton_design_scope" in s1
+
+
+class TestARFIX2Stage13SummaryUsesStaticSkeleton:
+    def test_stage_13_summary_mentions_static_skeleton(self):
+        r = _run(symbol="SOLUSDT")
+        s13 = r.stages[STAGE_13_FINAL_IMPLEMENTATION_DESIGN_VERDICT]
+        assert "static skeleton design verdict" in s13["summary"]
+        assert "final_implementation_design_verdict" in s13
+        assert "final_static_skeleton_design_verdict" in s13
+        assert s13["static_skeleton_design_conclusion"] \
+            == "STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE"
+
+
+class TestARFIX2AQConsumptionStillIntact:
+    def test_aq_artifact_still_consumed_at_runtime(self):
+        # Regression guard: FIX2 must not break FIX1's runtime
+        # consumption of the AQ implementation design artifact.
+        r = _run(symbol="SOLUSDT")
+        assert r.upstream_entry_implementation_design_status \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_READY"
+        assert r.upstream_entry_implementation_design_conclusion \
+            == "IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE"
+        assert r.upstream_entry_implementation_design_response_status \
+            == "IMPLEMENTATION_DESIGN_NOT_SENT"
+        assert r.consumed_implementation_design_contract_version \
+            == "implementation_design_v1"
+        # Audit artifacts still expose the AQ-derived fields.
+        a = r.audit_artifacts
+        assert a["upstream_entry_implementation_design_status"] \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_IMPLEMENTATION_DESIGN_READY"
+        assert a["consumed_implementation_design_contract_version"] \
+            == "implementation_design_v1"
+
+
+class TestARFIX2MarkdownReportTitleAndSections:
+    def test_markdown_report_uses_static_skeleton_wording(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_static_skeleton_design"
+        latest_md = out_dir / f"latest_{base}.md"
+        md = latest_md.read_text(encoding="utf-8")
+        # Title must say Static Skeleton Design, not Implementation Design.
+        assert "# Tiny Guarded Entry Real Execution Adapter Static Skeleton Design (TASK-014AR)" in md
+        # Section headers updated to static skeleton wording.
+        assert "## Static Skeleton Design Verdict" in md
+        assert "## Static Skeleton Design Scope" in md
+        assert "## Final Static Skeleton Design Verdict" in md
+        # Static skeleton conclusion label appears at the top of the report.
+        assert "static_skeleton_design_conclusion:" in md
+        # Mode shown in the report is the static_skeleton_design_checklist
+        # string.
+        assert "mode: `static_skeleton_design_checklist`" in md
+        # The narrative summary mentions that AR consumes AQ output and
+        # produces static skeleton design for AS.
+        assert "TASK-014AQ" in md
+        assert "TASK-014AS" in md
+
+
+class TestARFIX2CLIBannerSaysStaticSkeleton:
+    def test_cli_help_does_not_advertise_implementation_design_only(self):
+        import subprocess
+        import sys
+        result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py",
+                "--help",
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0
+        combined = result.stdout + result.stderr
+        # The CLI argparse description must advertise STATIC SKELETON
+        # DESIGN (TASK-014AR), not the legacy IMPLEMENTATION DESIGN
+        # phrasing.
+        assert "STATIC SKELETON DESIGN" in combined
+        assert "TASK-014AQ implementation design output" in combined
+        assert "TASK-014AS" in combined

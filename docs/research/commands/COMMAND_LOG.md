@@ -21,6 +21,163 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AR-FIX2 — Clean Static Skeleton Report Schema Labels）
+
+Agent: Claude (Opus)
+Command source: Rick chat instruction "Proceed with TASK-014AR-FIX2 now.
+TASK-014AR-FIX1 VPS validation passed... However, the AR report still
+contains confusing implementation-design labels: header says
+'IMPLEMENTATION DESIGN CHECKLIST'; mode is `implementation_design_
+checklist`; markdown title says 'Implementation Design'; fields/stages
+still use `implementation_design_scope`; final verdict still uses
+`final_implementation_design_verdict`; scope_summary still says it
+produces an implementation design. This is a schema/label cleanup task
+only." (2026-06-14)
+Task: Schema/label cleanup of TASK-014AR static-skeleton-design report
+surface — rename report-facing labels to STATIC SKELETON DESIGN
+terminology while preserving every safety behavior, the TASK-014AQ
+runtime consumption, and every fail-closed gate, AND keep
+backward-compatible aliases for the legacy `implementation_design_*`
+keys so downstream docs / tests / future agents that still reference
+them continue to work. NO endpoint, NO secret, NO sender, NO adapter
+class, NO `send` / `place_order` / `execute` method, NO G20 lift, NO
+main.py / src/risk.py / BybitExecutor modification, NO position
+modification.
+
+Status before: TASK-014AR-FIX1-DOCS1 committed locally as `726e484`;
+VPS-validated; runtime consumption of TASK-014AQ artifact intact; but
+the report-facing labels still read "IMPLEMENTATION DESIGN" and the
+mode string still said `implementation_design_checklist`
+Status after: TASK-014AR-FIX2 schema cleanup DONE; mode now
+`static_skeleton_design_checklist` / `static_skeleton_design_approval`;
+report title "Tiny Guarded Entry Real Execution Adapter Static
+Skeleton Design"; new aliases `static_skeleton_design_conclusion` /
+`final_static_skeleton_design_verdict` / `static_skeleton_design_
+scope` / `static_skeleton_design_authorization_result`; legacy
+`implementation_design_*` keys preserved as back-compat aliases;
+AQ runtime consumption intact; status string unchanged; 175/175 PASS;
+next_required_task = TASK-014AS_guarded_entry_real_execution_adapter_
+static_skeleton_dry_run
+
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (module docstring header changed from "Implementation Design" to
+  "Static Skeleton Design" with explicit "consumes TASK-014AQ ...
+  produces STATIC SKELETON DESIGN for TASK-014AS" wording; Modes
+  block in docstring updated; `MODE_STATIC_SKELETON_DESIGN_CHECKLIST`
+  / `MODE_STATIC_SKELETON_DESIGN_APPROVAL` added with new
+  underlying string values; `MODE_IMPLEMENTATION_DESIGN_CHECKLIST` /
+  `_APPROVAL` retained as backward-compat aliases pointing at the
+  new strings; `run_design()` mode assignments updated to the new
+  constants; `to_dict()` adds `static_skeleton_design_scope`,
+  `static_skeleton_design_conclusion`,
+  `static_skeleton_design_authorization_result`,
+  `final_static_skeleton_design_verdict` aliases (legacy
+  `implementation_design_*` keys preserved); stage_1 dict +
+  `audit_artifacts` + `final_implementation_design_verdict` carry
+  the new aliases; stage_1 summary now says "Assert static skeleton
+  design scope"; stage_13 summary now says "Final static skeleton
+  design verdict"; scope_summary rewritten to "TASK-014AR consumes
+  TASK-014AQ implementation design output at runtime and produces a
+  STATIC SKELETON DESIGN for TASK-014AS"; `__all__` extended with
+  the new MODE_STATIC_SKELETON_DESIGN_* names)
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (module docstring header / usage banner / IMPORTANT block
+  references retitled to "Static Skeleton Design"; argparse
+  `description=` rewritten to "Tiny guarded entry REAL EXECUTION
+  ADAPTER STATIC SKELETON DESIGN (TASK-014AR). Consumes TASK-014AQ
+  implementation design output at runtime and produces a static
+  skeleton design for TASK-014AS."; runtime banner now prints
+  "STATIC SKELETON DESIGN CHECKLIST / APPROVAL" instead of the
+  legacy "IMPLEMENTATION DESIGN CHECKLIST / APPROVAL"; markdown
+  H1 title now "# Tiny Guarded Entry Real Execution Adapter Static
+  Skeleton Design (TASK-014AR)"; narrative summary line under the
+  title added; markdown section headers retitled: "## Static
+  Skeleton Design Verdict", "## Static Skeleton Design Scope", "##
+  Final Static Skeleton Design Verdict"; top-of-report fields now
+  show `static_skeleton_design_conclusion` and
+  `static_skeleton_design_authorization_result` with the legacy
+  `implementation_design_conclusion` rendered as a backward-compat
+  alias line)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py`
+  (imports extended with `MODE_STATIC_SKELETON_DESIGN_APPROVAL` /
+  `_CHECKLIST`; 16 new TestARFIX2* classes appended at end of file
+  covering: mode string is `static_skeleton_design_checklist` (+
+  alias), approval mode string, status string unchanged,
+  next_required_task unchanged, every safety flag remains
+  false/forbidden, `static_skeleton_design_conclusion` alias on
+  `to_dict()` equals legacy key, `static_skeleton_design_
+  authorization_result` alias, `static_skeleton_design_scope`
+  alias with scope_summary mentioning TASK-014AQ + STATIC
+  SKELETON DESIGN + TASK-014AS, `final_static_skeleton_design_
+  verdict` alias equals legacy, audit_artifacts carry the new
+  aliases, stage_1 summary mentions "static skeleton design
+  scope" with both key forms present, stage_13 summary mentions
+  "static skeleton design verdict" with both key forms present,
+  AQ runtime consumption still intact post-FIX2, markdown report
+  uses static skeleton wording (title + 3 section headers +
+  conclusion line + mode string + TASK-014AQ/AS in narrative),
+  CLI argparse `--help` banner says "STATIC SKELETON DESIGN" +
+  references TASK-014AQ implementation design output + TASK-014AS)
+- `docs/research/commands/NEXT_ACTION.md`
+  (banner advanced to "updated by TASK-014AR-FIX2 (2026-06-14)";
+  new TASK-014AR Status block dated 2026-06-13 / updated by
+  TASK-014AR-FIX2 2026-06-14 added at top describing the schema
+  cleanup; pytest counts updated to 175/175 PASS post-FIX2; Next
+  Rick Action step 1 expectation updated to "175/175 PASS
+  (post-FIX2)")
+- `README.md`
+  (Demo Trading Guarded Lifecycle Status board banner updated to
+  "updated by TASK-014AR-FIX2, 2026-06-13"; `latest_completed_
+  task` updated to TASK-014AR-FIX2; `latest_commit` updated to
+  FIX2 message; `current_phase` extended with FIX2 schema label
+  cleanup details; `latest_validation` updated to 175 PASS)
+- `docs/research/commands/COMMAND_LOG.md` (this TASK-014AR-FIX2 entry)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` → 175/175 PASS (159 pre-FIX2 + 16 new AR-FIX2 schema-label tests)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` → 138/138 PASS (AQ regression intact)
+- AST + tokenize source-scan safety preserved
+- ADAPTER_CONTRACT_VERSION = `static_skeleton_design_v1` (unchanged)
+- CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION = `implementation_design_v1` (still consumed at runtime — FIX1 wiring preserved)
+- ADAPTER_RESPONSE_STATUS = `STATIC_SKELETON_DESIGN_NOT_SENT` (unchanged)
+- ORDER_LINK_ID_PREFIX = `STATIC_SKELETON_DESIGN_TINY_ENTRY_` (unchanged)
+- STATIC_SKELETON_DESIGN_CONCLUSION = `STATIC_SKELETON_DESIGN_READY_NOT_EXECUTABLE` (unchanged)
+- Status string `TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_STATIC_SKELETON_DESIGN_READY` unchanged
+- next_required_task `TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run` unchanged
+- Mode string now: `static_skeleton_design_checklist` (default), `static_skeleton_design_approval` (with --allow-implementation-design)
+
+Outputs: none (runtime preview not invoked locally; outputs dir gitignored).
+
+Safety confirmations:
+- no real order placed / no `/v5/order/create` call / no `/v5/position/trading-stop` call
+- no sender adapter introduced / no executable adapter surface / no adapter class added / no `send` / `place_order` / `execute` method
+- no endpoint call / no socket opened / no urllib / no requests / no httpx / no http.client
+- no secrets read / no `.env*` read / no `os.environ` access / no dotenv
+- no HMAC / no signature header / no signing primitive
+- TASK-014L G20 sender policy still active (no protected_entry_policy_missing lift)
+- 5 protected demo positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified
+- main.py / src/risk.py / BybitExecutor untouched
+- no auto git commit / no auto git push / no auto branch / no auto tag
+
+Notes:
+- TASK-014AR-FIX2 is a pure report-facing schema/label cleanup. It
+  preserves every safety invariant, every fail-closed gate, the
+  runtime consumption of the TASK-014AQ implementation design
+  artifact (FIX1), and all legacy `implementation_design_*` keys as
+  backward-compatible aliases. The mode string change is intentional
+  and the legacy `MODE_IMPLEMENTATION_DESIGN_CHECKLIST` /
+  `_APPROVAL` identifiers continue to resolve to the new string
+  values, so any downstream test or doc that imports them remains
+  valid.
+- G20 sender policy unchanged. Five protected positions never
+  touched. No endpoint called. No secret read. No HMAC. No
+  signature. No real order. No auto-git operations. Local commit
+  only; remote push deferred to Rick's explicit instruction.
+
+---
+
 ### 2026-06-13（TASK-014AR-FIX1-DOCS1 — Sync Static Skeleton Artifact Wiring Docs）
 
 Agent: Claude (Opus)

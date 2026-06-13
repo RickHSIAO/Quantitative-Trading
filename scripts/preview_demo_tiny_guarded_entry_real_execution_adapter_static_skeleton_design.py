@@ -1,9 +1,9 @@
 """
 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py
-TASK-014AR: Guarded Entry Real Execution Adapter Implementation
+TASK-014AR: Guarded Entry Real Execution Adapter Static Skeleton
             Design CLI.
 
-Usage (IMPLEMENTATION DESIGN CHECKLIST --- default, no network,
+Usage (STATIC SKELETON DESIGN CHECKLIST --- default, no network,
        no implementation, no execution):
   python scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py \\
     --from-latest-readonly \\
@@ -37,7 +37,7 @@ Usage (IMPLEMENTATION DESIGN CHECKLIST --- default, no network,
     [--expected-commit-hash <hash>] \\
     [--write-report]
 
-Usage (IMPLEMENTATION DESIGN APPROVAL --- design-only, no execution):
+Usage (STATIC SKELETON DESIGN APPROVAL --- design-only, no execution):
   ... --allow-implementation-design
 
 Usage (REAL ENTRY EXECUTION GUARD --- always returns
@@ -83,7 +83,7 @@ Writes (when --write-report):
       latest_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.md
 
 IMPORTANT:
-  - TASK-014AR produces a STRICT IMPLEMENTATION-DESIGN-ONLY artifact.
+  - TASK-014AR produces a STRICT STATIC-SKELETON-DESIGN-ONLY artifact.
     No guarded entry sender, no adapter implementation, no order send,
     no stop-attach send, no cleanup send, no endpoint invoked.  No
     network, no socket, no environment-variable reads, no signing, no
@@ -589,21 +589,27 @@ def _write_report(
     json_latest.write_text(json_text, encoding="utf-8")
 
     md_lines: list[str] = [
-        "# Tiny Guarded Entry Real Execution Adapter Implementation Design (TASK-014AR)",
+        "# Tiny Guarded Entry Real Execution Adapter Static Skeleton Design (TASK-014AR)",
+        "",
+        "_TASK-014AR consumes TASK-014AQ implementation design output at "
+        "runtime and produces a static skeleton design for TASK-014AS. "
+        "It does not implement the adapter, never sends an order, never "
+        "calls any endpoint, never lifts G20._",
         "",
         f"timestamp: `{r.timestamp_utc}`  ",
         f"mode: `{r.mode}`  ",
         f"status: **{r.status}**  ",
         f"failed_stage: `{r.failed_stage or '(none)'}`  ",
-        f"implementation_design_conclusion: `{r.implementation_design_conclusion}`  ",
-        f"implementation_design_authorization_result: `{r.implementation_design_authorization_result}`  ",
+        f"static_skeleton_design_conclusion: `{r.implementation_design_conclusion}`  ",
+        f"static_skeleton_design_authorization_result: `{r.implementation_design_authorization_result}`  ",
+        f"implementation_design_conclusion (alias): `{r.implementation_design_conclusion}`  ",
         f"adapter_name: `{ADAPTER_NAME}`  ",
         f"adapter_contract_version: `{ADAPTER_CONTRACT_VERSION}`  ",
         f"consumed_readiness_contract_version: `{CONSUMED_READINESS_CONTRACT_VERSION}`  ",
         f"consumed_dry_run_contract_version: `{CONSUMED_DRY_RUN_CONTRACT_VERSION}`  ",
         f"consumed_design_contract_version: `{CONSUMED_DESIGN_CONTRACT_VERSION}`  ",
         "",
-        "## Implementation Design Verdict",
+        "## Static Skeleton Design Verdict",
         "",
         "| field | value |",
         "|---|---|",
@@ -652,7 +658,7 @@ def _write_report(
         f"{r.upstream_entry_implementation_readiness_review_response_status} |",
         f"| next_required_task | {r.next_required_task} |",
         "",
-        "## Implementation Design Scope",
+        "## Static Skeleton Design Scope",
         "",
         "```json",
         json.dumps(r.implementation_design_scope, indent=2),
@@ -724,7 +730,7 @@ def _write_report(
         json.dumps(r.documentation_sync_review, indent=2),
         "```",
         "",
-        "## Final Implementation Design Verdict",
+        "## Final Static Skeleton Design Verdict",
         "",
         "```json",
         json.dumps(r.final_implementation_design_verdict, indent=2),
@@ -926,10 +932,11 @@ def run_execute(
     if allow_real_entry_execution:
         print("REAL ENTRY EXECUTION GUARD --- NO NETWORK --- REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED")
     elif allow_implementation_design:
-        print("IMPLEMENTATION DESIGN APPROVAL --- NO NETWORK --- design-only")
+        print("STATIC SKELETON DESIGN APPROVAL --- NO NETWORK --- design-only")
     else:
-        print("IMPLEMENTATION DESIGN CHECKLIST --- NO NETWORK --- design-only")
-    print("TASK-014AR: Guarded Entry Real Execution Adapter Implementation Design")
+        print("STATIC SKELETON DESIGN CHECKLIST --- NO NETWORK --- design-only")
+    print("TASK-014AR: Guarded Entry Real Execution Adapter Static Skeleton Design")
+    print("  consumes TASK-014AQ implementation design output -> produces static skeleton design for TASK-014AS")
     print(f"  adapter_name                          : {ADAPTER_NAME}")
     print(f"  adapter_contract_version              : {ADAPTER_CONTRACT_VERSION}")
     print(f"  consumed_readiness_contract_version   : {CONSUMED_READINESS_CONTRACT_VERSION}")
@@ -1185,8 +1192,10 @@ def run_execute(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Tiny guarded entry REAL EXECUTION ADAPTER IMPLEMENTATION "
-            "DESIGN.  No network, no live endpoint, no orders / "
+            "Tiny guarded entry REAL EXECUTION ADAPTER STATIC SKELETON "
+            "DESIGN (TASK-014AR).  Consumes TASK-014AQ implementation "
+            "design output at runtime and produces a static skeleton "
+            "design for TASK-014AS.  No network, no live endpoint, no orders / "
             "positions modified, no guarded entry sender implemented, no "
             "executable adapter, no adapter `send` method, no real entry "
             "execution, no entry / stop-attach / cleanup execution "
