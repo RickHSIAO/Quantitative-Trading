@@ -1738,10 +1738,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldDryR
         entry_disd_real_entry_implemented = _safe_bool(
             atd.get("real_entry_implemented", False)
         )
-        entry_disd_authorization_result = _safe_str(
-            atd.get("authorization_result", "")
-        )
-        # Conclusion may be at top-level or inside
+        # authorization_result and conclusion may be at top-level or inside
         # final_disabled_implementation_scaffold_design_verdict
         _atd_verdict = atd.get(
             "final_disabled_implementation_scaffold_design_verdict"
@@ -1749,6 +1746,12 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldDryR
             atd.get("final_disabled_implementation_scaffold_design_verdict"),
             dict,
         ) else {}
+        entry_disd_authorization_result = _safe_str(
+            atd.get(
+                "authorization_result",
+                _atd_verdict.get("authorization_result", "")
+            )
+        )
         entry_disd_conclusion = _safe_str(
             atd.get(
                 "disabled_implementation_scaffold_design_conclusion",

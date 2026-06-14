@@ -644,7 +644,7 @@ def _write_report(
     md_lines: list[str] = [
         "# Tiny Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Dry-run (TASK-014AU)",
         "",
-        "_TASK-014AU consumes TASK-014AS static skeleton dry-run output at "
+        "_TASK-014AU consumes TASK-014AT disabled implementation scaffold design output at "
         "runtime and produces a disabled implementation scaffold dry-run for TASK-014AV. "
         "It does not implement the adapter, never sends an order, never "
         "calls any endpoint, never lifts G20._",
@@ -1004,7 +1004,7 @@ def run_execute(
     else:
         print("DISABLED IMPLEMENTATION SCAFFOLD DRY-RUN CHECKLIST --- NO NETWORK --- dry-run-only")
     print("TASK-014AU: Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Dry-run")
-    print("  consumes TASK-014AS static skeleton dry-run output -> produces disabled implementation scaffold dry-run for TASK-014AV")
+    print("  consumes TASK-014AT disabled implementation scaffold design output -> produces disabled implementation scaffold dry-run for TASK-014AV")
     print(f"  adapter_name                          : {ADAPTER_NAME}")
     print(f"  adapter_contract_version              : {ADAPTER_CONTRACT_VERSION}")
     print(f"  consumed_readiness_contract_version   : {CONSUMED_READINESS_CONTRACT_VERSION}")

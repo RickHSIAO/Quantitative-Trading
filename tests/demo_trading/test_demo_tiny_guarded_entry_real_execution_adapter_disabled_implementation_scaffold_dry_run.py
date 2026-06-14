@@ -858,7 +858,6 @@ def _valid_entry_disabled_implementation_scaffold_design() -> dict:
         "real_entry_implemented":              False,
         "guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design": True,
         "current_task_real_execution_allowed": False,
-        "authorization_result":                "DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_NOT_AUTHORIZATION",
         "disabled_implementation_scaffold_design_conclusion": "DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_READY_NOT_EXECUTABLE",
         "expected_commit_hash":         "0000000000000000000000000000000000000000",
         "audit_artifacts": {
@@ -875,6 +874,7 @@ def _valid_entry_disabled_implementation_scaffold_design() -> dict:
             "no_position_modified": True,
             "no_secrets_loaded": True,
             "g20_lifted": False,
+            "authorization_result": "DOCUMENTED_ONLY_NOT_AUTHORIZED",
         },
         "next_required_task":           "TASK-014AU_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run",
     }
@@ -3065,10 +3065,9 @@ class TestARFIX2MarkdownReportTitleAndSections:
         # Mode shown in the report is the disabled_implementation_scaffold_dry_run_checklist
         # string.
         assert "mode: `disabled_implementation_scaffold_dry_run_checklist`" in md
-        # The narrative summary mentions that AT consumes AS static skeleton
-        # dry-run output and produces a disabled implementation scaffold
-        # design for AU.
-        assert "TASK-014AS" in md
+        # The narrative intro correctly names AU as the consumer of AT
+        # (disabled implementation scaffold design output), not AS.
+        assert "TASK-014AT" in md
         assert "TASK-014AU" in md
         assert "TASK-014AV" in md
 
@@ -3416,7 +3415,7 @@ class TestAUATUpstreamConsumptionPropagatesFields:
         assert r.upstream_entry_disabled_implementation_scaffold_design_no_auto_git_operations is True
         assert r.upstream_entry_disabled_implementation_scaffold_design_real_entry_implemented is False
         assert r.upstream_entry_disabled_implementation_scaffold_design_authorization_result \
-            == "DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_NOT_AUTHORIZATION"
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
         assert r.upstream_entry_disabled_implementation_scaffold_design_conclusion \
             == "DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_READY_NOT_EXECUTABLE"
         assert r.upstream_entry_disabled_implementation_scaffold_design_response_status \
@@ -3435,7 +3434,7 @@ class TestAUATUpstreamConsumptionPropagatesFields:
         assert d["upstream_entry_disabled_implementation_scaffold_design_response_status"] \
             == "DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_NOT_SENT"
         assert d["upstream_entry_disabled_implementation_scaffold_design_authorization_result"] \
-            == "DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_NOT_AUTHORIZATION"
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
         assert d["consumed_disabled_implementation_scaffold_design_contract_version"] \
             == "disabled_implementation_scaffold_design_v1"
 
@@ -3642,3 +3641,38 @@ class TestAUATASConsumptionStillIntact:
             == "STATIC_SKELETON_DRY_RUN_NOT_SENT"
         assert r.consumed_static_skeleton_dry_run_contract_version \
             == "static_skeleton_dry_run_v1"
+
+
+class TestAUATFIX1ReportProof:
+    """TASK-014AU-FIX1: upstream report proof and authorization_result correctness."""
+
+    def test_markdown_intro_names_at_not_as(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        intro = next(
+            (ln for ln in md.splitlines() if ln.startswith("_TASK-014AU consumes")),
+            "",
+        )
+        assert "TASK-014AT disabled implementation scaffold design output" in intro
+        assert "TASK-014AS static skeleton dry-run output" not in intro
+
+    def test_authorization_result_propagated_from_verdict_fallback(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_design_authorization_result \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+
+    def test_to_dict_authorization_result_documented_only_not_authorized(self):
+        d = _run().to_dict()
+        assert d["upstream_entry_disabled_implementation_scaffold_design_authorization_result"] \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+
+    def test_audit_artifacts_authorization_result_documented_only_not_authorized(self):
+        a = _run().audit_artifacts
+        assert a["upstream_entry_disabled_implementation_scaffold_design_authorization_result"] \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
