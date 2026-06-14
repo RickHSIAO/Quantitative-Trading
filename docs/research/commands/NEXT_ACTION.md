@@ -1,9 +1,10 @@
 # Next Action
 
-> README shared status updated by TASK-014AS-FIX2-DOCS1 (2026-06-14) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014as-fix2-docs1-2026-06-14)
-> for the cross-agent status board. Response-status label cleanup only — no
-> runtime behavior change, G20 still active, no real trading enabled.
+> README shared status updated by TASK-014AT-DOCS1 (2026-06-14) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014at-docs1-2026-06-14)
+> for the cross-agent status board. TASK-014AT added disabled
+> implementation scaffold design (still no real execution, G20 still
+> active, no real trading enabled).
 
 ## TASK-014AT Status (2026-06-14)
 
@@ -23,7 +24,8 @@
 | `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design/` | DONE |
 | no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no sender adapter / no executable adapter surface / no `send` / `place_order` / `execute` method / no AA-AS module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback / no real token / phrase / approval-input validation / no auto git commit / no auto git push | CONFIRMED |
 | main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
-| local commit | PENDING |
+| local commit | DONE — `29b050d` |
+| TASK-014AT-DOCS1 docs sync | DONE |
 
 ## Next Rick Action (set by 2026-06-14 TASK-014AT)
 

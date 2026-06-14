@@ -21,6 +21,68 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AT-DOCS1 — Sync Disabled Implementation Scaffold Design Docs）
+
+Agent: Claude (Sonnet)
+Command source: Rick chat instruction "Proceed with TASK-014AT-DOCS1
+now, before push/VPS validation." (2026-06-14)
+Task: Docs-only sync after TASK-014AT (commit `29b050d`). Update
+`README.md` shared status board to reflect AT identity
+(`latest_completed_task=TASK-014AT`, `latest_commit=29b050d`,
+`current_phase=guarded entry real execution adapter disabled
+implementation scaffold design completed`,
+`next_required_task=TASK-014AU_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run`,
+adapter identity, order link id prefix, audit response_status,
+disabled_implementation_scaffold_design_conclusion, combined 692/692
+PASS validation line). Update `NEXT_ACTION.md` banner pointer and
+replace "local commit | PENDING" with "DONE — `29b050d`" + add
+`TASK-014AT-DOCS1 docs sync | DONE` row. Patch the TASK-014AT entry in
+`COMMAND_LOG.md` "Status after" line so it records `29b050d` instead
+of "local commit pending". No source / preview / test changes.
+
+Status before: TASK-014AT committed locally as `29b050d`;
+NEXT_ACTION.md TASK-014AT row showed "local commit | PENDING";
+README still pointed at TASK-014AS-FIX2-DOCS1 status board.
+
+Status after: README status board now anchored on TASK-014AT-DOCS1,
+NEXT_ACTION.md banner + TASK-014AT block reflect `29b050d` DONE,
+COMMAND_LOG.md TASK-014AT entry status line cleaned, new
+TASK-014AT-DOCS1 entry appended.
+
+Files changed:
+- README.md (shared status board re-headed to TASK-014AT-DOCS1)
+- docs/research/commands/NEXT_ACTION.md (banner pointer + AT row
+  PENDING → DONE `29b050d` + AT-DOCS1 marker)
+- docs/research/commands/COMMAND_LOG.md (this entry + AT "Status
+  after" line updated)
+
+Validation:
+- python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py
+  scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py
+  tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py
+  → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py
+  -q → 199/199 PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py
+  -q → 180/180 PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py
+  -q → 175/175 PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py
+  -q → 138/138 PASS
+- combined 692/692 PASS
+
+Outputs: none (docs-only).
+
+Notes: docs-only sync — no runtime behavior change, no gate change,
+no artifact change. No real order, no sender, no executable adapter,
+no active send/place_order/execute behavior, no endpoint call, no
+secrets, no HMAC/signing, no G20 lift, no position modification.
+main.py / src/risk.py / BybitExecutor untouched. 5 protected demo
+positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched.
+Local commit only — no push.
+
+---
+
 ### 2026-06-14（TASK-014AT — Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Design）
 
 Agent: Claude (Opus 4.7)
@@ -39,7 +101,8 @@ as `b8afcfb` (and docs commit `b963956`); 180/180 AS, 175/175 AR,
 
 Status after: 199/199 AT pass (180 inherited + 19 NEW
 `TestATAS*UpstreamConsumption*`); 180/180 AS, 175/175 AR, 138/138 AQ
-regression all still green; local commit pending.
+regression all still green; combined 692/692 PASS;
+local commit `29b050d`.
 
 Files changed:
 - NEW src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py

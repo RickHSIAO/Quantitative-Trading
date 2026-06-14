@@ -14,17 +14,17 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AS-FIX2-DOCS1, 2026-06-14）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AT-DOCS1, 2026-06-14）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AS-FIX2-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AT-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AS-FIX2 |
-| latest_commit | local — `b8afcfb` — `TASK-014AS-FIX2: clean static skeleton dry-run response-status labels`（local；尚未推遠端） |
-| current_phase | guarded entry real execution adapter static skeleton dry-run response-status label cleanup（**TASK-014AS-FIX2**：`GATE_RESPONSE_STATUS_IS_NOT_SENT` string value 改為 `response_status_is_static_skeleton_dry_run_not_sent`；stage_6 summary 改為 `response_status=STATIC_SKELETON_DRY_RUN_NOT_SENT`；AQ upstream proof fields 不變；新增 4 tests `TestASFIX2ResponseStatusLabels`，AS suite 擴增至 180 PASS） |
-| next_required_task | `TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design` |
+| latest_completed_task | TASK-014AT |
+| latest_commit | local — `29b050d` — `TASK-014AT: add guarded entry real execution adapter disabled implementation scaffold design`（local；尚未推遠端） |
+| current_phase | guarded entry real execution adapter disabled implementation scaffold design completed（**TASK-014AT**：新增 disabled-implementation-scaffold-design-only 模組；29 個 upstream artifacts（AS 繼承 28 個 + AS `entry_static_skeleton_dry_run` 在 runtime 被消費）；88-gate hard-fail frozenset 含 13 個 LIVE AS-consumption gates；19 個 ACCEPTABLE_*_STATUSES 含 `ACCEPTABLE_ENTRY_STATIC_SKELETON_DRY_RUN_STATUSES`；`CONSUMED_STATIC_SKELETON_DRY_RUN_CONTRACT_VERSION=static_skeleton_dry_run_v1`；新增 19 tests `TestATAS*UpstreamConsumption*`，AT suite 199 PASS） |
+| next_required_task | `TASK-014AU_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
 | actual stop attach | **FORBIDDEN** |
@@ -32,12 +32,13 @@ TASK-014AS-FIX2-DOCS1 同步更新；不改任何 execution logic、不解除 G2
 | actual runner execution | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `py_compile` src + preview → PASS；`pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py` → **180 PASS**；AR regression → 175 PASS；AQ regression → 138 PASS；合計 493/493 PASS |
+| latest validation | `py_compile` src + preview + test → PASS；`pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py` → **199 PASS**；AS regression → 180 PASS；AR regression → 175 PASS；AQ regression → 138 PASS；合計 **692/692 PASS** |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
-| adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=static_skeleton_dry_run_v1`、`CONSUMED_STATIC_SKELETON_DESIGN_CONTRACT_VERSION=static_skeleton_design_v1`、`CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1`、`CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1`、`CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1`、`CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
-| order link id prefix | `STATIC_SKELETON_DRY_RUN_TINY_ENTRY_`（static-skeleton-dry-run label — 永不會作為 real order client id 送出） |
-| audit response_status | `STATIC_SKELETON_DRY_RUN_NOT_SENT`（無任何 outbound request） |
-| static_skeleton_dry_run_conclusion | `STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE`（documented only — 仍不授權任何 real execution；下一步是 TASK-014AT disabled implementation scaffold **design**，仍不是實作或執行） |
+| adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=disabled_implementation_scaffold_design_v1`、`CONSUMED_STATIC_SKELETON_DRY_RUN_CONTRACT_VERSION=static_skeleton_dry_run_v1`、`CONSUMED_STATIC_SKELETON_DESIGN_CONTRACT_VERSION=static_skeleton_design_v1`、`CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1`、`CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1`、`CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1`、`CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
+| order link id prefix | `DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_TINY_ENTRY_`（disabled-implementation-scaffold-design label — 永不會作為 real order client id 送出） |
+| audit response_status | `DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_NOT_SENT`（無任何 outbound request） |
+| disabled_implementation_scaffold_design_conclusion | `DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_READY_NOT_EXECUTABLE`（documented only — 仍不授權任何 real execution；下一步是 TASK-014AU disabled implementation scaffold **dry-run**，仍不是實作或執行） |
+| main.py / src/risk.py / BybitExecutor | untouched |
 
 權威來源（authoritative pointers — 任何不一致以下列檔案為準）：
 
