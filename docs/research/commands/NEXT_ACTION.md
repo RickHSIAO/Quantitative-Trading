@@ -1,10 +1,49 @@
 # Next Action
 
-> README shared status updated by TASK-014AU (2026-06-14) — see
+> README shared status updated by TASK-014AU-FIX1 (2026-06-14) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014au-2026-06-14)
-> for the cross-agent status board. TASK-014AU added disabled
-> implementation scaffold dry-run (still no real execution, G20 still
-> active, no real trading enabled).
+> for the cross-agent status board. TASK-014AU-FIX1 cleaned AU upstream
+> report proof: preview intro/banner now correctly say "TASK-014AT
+> disabled implementation scaffold design output"; authorization_result
+> now propagates "DOCUMENTED_ONLY_NOT_AUTHORIZED" via verdict fallback.
+
+## TASK-014AU-FIX1 Status (2026-06-14)
+
+| item | status |
+|---|---|
+| preview intro line: `_TASK-014AU consumes TASK-014AT disabled implementation scaffold design output at runtime...` | DONE |
+| preview stdout banner: `consumes TASK-014AT disabled implementation scaffold design output -> produces disabled implementation scaffold dry-run for TASK-014AV` | DONE |
+| src `authorization_result` parsing: move `_atd_verdict` before extraction; add `_atd_verdict.get("authorization_result", "")` fallback so nested AT artifact field propagates correctly as `"DOCUMENTED_ONLY_NOT_AUTHORIZED"` | DONE |
+| test fixture: remove top-level `authorization_result`; add `"authorization_result": "DOCUMENTED_ONLY_NOT_AUTHORIZED"` inside `final_disabled_implementation_scaffold_design_verdict` (matches real AT artifact structure; exercises fallback path) | DONE |
+| update 2 assertions in `TestAUATUpstreamConsumptionPropagatesFields` (`test_valid_run_propagates_at_fields_into_result`, `test_to_dict_exposes_at_fields`): `"DOCUMENTED_ONLY_NOT_AUTHORIZED"` | DONE |
+| fix stale comment + assertion in `TestARFIX2MarkdownReportTitleAndSections.test_markdown_report_uses_static_skeleton_wording`: `assert "TASK-014AT" in md` (was `"TASK-014AS"`, wrong after intro fix) | DONE |
+| add `TestAUATFIX1ReportProof` (4 tests): intro names AT not AS; authorization_result in result; in to_dict; in audit_artifacts | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AU | **228/228 PASS** |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| combined | **920/920 PASS** |
+| no runtime behavior change / no endpoint / no secret / no G20 / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE — `5bffb1e` |
+
+## Next Rick Action (set by 2026-06-14 TASK-014AU-FIX1)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py -q
+       # expect 228/228 PASS
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py --write-report --from-latest-entry-disabled-implementation-scaffold-design
+       # confirm: intro says "TASK-014AT disabled implementation scaffold design output"
+       # confirm: authorization_result = "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+
+2. Once step 1 passes, decide whether to authorise TASK-014AV
+   (guarded entry real execution adapter disabled implementation scaffold
+   readiness review — next phase; still no real execution).
 
 ## TASK-014AU Status (2026-06-14)
 

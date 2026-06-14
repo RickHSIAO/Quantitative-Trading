@@ -21,6 +21,74 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AU-FIX1 — Clean Disabled Scaffold Dry-run Upstream Report Proof）
+
+Agent: Claude (Sonnet 4.6)
+Command source: Rick chat instruction authorizing TASK-014AU-FIX1 after
+VPS preview run revealed two wrong upstream-label strings and an empty
+authorization_result field in the AU report.
+Task: Fix three issues in the AU disabled-implementation-scaffold-dry-run
+module — (1) preview script intro line and stdout banner wrongly said
+"TASK-014AS static skeleton dry-run output" instead of "TASK-014AT
+disabled implementation scaffold design output"; (2)
+`upstream_entry_disabled_implementation_scaffold_design_authorization_result`
+was empty because `authorization_result` lives inside
+`final_disabled_implementation_scaffold_design_verdict` in the real AT
+artifact, not at top level, and AU only checked top level; (3) one
+pre-existing test asserted `"TASK-014AS" in md` which was a stale
+expectation from when the intro still named AS. Fix: move `_atd_verdict`
+computation before the `authorization_result` extraction and add
+`_atd_verdict.get("authorization_result", "")` as fallback; update both
+preview strings; update fixture so `authorization_result` lives only
+inside `final_disabled_implementation_scaffold_design_verdict` (value
+`"DOCUMENTED_ONLY_NOT_AUTHORIZED"`, matching real AT output); update 2
+test assertions + 1 stale comment/assertion in
+`TestARFIX2MarkdownReportTitleAndSections`; add
+`TestAUATFIX1ReportProof` (4 tests).
+
+Status before: TASK-014AU committed locally as `593f081` + docs stamp
+`e7f6fef`; AU suite 224/224 PASS; combined 916/916 PASS.
+
+Status after: TASK-014AU-FIX1 committed locally as `5bffb1e`; AU suite
+228/228 PASS (4 new FIX1 tests); AT/AS/AR/AQ regressions
+199/180/175/138 PASS; combined 920/920 PASS.
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  (authorization_result parsing: move _atd_verdict before field
+  extraction, add verdict fallback)
+- scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  (fix 2 strings: intro and stdout banner now say
+  "TASK-014AT disabled implementation scaffold design output")
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  (fixture: remove top-level authorization_result, add to verdict dict
+  as "DOCUMENTED_ONLY_NOT_AUTHORIZED"; update 2 assertions in
+  TestAUATUpstreamConsumptionPropagatesFields; fix stale comment +
+  assertion in TestARFIX2MarkdownReportTitleAndSections;
+  add TestAUATFIX1ReportProof with 4 tests)
+
+Validation:
+- python -m py_compile src/... scripts/... tests/... → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  -q → 228/228 PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py
+  -q → 199/199 PASS (regression)
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py
+  -q → 180/180 PASS (regression)
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py
+  -q → 175/175 PASS (regression)
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py
+  -q → 138/138 PASS (regression)
+- combined 920/920 PASS
+
+Outputs: none committed (preview script writes to .gitignored outputs/).
+
+Notes: no runtime behavior change; no endpoint/secret/sender change; no
+G20 lift; no position modification; main.py / src/risk.py / BybitExecutor
+untouched. Local commit only — no push.
+
+---
+
 ### 2026-06-14（TASK-014AU — Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Dry-run）
 
 Agent: Claude (Opus 4.7)
