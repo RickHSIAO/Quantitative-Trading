@@ -550,7 +550,7 @@ GATE_HMAC_SIGNATURE_EXCLUDED                      = "hmac_signature_excluded"
 GATE_FORBIDDEN_LOG_FIELDS_DOCUMENTED              = "forbidden_log_fields_documented"
 
 # Response / error handling design gates
-GATE_RESPONSE_STATUS_IS_NOT_SENT                  = "response_status_is_implementation_design_not_sent"
+GATE_RESPONSE_STATUS_IS_NOT_SENT                  = "response_status_is_static_skeleton_dry_run_not_sent"
 GATE_RESPONSE_FROM_EXCHANGE_FALSE                 = "response_from_exchange_false"
 GATE_EXCHANGE_ORDER_ID_NONE                       = "exchange_order_id_none"
 GATE_RESPONSE_PARSER_EXCLUDED                     = "response_parser_excluded"
@@ -1809,7 +1809,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDryRun:
         }
         stages[STAGE_6_RESPONSE_AND_ERROR_HANDLING_DESIGN] = {
             "stage":   STAGE_6_RESPONSE_AND_ERROR_HANDLING_DESIGN,
-            "summary": "Response / error handling design (response_status=IMPLEMENTATION_DESIGN_NOT_SENT; parser excluded).",
+            "summary": "Response / error handling design (response_status=STATIC_SKELETON_DRY_RUN_NOT_SENT; parser excluded).",
             "response_and_error_handling_design":    response_and_error_handling_design,
         }
         blocked.append(GATE_RESPONSE_STATUS_IS_NOT_SENT)

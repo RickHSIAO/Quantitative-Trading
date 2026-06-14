@@ -14,16 +14,16 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AS-FIX1-DOCS1, 2026-06-14）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AS-FIX2, 2026-06-14）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AS-FIX1-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AS-FIX2 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AS-FIX1 |
-| latest_commit | local — `798e77d` — `TASK-014AS-FIX1: clean static skeleton dry-run footer wording`（local；尚未推遠端） |
-| current_phase | guarded entry real execution adapter static skeleton dry-run footer wording cleanup（**TASK-014AS-FIX1**：report footer / CLI description / module docstring 改用 STATIC-SKELETON-DRY-RUN-ONLY、`--allow-static-skeleton-dry-run`、`static_skeleton_dry_run_conclusion remains STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE`；舊有 `implementation_design_*` backward-compatible alias fields 保留；runtime behavior / gates / artifacts 未變動；新增 1 test `test_markdown_report_footer_uses_dry_run_wording`，AS suite 擴增至 176 PASS） |
+| latest_completed_task | TASK-014AS-FIX2 |
+| latest_commit | local — `TASK-014AS-FIX2: clean static skeleton dry-run response-status labels`（local；尚未推遠端） |
+| current_phase | guarded entry real execution adapter static skeleton dry-run response-status label cleanup（**TASK-014AS-FIX2**：`GATE_RESPONSE_STATUS_IS_NOT_SENT` string value 改為 `response_status_is_static_skeleton_dry_run_not_sent`；stage_6 summary 改為 `response_status=STATIC_SKELETON_DRY_RUN_NOT_SENT`；AQ upstream proof fields 不變；新增 4 tests `TestASFIX2ResponseStatusLabels`，AS suite 擴增至 180 PASS） |
 | next_required_task | `TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
@@ -32,7 +32,7 @@ TASK-014AS-FIX1-DOCS1 同步更新；不改任何 execution logic、不解除 G2
 | actual runner execution | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
-| latest validation | `py_compile` src + preview → PASS；`pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py` → **176 PASS**；AR regression → 175 PASS；AQ regression → 138 PASS；合計 489/489 PASS |
+| latest validation | `py_compile` src + preview → PASS；`pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py` → **180 PASS**；AR regression → 175 PASS；AQ regression → 138 PASS；合計 493/493 PASS |
 | protected positions（never touched） | ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT |
 | adapter identity | `ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter`、`ADAPTER_CONTRACT_VERSION=static_skeleton_dry_run_v1`、`CONSUMED_STATIC_SKELETON_DESIGN_CONTRACT_VERSION=static_skeleton_design_v1`、`CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1`、`CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1`、`CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1`、`CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1`（documented only — adapter NOT instantiated, no `send` method exists） |
 | order link id prefix | `STATIC_SKELETON_DRY_RUN_TINY_ENTRY_`（static-skeleton-dry-run label — 永不會作為 real order client id 送出） |

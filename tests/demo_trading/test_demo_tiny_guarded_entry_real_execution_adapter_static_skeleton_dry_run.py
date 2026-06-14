@@ -2985,3 +2985,40 @@ class TestARFIX2CLIBannerSaysStaticSkeleton:
         assert "allow-static-skeleton-dry-run" in normalized
         assert "static_skeleton_dry_run_conclusion" in normalized
         assert "STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE" in normalized
+
+
+class TestASFIX2ResponseStatusLabels:
+    """Gate label and stage-6 summary use STATIC_SKELETON_DRY_RUN_NOT_SENT."""
+
+    def test_blocked_gates_contains_dry_run_response_status_gate(self):
+        r = _run()
+        assert "response_status_is_static_skeleton_dry_run_not_sent" in r.blocked_gates
+
+    def test_blocked_gates_does_not_contain_impl_design_response_status_gate(self):
+        r = _run()
+        assert "response_status_is_implementation_design_not_sent" not in r.blocked_gates
+
+    def test_stage6_summary_uses_dry_run_response_status(self):
+        r = _run()
+        summary = r.stages[STAGE_6_RESPONSE_AND_ERROR_HANDLING_DESIGN]["summary"]
+        assert "STATIC_SKELETON_DRY_RUN_NOT_SENT" in summary
+        assert "IMPLEMENTATION_DESIGN_NOT_SENT" not in summary
+
+    def test_markdown_report_response_status_uses_dry_run_wording(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        # Stage-6 summary in the report must use dry-run response-status label.
+        assert "response_status=STATIC_SKELETON_DRY_RUN_NOT_SENT" in md
+        assert "response_status=IMPLEMENTATION_DESIGN_NOT_SENT" not in md
+        # Blocked-gates section must use the new gate label.
+        assert "response_status_is_static_skeleton_dry_run_not_sent" in md
+        assert "response_status_is_implementation_design_not_sent" not in md
+        # AQ upstream proof fields must still be present and unchanged.
+        assert "IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE" in md
+        assert "IMPLEMENTATION_DESIGN_NOT_SENT" in md

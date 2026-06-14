@@ -1,9 +1,25 @@
 # Next Action
 
-> README shared status updated by TASK-014AS-FIX1-DOCS1 (2026-06-14) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014as-fix1-docs1-2026-06-14)
-> for the cross-agent status board. Footer wording cleanup only — no runtime
-> behavior change, G20 still active, no real trading enabled.
+> README shared status updated by TASK-014AS-FIX2 (2026-06-14) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014as-fix2-2026-06-14)
+> for the cross-agent status board. Response-status label cleanup only — no
+> runtime behavior change, G20 still active, no real trading enabled.
+
+## TASK-014AS-FIX2 Status (2026-06-14)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: `GATE_RESPONSE_STATUS_IS_NOT_SENT` string value `"response_status_is_implementation_design_not_sent"` → `"response_status_is_static_skeleton_dry_run_not_sent"` | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: stage_6 summary `response_status=IMPLEMENTATION_DESIGN_NOT_SENT` → `response_status=STATIC_SKELETON_DRY_RUN_NOT_SENT` | DONE |
+| AQ upstream proof fields (`upstream_entry_implementation_design_conclusion=IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE`, `upstream_entry_implementation_design_response_status=IMPLEMENTATION_DESIGN_NOT_SENT`) unchanged | CONFIRMED |
+| tests: +4 `TestASFIX2ResponseStatusLabels` — `test_blocked_gates_contains_dry_run_response_status_gate`, `test_blocked_gates_does_not_contain_impl_design_response_status_gate`, `test_stage6_summary_uses_dry_run_response_status`, `test_markdown_report_response_status_uses_dry_run_wording` | DONE |
+| no runtime behavior change / no gate change / no artifact change / no endpoint/secret/sender change | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| py_compile src + scripts + test | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py | **180/180 PASS** |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py (regression) | 175/175 PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py (regression) | 138/138 PASS |
+| local commit | DONE |
 
 ## TASK-014AS-FIX1 Status (2026-06-14)
 
@@ -43,7 +59,7 @@
 | main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
 | local commit | DONE |
 
-## Next Rick Action (set by 2026-06-14 TASK-014AS-FIX1)
+## Next Rick Action (set by 2026-06-14 TASK-014AS-FIX2)
 
 1. VPS git pull and validate:
        git pull --ff-only
@@ -51,7 +67,7 @@
        source .env.demo
        python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py
        python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py -q
-       # expect 176/176 PASS
+       # expect 180/180 PASS
 
 2. (Optional) Run TASK-014AS static skeleton dry-run preview:
        python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py \
