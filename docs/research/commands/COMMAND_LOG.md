@@ -21,6 +21,69 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AT — Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Design）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick chat instruction authorizing TASK-014AT, continuing
+the strict TASK-014X safety chain (AQ → AR → AS → AT → AU).
+Task: Add disabled-implementation-scaffold-design-only module that
+consumes TASK-014AS static skeleton dry-run output at runtime as the 29th
+upstream artifact and produces a disabled implementation scaffold design
+for the FUTURE TASK-014AU. Still no real execution, no sender, no
+executable adapter, no endpoint calls, no secrets, no G20 lift, no
+auto-git operations. 13 new fail-closed gates against AS upstream.
+
+Status before: TASK-014AS-FIX2 + TASK-014AS-FIX2-DOCS1 committed locally
+as `b8afcfb` (and docs commit `b963956`); 180/180 AS, 175/175 AR,
+138/138 AQ all green.
+
+Status after: 199/199 AT pass (180 inherited + 19 NEW
+`TestATAS*UpstreamConsumption*`); 180/180 AS, 175/175 AR, 138/138 AQ
+regression all still green; local commit pending.
+
+Files changed:
+- NEW src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py
+  (copied + bulk-renamed from AS; identity flipped to AT;
+  CONSUMED_STATIC_SKELETON_DRY_RUN_CONTRACT_VERSION + 13 gates +
+  ACCEPTABLE_ENTRY_STATIC_SKELETON_DRY_RUN_STATUSES +
+  12 `upstream_entry_static_skeleton_dry_run_*` dataclass fields +
+  to_dict/audit_artifacts entries + stage_0 frozenset)
+- NEW scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py
+  (29 `--from-latest-*` flags incl. new
+  `--from-latest-entry-static-skeleton-dry-run`; `run_execute()` accepts
+  `entry_static_skeleton_dry_run_dir`; loads AS latest artifact and
+  passes it into `run_design()`; outputs to
+  `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design/`;
+  CLI description surfaces `disabled_implementation_scaffold_design_conclusion remains DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_READY_NOT_EXECUTABLE`)
+- NEW tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py
+  (199 tests; new `_valid_entry_static_skeleton_dry_run()` fixture;
+  19 NEW `TestATAS*UpstreamConsumption*` classes covering field
+  propagation + 13 fail-closed gates + CLI flag exposure)
+- .gitignore: added
+  `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design/`
+- docs/research/commands/NEXT_ACTION.md: TASK-014AT status block prepended
+
+Validation:
+- python -m py_compile src/scripts/test for AT — PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py -q — 199/199 PASS
+- pytest AS/AR/AQ regression — 493/493 PASS
+
+Outputs: none (no preview run yet; VPS will produce
+`outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design/`)
+
+Notes: No real entry execution, no `/v5/order/create`, no
+`/v5/position/trading-stop`, no sender, no executable adapter, no
+`send` / `place_order` / `execute` method, no AA-AS module reuse, G20
+NOT lifted, 5 protected positions
+(ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched, no secrets, no
+HMAC, no signature header, no live endpoint fallback, no real token /
+phrase / approval-input validation, no auto git commit, no auto git
+push. AS upstream contract version pinned to `static_skeleton_dry_run_v1`.
+next_required_task = TASK-014AU. Local commit only — no push (Rick must
+authorize push separately).
+
+---
+
 ### 2026-06-14（TASK-014AS-FIX2 — Clean Static Skeleton Dry-run Response-Status Labels）
 
 Agent: Claude (Sonnet)
