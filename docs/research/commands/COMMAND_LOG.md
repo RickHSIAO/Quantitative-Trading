@@ -21,6 +21,90 @@ Notes:
 
 ---
 
+### 2026-06-15（TASK-014AW — Add Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Final Pre-Execution Review）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick chat instruction authorizing TASK-014AW with
+strict constraints: mirror AV pattern but renamed `readiness_review` →
+`final_pre_execution_review`; add AV's READINESS REVIEW as the 32nd
+runtime upstream artifact; add 14 fail-closed AV gates; add CLI flags
+`--from-latest-entry-disabled-implementation-scaffold-readiness-review`
+and `--allow-disabled-implementation-scaffold-final-pre-execution-review`;
+status/conclusion/authorization fixed; strictly non-executable;
+main.py / src/risk.py / BybitExecutor untouched; local commit only.
+
+Task: Build TASK-014AW scaffold (src + scripts + tests) that consumes
+TASK-014AV READINESS REVIEW + 31 upstream artifacts at runtime and
+produces a disabled implementation scaffold FINAL PRE-EXECUTION REVIEW
+artifact for the FUTURE TASK-014AX manual authorization gate design.
+
+Status before: TASK-014AV-FIX2 committed locally as `1aa184f`; AV
+suite 259/259 PASS; combined AV+AU+AT+AS+AR+AQ 1186/1186 PASS.
+
+Status after: AW src/scripts/tests created via surgical disambiguated-
+phrase rename (preserves TASK-014AP `implementation_readiness_review`
+and generic `readiness_review_v1` references); 14 new AV gates
+(`GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_*`)
+added — hard-fail count 116 → 130; new dataclass fields propagate AV
+payload + contract version; 18 new TestAWAV* classes; AW suite
+**282/282 PASS**; AV/AU/AT/AS/AR/AQ 1186/1186 PASS; combined
+**1468/1468 PASS**; status =
+`TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_READY`;
+conclusion = `DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_READY_NOT_EXECUTABLE`;
+authorization = `DOCUMENTED_ONLY_NOT_AUTHORIZED`; forward-ref
+next_required_task = `TASK-014AX_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design`.
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py
+  (new file — full AW scaffold with 14 new AV gates, new dataclass
+  fields, AV parser block, audit_artifacts entries, AV-aware
+  STAGE_0 summary, scope_summary referencing TASK-014AV READINESS
+  REVIEW + 31 upstream + TASK-014AX forward-ref, `__all__` exports)
+- scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py
+  (new file — argparse description / banner say TASK-014AV READINESS
+  REVIEW → TASK-014AX; adds `--from-latest-entry-disabled-implementation-scaffold-readiness-review`
+  and `--allow-disabled-implementation-scaffold-final-pre-execution-review`
+  flags; new loader, dir resolution, missing-check, print line,
+  run_readiness_review() kwarg for AV payload)
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py
+  (new file — adds `_valid_entry_disabled_implementation_scaffold_readiness_review`
+  fixture + `_run()` _UNSET param + 18 TestAWAV* classes;
+  scope_summary regression asserts TASK-014AV / 31 upstream /
+  READINESS REVIEW / TASK-014AX)
+- README.md (shared status board: latest_completed_task → TASK-014AW;
+  forward-ref TASK-014AX; AW 282 + combined 1468; AW adapter contract
+  + final_pre_execution_review constants)
+- docs/research/commands/NEXT_ACTION.md (prepended TASK-014AW Status
+  + Next Rick Action block)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+
+Validation:
+- `python -m py_compile` src + scripts + test → PASS
+- `python -m pytest` AW → **282/282 PASS**
+- AV regression → 259/259 PASS
+- AU regression → 235/235 PASS
+- AT regression → 199/199 PASS
+- AS regression → 180/180 PASS
+- AR regression → 175/175 PASS
+- AQ regression → 138/138 PASS
+- combined AW+AV+AU+AT+AS+AR+AQ → **1468/1468 PASS**
+
+Outputs: none at runtime (`--write-report` not exercised in CI; AW is
+a documented-only scaffold).  Report would land at
+`outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review/`
+when Rick runs the preview script on VPS.
+
+Notes: No network, no sender adapter, no `send` method, no real
+entry / stop-attach / cleanup execution, no real token / phrase /
+approval validation, no automatic git commit / push.  G20 sender
+policy still active.  5 protected demo positions
+(ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT) untouched.
+main.py / src/risk.py / BybitExecutor untouched.  Local commit only
+(per durable instruction: never push without explicit Rick
+instruction).
+
+---
+
 ### 2026-06-14（TASK-014AV-FIX2 — Clean Readiness Review Upstream and Next-Task Wording）
 
 Agent: Claude (Sonnet 4.6)
