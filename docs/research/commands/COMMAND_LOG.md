@@ -60,7 +60,7 @@ Outputs: none.
 Notes: no code changes to src / scripts / tests; no runtime behavior
 change; no endpoint, no secret, no sender, no G20 lift, no position
 modification; main.py / src/risk.py / BybitExecutor untouched. Local
-commit only — no push.
+commit `e3689c9` — no push.
 
 ---
 

@@ -23,7 +23,7 @@
 | combined AV+AU+AT+AS+AR+AQ (no `-s`) | **1186/1186 PASS** |
 | no code changes to src / scripts / tests | CONFIRMED |
 | no runtime behavior change / no endpoint / no secret / no G20 / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
-| local commit | DONE |
+| local commit | DONE — `e3689c9` |
 
 ## Next Rick Action (set by 2026-06-14 TASK-014AV-FIX1)
 
