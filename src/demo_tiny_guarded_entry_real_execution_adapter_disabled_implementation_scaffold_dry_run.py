@@ -1749,7 +1749,13 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldDryR
         entry_disd_authorization_result = _safe_str(
             atd.get(
                 "authorization_result",
-                _atd_verdict.get("authorization_result", "")
+                atd.get(
+                    "disabled_implementation_scaffold_design_authorization_result",
+                    atd.get(
+                        "implementation_design_authorization_result",
+                        _atd_verdict.get("authorization_result", "")
+                    )
+                )
             )
         )
         entry_disd_conclusion = _safe_str(

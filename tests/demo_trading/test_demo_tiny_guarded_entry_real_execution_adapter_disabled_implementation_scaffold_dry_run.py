@@ -858,6 +858,7 @@ def _valid_entry_disabled_implementation_scaffold_design() -> dict:
         "real_entry_implemented":              False,
         "guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design": True,
         "current_task_real_execution_allowed": False,
+        "disabled_implementation_scaffold_design_authorization_result": "DOCUMENTED_ONLY_NOT_AUTHORIZED",
         "disabled_implementation_scaffold_design_conclusion": "DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_READY_NOT_EXECUTABLE",
         "expected_commit_hash":         "0000000000000000000000000000000000000000",
         "audit_artifacts": {
@@ -874,7 +875,6 @@ def _valid_entry_disabled_implementation_scaffold_design() -> dict:
             "no_position_modified": True,
             "no_secrets_loaded": True,
             "g20_lifted": False,
-            "authorization_result": "DOCUMENTED_ONLY_NOT_AUTHORIZED",
         },
         "next_required_task":           "TASK-014AU_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run",
     }
@@ -3662,7 +3662,7 @@ class TestAUATFIX1ReportProof:
         assert "TASK-014AT disabled implementation scaffold design output" in intro
         assert "TASK-014AS static skeleton dry-run output" not in intro
 
-    def test_authorization_result_propagated_from_verdict_fallback(self):
+    def test_authorization_result_propagated_from_at_design_key(self):
         r = _run()
         assert r.upstream_entry_disabled_implementation_scaffold_design_authorization_result \
             == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
@@ -3676,3 +3676,76 @@ class TestAUATFIX1ReportProof:
         a = _run().audit_artifacts
         assert a["upstream_entry_disabled_implementation_scaffold_design_authorization_result"] \
             == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+
+
+class TestAUATFIX2AuthorizationResultReport:
+    """TASK-014AU-FIX2: upstream authorization_result propagates through all report surfaces."""
+
+    def test_result_field_documented_only_not_authorized(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_design_authorization_result \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+
+    def test_to_dict_field_documented_only_not_authorized(self):
+        d = _run().to_dict()
+        assert d["upstream_entry_disabled_implementation_scaffold_design_authorization_result"] \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+
+    def test_audit_artifacts_field_documented_only_not_authorized(self):
+        a = _run().audit_artifacts
+        assert a["upstream_entry_disabled_implementation_scaffold_design_authorization_result"] \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+
+    def test_generated_json_contains_documented_only_not_authorized(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run"
+        json_text = (out_dir / f"latest_{base}.json").read_text(encoding="utf-8")
+        assert (
+            '"upstream_entry_disabled_implementation_scaffold_design_authorization_result":'
+            ' "DOCUMENTED_ONLY_NOT_AUTHORIZED"'
+        ) in json_text
+
+    def test_generated_json_does_not_contain_empty_authorization_result(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run"
+        json_text = (out_dir / f"latest_{base}.json").read_text(encoding="utf-8")
+        assert (
+            '"upstream_entry_disabled_implementation_scaffold_design_authorization_result": ""'
+        ) not in json_text
+
+    def test_generated_markdown_contains_documented_only_not_authorized(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert (
+            '"upstream_entry_disabled_implementation_scaffold_design_authorization_result":'
+            ' "DOCUMENTED_ONLY_NOT_AUTHORIZED"'
+        ) in md
+
+    def test_generated_markdown_does_not_contain_empty_authorization_result(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert (
+            '"upstream_entry_disabled_implementation_scaffold_design_authorization_result": ""'
+        ) not in md
