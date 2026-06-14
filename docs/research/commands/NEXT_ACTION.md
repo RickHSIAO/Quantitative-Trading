@@ -1,11 +1,47 @@
 # Next Action
 
-> README shared status updated by TASK-014AU-FIX1 (2026-06-14) — see
+> README shared status updated by TASK-014AU-FIX2 (2026-06-14) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014au-2026-06-14)
-> for the cross-agent status board. TASK-014AU-FIX1 cleaned AU upstream
-> report proof: preview intro/banner now correctly say "TASK-014AT
-> disabled implementation scaffold design output"; authorization_result
-> now propagates "DOCUMENTED_ONLY_NOT_AUTHORIZED" via verdict fallback.
+> for the cross-agent status board. TASK-014AU-FIX2 completes the
+> authorization_result proof: upstream_entry_disabled_implementation_scaffold_design_authorization_result
+> now reads "DOCUMENTED_ONLY_NOT_AUTHORIZED" in result / to_dict /
+> audit_artifacts / generated JSON / generated markdown.
+
+## TASK-014AU-FIX2 Status (2026-06-14)
+
+| item | status |
+|---|---|
+| root cause: AT artifact JSON uses `disabled_implementation_scaffold_design_authorization_result` (AT's `to_dict()` key), not bare `authorization_result`; AU only checked bare key and verdict dict — so field was always `""` | IDENTIFIED |
+| src: extend fallback chain — `atd.get("authorization_result", atd.get("disabled_implementation_scaffold_design_authorization_result", atd.get("implementation_design_authorization_result", _atd_verdict.get("authorization_result", ""))))` | DONE |
+| fixture: remove `authorization_result` from `final_disabled_implementation_scaffold_design_verdict`; add `"disabled_implementation_scaffold_design_authorization_result": "DOCUMENTED_ONLY_NOT_AUTHORIZED"` at top level (matches real AT artifact structure) | DONE |
+| rename FIX1 test `test_authorization_result_propagated_from_verdict_fallback` → `test_authorization_result_propagated_from_at_design_key` | DONE |
+| add `TestAUATFIX2AuthorizationResultReport` (7 tests): result / to_dict / audit_artifacts field; generated JSON contains correct value; JSON no empty form; markdown contains correct value; markdown no empty form | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AU | **235/235 PASS** |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| combined | **927/927 PASS** |
+| no runtime behavior change / no endpoint / no secret / no G20 / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE — `85550e0` |
+
+## Next Rick Action (set by 2026-06-14 TASK-014AU-FIX2)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py -q
+       # expect 235/235 PASS
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py --write-report --from-latest-entry-disabled-implementation-scaffold-design
+       # confirm: upstream_entry_disabled_implementation_scaffold_design_authorization_result = "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+       # confirm: generated JSON/markdown do not contain the empty-string form of this field
+
+2. Once step 1 passes, decide whether to authorise TASK-014AV
+   (guarded entry real execution adapter disabled implementation scaffold
+   readiness review — next phase; still no real execution).
 
 ## TASK-014AU-FIX1 Status (2026-06-14)
 

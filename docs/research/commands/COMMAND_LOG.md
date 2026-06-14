@@ -21,6 +21,57 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AU-FIX2 — Sync Disabled Scaffold Dry-run Upstream Authorization Proof）
+
+Agent: Claude (Sonnet 4.6)
+Command source: Rick chat instruction authorizing TASK-014AU-FIX2 after
+VPS validation of FIX1 showed `upstream_entry_disabled_implementation_scaffold_design_authorization_result`
+still "" in audit_artifacts, even though the top-level AU
+`implementation_design_authorization_result` (AU's own constant) was
+correctly "DOCUMENTED_ONLY_NOT_AUTHORIZED".
+Task: Fix root cause — AT artifact JSON uses the key
+`disabled_implementation_scaffold_design_authorization_result` (from
+AT's `to_dict()`), not a bare `authorization_result`. AU's FIX1 only
+added the verdict fallback, but neither the bare key nor the verdict key
+exist in the real AT artifact. Fix: extend the parsing fallback chain to
+check `disabled_implementation_scaffold_design_authorization_result` and
+`implementation_design_authorization_result` at the top level of `atd`
+before falling back to the verdict dict. Update test fixture to match
+the real AT artifact structure (AT-specific key at top level, not bare
+key inside verdict). Rename misleading FIX1 test name. Add
+`TestAUATFIX2AuthorizationResultReport` (7 tests) covering all report
+surfaces.
+
+Status before: TASK-014AU-FIX1 committed locally as `5bffb1e` + docs
+stamp `ea8785e`; AU suite 228/228 PASS; combined 920/920 PASS.
+
+Status after: TASK-014AU-FIX2 committed locally as `85550e0`; AU suite
+235/235 PASS (7 new FIX2 tests); AT/AS/AR/AQ regressions
+199/180/175/138 PASS; combined 927/927 PASS.
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  (extend authorization_result fallback chain to include AT-specific keys)
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  (fixture: swap verdict `authorization_result` → top-level
+  `disabled_implementation_scaffold_design_authorization_result`;
+  rename FIX1 test; add TestAUATFIX2AuthorizationResultReport 7 tests)
+
+Validation:
+- python -m py_compile src/... scripts/... tests/... → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  -q → 235/235 PASS
+- pytest AT/AS/AR/AQ regressions → 199/180/175/138 PASS
+- combined 927/927 PASS
+
+Outputs: none committed (preview script writes to .gitignored outputs/).
+
+Notes: no runtime behavior change; no endpoint/secret/sender change; no
+G20 lift; no position modification; main.py / src/risk.py / BybitExecutor
+untouched. Local commit only — no push.
+
+---
+
 ### 2026-06-14（TASK-014AU-FIX1 — Clean Disabled Scaffold Dry-run Upstream Report Proof）
 
 Agent: Claude (Sonnet 4.6)
