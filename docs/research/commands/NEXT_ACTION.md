@@ -1,10 +1,50 @@
 # Next Action
 
-> README shared status updated by TASK-014AT-DOCS1 (2026-06-14) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014at-docs1-2026-06-14)
-> for the cross-agent status board. TASK-014AT added disabled
-> implementation scaffold design (still no real execution, G20 still
+> README shared status updated by TASK-014AU (2026-06-14) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014au-2026-06-14)
+> for the cross-agent status board. TASK-014AU added disabled
+> implementation scaffold dry-run (still no real execution, G20 still
 > active, no real trading enabled).
+
+## TASK-014AU Status (2026-06-14)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py: disabled-implementation-scaffold-dry-run-only module (NO sender, NO executable adapter, NO `send` / `place_order` / `execute` method, NO endpoint calls, NO real entry execution, NO real token / phrase / approval-input validation, NO auto-git operations, NO AA-AT module reuse), **30 upstream artifact inputs** (the 29 from TASK-014AT + AT's `entry_disabled_implementation_scaffold_design` output **consumed at runtime by TASK-014AU**), 14 stages (STAGE_0 through STAGE_13), hard-fail-closed gates frozenset (**102 gates** incl. 14 LIVE AT-consumption gates `entry_disabled_implementation_scaffold_design_*`), 20 ACCEPTABLE_*_STATUSES frozensets incl. ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_STATUSES and ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_MODES, dataclass result with deep-copy `to_dict()` covering 14 sub-dict fields **+ 16 `upstream_entry_disabled_implementation_scaffold_design_*` fields + `consumed_disabled_implementation_scaffold_design_contract_version`** | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py: NO `/v5/order/create` invocation (only documented reference string), NO `/v5/position/trading-stop`, NO secret reads, NO HMAC/signature, NO sender adapter, NO executable adapter surface, NO `send` / `place_order` / `execute` method, NO real entry execution, NO urllib/requests/httpx/socket/http.client imports, NO G20 lift, NO AA-AT module reuse, NO auto git commit / push / branch / tag — pure-computation disabled-implementation-scaffold-dry-run envelope (ADAPTER_CONTRACT_VERSION=disabled_implementation_scaffold_dry_run_v1, CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_CONTRACT_VERSION=disabled_implementation_scaffold_design_v1, ADAPTER_RESPONSE_STATUS=DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_NOT_SENT, DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_CONCLUSION=DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_READY_NOT_EXECUTABLE) | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py: AT `entry_disabled_implementation_scaffold_design` artifact CONSUMED AT RUNTIME — status / mode / `real_execution_allowed` / `send_allowed` / `adapter_implementation_included` / `adapter_execution_included` / `order_endpoint_called` / `stop_endpoint_called` / `no_position_modified` / `no_secrets_loaded` / `g20_lifted` / `no_live_endpoint` / `no_auto_git_operations` / `real_entry_implemented` / `authorization_result` / conclusion / `audit_artifacts.response_status` all parsed and gated. ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_STATUSES (TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_READY / _READY_BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED); ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_MODES (disabled_implementation_scaffold_design_checklist / disabled_implementation_scaffold_design_approval); 14 LIVE AT-consumption gates (entry_disabled_implementation_scaffold_design_missing / _status_unacceptable / _mode_unacceptable / _real_execution_allowed_true / _send_allowed_true / _adapter_implementation_included_true / _adapter_execution_included_true / _order_endpoint_called_true / _stop_endpoint_called_true / _no_position_modified_false / _no_secrets_loaded_false / _g20_lifted_true / _conclusion_mismatch / _response_status_unacceptable) — each fails-closed when violated. AS + AR + AQ runtime consumption preserved intact. | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py: next_required_task = "TASK-014AV_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review"; audit_artifacts.response_status = "DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_NOT_SENT"; final_disabled_implementation_scaffold_dry_run_verdict.disabled_implementation_scaffold_dry_run_conclusion = "DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_READY_NOT_EXECUTABLE" | DONE |
+| scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py: **30** `--from-latest-*` flags (incl. new `--from-latest-entry-disabled-implementation-scaffold-design`), `--symbol`, `--expected-commit-hash`, `--allow-disabled-implementation-scaffold-dry-run`, `--allow-real-entry-execution`, `--write-report`; `run_execute()` callable from tests (now also accepts `entry_disabled_implementation_scaffold_design_dir`); loads `latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.json` and passes the artifact through to `run_dry_run(entry_disabled_implementation_scaffold_design=...)`; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run/`; NO auto git operations | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py: 224 tests — 199 inherited (rebadged for AU identity) + 25 NEW `TestAUAT*UpstreamConsumption*` covering contract version constant, ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_STATUSES + MODES frozensets, AT field propagation into result/to_dict/audit_artifacts, missing-AT fail-closed, status unacceptable, mode unacceptable (and approval mode accepted), real_execution_allowed true, send_allowed true, adapter_implementation_included true, adapter_execution_included true, order_endpoint_called true, stop_endpoint_called true, no_position_modified false, no_secrets_loaded false, g20_lifted true, conclusion mismatch, response_status mismatch, AQ/AR/AS regression-still-intact assertions, CLI --help exposes `--from-latest-entry-disabled-implementation-scaffold-design` | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py | **224/224 PASS** |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py (regression) | 199/199 PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py (regression) | 180/180 PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py (regression) | 175/175 PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py (regression) | 138/138 PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run/` | DONE |
+| no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no sender adapter / no executable adapter surface / no `send` / `place_order` / `execute` method / no AA-AT module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback / no real token / phrase / approval-input validation / no auto git commit / no auto git push | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | PENDING |
+
+## Next Rick Action (set by 2026-06-14 TASK-014AU)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py -q
+       # expect 224/224 PASS
+
+2. Once step 1 passes, decide whether to authorise TASK-014AV
+   (guarded entry real execution adapter disabled implementation scaffold
+   readiness review — next phase; still no real execution. TASK-014AU
+   already wires the 14 `entry_disabled_implementation_scaffold_design_*`
+   gates and ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_STATUSES
+   + ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_MODES at runtime
+   against AT output; AV will produce the disabled implementation scaffold
+   readiness review).
 
 ## TASK-014AT Status (2026-06-14)
 

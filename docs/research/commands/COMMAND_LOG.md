@@ -21,6 +21,87 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AU — Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Dry-run）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick chat instruction authorizing TASK-014AU, continuing
+the strict TASK-014X safety chain (AQ → AR → AS → AT → AU → AV).
+Task: Add a disabled-implementation-scaffold-dry-run-only successor to
+TASK-014AT consisting of three new files
+(`src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py`,
+`scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py`,
+`tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py`).
+30 upstream artifact inputs (the 29 from TASK-014AT + AT's
+`entry_disabled_implementation_scaffold_design` output consumed at
+runtime by TASK-014AU). 14 stages (STAGE_0 through STAGE_13). 102-gate
+hard-fail frozenset incl. 14 LIVE AT-consumption gates
+(`entry_disabled_implementation_scaffold_design_*`). 20 ACCEPTABLE_*
+status/mode frozensets incl. ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_STATUSES
+and ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_MODES.
+Result dataclass exposes 16 `upstream_entry_disabled_implementation_scaffold_design_*`
+fields and `consumed_disabled_implementation_scaffold_design_contract_version`
+through to_dict() / audit_artifacts.
+ADAPTER_CONTRACT_VERSION=`disabled_implementation_scaffold_dry_run_v1`;
+CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_CONTRACT_VERSION=`disabled_implementation_scaffold_design_v1`;
+ADAPTER_RESPONSE_STATUS=`DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_NOT_SENT`;
+DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_CONCLUSION=`DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_READY_NOT_EXECUTABLE`;
+next_required_task=`TASK-014AV_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review`.
+No sender adapter, no `send`/`place_order`/`execute` method, no
+endpoint call, no secret read, no HMAC, no G20 lift, no position
+modification, no AA-AT module reuse, no auto git ops.
+
+Status before: TASK-014AT committed locally as `29b050d`; main.py /
+src/risk.py / BybitExecutor untouched; G20 sender policy still active;
+5 protected demo positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT)
+untouched.
+
+Status after: TASK-014AU module + preview + test added; AU suite
+224/224 PASS; AT/AS/AR/AQ regressions 199/180/175/138 PASS; combined
+916/916 PASS. README shared status board re-headed to TASK-014AU;
+NEXT_ACTION.md TASK-014AU block prepended with status table and Next
+Rick Action; .gitignore extended with new outputs dir. Local commit
+pending (no push).
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py (new)
+- scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py (new)
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py (new)
+- .gitignore (new outputs dir line)
+- README.md (shared status board re-headed to TASK-014AU)
+- docs/research/commands/NEXT_ACTION.md (banner pointer + TASK-014AU
+  status block + Next Rick Action set by TASK-014AU)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+
+Validation:
+- python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py
+  -q → 224/224 PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py
+  -q → 199/199 PASS (regression)
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py
+  -q → 180/180 PASS (regression)
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py
+  -q → 175/175 PASS (regression)
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py
+  -q → 138/138 PASS (regression)
+- combined 916/916 PASS
+
+Outputs: none in this commit (preview script writes
+`outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run/`
+when invoked; directory is .gitignored).
+
+Notes: pure design/dry-run only — no runtime execution, no sender, no
+`/v5/order/create`, no `/v5/position/trading-stop`, no secret read,
+no HMAC, no G20 lift, no position modification. main.py / src/risk.py
+/ BybitExecutor untouched. 5 protected demo positions
+(ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched. Local commit
+only — no push.
+
+---
+
 ### 2026-06-14（TASK-014AT-DOCS1 — Sync Disabled Implementation Scaffold Design Docs）
 
 Agent: Claude (Sonnet)
