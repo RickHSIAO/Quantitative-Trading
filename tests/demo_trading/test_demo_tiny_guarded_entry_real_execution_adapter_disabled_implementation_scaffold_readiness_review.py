@@ -20,7 +20,7 @@ auto-git); report artifacts; forbidden-flag absence (--execute-real-* /
 --send-order / --place-order / --real-run / --confirm-token /
 --auto-commit / --git-commit / --auto-push / --git-push); G20 never
 lifted; 5 protected positions never touched; next_required_task =
-TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.
+TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.
 """
 from __future__ import annotations
 
@@ -841,7 +841,7 @@ def _valid_entry_static_skeleton_dry_run() -> dict:
             "no_secrets_loaded": True,
             "g20_lifted": False,
         },
-        "next_required_task":           "TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review",
+        "next_required_task":           "TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review",
     }
 
 
@@ -1908,7 +1908,7 @@ class TestAQ80NextRequiredTask:
     def test_next_required_task(self):
         r = _run()
         assert r.next_required_task == NEXT_REQUIRED_TASK
-        assert NEXT_REQUIRED_TASK == "TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review"
+        assert NEXT_REQUIRED_TASK == "TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
 
 
 # ===========================================================================
@@ -2981,7 +2981,7 @@ class TestARFIX2NextRequiredTaskUnchanged:
     def test_next_required_task_is_AS(self):
         r = _run(symbol="SOLUSDT")
         assert r.next_required_task \
-            == "TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review"
+            == "TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
         assert r.next_required_task == NEXT_REQUIRED_TASK
 
 
@@ -3038,13 +3038,15 @@ class TestARFIX2StaticSkeletonScopeAlias:
         # Alias content must equal the legacy implementation_design_scope.
         assert d["disabled_implementation_scaffold_readiness_review_scope"] \
             == d["implementation_design_scope"]
-        # Scope summary text now says AU consumes AT disabled implementation
-        # scaffold design output and produces a disabled implementation
-        # scaffold dry-run for AV.
+        # Scope summary text says AV consumes AU disabled implementation
+        # scaffold dry-run output (plus 30 chained artifacts) and produces
+        # a disabled implementation scaffold readiness review for AW.
         summary = d["disabled_implementation_scaffold_readiness_review_scope"]["scope_summary"]
-        assert "TASK-014AT" in summary
-        assert "DISABLED IMPLEMENTATION SCAFFOLD DESIGN" in summary
+        assert "TASK-014AU" in summary
         assert "DISABLED IMPLEMENTATION SCAFFOLD DRY-RUN" in summary
+        assert "DISABLED IMPLEMENTATION SCAFFOLD DESIGN" in summary      # AT's design in chained proof
+        assert "DISABLED IMPLEMENTATION SCAFFOLD READINESS REVIEW" in summary
+        assert "30 upstream artifacts" in summary
         assert "TASK-014AV" in summary
         assert "TASK-014AW" in summary
 
@@ -3142,13 +3144,13 @@ class TestARFIX2MarkdownReportTitleAndSections:
         # Mode shown in the report is the disabled_implementation_scaffold_readiness_review_checklist
         # string.
         assert "mode: `disabled_implementation_scaffold_readiness_review_checklist`" in md
-        # The narrative intro correctly names AU as the consumer of AT
-        # (disabled implementation scaffold design output), not AS.
-        assert "TASK-014AT" in md
+        # The narrative intro correctly names AV as the consumer of AU
+        # (disabled implementation scaffold dry-run output), not AT or AS.
+        assert "TASK-014AU" in md
         assert "TASK-014AV" in md
         assert "TASK-014AW" in md
 
-    def test_markdown_report_footer_uses_dry_run_wording(self, repo_tmp_path):
+    def test_markdown_report_footer_uses_readiness_review_wording(self, repo_tmp_path):
         from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review import (
             _write_report,
         )
@@ -3158,8 +3160,9 @@ class TestARFIX2MarkdownReportTitleAndSections:
         base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review"
         latest_md = out_dir / f"latest_{base}.md"
         md = latest_md.read_text(encoding="utf-8")
-        # Footer blockquote must say DISABLED-IMPLEMENTATION-SCAFFOLD-DRY-RUN-ONLY.
-        assert "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-DRY-RUN-ONLY module" in md
+        # Footer blockquote must say DISABLED-IMPLEMENTATION-SCAFFOLD-READINESS-REVIEW-ONLY.
+        assert "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-READINESS-REVIEW-ONLY module" in md
+        assert "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-DRY-RUN-ONLY module" not in md
         assert "IMPLEMENTATION-DESIGN-ONLY module" not in md
         # Footer must reference --allow-disabled-implementation-scaffold-readiness-review flag.
         assert "--allow-disabled-implementation-scaffold-readiness-review" in md
@@ -3190,14 +3193,14 @@ class TestARFIX2CLIBannerSaysStaticSkeleton:
         # substring assertions.
         normalized = " ".join(combined.split())
         # The CLI argparse description must advertise DISABLED
-        # IMPLEMENTATION SCAFFOLD DRY-RUN (TASK-014AV), not the legacy
-        # IMPLEMENTATION DESIGN / STATIC SKELETON DRY-RUN phrasing.
-        # AU consumes TASK-014AT disabled implementation scaffold DESIGN.
+        # IMPLEMENTATION SCAFFOLD READINESS REVIEW (TASK-014AV), not the
+        # legacy DRY-RUN / IMPLEMENTATION DESIGN phrasing.
+        # AV consumes TASK-014AU disabled implementation scaffold dry-run output.
         # Assert individual tokens rather than the full phrase so
         # line-wrap cannot split them.
-        assert "DISABLED IMPLEMENTATION SCAFFOLD DRY-RUN" in normalized
-        assert "TASK-014AT" in normalized
-        assert "disabled implementation scaffold design" in normalized
+        assert "DISABLED IMPLEMENTATION SCAFFOLD READINESS REVIEW" in normalized
+        assert "TASK-014AU" in normalized
+        assert "disabled implementation scaffold dry-run" in normalized
         assert "disabled implementation scaffold readiness review" in normalized
         assert "TASK-014AV" in normalized
         # CLI description must reference --allow-disabled-implementation-scaffold-readiness-review,
@@ -3723,7 +3726,7 @@ class TestAUATASConsumptionStillIntact:
 class TestAUATFIX1ReportProof:
     """TASK-014AV-FIX1: upstream report proof and authorization_result correctness."""
 
-    def test_markdown_intro_names_at_not_as(self, repo_tmp_path):
+    def test_markdown_intro_names_au_not_at(self, repo_tmp_path):
         from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review import (
             _write_report,
         )
@@ -3736,7 +3739,8 @@ class TestAUATFIX1ReportProof:
             (ln for ln in md.splitlines() if ln.startswith("_TASK-014AV consumes")),
             "",
         )
-        assert "TASK-014AT disabled implementation scaffold design output" in intro
+        assert "TASK-014AU disabled implementation scaffold dry-run output" in intro
+        assert "TASK-014AT disabled implementation scaffold design output" not in intro
         assert "TASK-014AS static skeleton dry-run output" not in intro
 
     def test_authorization_result_propagated_from_at_design_key(self):

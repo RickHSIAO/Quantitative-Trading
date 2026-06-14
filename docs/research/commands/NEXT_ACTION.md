@@ -1,11 +1,62 @@
 # Next Action
 
-> README shared status updated by TASK-014AV-FIX1 (2026-06-14) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014av-fix1-2026-06-14)
-> for the cross-agent status board. TASK-014AV-FIX1 confirms all 259
-> AV tests and 1186 combined tests pass with `pytest -q` (no `-s` flag
-> required); no code changes; docs-only commit. No real execution, no
-> sender, no endpoint calls, no G20 lift, no position modification.
+> README shared status updated by TASK-014AV-FIX2 (2026-06-14) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014av-fix2-2026-06-14)
+> for the cross-agent status board. TASK-014AV-FIX2 corrects AV report
+> wording: upstream reference is now TASK-014AU (DRY-RUN), identity
+> banner/footer says READINESS REVIEW (not DRY-RUN), and
+> NEXT_REQUIRED_TASK is updated to final_pre_execution_review. No real
+> execution, no sender, no endpoint calls, no G20 lift, no position
+> modification.
+
+## TASK-014AV-FIX2 Status (2026-06-14)
+
+| item | status |
+|---|---|
+| issue 1: src/scripts/tests still said "consumes TASK-014AT disabled implementation scaffold design output" — should say TASK-014AU disabled implementation scaffold dry-run | FIXED |
+| issue 2: report header / scope_summary / footer still said DRY-RUN CHECKLIST / DRY-RUN-ONLY where AV should say READINESS REVIEW CHECKLIST / READINESS-REVIEW-ONLY | FIXED |
+| issue 3: `NEXT_REQUIRED_TASK` was `TASK-014AW_..._readiness_review`; docs have no explicit AW name → corrected to `TASK-014AW_..._final_pre_execution_review` | FIXED |
+| issue 4: `DOCUMENTED_ONLY_NOT_AUTHORIZE` truncation — not present in any file; terminal/copy artefact only | CONFIRMED (no fix needed) |
+| src: docstring updated (TASK-014AU DRY-RUN, 31 inputs, final_pre_execution_review forward ref) | DONE |
+| src: `NEXT_REQUIRED_TASK` = `TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review` | DONE |
+| src: `scope_summary` updated (TASK-014AU DRY-RUN, 30 chained artifacts, READINESS REVIEW produced) | DONE |
+| scripts: docstring / stdout banner / argparse description updated (TASK-014AU, READINESS REVIEW, final_pre_execution_review) | DONE |
+| tests: scope_summary assertions updated (TASK-014AU, 30 upstream, READINESS REVIEW) | DONE |
+| tests: `test_markdown_report_footer_uses_readiness_review_wording` (was dry_run_wording) — asserts READINESS-REVIEW-ONLY, not DRY-RUN-ONLY | DONE |
+| tests: CLI description asserts READINESS REVIEW + TASK-014AU + dry-run consumed (was DRY-RUN + TASK-014AT + design) | DONE |
+| tests: `test_markdown_intro_names_au_not_at` (was names_at_not_as) — asserts AU in intro, AT not in intro, AS not in intro | DONE |
+| tests: `NEXT_REQUIRED_TASK` literal assertions updated to `final_pre_execution_review` | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AV | **259/259 PASS** |
+| pytest AU regression | 235/235 PASS |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| combined AV+AU+AT+AS+AR+AQ | **1186/1186 PASS** |
+| no endpoint / no secret / no G20 lift / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-14 TASK-014AV-FIX2)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py -q
+       # expect 259/259 PASS
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py --write-report \
+         --from-latest-entry-disabled-implementation-scaffold-design \
+         --from-latest-entry-disabled-implementation-scaffold-dry-run
+       # confirm: scope_summary says TASK-014AU / 30 upstream / READINESS REVIEW,
+       # next_required_task = TASK-014AW_..._final_pre_execution_review,
+       # footer says READINESS-REVIEW-ONLY (not DRY-RUN-ONLY),
+       # no socket opened, no endpoint called, no secret loaded,
+       # G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise TASK-014AW
+   (next phase; final_pre_execution_review; still no real execution).
 
 ## TASK-014AV-FIX1 Status (2026-06-14)
 

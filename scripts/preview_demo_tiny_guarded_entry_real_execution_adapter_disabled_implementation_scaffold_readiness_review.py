@@ -3,7 +3,7 @@ scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implemen
 TASK-014AV: Guarded Entry Real Execution Adapter Disabled
             Implementation Scaffold Design CLI.
 
-Usage (DISABLED IMPLEMENTATION SCAFFOLD DRY-RUN CHECKLIST --- default, no network,
+Usage (DISABLED IMPLEMENTATION SCAFFOLD READINESS REVIEW CHECKLIST --- default, no network,
        no implementation, no execution):
   python scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py \\
     --from-latest-readonly \\
@@ -92,7 +92,7 @@ Writes (when --write-report):
       latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.md
 
 IMPORTANT:
-  - TASK-014AV produces a STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-DRY-RUN-ONLY artifact.
+  - TASK-014AV produces a STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-READINESS-REVIEW-ONLY artifact.
     No guarded entry sender, no adapter implementation, no order send,
     no stop-attach send, no cleanup send, no endpoint invoked.  No
     network, no socket, no environment-variable reads, no signing, no
@@ -100,8 +100,8 @@ IMPORTANT:
     mapping, NO real phrase validation, NO phrase-to-authorization
     mapping, NO real approval-input validation, NO adapter
     implementation, NO adapter `send` method.  Disabled implementation
-    scaffold design for the FUTURE TASK-014AW adapter disabled
-    implementation scaffold dry-run
+    scaffold readiness review for the FUTURE TASK-014AW adapter
+    disabled implementation scaffold final pre-execution review
     is documented only --- this task does NOT implement the adapter.
     No automatic git commit, no automatic git push.
   - Even with --allow-disabled-implementation-scaffold-readiness-review the module only emits
@@ -661,7 +661,7 @@ def _write_report(
     md_lines: list[str] = [
         "# Tiny Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Readiness Review (TASK-014AV)",
         "",
-        "_TASK-014AV consumes TASK-014AT disabled implementation scaffold design output at "
+        "_TASK-014AV consumes TASK-014AU disabled implementation scaffold dry-run output at "
         "runtime and produces a disabled implementation scaffold readiness review for TASK-014AW. "
         "It does not implement the adapter, never sends an order, never "
         "calls any endpoint, never lifts G20._",
@@ -871,7 +871,7 @@ def _write_report(
         f"- g20_lifted: `{r.g20_lifted}`",
         f"- existing_positions_touched: `{r.existing_positions_touched}`",
         "",
-        "> TASK-014AV is a STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-DRY-RUN-ONLY module.",
+        "> TASK-014AV is a STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-READINESS-REVIEW-ONLY module.",
         "> It NEVER opens a socket, NEVER invokes /v5/order/create,",
         "> NEVER invokes /v5/position/trading-stop, NEVER modifies any",
         "> position, NEVER invokes the close-only sender, NEVER invokes",
@@ -1022,11 +1022,11 @@ def run_execute(
     if allow_real_entry_execution:
         print("REAL ENTRY EXECUTION GUARD --- NO NETWORK --- REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED")
     elif allow_implementation_design:
-        print("DISABLED IMPLEMENTATION SCAFFOLD DRY-RUN APPROVAL --- NO NETWORK --- dry-run-only")
+        print("DISABLED IMPLEMENTATION SCAFFOLD READINESS REVIEW APPROVAL --- NO NETWORK --- readiness-review-only")
     else:
-        print("DISABLED IMPLEMENTATION SCAFFOLD DRY-RUN CHECKLIST --- NO NETWORK --- dry-run-only")
+        print("DISABLED IMPLEMENTATION SCAFFOLD READINESS REVIEW CHECKLIST --- NO NETWORK --- readiness-review-only")
     print("TASK-014AV: Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Readiness Review")
-    print("  consumes TASK-014AT disabled implementation scaffold design output -> produces disabled implementation scaffold readiness review for TASK-014AW")
+    print("  consumes TASK-014AU disabled implementation scaffold dry-run output -> produces disabled implementation scaffold readiness review for TASK-014AW")
     print(f"  adapter_name                          : {ADAPTER_NAME}")
     print(f"  adapter_contract_version              : {ADAPTER_CONTRACT_VERSION}")
     print(f"  consumed_readiness_contract_version   : {CONSUMED_READINESS_CONTRACT_VERSION}")
@@ -1335,8 +1335,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Tiny guarded entry REAL EXECUTION ADAPTER DISABLED "
-            "IMPLEMENTATION SCAFFOLD DRY-RUN (TASK-014AV).  Consumes "
-            "TASK-014AT disabled implementation scaffold design output "
+            "IMPLEMENTATION SCAFFOLD READINESS REVIEW (TASK-014AV).  Consumes "
+            "TASK-014AU disabled implementation scaffold dry-run output "
             "at runtime and produces a disabled implementation scaffold "
             "readiness review for TASK-014AW.  No network, no live endpoint, no orders / "
             "positions modified, no guarded entry sender implemented, no "
@@ -1350,8 +1350,8 @@ def main() -> None:
             "no real phrase validation, no phrase-to-authorization "
             "mapping, no real approval-input validation, no automatic "
             "git commit, no automatic git push.  Disabled implementation "
-            "scaffold design for the FUTURE TASK-014AW adapter disabled "
-            "implementation scaffold readiness review.  Even with "
+            "scaffold readiness review for the FUTURE TASK-014AW adapter "
+            "disabled implementation scaffold final pre-execution review.  Even with "
             "--allow-disabled-implementation-scaffold-readiness-review "
             "this only emits a sanitized design artifact whose "
             "disabled_implementation_scaffold_readiness_review_conclusion remains "

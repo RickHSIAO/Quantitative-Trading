@@ -21,6 +21,67 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AV-FIX2 — Clean Readiness Review Upstream and Next-Task Wording）
+
+Agent: Claude (Sonnet 4.6)
+Command source: Rick chat instruction "Proceed with TASK-014AV-FIX2 now."
+
+Task: Fix four wording issues found during VPS report inspection:
+(1) src/scripts/tests still referenced TASK-014AT as the direct
+upstream — correct to TASK-014AU (disabled implementation scaffold
+dry-run).  (2) Identity banner / footer said DRY-RUN CHECKLIST /
+DRY-RUN-ONLY — correct to READINESS REVIEW CHECKLIST /
+READINESS-REVIEW-ONLY.  (3) NEXT_REQUIRED_TASK pointed at
+`TASK-014AW_..._readiness_review` — no docs define that name, so
+updated to `TASK-014AW_..._final_pre_execution_review`.  (4) Check
+for truncated `DOCUMENTED_ONLY_NOT_AUTHORIZE` string — not present
+in any file (terminal/copy artefact only), no change needed.
+
+Status before: TASK-014AV-FIX1 committed locally as `e3689c9`; AV
+suite 259/259 PASS; report wording issues identified from VPS run.
+
+Status after: All wording corrected; test names updated
+(`test_markdown_report_footer_uses_readiness_review_wording`,
+`test_markdown_intro_names_au_not_at`); new assertions added for AU
+in intro, AT not in intro, READINESS-REVIEW-ONLY in footer, 30
+upstream in scope_summary, READINESS REVIEW in scope_summary;
+NEXT_REQUIRED_TASK literal assertions updated; AV suite 259/259
+PASS; AU/AT/AS/AR/AQ 927/927 PASS; combined 1186/1186 PASS.
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py
+  (docstring: TASK-014AU DRY-RUN / 31 inputs / final_pre_execution_review;
+  NEXT_REQUIRED_TASK: final_pre_execution_review;
+  scope_summary: TASK-014AU / 30 upstream / READINESS REVIEW)
+- scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py
+  (docstring/stdout/argparse: TASK-014AU, READINESS REVIEW,
+  final_pre_execution_review; markdown intro: AU not AT;
+  footer: READINESS-REVIEW-ONLY not DRY-RUN-ONLY)
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py
+  (scope_summary assertions updated; footer test renamed +
+  READINESS-REVIEW-ONLY assertion; CLI description assertions updated;
+  markdown intro test renamed + AT-not-in-intro assertion added;
+  NEXT_REQUIRED_TASK literals updated to final_pre_execution_review)
+- docs/research/commands/NEXT_ACTION.md (TASK-014AV-FIX2 status block
+  + updated Next Rick Action)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+- README.md (updated latest_completed_task → TASK-014AV-FIX2)
+
+Validation:
+- python -m py_compile src/... scripts/... tests/... → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py
+  -q → 259/259 PASS
+- pytest AU/AT/AS/AR/AQ regressions -q → 235/199/180/175/138 PASS
+- combined AV+AU+AT+AS+AR+AQ → 1186/1186 PASS
+
+Outputs: none.
+
+Notes: no endpoint, no secret, no sender, no G20 lift, no position
+modification; main.py / src/risk.py / BybitExecutor untouched. Local
+commit only — no push.
+
+---
+
 ### 2026-06-14（TASK-014AV-FIX1 — Stabilize Readiness Review CLI Help Tests）
 
 Agent: Claude (Sonnet 4.6)

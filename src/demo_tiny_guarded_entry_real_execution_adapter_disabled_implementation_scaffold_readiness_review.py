@@ -3,14 +3,15 @@ src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaff
 TASK-014AV: Guarded Entry Real Execution Adapter Disabled
             Implementation Scaffold Design.
 
-Disabled-implementation-scaffold-dry-run-only module. This task
-consumes TASK-014AT's guarded entry real execution adapter DISABLED
-IMPLEMENTATION SCAFFOLD DESIGN artifact at runtime (plus the 29
-upstream artifacts AT already consumed, including AS's STATIC
-SKELETON DRY-RUN, AR's STATIC SKELETON DESIGN and AQ's
-IMPLEMENTATION DESIGN) and produces a DISABLED IMPLEMENTATION
-SCAFFOLD DRY-RUN report for TASK-014AW (the future guarded entry
-real execution adapter disabled implementation scaffold readiness
+Disabled-implementation-scaffold-readiness-review-only module. This
+task consumes TASK-014AU's guarded entry real execution adapter
+DISABLED IMPLEMENTATION SCAFFOLD DRY-RUN artifact at runtime (plus
+the 30 upstream artifacts AU already consumed, including AT's
+DISABLED IMPLEMENTATION SCAFFOLD DESIGN, AS's STATIC SKELETON
+DRY-RUN, AR's STATIC SKELETON DESIGN and AQ's IMPLEMENTATION
+DESIGN) and produces a DISABLED IMPLEMENTATION SCAFFOLD READINESS
+REVIEW for TASK-014AW (the future guarded entry real execution
+adapter disabled implementation scaffold final pre-execution
 review). It
 documents the static module boundary, the request construction, the
 transport / endpoint design, the secret / signing design, the
@@ -38,9 +39,9 @@ Backward-compatible aliases are kept on the result object
 `final_implementation_design_verdict`, `implementation_design_scope`)
 so older tests / downstream docs continue to work.
 
-Inputs: 30 upstream artifacts (the 29 from TASK-014AT + AT's own
+Inputs: 31 upstream artifacts (the 30 from TASK-014AU + AU's own
         guarded entry real execution adapter disabled implementation
-        scaffold design output).
+        scaffold dry-run output).
 
 Stages:
   stage_0_artifact_preflight
@@ -182,7 +183,7 @@ DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_CONCLUSION = "DISABLED_IMPLEME
 DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_AUTHORIZATION_RESULT = "DOCUMENTED_ONLY_NOT_AUTHORIZED"
 
 NEXT_REQUIRED_TASK = (
-    "TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review"
+    "TASK-014AW_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
 )
 
 
@@ -2357,14 +2358,15 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldRead
             "g20_lifted":                            False,
             "next_required_task":                    NEXT_REQUIRED_TASK,
             "scope_summary": (
-                "TASK-014AV consumes TASK-014AT DISABLED IMPLEMENTATION "
-                "SCAFFOLD DESIGN output at runtime (plus the 29 upstream "
-                "artifacts AT already consumed, including AS's STATIC "
-                "SKELETON DRY-RUN, AR's STATIC SKELETON DESIGN and AQ's "
+                "TASK-014AV consumes TASK-014AU DISABLED IMPLEMENTATION "
+                "SCAFFOLD DRY-RUN output at runtime (plus the 30 upstream "
+                "artifacts AU already consumed, including AT's DISABLED "
+                "IMPLEMENTATION SCAFFOLD DESIGN, AS's STATIC SKELETON "
+                "DRY-RUN, AR's STATIC SKELETON DESIGN and AQ's "
                 "IMPLEMENTATION DESIGN) and produces a DISABLED "
-                "IMPLEMENTATION SCAFFOLD DRY-RUN for TASK-014AW (the "
-                "future disabled implementation scaffold readiness "
-                "review). It "
+                "IMPLEMENTATION SCAFFOLD READINESS REVIEW for TASK-014AW "
+                "(the future disabled implementation scaffold final "
+                "pre-execution review). It "
                 "documents the static module boundary, request "
                 "construction, transport / endpoint design, secret / "
                 "signing design, response / error handling design, "
