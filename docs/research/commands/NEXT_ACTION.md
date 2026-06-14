@@ -1,13 +1,52 @@
 # Next Action
 
-> README shared status updated by TASK-014AV (2026-06-14) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014au-2026-06-14)
-> for the cross-agent status board. TASK-014AV introduces the disabled
-> implementation scaffold READINESS REVIEW (consuming 31 upstream
-> artifacts at runtime including AU's disabled-implementation-scaffold
-> dry-run as the 31st); no real execution, no sender, no endpoint
-> calls, no G20 lift, no position modification, no AA-AT module reuse,
-> no auto-git, no secrets.
+> README shared status updated by TASK-014AV-FIX1 (2026-06-14) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014av-fix1-2026-06-14)
+> for the cross-agent status board. TASK-014AV-FIX1 confirms all 259
+> AV tests and 1186 combined tests pass with `pytest -q` (no `-s` flag
+> required); no code changes; docs-only commit. No real execution, no
+> sender, no endpoint calls, no G20 lift, no position modification.
+
+## TASK-014AV-FIX1 Status (2026-06-14)
+
+| item | status |
+|---|---|
+| issue: 6 CLI help subprocess tests showed `OSError: [WinError 6] The handle is invalid` under pytest capture mode in prior session | IDENTIFIED |
+| fix approach: re-validate all tests without `-s`; confirm transient Windows handle issue does not reproduce | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AV (no `-s`) | **259/259 PASS** |
+| pytest AU regression (no `-s`) | 235/235 PASS |
+| pytest AT regression (no `-s`) | 199/199 PASS |
+| pytest AS regression (no `-s`) | 180/180 PASS |
+| pytest AR regression (no `-s`) | 175/175 PASS |
+| pytest AQ regression (no `-s`) | 138/138 PASS |
+| combined AV+AU+AT+AS+AR+AQ (no `-s`) | **1186/1186 PASS** |
+| no code changes to src / scripts / tests | CONFIRMED |
+| no runtime behavior change / no endpoint / no secret / no G20 / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-14 TASK-014AV-FIX1)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py -q
+       # expect 259/259 PASS
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py --write-report \
+         --from-latest-entry-disabled-implementation-scaffold-design \
+         --from-latest-entry-disabled-implementation-scaffold-dry-run
+       # confirm: 31 upstream artifacts consumed, status =
+       # TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_READY,
+       # disabled_implementation_scaffold_readiness_review_conclusion =
+       # DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_READY_NOT_EXECUTABLE,
+       # no socket opened, no endpoint called, no secret loaded,
+       # G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise TASK-014AW
+   (next phase in the sequential safety chain; still no real
+   execution).
 
 ## TASK-014AV Status (2026-06-14)
 

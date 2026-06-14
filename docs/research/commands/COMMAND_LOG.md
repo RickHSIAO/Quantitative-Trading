@@ -21,6 +21,49 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AV-FIX1 — Stabilize Readiness Review CLI Help Tests）
+
+Agent: Claude (Sonnet 4.6)
+Command source: Rick chat instruction "Proceed with TASK-014AV-FIX1 now."
+
+Task: Confirm all AV tests pass with `pytest -q` (no `-s` flag). Prior
+session recorded 6 CLI help subprocess tests failing with
+`OSError: [WinError 6] The handle is invalid` under pytest capture
+mode. FIX1 re-validates without `-s`; if tests pass, no code changes
+are needed (transient Windows handle issue); if tests fail, replace
+subprocess capture with in-process parser/help inspection.
+
+Status before: TASK-014AV committed locally as `6166fb0`; AV suite
+259/259 PASS with `-s`; 6 CLI help tests showed WinError 6 without
+`-s` in prior session.
+
+Status after: All 259 AV tests PASS with `pytest -q` (no `-s`);
+WinError 6 did not reproduce — transient issue. No code changes; docs-
+only commit confirming stable validation.
+
+Files changed:
+- docs/research/commands/NEXT_ACTION.md (TASK-014AV-FIX1 status block
+  + updated Next Rick Action)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+- README.md (updated latest_completed_task → TASK-014AV-FIX1;
+  latest validation now shows `-q` without `-s`)
+
+Validation:
+- python -m py_compile src/... scripts/... tests/... → PASS
+- pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py
+  -q → 259/259 PASS (no -s required)
+- pytest AU/AT/AS/AR/AQ regressions -q → 235/199/180/175/138 PASS
+- combined AV+AU+AT+AS+AR+AQ → 1186/1186 PASS
+
+Outputs: none.
+
+Notes: no code changes to src / scripts / tests; no runtime behavior
+change; no endpoint, no secret, no sender, no G20 lift, no position
+modification; main.py / src/risk.py / BybitExecutor untouched. Local
+commit only — no push.
+
+---
+
 ### 2026-06-14（TASK-014AV — Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Readiness Review Scaffold）
 
 Agent: Claude (Sonnet 4.6)
