@@ -1,7 +1,7 @@
 # Next Action
 
-> README shared status updated by TASK-014AS-FIX2 (2026-06-14) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014as-fix2-2026-06-14)
+> README shared status updated by TASK-014AS-FIX2-DOCS1 (2026-06-14) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014as-fix2-docs1-2026-06-14)
 > for the cross-agent status board. Response-status label cleanup only — no
 > runtime behavior change, G20 still active, no real trading enabled.
 
@@ -19,7 +19,8 @@
 | pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py | **180/180 PASS** |
 | pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py (regression) | 175/175 PASS |
 | pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py (regression) | 138/138 PASS |
-| local commit | DONE |
+| local commit | DONE — `b8afcfb` |
+| TASK-014AS-FIX2-DOCS1 docs sync | DONE |
 
 ## TASK-014AS-FIX1 Status (2026-06-14)
 
