@@ -139,6 +139,75 @@ Notes:
   / `_APPROVAL` are aliases of the new
   `MODE_STATIC_SKELETON_DRY_RUN_*` strings.
 - Local commit only; not pushed to remote (per persistent user rule).
+- Local commit hash: `1768924`.
+
+---
+
+### 2026-06-14（TASK-014AS-DOCS1 — Sync Static Skeleton Dry-run Docs）
+
+Agent: Claude (Sonnet)
+Command source: Rick chat instruction "Proceed with TASK-014AS-DOCS1
+now, before push/VPS validation." (2026-06-14)
+Task: Synchronize cross-agent docs for TASK-014AS — fill in the actual
+local commit hash `1768924` into the README Demo Trading Guarded
+Lifecycle Status board; update banner to "TASK-014AS-DOCS1,
+2026-06-14"; add `actual runner execution = FORBIDDEN` row; add this
+TASK-014AS-DOCS1 event in COMMAND_LOG (including the `1768924` hash
+reference for the TASK-014AS entry); verify NEXT_ACTION.md TASK-014AS
+status block and VPS validation commands are intact and use static
+skeleton DRY-RUN terminology (not DESIGN). No code changes, no
+execution logic, no G20 lift, no endpoint calls, no secret reads, no
+real entry execution, no executable sender path added, no `send` /
+`place_order` / `execute` method introduced, no adapter class added,
+no main.py / src/risk.py / BybitExecutor modification, no position
+modification.
+
+Status before: TASK-014AS committed locally as `1768924` but README
+board still showed `latest_commit = pending` and banner read "updated
+by TASK-014AS, 2026-06-14"; `actual runner execution` row absent
+Status after: TASK-014AS-DOCS1 docs sync DONE; cross-agent board
+points at TASK-014AS / `1768924`; next_required_task =
+TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design
+
+Files changed:
+- `README.md` (Demo Trading Guarded Lifecycle Status board:
+  banner updated to "updated by TASK-014AS-DOCS1, 2026-06-14";
+  `latest_commit` updated from `pending` → `1768924`;
+  added `actual runner execution = FORBIDDEN` row)
+- `docs/research/commands/COMMAND_LOG.md` (TASK-014AS entry: added
+  explicit `Local commit hash: 1768924` line; this TASK-014AS-DOCS1
+  entry appended)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py -q` → 175/175 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` → 175/175 PASS (AR regression intact)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` → 138/138 PASS (AQ regression intact)
+- Combined 488/488 PASS
+
+Outputs: (docs-only sync; no code artifacts produced.)
+
+Safety confirmations:
+- No real order, no sender, no executable adapter, no
+  `send` / `place_order` / `execute` method, no endpoint call, no
+  secrets, no HMAC / signing, no G20 lift, no position modification.
+- `main.py` / `src/risk.py` / BybitExecutor untouched.
+- 5 protected demo positions (ENAUSDT / TIAUSDT / AIXBTUSDT /
+  POLYXUSDT / EDUUSDT) untouched.
+- TASK-014L sender G20 (`protected_entry_policy_missing`) still
+  active.
+- No automatic git operation; local commit only; not pushed.
+
+Notes:
+- Docs-only sync. AS source / preview / tests unchanged; only
+  `README.md` board and `COMMAND_LOG.md` updated.
+- `NEXT_ACTION.md` TASK-014AS status section (added by TASK-014AS)
+  already states: 28 upstream artifacts; TASK-014AR static skeleton
+  design output consumed at runtime; static skeleton DRY-RUN (not
+  DESIGN) terminology; next_required_task =
+  TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design;
+  VPS validation commands present; forbidden statuses synced. No
+  modification required in this DOCS1 sync.
 
 ---
 

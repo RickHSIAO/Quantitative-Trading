@@ -14,21 +14,22 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AS, 2026-06-14）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AS-DOCS1, 2026-06-14）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AS 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AS-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
 | latest_completed_task | TASK-014AS |
-| latest_commit | local — pending — `TASK-014AS: add guarded entry real execution adapter static skeleton dry-run`（local；尚未推遠端） |
+| latest_commit | local — `1768924` — `TASK-014AS: add guarded entry real execution adapter static skeleton dry-run`（local；尚未推遠端） |
 | current_phase | guarded entry real execution adapter static skeleton dry-run completed（**TASK-014AS runtime 主動 consume TASK-014AR 產出的 `entry_static_skeleton_design` artifact**：28 upstream artifacts、`CONSUMED_STATIC_SKELETON_DESIGN_CONTRACT_VERSION=static_skeleton_design_v1`、新增 13 個 LIVE `entry_static_skeleton_design_*` fail-closed gates、`_HARD_FAIL_GATES` 自 62 擴展至 75；mode 為 `static_skeleton_dry_run_checklist` / `static_skeleton_dry_run_approval`；markdown/report title 為 "Static Skeleton Dry-run"；output 含 `static_skeleton_dry_run_conclusion=STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE` / `final_static_skeleton_dry_run_verdict` / `static_skeleton_dry_run_scope` 別名；舊有 `implementation_design_*` 欄位保留為 backward-compatible 別名；無 sender，無 executable adapter，無 `send` / `place_order` / `execute` method，無實單，no auto-git） |
 | next_required_task | `TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design` |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |
 | actual stop attach | **FORBIDDEN** |
 | actual cleanup | **FORBIDDEN** |
+| actual runner execution | **FORBIDDEN** |
 | live trading | **FORBIDDEN** |
 | G20 sender policy | **still active**（無 sender adapter，無 `/v5/order/create`，無 `/v5/position/trading-stop` 真實呼叫） |
 | latest validation | `py_compile` src + preview → PASS；`pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py` → 175 PASS；AR regression → 175 PASS；AQ regression → 138 PASS；合計 488/488 PASS |
