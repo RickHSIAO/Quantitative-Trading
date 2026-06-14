@@ -1,11 +1,62 @@
 # Next Action
 
-> README shared status updated by TASK-014AU-FIX2 (2026-06-14) — see
+> README shared status updated by TASK-014AV (2026-06-14) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014au-2026-06-14)
-> for the cross-agent status board. TASK-014AU-FIX2 completes the
-> authorization_result proof: upstream_entry_disabled_implementation_scaffold_design_authorization_result
-> now reads "DOCUMENTED_ONLY_NOT_AUTHORIZED" in result / to_dict /
-> audit_artifacts / generated JSON / generated markdown.
+> for the cross-agent status board. TASK-014AV introduces the disabled
+> implementation scaffold READINESS REVIEW (consuming 31 upstream
+> artifacts at runtime including AU's disabled-implementation-scaffold
+> dry-run as the 31st); no real execution, no sender, no endpoint
+> calls, no G20 lift, no position modification, no AA-AT module reuse,
+> no auto-git, no secrets.
+
+## TASK-014AV Status (2026-06-14)
+
+| item | status |
+|---|---|
+| scope: build TASK-014AV scaffold (src + scripts + tests) by mirroring AU pattern + adding AU as the 31st runtime-consumed upstream artifact | DEFINED |
+| module rename: `..._dry_run.py` → `..._readiness_review.py` (src, scripts, tests) | DONE |
+| TASK identity bumps: `TASK-014AU` → `TASK-014AV` (identity), `TASK-014AV` → `TASK-014AW` (forward-ref) | DONE |
+| src: add `ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_STATUSES` (3) + `ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_MODES` (2) + `CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_CONTRACT_VERSION = "disabled_implementation_scaffold_dry_run_v1"` | DONE |
+| src: add 14 new fail-closed gates `GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_*` (missing/status/mode/real_exec/send/impl/exec/order/stop/no_pos/no_secrets/g20/conclusion/response_status); hard-fail count: 102 → 116 | DONE |
+| src: extend result dataclass with 16 new `upstream_entry_disabled_implementation_scaffold_dry_run_*` fields + parser block + audit_artifacts | DONE |
+| src: extend `run_readiness_review()` to require `entry_disabled_implementation_scaffold_dry_run` as 31st upstream input | DONE |
+| scripts: add `--from-latest-entry-disabled-implementation-scaffold-dry-run` CLI flag + loader + dir resolution + missing-check + print line + run_readiness_review() kwarg | DONE |
+| scripts: argparse description now produces "disabled implementation scaffold readiness review" (was inadvertently still "dry-run") | DONE |
+| tests: add `_valid_entry_disabled_implementation_scaffold_dry_run()` fixture + extend `_run()` with `_UNSET` param | DONE |
+| tests: add 19 new TestAVAU* test classes (24 tests) — contract / propagation / 14 gates / approval mode / CLI flag / AT-still-intact / AS-still-intact | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AV | **259/259 PASS** |
+| pytest AU regression | 235/235 PASS |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| combined AV+AU+AT+AS+AR+AQ | **1186/1186 PASS** |
+| no runtime behavior change in AA-AU / no endpoint / no secret / no G20 lift / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-14 TASK-014AV)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py -q
+       # expect 259/259 PASS
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py --write-report \
+         --from-latest-entry-disabled-implementation-scaffold-design \
+         --from-latest-entry-disabled-implementation-scaffold-dry-run
+       # confirm: 31 upstream artifacts consumed, status =
+       # TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_READY,
+       # disabled_implementation_scaffold_readiness_review_conclusion =
+       # DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_READY_NOT_EXECUTABLE,
+       # no socket opened, no endpoint called, no secret loaded,
+       # G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise TASK-014AW
+   (next phase in the sequential safety chain; still no real
+   execution).
 
 ## TASK-014AU-FIX2 Status (2026-06-14)
 
