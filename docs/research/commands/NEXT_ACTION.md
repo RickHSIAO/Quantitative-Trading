@@ -35,7 +35,7 @@
 | pytest AQ regression | 138/138 PASS |
 | combined AV+AU+AT+AS+AR+AQ | **1186/1186 PASS** |
 | no endpoint / no secret / no G20 lift / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
-| local commit | DONE |
+| local commit | DONE — `1aa184f` |
 
 ## Next Rick Action (set by 2026-06-14 TASK-014AV-FIX2)
 

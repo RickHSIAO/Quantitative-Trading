@@ -78,7 +78,7 @@ Outputs: none.
 
 Notes: no endpoint, no secret, no sender, no G20 lift, no position
 modification; main.py / src/risk.py / BybitExecutor untouched. Local
-commit only — no push.
+commit `1aa184f` — no push.
 
 ---
 
