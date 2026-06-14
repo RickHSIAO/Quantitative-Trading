@@ -1,9 +1,26 @@
 # Next Action
 
-> README shared status updated by TASK-014AS (2026-06-14) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
-> for the cross-agent status board. Code-only sync — no real trading logic
-> added, G20 still active, no real trading enabled.
+> README shared status updated by TASK-014AS-FIX1 (2026-06-14) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014as-fix1-2026-06-14)
+> for the cross-agent status board. Footer wording cleanup only — no runtime
+> behavior change, G20 still active, no real trading enabled.
+
+## TASK-014AS-FIX1 Status (2026-06-14)
+
+| item | status |
+|---|---|
+| scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: module docstring lines `--allow-implementation-design` / `implementation_design_conclusion` / `IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE` → `--allow-static-skeleton-dry-run` / `static_skeleton_dry_run_conclusion` / `STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE` | DONE |
+| scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: markdown report footer blockquote updated — "STRICT IMPLEMENTATION-DESIGN-ONLY module" → "STRICT STATIC-SKELETON-DRY-RUN-ONLY module"; `--allow-implementation-design` → `--allow-static-skeleton-dry-run`; `implementation_design_conclusion remains IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE` → `static_skeleton_dry_run_conclusion remains STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE` | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: module docstring modes section `--allow-implementation-design` → `--allow-static-skeleton-dry-run`; `run_dry_run()` docstring `--allow-implementation-design` → `--allow-static-skeleton-dry-run` | DONE |
+| backward-compatible `implementation_design_*` alias fields on result dataclass and `to_dict()` preserved — no tests broken | CONFIRMED |
+| no runtime behavior change / no gate change / no artifact change / no endpoint/secret/sender change | CONFIRMED |
+| tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: +1 test `test_markdown_report_footer_uses_dry_run_wording` (asserts STRICT STATIC-SKELETON-DRY-RUN-ONLY / `--allow-static-skeleton-dry-run` / `static_skeleton_dry_run_conclusion remains` / `STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE` in MD); CLI banner test extended with `allow-static-skeleton-dry-run` / `static_skeleton_dry_run_conclusion` / `STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE` assertions | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py | **176/176 PASS** |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py (regression) | 175/175 PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py (regression) | 138/138 PASS |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
 
 ## TASK-014AS Status (2026-06-14)
 
@@ -25,15 +42,15 @@
 | main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
 | local commit | DONE |
 
-## Next Rick Action (set by 2026-06-14 TASK-014AS)
+## Next Rick Action (set by 2026-06-14 TASK-014AS-FIX1)
 
 1. VPS git pull and validate:
        git pull --ff-only
        source .venv/bin/activate
        source .env.demo
-       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py
        python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py -q
-       # expect 175/175 PASS
+       # expect 176/176 PASS
 
 2. (Optional) Run TASK-014AS static skeleton dry-run preview:
        python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py \

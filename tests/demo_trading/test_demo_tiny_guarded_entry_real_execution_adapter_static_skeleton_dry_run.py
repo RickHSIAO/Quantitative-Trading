@@ -2930,6 +2930,25 @@ class TestARFIX2MarkdownReportTitleAndSections:
         assert "TASK-014AS" in md
         assert "TASK-014AT" in md
 
+    def test_markdown_report_footer_uses_dry_run_wording(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run"
+        latest_md = out_dir / f"latest_{base}.md"
+        md = latest_md.read_text(encoding="utf-8")
+        # Footer blockquote must say STATIC-SKELETON-DRY-RUN-ONLY.
+        assert "STRICT STATIC-SKELETON-DRY-RUN-ONLY module" in md
+        assert "IMPLEMENTATION-DESIGN-ONLY module" not in md
+        # Footer must reference --allow-static-skeleton-dry-run flag.
+        assert "--allow-static-skeleton-dry-run" in md
+        # Footer conclusion reference must use static_skeleton_dry_run terminology.
+        assert "static_skeleton_dry_run_conclusion remains" in md
+        assert "STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE" in md
+
 
 class TestARFIX2CLIBannerSaysStaticSkeleton:
     def test_cli_help_does_not_advertise_implementation_design_only(self):
@@ -2961,3 +2980,8 @@ class TestARFIX2CLIBannerSaysStaticSkeleton:
         assert "static skeleton design" in normalized
         assert "static skeleton dry-run" in normalized
         assert "TASK-014AS" in normalized
+        # CLI description must reference --allow-static-skeleton-dry-run,
+        # not the legacy --allow-implementation-design flag.
+        assert "allow-static-skeleton-dry-run" in normalized
+        assert "static_skeleton_dry_run_conclusion" in normalized
+        assert "STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE" in normalized

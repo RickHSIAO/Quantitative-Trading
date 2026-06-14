@@ -21,6 +21,81 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AS-FIX1 — Clean Static Skeleton Dry-run Footer Wording）
+
+Agent: Claude (Sonnet)
+Command source: Rick chat instruction "Proceed with TASK-014AS-FIX1 now."
+(2026-06-14)
+Task: Report/footer wording cleanup only. Update scripts/preview and src
+module so the final safety footer uses STATIC-SKELETON-DRY-RUN
+terminology instead of legacy IMPLEMENTATION-DESIGN wording:
+"TASK-014AS is a STRICT STATIC-SKELETON-DRY-RUN-ONLY module.";
+"--allow-static-skeleton-dry-run"; "static_skeleton_dry_run_conclusion
+remains STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE". Backward-
+compatible `implementation_design_*` alias fields preserved. No runtime
+behavior change, no gate change, no artifact change. Add 1 test
+`test_markdown_report_footer_uses_dry_run_wording`; extend CLI banner
+test with `allow-static-skeleton-dry-run` / `static_skeleton_dry_run_conclusion`
+/ `STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE` assertions.
+
+Status before: TASK-014AS-DOCS1 committed locally as `0445a74`;
+VPS validation passed (175/175 AS, 175/175 AR, 138/138 AQ);
+footer still contained legacy IMPLEMENTATION-DESIGN-ONLY wording.
+Status after: TASK-014AS-FIX1 DONE; footer uses STATIC-SKELETON-DRY-RUN
+terminology; AS suite 176/176 PASS; AR 175/175 PASS; AQ 138/138 PASS.
+
+Files changed:
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py`
+  (module docstring line 98-100: `--allow-implementation-design` /
+  `implementation_design_conclusion` / `IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE`
+  → `--allow-static-skeleton-dry-run` / `static_skeleton_dry_run_conclusion` /
+  `STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE`;
+  markdown footer lines 820-842: "STRICT IMPLEMENTATION-DESIGN-ONLY module"
+  → "STRICT STATIC-SKELETON-DRY-RUN-ONLY module";
+  `--allow-implementation-design` → `--allow-static-skeleton-dry-run`;
+  `implementation_design_conclusion remains IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE`
+  → `static_skeleton_dry_run_conclusion remains STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE`)
+- `src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py`
+  (module docstring modes section: `--allow-implementation-design` →
+  `--allow-static-skeleton-dry-run`;
+  `run_dry_run()` docstring: `--allow-implementation-design` →
+  `--allow-static-skeleton-dry-run`)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py`
+  (+1 test `test_markdown_report_footer_uses_dry_run_wording` in
+  `TestARFIX2MarkdownReportTitleAndSections`;
+  CLI banner test `TestARFIX2CLIBannerSaysStaticSkeleton` extended with
+  3 new assertions for dry-run terminology)
+- `README.md` (status board banner → "updated by TASK-014AS-FIX1,
+  2026-06-14"; `latest_completed_task` → TASK-014AS-FIX1;
+  `current_phase` → footer wording cleanup description;
+  `latest validation` → 176/176 AS PASS, 489/489 total)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014AS-FIX1 status block
+  prepended; Next Rick Action updated to expect 176/176 PASS)
+- `docs/research/commands/COMMAND_LOG.md` (this TASK-014AS-FIX1 entry)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py -q` → **176/176 PASS**
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` (AR regression) → 175/175 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` (AQ regression) → 138/138 PASS
+- Combined 489/489 PASS
+
+Outputs: (no new output artifacts — wording cleanup only)
+
+Notes:
+- Footer wording cleanup only. Zero runtime behavior change.
+- `implementation_design_conclusion` alias field on dataclass and
+  `to_dict()` still resolves to `STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE`
+  (backward-compat preserved).
+- AQ upstream proof fields (`upstream_entry_implementation_design_conclusion`
+  = `IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE`,
+  `upstream_entry_implementation_design_response_status`
+  = `IMPLEMENTATION_DESIGN_NOT_SENT`) are untouched — these document
+  what the AQ artifact contains and are required by the gate checks.
+- Local commit only; not pushed to remote (per persistent user rule).
+
+---
+
 ### 2026-06-14（TASK-014AS — Guarded Entry Real Execution Adapter Static Skeleton Dry-run）
 
 Agent: Claude (Opus)

@@ -95,9 +95,9 @@ IMPORTANT:
     scaffold design
     is documented only --- this task does NOT implement the adapter.
     No automatic git commit, no automatic git push.
-  - Even with --allow-implementation-design the design only emits
-    a sanitized design artifact.  implementation_design_conclusion
-    is fixed at IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE.
+  - Even with --allow-static-skeleton-dry-run the module only emits
+    a sanitized dry-run artifact.  static_skeleton_dry_run_conclusion
+    is fixed at STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE.
   - Even with --allow-real-entry-execution the design returns
     REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED (no socket opened, no
     real sender implemented).
@@ -817,7 +817,7 @@ def _write_report(
         f"- g20_lifted: `{r.g20_lifted}`",
         f"- existing_positions_touched: `{r.existing_positions_touched}`",
         "",
-        "> TASK-014AS is a STRICT IMPLEMENTATION-DESIGN-ONLY module.",
+        "> TASK-014AS is a STRICT STATIC-SKELETON-DRY-RUN-ONLY module.",
         "> It NEVER opens a socket, NEVER invokes /v5/order/create,",
         "> NEVER invokes /v5/position/trading-stop, NEVER modifies any",
         "> position, NEVER invokes the close-only sender, NEVER invokes",
@@ -834,10 +834,10 @@ def _write_report(
         "> sender G20 (protected_entry_policy_missing), NEVER performs",
         "> any automatic git commit, NEVER performs any automatic git",
         "> push.  The 5 existing demo positions are NEVER touched.",
-        "> Even with --allow-implementation-design the design",
-        "> only emits a sanitized design artifact",
-        "> (implementation_design_conclusion remains",
-        "> IMPLEMENTATION_DESIGN_READY_NOT_EXECUTABLE).  Even with",
+        "> Even with --allow-static-skeleton-dry-run the module",
+        "> only emits a sanitized dry-run artifact",
+        "> (static_skeleton_dry_run_conclusion remains",
+        "> STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE).  Even with",
         "> --allow-real-entry-execution this task returns",
         "> REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED (no socket opened).",
         "",

@@ -52,7 +52,7 @@ Stages:
 
 Modes:
   static_skeleton_dry_run_checklist --- default
-  static_skeleton_dry_run_approval  --- --allow-implementation-design
+  static_skeleton_dry_run_approval  --- --allow-static-skeleton-dry-run
   real_entry_execution_guard       --- --allow-real-entry-execution
   fail_closed                      --- upstream failed
 
@@ -1137,7 +1137,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterStaticSkeletonDryRun:
     `send` method, and NEVER invokes the order-create or trading-stop
     endpoints.
 
-    --allow-implementation-design   --> status promoted to
+    --allow-static-skeleton-dry-run   --> status promoted to
         ..._READY_BUT_EXECUTION_DISABLED
 
     --allow-real-entry-execution    --> status fixed to
