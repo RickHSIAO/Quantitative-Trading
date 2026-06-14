@@ -25,7 +25,7 @@
 | `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run/` | DONE |
 | no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no sender adapter / no executable adapter surface / no `send` / `place_order` / `execute` method / no AA-AT module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback / no real token / phrase / approval-input validation / no auto git commit / no auto git push | CONFIRMED |
 | main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
-| local commit | PENDING |
+| local commit | DONE — `593f081` |
 
 ## Next Rick Action (set by 2026-06-14 TASK-014AU)
 

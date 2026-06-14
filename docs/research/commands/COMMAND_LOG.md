@@ -60,7 +60,7 @@ Status after: TASK-014AU module + preview + test added; AU suite
 916/916 PASS. README shared status board re-headed to TASK-014AU;
 NEXT_ACTION.md TASK-014AU block prepended with status table and Next
 Rick Action; .gitignore extended with new outputs dir. Local commit
-pending (no push).
+`593f081` (no push).
 
 Files changed:
 - src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py (new)
