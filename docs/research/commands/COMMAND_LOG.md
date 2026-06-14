@@ -93,6 +93,52 @@ Notes:
   = `IMPLEMENTATION_DESIGN_NOT_SENT`) are untouched — these document
   what the AQ artifact contains and are required by the gate checks.
 - Local commit only; not pushed to remote (per persistent user rule).
+- Local commit hash: `798e77d`.
+
+---
+
+### 2026-06-14（TASK-014AS-FIX1-DOCS1 — Sync Static Skeleton Dry-run Footer Docs）
+
+Agent: Claude (Sonnet)
+Command source: Rick chat instruction "Proceed with TASK-014AS-FIX1-DOCS1
+now, before push/VPS validation." (2026-06-14)
+Task: Docs-only sync for TASK-014AS-FIX1. Fill in commit hash `798e77d`
+into README and COMMAND_LOG. Update README banner to TASK-014AS-FIX1-DOCS1.
+Verify NEXT_ACTION.md TASK-014AS-FIX1 block is complete (footer wording
+fix stated, 28 upstream artifacts stated, TASK-014AR static skeleton
+design output consumed at runtime, next_required_task = TASK-014AT,
+VPS validation commands present). Add this TASK-014AS-FIX1-DOCS1 log
+entry. No code change, no runtime behavior change, no gate change.
+
+Status before: TASK-014AS-FIX1 committed locally as `798e77d`;
+README `latest_commit` row missing the actual hash; NEXT_ACTION.md
+already correct (TASK-014AS-FIX1 block present, 176/176 PASS noted).
+Status after: TASK-014AS-FIX1-DOCS1 DONE; all doc files reference
+`798e77d`; README banner updated to TASK-014AS-FIX1-DOCS1.
+
+Files changed:
+- `README.md` (banner → "updated by TASK-014AS-FIX1-DOCS1, 2026-06-14";
+  `latest_commit` → `798e77d — TASK-014AS-FIX1: clean static skeleton
+  dry-run footer wording`)
+- `docs/research/commands/COMMAND_LOG.md` (FIX1 entry notes: added
+  "Local commit hash: 798e77d"; this FIX1-DOCS1 entry)
+- `docs/research/commands/NEXT_ACTION.md` (banner updated to
+  TASK-014AS-FIX1-DOCS1; FIX1-DOCS1 local commit row added)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py -q` → 176/176 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` (AR regression) → 175/175 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` (AQ regression) → 138/138 PASS
+- Combined 489/489 PASS
+
+Outputs: (no new output artifacts — docs sync only)
+
+Safety confirmations:
+- No real order, no sender, no executable adapter, no `send` / `place_order` / `execute` method.
+- No endpoint call, no secrets, no HMAC / signing, no G20 lift, no position modification.
+- main.py / src/risk.py / BybitExecutor untouched.
+- Local commit only; not pushed to remote (per persistent user rule).
 
 ---
 

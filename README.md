@@ -14,15 +14,15 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AS-FIX1, 2026-06-14）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AS-FIX1-DOCS1, 2026-06-14）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AS-FIX1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AS-FIX1-DOCS1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
 | latest_completed_task | TASK-014AS-FIX1 |
-| latest_commit | local — `TASK-014AS-FIX1: clean static skeleton dry-run footer wording`（local；尚未推遠端） |
+| latest_commit | local — `798e77d` — `TASK-014AS-FIX1: clean static skeleton dry-run footer wording`（local；尚未推遠端） |
 | current_phase | guarded entry real execution adapter static skeleton dry-run footer wording cleanup（**TASK-014AS-FIX1**：report footer / CLI description / module docstring 改用 STATIC-SKELETON-DRY-RUN-ONLY、`--allow-static-skeleton-dry-run`、`static_skeleton_dry_run_conclusion remains STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE`；舊有 `implementation_design_*` backward-compatible alias fields 保留；runtime behavior / gates / artifacts 未變動；新增 1 test `test_markdown_report_footer_uses_dry_run_wording`，AS suite 擴增至 176 PASS） |
 | next_required_task | `TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design` |
 | real_execution_allowed | **False** |
