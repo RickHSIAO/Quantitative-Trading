@@ -21,6 +21,127 @@ Notes:
 
 ---
 
+### 2026-06-14（TASK-014AS — Guarded Entry Real Execution Adapter Static Skeleton Dry-run）
+
+Agent: Claude (Opus)
+Command source: Rick chat instruction "I explicitly authorize TASK-014AS
+now. Recommended model: Codex: GPT-5.5 / reasoning=very high; Claude:
+Opus 4.7. Proceed with TASK-014AS: Guarded Entry Real Execution Adapter
+Static Skeleton Dry-run." (2026-06-14)
+Task: Produce a STRICT STATIC-SKELETON-DRY-RUN-ONLY module that
+consumes TASK-014AR's `entry_static_skeleton_design` artifact at
+runtime (plus the 27 upstream artifacts AR already consumed), evaluates
+28 upstream artifacts through 14 stages, exposes a 75-gate
+`_HARD_FAIL_GATES` frozenset (62 inherited + 13 new
+`entry_static_skeleton_design_*` AR-consumption gates), 18 ACCEPTABLE_*
+status whitelist frozensets (17 inherited + new
+ACCEPTABLE_ENTRY_STATIC_SKELETON_DESIGN_STATUSES), and writes
+`STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE` to the verdict label.
+Adapter is documented only — NO sender, NO executable adapter, NO
+`send` / `place_order` / `execute` method, NO endpoint calls, NO real
+entry execution, NO real token / phrase / approval-input validation,
+NO secret reads, NO HMAC, NO signing, NO G20 lift, NO modification of
+the 5 protected demo positions (ENAUSDT / TIAUSDT / AIXBTUSDT /
+POLYXUSDT / EDUUSDT), NO `main.py` / `src/risk.py` / BybitExecutor
+reuse, NO AA-AR module reuse from `src/`, NO auto git commit / push.
+
+Status before: TASK-014AR-FIX3-DOCS1 committed locally as `1674dfc`;
+next_required_task =
+TASK-014AS_guarded_entry_real_execution_adapter_static_skeleton_dry_run
+Status after: TASK-014AS DONE; status =
+TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_STATIC_SKELETON_DRY_RUN_READY;
+next_required_task =
+TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design
+
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py`
+  (new — 2653 lines; static-skeleton-dry-run-only module;
+  ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter,
+  ADAPTER_CONTRACT_VERSION=static_skeleton_dry_run_v1,
+  CONSUMED_STATIC_SKELETON_DESIGN_CONTRACT_VERSION=static_skeleton_design_v1,
+  CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1,
+  CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1,
+  CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1,
+  CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1,
+  ADAPTER_RESPONSE_STATUS=STATIC_SKELETON_DRY_RUN_NOT_SENT,
+  ORDER_LINK_ID_PREFIX=STATIC_SKELETON_DRY_RUN_TINY_ENTRY_,
+  STATIC_SKELETON_DRY_RUN_CONCLUSION=STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE;
+  28 upstream artifacts wired; 18 ACCEPTABLE_*_STATUSES frozensets;
+  75-gate `_HARD_FAIL_GATES`; backward-compat `implementation_design_*`
+  aliases preserved)
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py`
+  (new — 1392 lines; 28 `--from-latest-*` flags incl. new
+  `--from-latest-entry-static-skeleton-design`; `--symbol`,
+  `--expected-commit-hash`, `--allow-static-skeleton-dry-run`,
+  `--allow-real-entry-execution`, `--write-report`; `run_execute()`
+  callable from tests; writes `{ts}_*` + `latest_*` JSON+MD to
+  `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run/`;
+  NO auto git operations)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py`
+  (new — 2960 lines; 175 tests covering 4 status modes, 28
+  missing-artifact gates, endpoint/account/symbol invariants, all 14
+  stages presence + order, deep-copy roundtrip, AST + tokenize
+  source-scan safety, 5 protected positions untouched, G20 never
+  lifted, no AA-AR module reuse, next_required_task = 014AT, 18
+  frozenset whitelists incl. ACCEPTABLE_ENTRY_STATIC_SKELETON_DESIGN_STATUSES,
+  CONSUMED_STATIC_SKELETON_DESIGN_CONTRACT_VERSION = "static_skeleton_design_v1",
+  13 LIVE AR-consumption gates, AQ-consumption regression preserved,
+  schema-label tests assert STATIC SKELETON DRY-RUN terminology and
+  `TASK-014AR` upstream wording in scope_summary / markdown / CLI help)
+- `.gitignore` (added
+  `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run/`)
+- `README.md` (Demo Trading Guarded Lifecycle Status board:
+  banner updated to "updated by TASK-014AS, 2026-06-14";
+  `latest_completed_task` → TASK-014AS;
+  `current_phase` → "guarded entry real execution adapter static
+  skeleton dry-run completed";
+  `next_required_task` →
+  `TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design`;
+  adapter identity updated to expose new
+  `CONSUMED_STATIC_SKELETON_DESIGN_CONTRACT_VERSION=static_skeleton_design_v1`;
+  `audit response_status` → `STATIC_SKELETON_DRY_RUN_NOT_SENT`;
+  added `static_skeleton_dry_run_conclusion` row)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014AS status table +
+  Next Rick Action section prepended; existing TASK-014AR-FIX3 block
+  preserved)
+- `docs/research/commands/COMMAND_LOG.md` (this TASK-014AS entry)
+
+Validation:
+- `python -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py -q` → 175/175 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` (AR regression) → 175/175 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` (AQ regression) → 138/138 PASS
+- Combined 488/488 PASS
+
+Outputs:
+- (TASK module produces no output artifacts unless invoked with
+  `--write-report`; CLI default is dry-run-checklist with no I/O.)
+
+Notes:
+- TASK-014AS is the static skeleton DRY-RUN successor to TASK-014AR
+  (which produced the static skeleton DESIGN). AS consumes AR's output
+  via the new 28th upstream artifact wiring, gating 13 fail-closed
+  invariants from AR's verdict (status, real_execution_allowed,
+  send_allowed, adapter_implementation_included,
+  adapter_execution_included, order_endpoint_called,
+  stop_endpoint_called, no_position_modified, no_secrets_loaded,
+  g20_lifted, conclusion, response_status). All 8 LIVE AQ-consumption
+  gates from AR-FIX1 remain active (regression-tested).
+- Real execution is still FORBIDDEN. `--allow-static-skeleton-dry-run`
+  only flips the mode label; `--allow-real-entry-execution` only
+  returns `REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED`. No order endpoint is
+  ever invoked, no socket is opened, no secret is loaded, no G20 is
+  lifted.
+- Backward-compat aliases retained: `implementation_design_conclusion`,
+  `final_implementation_design_verdict`, `implementation_design_scope`
+  resolve to the new `static_skeleton_dry_run_*` values so older
+  downstream readers still work; `MODE_IMPLEMENTATION_DESIGN_CHECKLIST`
+  / `_APPROVAL` are aliases of the new
+  `MODE_STATIC_SKELETON_DRY_RUN_*` strings.
+- Local commit only; not pushed to remote (per persistent user rule).
+
+---
+
 ### 2026-06-14（TASK-014AR-FIX3-DOCS1 — Sync Static Skeleton CLI Help Test Docs）
 
 Agent: Claude (Sonnet)

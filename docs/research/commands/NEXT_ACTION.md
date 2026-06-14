@@ -1,9 +1,86 @@
 # Next Action
 
-> README shared status updated by TASK-014AR-FIX3 (2026-06-14) — see
+> README shared status updated by TASK-014AS (2026-06-14) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-status-updated-by-task-014af-docs1-2026-06-11)
 > for the cross-agent status board. Code-only sync — no real trading logic
 > added, G20 still active, no real trading enabled.
+
+## TASK-014AS Status (2026-06-14)
+
+| item | status |
+|---|---|
+| src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: static-skeleton-dry-run-only module (NO sender, NO executable adapter, NO `send` / `place_order` / `execute` method, NO endpoint calls, NO real entry execution, NO real token / phrase / approval-input validation, NO auto-git operations, NO AA-AR module reuse), **28 upstream artifact inputs** (the 27 from TASK-014AR + AR's `entry_static_skeleton_design` output **consumed at runtime by TASK-014AS**), 14 stages (STAGE_0 through STAGE_13), hard-fail-closed gates frozenset (**75 gates** incl. 13 LIVE AR-consumption gates `entry_static_skeleton_design_*`), 18 ACCEPTABLE_*_STATUSES frozensets incl. ACCEPTABLE_ENTRY_STATIC_SKELETON_DESIGN_STATUSES, dataclass result with deep-copy `to_dict()` covering 14 sub-dict fields **+ 7 `upstream_entry_static_skeleton_design_*` fields + `consumed_static_skeleton_design_contract_version`** | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: NO `/v5/order/create` invocation (only documented reference string), NO `/v5/position/trading-stop`, NO secret reads, NO HMAC/signature, NO sender adapter, NO executable adapter surface, NO `send` / `place_order` / `execute` method, NO real entry execution, NO urllib/requests/httpx/socket/http.client imports, NO G20 lift, NO AA-AR module reuse, NO auto git commit / push / branch / tag — pure-computation static-skeleton-dry-run envelope (ADAPTER_NAME=GuardedTinyEntryRealExecutionAdapter, ADAPTER_CONTRACT_VERSION=static_skeleton_dry_run_v1, CONSUMED_STATIC_SKELETON_DESIGN_CONTRACT_VERSION=static_skeleton_design_v1, CONSUMED_IMPLEMENTATION_DESIGN_CONTRACT_VERSION=implementation_design_v1, CONSUMED_READINESS_CONTRACT_VERSION=readiness_review_v1, CONSUMED_DRY_RUN_CONTRACT_VERSION=dry_run_v1, CONSUMED_DESIGN_CONTRACT_VERSION=design_only_v1, ADAPTER_RESPONSE_STATUS=STATIC_SKELETON_DRY_RUN_NOT_SENT, ORDER_LINK_ID_PREFIX=STATIC_SKELETON_DRY_RUN_TINY_ENTRY_, STATIC_SKELETON_DRY_RUN_CONCLUSION=STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE, symbol=SOLUSDT, qty=0.1, side=Buy, reduceOnly=False, orderType=Market, positionIdx=0, max_notional_usdt=10, stopLoss=61.18, tpslMode=Full, slTriggerBy=MarkPrice) | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: AR `entry_static_skeleton_design` artifact CONSUMED AT RUNTIME — status / `real_execution_allowed` / `send_allowed` / `adapter_implementation_included` / `adapter_execution_included` / `order_endpoint_called` / `stop_endpoint_called` / `no_position_modified` / `no_secrets_loaded` / `g20_lifted` / conclusion / `audit_artifacts.response_status` all parsed and gated. ACCEPTABLE_ENTRY_STATIC_SKELETON_DESIGN_STATUSES (TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_STATIC_SKELETON_DESIGN_READY / _READY_BUT_EXECUTION_DISABLED / REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED); 13 LIVE AR-consumption gates (entry_static_skeleton_design_missing / _status_unacceptable / _real_execution_allowed_true / _send_allowed_true / _adapter_implementation_included_true / _adapter_execution_included_true / _order_endpoint_called_true / _stop_endpoint_called_true / _no_position_modified_false / _no_secrets_loaded_false / _g20_lifted_true / _conclusion_mismatch / _response_status_unacceptable) — each fails-closed when violated. AQ runtime consumption (8 gates) preserved intact. | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: forbidden flags (--execute-real-lifecycle / --execute-real-entry / --execute-real-stop / --execute-real-cleanup / --send-order / --place-order / --real-run / --confirm-token / --execute-tiny-entry / --auto-commit / --git-commit / --auto-push / --git-push) deliberately absent from code; only `--allow-static-skeleton-dry-run` and `--allow-real-entry-execution` exposed (both never execute real orders) | DONE |
+| src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: next_required_task = "TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design"; audit_artifacts.response_status = "STATIC_SKELETON_DRY_RUN_NOT_SENT"; final_static_skeleton_dry_run_verdict.static_skeleton_dry_run_conclusion = "STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE" | DONE |
+| scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: **28** `--from-latest-*` flags (incl. new `--from-latest-entry-static-skeleton-design`), `--symbol`, `--expected-commit-hash`, `--allow-static-skeleton-dry-run`, `--allow-real-entry-execution`, `--write-report`; `run_execute()` callable from tests (now also accepts `entry_static_skeleton_design_dir`); loads `latest_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.json` and passes the artifact through to `run_dry_run(entry_static_skeleton_design=...)`; writes `{ts}_*` + `latest_*` JSON+MD to `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run/`; NO auto git operations | DONE |
+| tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py: 175 tests covering 4 status modes, missing-artifact gates (incl. new GATE_ENTRY_STATIC_SKELETON_DESIGN_MISSING), endpoint/account/symbol invariants, all 14 stages presence + order, deep-copy roundtrip, AST + tokenize source-scan safety, 5 protected positions untouched, G20 never lifted, no AA-AR module reuse, next_required_task = 014AT, 18 frozenset whitelists incl. ACCEPTABLE_ENTRY_STATIC_SKELETON_DESIGN_STATUSES, CONSUMED_STATIC_SKELETON_DESIGN_CONTRACT_VERSION = "static_skeleton_design_v1", 13 LIVE AR-consumption gates, AQ-consumption regression preserved, schema-label tests assert STATIC SKELETON DRY-RUN terminology and `TASK-014AR` upstream wording in scope_summary / markdown / CLI help | DONE |
+| py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py + scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py | PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py | 175/175 PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py (regression) | 175/175 PASS |
+| pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py (regression) | 138/138 PASS |
+| `.gitignore` updated with `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run/` | DONE |
+| no real entry / no `/v5/order/create` / no `/v5/position/trading-stop` / no order send / no sender adapter / no executable adapter surface / no `send` / `place_order` / `execute` method / no AA-AR module reuse / G20 not lifted / 5 existing positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) never modified / no secrets / no HMAC / no signature header / no live endpoint fallback / no real token / phrase / approval-input validation / no auto git commit / no auto git push | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE |
+
+## Next Rick Action (set by 2026-06-14 TASK-014AS)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py -q
+       # expect 175/175 PASS
+
+2. (Optional) Run TASK-014AS static skeleton dry-run preview:
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py \
+           --from-latest-readonly --from-latest-reconciliation \
+           --from-latest-protection --from-latest-contract \
+           --from-latest-noop-plan --from-latest-lifecycle \
+           --from-latest-real-permission --from-latest-tiny-entry-permission \
+           --from-latest-tiny-stop-permission --from-latest-tiny-cleanup-permission \
+           --from-latest-lifecycle-summary --from-latest-runner-design \
+           --from-latest-runner-dry-run --from-latest-guarded-design-review \
+           --from-latest-guarded-entry-adapter --from-latest-guarded-stop-adapter \
+           --from-latest-guarded-cleanup-adapter --from-latest-guarded-lifecycle-summary \
+           --from-latest-entry-real-permission-review \
+           --from-latest-entry-manual-auth-design \
+           --from-latest-entry-manual-auth-dry-run \
+           --from-latest-entry-final-pre-execution-review \
+           --from-latest-entry-manual-approval-gate \
+           --from-latest-entry-adapter-design \
+           --from-latest-entry-adapter-dry-run \
+           --from-latest-entry-implementation-readiness-review \
+           --from-latest-entry-implementation-design \
+           --from-latest-entry-static-skeleton-design \
+           --symbol SOLUSDT --write-report
+       cat outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run/latest_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.md
+
+   Expected:
+     status=TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_STATIC_SKELETON_DRY_RUN_READY;
+     selected_symbol=SOLUSDT;
+     5 protected positions (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) untouched;
+     real_execution_allowed=False; real_entry_implemented=False;
+     adapter_implementation_included=False; adapter_execution_included=False;
+     send_allowed=False;
+     order_endpoint_called=False; stop_endpoint_called=False;
+     no_position_modified=True; no_live_endpoint=True;
+     no_secrets_loaded=True; g20_lifted=False;
+     g20_policy_still_in_place=True;
+     audit_artifacts.response_status=STATIC_SKELETON_DRY_RUN_NOT_SENT;
+     final_static_skeleton_dry_run_verdict.static_skeleton_dry_run_conclusion=STATIC_SKELETON_DRY_RUN_READY_NOT_EXECUTABLE;
+     no_auto_git_operations=True;
+     next_required_task=TASK-014AT_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.
+
+3. Once step 1 passes, decide whether to authorise TASK-014AT
+   (guarded entry real execution adapter disabled implementation scaffold
+   design — next phase; still no real execution. TASK-014AS already wires the
+   13 `entry_static_skeleton_design_*` gates and
+   ACCEPTABLE_ENTRY_STATIC_SKELETON_DESIGN_STATUSES at runtime against AR
+   output; AT will produce the disabled implementation scaffold design).
 
 ## TASK-014AR Status (2026-06-13, updated by TASK-014AR-FIX3 2026-06-14)
 
