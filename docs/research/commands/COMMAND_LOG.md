@@ -21,6 +21,53 @@ Notes:
 
 ---
 
+### 2026-06-15（TASK-014AX-FIX2 — Sync Manual Authorization Gate Dry-Run Next Task）
+
+Agent: Claude (Sonnet 4.6)
+Command source: Rick VPS validation after TASK-014AX-FIX1 confirmed next_required_task
+was pointing to TASK-014AY with `manual_authorization_gate_design` phase name.
+Root cause: Forward-ref task name should be DRY-RUN phase (TASK-014AY is the
+next phase AFTER AX's DESIGN phase), not another DESIGN phase.
+
+Task:
+- Update AX src/tests: `NEXT_REQUIRED_TASK` constant to point to TASK-014AY
+  `...manual_authorization_gate_dry_run` (not design).
+- Update tests: assertions checking AX's next_required_task value.
+- Update module docstring comment reflecting correct next task phase.
+- Preserve all other logic (upstream paths, identity, gates, etc. from FIX1).
+
+Status before: TASK-014AX-FIX1 (1777 PASS); VPS validation showed
+next_required_task = TASK-014AY...manual_authorization_gate_design (wrong).
+
+Status after: TASK-014AX-FIX2 (1777 PASS). Forward-ref now correctly points to
+TASK-014AY...manual_authorization_gate_dry_run. All outputs (src, scripts,
+tests, JSON, Markdown, stdout, audit_artifacts) now agree.
+
+Files changed (2 modified):
+- `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py` —
+  `NEXT_REQUIRED_TASK` = `TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run`
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py` —
+  updated `TestAQ80NextRequiredTask` assertion (line 1989),
+  updated `TestARFIX2NextRequiredTaskUnchanged` assertion (line 3062),
+  updated module docstring (line 23).
+
+Validation (local Windows):
+- py_compile src + preview + test → PASS
+- pytest AX 299/299 PASS
+- pytest AW+AV+AU+AT+AS+AR+AQ 1478/1478 PASS
+- combined 1777/1777 PASS
+
+Outputs: 2 files modified, no runtime outputs generated.
+
+Notes:
+- AX = manual authorization gate DESIGN phase (scaffold)
+- AY = manual authorization gate DRY-RUN phase (next phase, still no real execution)
+- Clarifies the sequential task naming: design → dry-run → [next phase]
+- main.py / src/risk.py / BybitExecutor / G20 sender policy still UNTOUCHED.
+- Local commit only (durable-memory instruction: don't push without explicit Rick approval).
+
+---
+
 ### 2026-06-15（TASK-014AX-FIX1 — Restore Entry Final Pre-Execution Upstream Path）
 
 Agent: Claude (Sonnet 4.6)

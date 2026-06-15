@@ -184,7 +184,7 @@ DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_CONCLUSION = "
 DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_AUTHORIZATION_RESULT = "DOCUMENTED_ONLY_NOT_AUTHORIZED"
 
 NEXT_REQUIRED_TASK = (
-    "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design"
+    "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
 )
 
 

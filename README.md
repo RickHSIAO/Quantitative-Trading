@@ -14,16 +14,16 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014AX-FIX1, 2026-06-15）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014AX-FIX2, 2026-06-15）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014AX-FIX1 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014AX-FIX2 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
 | 欄位 | 值 |
 |---|---|
-| latest_completed_task | TASK-014AX-FIX1 |
-| latest_commit | local — `TASK-014AX-FIX1: restore entry final pre-execution upstream path`（local；尚未推遠端） |
-| current_phase | guarded entry real execution adapter disabled implementation scaffold **manual authorization gate design** scaffold added（**TASK-014AX**）；**TASK-014AX-FIX1** 修正 Stage 1 廣域替換 (`final_pre_execution_review` → `manual_authorization_gate_design`) 錯誤地改到舊 TASK-014AI-era `tiny_guarded_entry_final_pre_execution_review` upstream 路徑。已還原 `GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING`、`ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES`、`upstream_entry_final_pre_execution_review_status`、`entry_final_pre_execution_review` 函數參數、預覽路徑 `tiny_guarded_entry_final_pre_execution_review/latest_tiny_guarded_entry_final_pre_execution_review.json`；新增 7 個 FIX1 regression tests；AX suite 299 PASS；combined 1777 PASS） |
+| latest_completed_task | TASK-014AX-FIX2 |
+| latest_commit | local — `TASK-014AX-FIX2: sync manual authorization gate dry-run next task`（local；尚未推遠端） |
+| current_phase | guarded entry real execution adapter disabled implementation scaffold **manual authorization gate design** scaffold added（**TASK-014AX**）；**TASK-014AX-FIX1** 修正舊 upstream 路徑；**TASK-014AX-FIX2** 修正 `next_required_task` 應指向 TASK-014AY 的 **dry-run** 而非 design；AX suite 299 PASS；combined 1777 PASS） |
 | next_required_task | `TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run` （由 Rick 在 NEXT_ACTION.md 顯式授權後才會啟動） |
 | real_execution_allowed | **False** |
 | actual tiny entry | **FORBIDDEN** |

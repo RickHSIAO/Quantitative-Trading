@@ -20,7 +20,7 @@ auto-git); report artifacts; forbidden-flag absence (--execute-real-* /
 --send-order / --place-order / --real-run / --confirm-token /
 --auto-commit / --git-commit / --auto-push / --git-push); G20 never
 lifted; 5 protected positions never touched; next_required_task =
-TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.
+TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.
 """
 from __future__ import annotations
 
@@ -1986,7 +1986,7 @@ class TestAQ80NextRequiredTask:
     def test_next_required_task(self):
         r = _run()
         assert r.next_required_task == NEXT_REQUIRED_TASK
-        assert NEXT_REQUIRED_TASK == "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design"
+        assert NEXT_REQUIRED_TASK == "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
 
 
 # ===========================================================================
@@ -3059,7 +3059,7 @@ class TestARFIX2NextRequiredTaskUnchanged:
     def test_next_required_task_is_AS(self):
         r = _run(symbol="SOLUSDT")
         assert r.next_required_task \
-            == "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design"
+            == "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
         assert r.next_required_task == NEXT_REQUIRED_TASK
 
 

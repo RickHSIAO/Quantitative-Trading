@@ -1,5 +1,57 @@
 # Next Action
 
+> README shared status updated by TASK-014AX-FIX2 (2026-06-15) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ax-fix2-2026-06-15)
+> for the cross-agent status board. TASK-014AX-FIX2 syncs the forward-ref
+> `next_required_task` to point to TASK-014AY's dry-run phase (not another
+> design phase). AX is the manual authorization gate DESIGN; AY should be
+> the manual authorization gate DRY-RUN. Constants, test assertions, and module
+> docstrings updated. All outputs (src, scripts, tests, JSON, Markdown, stdout)
+> now correctly show next_required_task = TASK-014AY_..._manual_authorization_gate_dry_run.
+
+## TASK-014AX-FIX2 Status (2026-06-15)
+
+| item | status |
+|---|---|
+| root cause: AX forward-ref next_required_task was set to TASK-014AY...manual_authorization_gate_design (wrong phase name) instead of TASK-014AY...manual_authorization_gate_dry_run | IDENTIFIED |
+| src: update `NEXT_REQUIRED_TASK` constant to `TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run` | DONE |
+| tests: update `TestAQ80NextRequiredTask.test_next_required_task` assertion from design to dry_run | DONE |
+| tests: update `TestARFIX2NextRequiredTaskUnchanged.test_next_required_task_is_AS` hardcoded and constant assertions to dry_run | DONE |
+| tests: update module docstring (line 23) — next_required_task reflects DRY-RUN | DONE |
+| AX src: verify `disabled_implementation_scaffold_manual_authorization_gate_design` identity unchanged (not touched by FIX2) | CONFIRMED |
+| py_compile src + scripts + test | PASS |
+| pytest AX | **299/299 PASS** |
+| pytest AW+AV+AU+AT+AS+AR+AQ regression | **1478/1478 PASS** |
+| combined AX+AW+AV+AU+AT+AS+AR+AQ | **1777/1777 PASS** |
+| no runtime behavior change / no endpoint / no secret / no G20 lift / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-15 TASK-014AX-FIX2)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py -q
+       # expect 299/299 PASS
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py --write-report \
+         --from-latest-entry-disabled-implementation-scaffold-design \
+         --from-latest-entry-disabled-implementation-scaffold-dry-run \
+         --from-latest-entry-disabled-implementation-scaffold-final-pre-execution-review
+       # confirm: next_required_task = TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run (NOT design)
+       # confirm: status = TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY
+       # confirm: conclusion = DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY_NOT_EXECUTABLE
+       # confirm: authorization_result = DOCUMENTED_ONLY_NOT_AUTHORIZED
+       # confirm: response_status = DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NOT_SENT
+
+2. Once step 1 passes, decide whether to authorise TASK-014AY
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate dry-run — next phase in the
+   sequential safety chain; still no real execution).
+
+---
+
 > README shared status updated by TASK-014AX-FIX1 (2026-06-15) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ax-fix1-2026-06-15)
 > for the cross-agent status board. TASK-014AX-FIX1 restores the over-renamed
