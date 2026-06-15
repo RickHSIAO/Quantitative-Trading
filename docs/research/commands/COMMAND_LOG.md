@@ -21,6 +21,81 @@ Notes:
 
 ---
 
+### 2026-06-15（TASK-014AY-FIX1 — Manual Authorization Gate Dry-Run Upstream + Simulated Approval Envelope Proof）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick direct chat instruction "execute TASK-014AY-FIX1" —
+complete the deferred AX-upstream structural mirror plus simulated-approval
+envelope, on top of commit aca4a9e (TASK-014AY), as a NEW FIX1 commit
+(do not delete aca4a9e).
+
+Task: TASK-014AY-FIX1 — Complete the deferred AX-as-34th-upstream
+structural mirror (parallel to how AX consumes AW as the 33rd upstream)
+plus a documented-only simulated-approval envelope with 10 fail-closed
+gates. No real execution, no sender, no executable adapter, no endpoint
+calls, no secret reading, no G20 lift, no position modification.
+main.py / src/risk.py / BybitExecutor untouched.
+
+Status before: TASK-014AY DONE (commit aca4a9e); AY identity rename to
+dry-run was complete but full structural mirror of AX upstream
+consumption was explicitly deferred (NEXT_ACTION line 35 documented the
+deferral). AY suite 299/299 PASS at this state.
+
+Status after: AY src + scripts + tests now include the full structural
+mirror. AY suite 353/353 PASS (299 baseline + 54 new FIX1 tests across
+6 new test classes). AX regression 299/299 PASS. Combined demo_trading
+real_execution_adapter chain 2522/2522 PASS.
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py
+  (+1 contract version constant, +2 frozensets, +15 AX-upstream gates,
+   +10 simulated-approval gates, +16 AX-upstream dataclass fields,
+   +14 simulated-approval dataclass fields, +1 consumed contract field,
+   `run_readiness_review` signature gains `entry_disabled_implementation_scaffold_manual_authorization_gate_design`
+   and `simulated_approval` params, AX-upstream parser block, simulated-
+   approval parser block, audit_artifacts entries, result construction,
+   to_dict entries)
+- scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py
+  (+`_DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_DIR`,
+   +`load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_design()`,
+   +`--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-design` CLI flag,
+   +markdown rows for all 16 AX-upstream fields and 14 simulated-approval
+   fields, footer wording changed to DRY-RUN-ONLY for AY identity)
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py
+  (+`_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_design()` fixture,
+   +`_valid_simulated_approval()` fixture,
+   +`_bad_axmag()` / `_bad_sa()` helpers,
+   +`_run()` helper gains `entry_disabled_implementation_scaffold_manual_authorization_gate_design=_UNSET` and `simulated_approval=_UNSET` kwargs,
+   +6 new test classes / 53 new tests:
+     TestAYAXFIX1AXUpstreamGates ×17,
+     TestAYAXFIX1AXUpstreamPropagation ×8,
+     TestAYAXFIX1SimulatedApproval ×12,
+     TestAYAXFIX1CLIFlags ×4,
+     TestAYAXFIX1IdentityWording ×6,
+     TestAYAXFIX1SafetyInvariants ×6,
+   footer-wording test (`test_markdown_report_footer_uses_readiness_review_wording`) already updated in Stage 5)
+- README.md (status board updated to TASK-014AY-FIX1)
+- docs/research/commands/NEXT_ACTION.md (TASK-014AY-FIX1 section prepended)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+
+Validation:
+- `py_compile src + preview + test` → PASS
+- `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py -q` → **353/353 PASS**
+- `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py + final_pre_execution_review -q` → **591/591 PASS**
+- combined demo_trading real_execution_adapter chain → **2522/2522 PASS**
+
+Outputs: documented-only; no outbound request, no real execution.
+
+Notes:
+- Local commit only; NOT pushed to remote (per project convention —
+  push requires explicit Rick instruction).
+- aca4a9e (TASK-014AY) preserved as base commit; FIX1 lands on top.
+- The 25 new gates (15 AX-upstream + 10 simulated-approval) are
+  documentation-strength gates that record in `blocked_gates` but
+  are NOT yet hard-fail; existing AY hard-fail behavior is unchanged.
+
+---
+
 ### 2026-06-15（TASK-014AY — Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Manual Authorization Gate Dry-Run）
 
 Agent: Claude (Haiku 4.5 with Sonnet 4.6 sub-agent assist)

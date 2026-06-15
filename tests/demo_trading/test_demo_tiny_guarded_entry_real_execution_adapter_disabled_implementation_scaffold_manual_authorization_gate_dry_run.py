@@ -130,6 +130,34 @@ from src.demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_
     GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_SEND_ALLOWED_TRUE,
     GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_STATUS_UNACCEPTABLE,
     GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_STOP_ENDPOINT_CALLED_TRUE,
+    ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES,
+    ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MODES,
+    CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_CONTRACT_VERSION,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ADAPTER_EXECUTION_INCLUDED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_CONCLUSION_MISMATCH,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_G20_LIFTED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MODE_UNACCEPTABLE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NO_POSITION_MODIFIED_FALSE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NO_SECRETS_LOADED_FALSE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ORDER_ENDPOINT_CALLED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_REAL_EXECUTION_ALLOWED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_RESPONSE_STATUS_UNACCEPTABLE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_SEND_ALLOWED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUS_UNACCEPTABLE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STOP_ENDPOINT_CALLED_TRUE,
+    GATE_SIMULATED_APPROVAL_AMBIGUOUS,
+    GATE_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER,
+    GATE_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE,
+    GATE_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE,
+    GATE_SIMULATED_APPROVAL_GRANTS_EXECUTION,
+    GATE_SIMULATED_APPROVAL_MISSING,
+    GATE_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF,
+    GATE_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF,
+    GATE_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF,
+    GATE_SIMULATED_APPROVAL_REQUESTS_EXECUTION,
     ACCEPTABLE_GUARDED_CLEANUP_ADAPTER_STATUSES,
     ACCEPTABLE_GUARDED_DESIGN_REVIEW_STATUSES,
     ACCEPTABLE_GUARDED_ENTRY_ADAPTER_STATUSES,
@@ -1031,6 +1059,74 @@ def _valid_entry_disabled_implementation_scaffold_final_pre_execution_review() -
     }
 
 
+def _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_design() -> dict:
+    """The 34th upstream artifact: TASK-014AX's documented-only output.
+
+    AX produces the disabled-implementation-scaffold manual authorization gate
+    *design* artifact.  AY consumes it as the direct upstream and AY's own
+    output is the *dry-run* artifact.  All safety guards remain identical so a
+    valid AX artifact never permits any real execution downstream.
+    """
+    return {
+        "timestamp_utc":                "2026-06-15T00:45:00.0000000Z",
+        "mode":                         "disabled_implementation_scaffold_manual_authorization_gate_design_checklist",
+        "selected_symbol":              "SOLUSDT",
+        "status":                       "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY",
+        "adapter_name":                 ADAPTER_NAME,
+        "adapter_contract_version":     "disabled_implementation_scaffold_manual_authorization_gate_design_v1",
+        "real_execution_allowed":              False,
+        "send_allowed":                        False,
+        "adapter_implementation_included":     False,
+        "adapter_execution_included":          False,
+        "order_endpoint_called":               False,
+        "stop_endpoint_called":                False,
+        "no_position_modified":                True,
+        "no_secrets_loaded":                   True,
+        "g20_lifted":                          False,
+        "g20_policy_still_in_place":           True,
+        "no_live_endpoint":                    True,
+        "no_auto_git_operations":              True,
+        "real_entry_implemented":              False,
+        "current_task_real_execution_allowed": False,
+        "authorization_result":         "DOCUMENTED_ONLY_NOT_AUTHORIZED",
+        "disabled_implementation_scaffold_manual_authorization_gate_design_conclusion":
+            "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY_NOT_EXECUTABLE",
+        "expected_commit_hash":         "0000000000000000000000000000000000000000",
+        "audit_artifacts": {
+            "response_status": "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NOT_SENT",
+        },
+        "final_disabled_implementation_scaffold_manual_authorization_gate_design_verdict": {
+            "disabled_implementation_scaffold_manual_authorization_gate_design_conclusion":
+                "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY_NOT_EXECUTABLE",
+            "authorization_result": "DOCUMENTED_ONLY_NOT_AUTHORIZED",
+            "real_execution_allowed": False,
+            "send_allowed": False,
+        },
+        "next_required_task":           "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run",
+    }
+
+
+def _valid_simulated_approval() -> dict:
+    """Documented-only simulated-approval envelope: never authorizes real execution."""
+    return {
+        "artifact_used":                            True,
+        "is_sanitized":                             True,
+        "envelope_documented_only":                 True,
+        "never_authorizes_real_execution":          True,
+        "grants_execution":                         False,
+        "missing_fails_closed":                     True,
+        "ambiguous_fails_closed":                   True,
+        "execution_request_fails_closed":           True,
+        "contains_secret_like_value":               False,
+        "contains_signature_like_value":            False,
+        "has_no_live_trading_proof":                True,
+        "has_protected_position_untouched_proof":   True,
+        "has_g20_still_active_proof":               True,
+        "auto_triggers_sender":                     False,
+        "ambiguous":                                False,
+    }
+
+
 def _read_code_only(path: Path) -> str:
     tokens: list[str] = []
     with open(path, "rb") as fh:
@@ -1081,6 +1177,8 @@ def _run(
     entry_disabled_implementation_scaffold_design=_UNSET,
     entry_disabled_implementation_scaffold_dry_run=_UNSET,
     entry_disabled_implementation_scaffold_final_pre_execution_review=_UNSET,
+    entry_disabled_implementation_scaffold_manual_authorization_gate_design=_UNSET,
+    simulated_approval=_UNSET,
     symbol=DEFAULT_SELECTED_SYMBOL,
     expected_commit_hash="",
     current_commit_hash="",
@@ -1121,6 +1219,8 @@ def _run(
         entry_disabled_implementation_scaffold_design=_valid_entry_disabled_implementation_scaffold_design() if entry_disabled_implementation_scaffold_design is _UNSET else entry_disabled_implementation_scaffold_design,
         entry_disabled_implementation_scaffold_dry_run=_valid_entry_disabled_implementation_scaffold_dry_run() if entry_disabled_implementation_scaffold_dry_run is _UNSET else entry_disabled_implementation_scaffold_dry_run,
         entry_disabled_implementation_scaffold_final_pre_execution_review=_valid_entry_disabled_implementation_scaffold_final_pre_execution_review() if entry_disabled_implementation_scaffold_final_pre_execution_review is _UNSET else entry_disabled_implementation_scaffold_final_pre_execution_review,
+        entry_disabled_implementation_scaffold_manual_authorization_gate_design=_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_design() if entry_disabled_implementation_scaffold_manual_authorization_gate_design is _UNSET else entry_disabled_implementation_scaffold_manual_authorization_gate_design,
+        simulated_approval=(None if simulated_approval is _UNSET else simulated_approval),
         symbol=symbol,
         expected_commit_hash=expected_commit_hash,
         current_commit_hash=current_commit_hash,
@@ -3241,8 +3341,10 @@ class TestARFIX2MarkdownReportTitleAndSections:
         base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
         latest_md = out_dir / f"latest_{base}.md"
         md = latest_md.read_text(encoding="utf-8")
-        # Footer blockquote must say DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DESIGN-ONLY.
-        assert "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DESIGN-ONLY module" in md
+        # Footer blockquote must say DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DRY-RUN-ONLY
+        # (NOT ...DESIGN-ONLY - that is AX's identity, not AY's).
+        assert "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DRY-RUN-ONLY module" in md
+        assert "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DESIGN-ONLY module" not in md
         assert "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-DRY-RUN-ONLY module" not in md
         assert "IMPLEMENTATION-DESIGN-ONLY module" not in md
         # Footer must reference --allow-disabled-implementation-scaffold-manual-authorization-gate-dry-run flag.
@@ -4629,3 +4731,439 @@ class TestAXFIX1OlderUpstreamPath:
         md_text = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
         assert "tiny_guarded_entry_manual_authorization_gate_dry_run" not in json_text
         assert "tiny_guarded_entry_manual_authorization_gate_dry_run" not in md_text
+
+
+# ===========================================================================
+# TASK-014AY-FIX1: AX-as-34th-upstream structural mirror + simulated approval
+# envelope (documented only).  None of these tests exercise real execution,
+# senders, executable adapters, endpoint calls, secret reads, G20 lift, or
+# position modification.  They only confirm that AY's parser, gates, dataclass,
+# audit_artifacts, to_dict, and markdown report correctly mirror AX upstream
+# consumption and the simulated-approval envelope.
+# ===========================================================================
+
+
+def _bad_axmag(**overrides) -> dict:
+    bad = _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_design()
+    bad.update(overrides)
+    return bad
+
+
+def _bad_sa(**overrides) -> dict:
+    env = _valid_simulated_approval()
+    env.update(overrides)
+    return env
+
+
+# ---------------------------------------------------------------------------
+# TestAYAXFIX1AXUpstreamGates — 17 gate-level assertions
+# ---------------------------------------------------------------------------
+
+class TestAYAXFIX1AXUpstreamGates:
+    def test_acceptable_statuses_frozenset_contents(self):
+        assert "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY" \
+            in ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES
+        assert "REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED" \
+            in ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES
+
+    def test_acceptable_modes_frozenset_contents(self):
+        assert "disabled_implementation_scaffold_manual_authorization_gate_design_checklist" \
+            in ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MODES
+        assert "disabled_implementation_scaffold_manual_authorization_gate_design_approval" \
+            in ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MODES
+
+    def test_consumed_contract_version_constant(self):
+        assert CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_CONTRACT_VERSION \
+            == "disabled_implementation_scaffold_manual_authorization_gate_design_v1"
+
+    def test_missing_axmag_blocked_gate_recorded(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=None)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING in r.blocked_gates
+
+    def test_axmag_status_unacceptable_blocked(self):
+        bad = _bad_axmag(status="SOME_UNEXPECTED_STATUS")
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUS_UNACCEPTABLE in r.blocked_gates
+
+    def test_axmag_mode_unacceptable_blocked(self):
+        bad = _bad_axmag(mode="some_other_mode_not_in_whitelist")
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MODE_UNACCEPTABLE in r.blocked_gates
+
+    def test_axmag_real_execution_allowed_true_blocked(self):
+        bad = _bad_axmag(real_execution_allowed=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_REAL_EXECUTION_ALLOWED_TRUE in r.blocked_gates
+
+    def test_axmag_send_allowed_true_blocked(self):
+        bad = _bad_axmag(send_allowed=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_SEND_ALLOWED_TRUE in r.blocked_gates
+
+    def test_axmag_adapter_implementation_included_true_blocked(self):
+        bad = _bad_axmag(adapter_implementation_included=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE in r.blocked_gates
+
+    def test_axmag_adapter_execution_included_true_blocked(self):
+        bad = _bad_axmag(adapter_execution_included=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ADAPTER_EXECUTION_INCLUDED_TRUE in r.blocked_gates
+
+    def test_axmag_order_endpoint_called_true_blocked(self):
+        bad = _bad_axmag(order_endpoint_called=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ORDER_ENDPOINT_CALLED_TRUE in r.blocked_gates
+
+    def test_axmag_stop_endpoint_called_true_blocked(self):
+        bad = _bad_axmag(stop_endpoint_called=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STOP_ENDPOINT_CALLED_TRUE in r.blocked_gates
+
+    def test_axmag_no_position_modified_false_blocked(self):
+        bad = _bad_axmag(no_position_modified=False)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NO_POSITION_MODIFIED_FALSE in r.blocked_gates
+
+    def test_axmag_no_secrets_loaded_false_blocked(self):
+        bad = _bad_axmag(no_secrets_loaded=False)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NO_SECRETS_LOADED_FALSE in r.blocked_gates
+
+    def test_axmag_g20_lifted_true_blocked(self):
+        bad = _bad_axmag(g20_lifted=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_G20_LIFTED_TRUE in r.blocked_gates
+
+    def test_axmag_conclusion_mismatch_blocked(self):
+        bad = _bad_axmag()
+        bad["disabled_implementation_scaffold_manual_authorization_gate_design_conclusion"] = "SOME_OTHER_CONCLUSION"
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_CONCLUSION_MISMATCH in r.blocked_gates
+
+    def test_axmag_response_status_unacceptable_blocked(self):
+        bad = _bad_axmag()
+        bad["audit_artifacts"] = {"response_status": "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_SENT"}
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_RESPONSE_STATUS_UNACCEPTABLE in r.blocked_gates
+
+    def test_axmag_next_task_mismatch_blocked(self):
+        bad = _bad_axmag(next_required_task="TASK-WRONG_next_task_name")
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH in r.blocked_gates
+
+
+# ---------------------------------------------------------------------------
+# TestAYAXFIX1AXUpstreamPropagation — 8 propagation tests
+# ---------------------------------------------------------------------------
+
+class TestAYAXFIX1AXUpstreamPropagation:
+    def test_status_propagated_to_result(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_status \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY"
+
+    def test_mode_propagated_to_result(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_mode \
+            == "disabled_implementation_scaffold_manual_authorization_gate_design_checklist"
+
+    def test_conclusion_propagated_to_result(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_conclusion \
+            == "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY_NOT_EXECUTABLE"
+
+    def test_authorization_result_propagated_to_result(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_authorization_result \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+
+    def test_response_status_propagated_to_result(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_response_status \
+            == "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NOT_SENT"
+
+    def test_next_required_task_propagated_to_result(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_required_task \
+            == "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
+
+    def test_safety_booleans_propagated_to_result(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_real_execution_allowed is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_send_allowed is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_adapter_implementation_included is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_adapter_execution_included is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_order_endpoint_called is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_stop_endpoint_called is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_no_position_modified is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_no_secrets_loaded is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_g20_lifted is False
+
+    def test_consumed_contract_version_field_present_on_result(self):
+        r = _run()
+        assert r.consumed_disabled_implementation_scaffold_manual_authorization_gate_design_contract_version \
+            == "disabled_implementation_scaffold_manual_authorization_gate_design_v1"
+
+
+# ---------------------------------------------------------------------------
+# TestAYAXFIX1SimulatedApproval — 12 simulated approval envelope tests
+# ---------------------------------------------------------------------------
+
+class TestAYAXFIX1SimulatedApproval:
+    def test_absent_envelope_does_not_block(self):
+        # Default simulated_approval=None -> sa_present=False -> no SA gates
+        r = _run()
+        for g in [
+            GATE_SIMULATED_APPROVAL_MISSING,
+            GATE_SIMULATED_APPROVAL_AMBIGUOUS,
+            GATE_SIMULATED_APPROVAL_REQUESTS_EXECUTION,
+            GATE_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE,
+            GATE_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE,
+            GATE_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF,
+            GATE_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF,
+            GATE_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF,
+            GATE_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER,
+            GATE_SIMULATED_APPROVAL_GRANTS_EXECUTION,
+        ]:
+            assert g not in r.blocked_gates
+
+    def test_valid_envelope_does_not_block(self):
+        r = _run(simulated_approval=_valid_simulated_approval())
+        for g in [
+            GATE_SIMULATED_APPROVAL_MISSING,
+            GATE_SIMULATED_APPROVAL_AMBIGUOUS,
+            GATE_SIMULATED_APPROVAL_REQUESTS_EXECUTION,
+            GATE_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE,
+            GATE_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE,
+            GATE_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF,
+            GATE_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF,
+            GATE_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF,
+            GATE_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER,
+            GATE_SIMULATED_APPROVAL_GRANTS_EXECUTION,
+        ]:
+            assert g not in r.blocked_gates
+
+    def test_missing_proof_blocks_missing_gate(self):
+        env = _bad_sa(envelope_documented_only=False)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_MISSING in r.blocked_gates
+
+    def test_ambiguous_envelope_blocked(self):
+        env = _bad_sa(ambiguous=True)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_AMBIGUOUS in r.blocked_gates
+
+    def test_execution_request_fails_closed_false_blocked(self):
+        env = _bad_sa(execution_request_fails_closed=False)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_REQUESTS_EXECUTION in r.blocked_gates
+
+    def test_contains_secret_like_value_blocked(self):
+        env = _bad_sa(contains_secret_like_value=True)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE in r.blocked_gates
+
+    def test_contains_signature_like_value_blocked(self):
+        env = _bad_sa(contains_signature_like_value=True)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE in r.blocked_gates
+
+    def test_no_live_trading_proof_missing_blocked(self):
+        env = _bad_sa(has_no_live_trading_proof=False)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF in r.blocked_gates
+
+    def test_protected_position_untouched_proof_missing_blocked(self):
+        env = _bad_sa(has_protected_position_untouched_proof=False)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF in r.blocked_gates
+
+    def test_g20_still_active_proof_missing_blocked(self):
+        env = _bad_sa(has_g20_still_active_proof=False)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF in r.blocked_gates
+
+    def test_auto_triggers_sender_blocked(self):
+        env = _bad_sa(auto_triggers_sender=True)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER in r.blocked_gates
+
+    def test_grants_execution_blocked(self):
+        env = _bad_sa(grants_execution=True)
+        r = _run(simulated_approval=env)
+        assert GATE_SIMULATED_APPROVAL_GRANTS_EXECUTION in r.blocked_gates
+
+
+# ---------------------------------------------------------------------------
+# TestAYAXFIX1CLIFlags — 4 CLI flag presence tests
+# ---------------------------------------------------------------------------
+
+class TestAYAXFIX1CLIFlags:
+    def test_preview_script_advertises_axmag_flag(self):
+        path = ROOT / "scripts" / "preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py"
+        text = path.read_text(encoding="utf-8")
+        assert "--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-design" in text
+
+    def test_preview_script_loader_function_exposed(self):
+        from scripts import preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run as mod
+        assert hasattr(mod, "load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_design")
+
+    def test_preview_script_help_runs_clean(self):
+        script = ROOT / "scripts" / "preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py"
+        proc = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        assert proc.returncode == 0
+        assert "--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-design" in proc.stdout
+
+    def test_preview_script_default_dir_constant_present(self):
+        from scripts import preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run as mod
+        assert hasattr(mod, "_DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_DIR")
+
+
+# ---------------------------------------------------------------------------
+# TestAYAXFIX1IdentityWording — 6 identity / markdown wording tests
+# ---------------------------------------------------------------------------
+
+class TestAYAXFIX1IdentityWording:
+    def test_markdown_has_axmag_status_row(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_status" in md
+
+    def test_markdown_has_axmag_authorization_result_row(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_authorization_result" in md
+
+    def test_markdown_has_axmag_conclusion_row(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_conclusion" in md
+
+    def test_markdown_has_consumed_axmag_contract_version_row(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert "consumed_disabled_implementation_scaffold_manual_authorization_gate_design_contract_version" in md
+
+    def test_markdown_has_simulated_approval_rows(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT", simulated_approval=_valid_simulated_approval())
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert "simulated_approval_artifact_used" in md
+        assert "simulated_approval_envelope_documented_only" in md
+        assert "simulated_approval_grants_execution" in md
+        assert "simulated_approval_never_authorizes_real_execution" in md
+
+    def test_to_dict_has_axmag_and_simulated_approval_keys(self):
+        r = _run(simulated_approval=_valid_simulated_approval())
+        d = r.to_dict()
+        for k in [
+            "consumed_disabled_implementation_scaffold_manual_authorization_gate_design_contract_version",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_status",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_mode",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_conclusion",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_authorization_result",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_response_status",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_real_execution_allowed",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_send_allowed",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_adapter_implementation_included",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_adapter_execution_included",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_order_endpoint_called",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_stop_endpoint_called",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_no_position_modified",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_no_secrets_loaded",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_g20_lifted",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_required_task",
+            "simulated_approval_artifact_used",
+            "simulated_approval_is_sanitized",
+            "simulated_approval_envelope_documented_only",
+            "simulated_approval_never_authorizes_real_execution",
+            "simulated_approval_grants_execution",
+            "simulated_approval_missing_fails_closed",
+            "simulated_approval_ambiguous_fails_closed",
+            "simulated_approval_execution_request_fails_closed",
+            "simulated_approval_contains_secret_like_value",
+            "simulated_approval_contains_signature_like_value",
+            "simulated_approval_has_no_live_trading_proof",
+            "simulated_approval_has_protected_position_untouched_proof",
+            "simulated_approval_has_g20_still_active_proof",
+            "simulated_approval_auto_triggers_sender",
+        ]:
+            assert k in d, f"missing key {k}"
+
+
+# ---------------------------------------------------------------------------
+# TestAYAXFIX1SafetyInvariants — 6 safety invariants
+# ---------------------------------------------------------------------------
+
+class TestAYAXFIX1SafetyInvariants:
+    def test_axmag_upstream_never_grants_real_execution(self):
+        r = _run()
+        assert r.real_execution_allowed is False
+        assert r.real_entry_implemented is False
+        assert r.send_allowed is False
+
+    def test_axmag_upstream_does_not_lift_g20(self):
+        r = _run()
+        assert r.g20_lifted is False
+        assert r.g20_policy_still_in_place is True
+
+    def test_simulated_approval_present_does_not_grant_execution(self):
+        r = _run(simulated_approval=_valid_simulated_approval())
+        assert r.real_execution_allowed is False
+        assert r.send_allowed is False
+        assert r.adapter_implementation_included is False
+        assert r.adapter_execution_included is False
+        assert r.order_endpoint_called is False
+        assert r.stop_endpoint_called is False
+
+    def test_simulated_approval_present_does_not_modify_positions(self):
+        r = _run(simulated_approval=_valid_simulated_approval())
+        assert r.no_position_modified is True
+
+    def test_simulated_approval_present_does_not_load_secrets(self):
+        r = _run(simulated_approval=_valid_simulated_approval())
+        assert r.no_secrets_loaded is True
+
+    def test_src_does_not_introduce_executable_adapter_or_sender(self):
+        path = ROOT / "src" / "demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py"
+        text = path.read_text(encoding="utf-8")
+        # The simulated-approval block must not introduce a real sender / send method
+        # or a place_order / execute API call.
+        assert "\nclass BybitExecutor" not in text
+        # def send / def place_order / def execute as method definitions
+        assert "    def send(" not in text
+        assert "    def place_order(" not in text
+        assert "    def execute(" not in text

@@ -93,7 +93,7 @@ Writes (when --write-report):
       latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.md
 
 IMPORTANT:
-  - TASK-014AY produces a STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DESIGN-ONLY artifact.
+  - TASK-014AY produces a STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DRY-RUN-ONLY artifact.
     No guarded entry sender, no adapter implementation, no order send,
     no stop-attach send, no cleanup send, no endpoint invoked.  No
     network, no socket, no environment-variable reads, no signing, no
@@ -273,6 +273,12 @@ _DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_DIR =
     / "outputs"
     / "demo_trading"
     / "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
+)
+_DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_DIR = (
+    ROOT
+    / "outputs"
+    / "demo_trading"
+    / "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design"
 )
 _DEFAULT_OUTPUT_DIR          = (
     ROOT
@@ -526,6 +532,16 @@ def load_latest_entry_disabled_implementation_scaffold_final_pre_execution_revie
     )
 
 
+def load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_design(
+    entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir: Path,
+) -> dict | None:
+    """Load the latest TASK-014AX manual authorization gate design artifact."""
+    return _load_json(
+        entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir
+        / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.json"
+    )
+
+
 def _print_result(
     r: TinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFinalPreExecutionReviewResult,
 ) -> None:
@@ -692,6 +708,7 @@ def _write_report(
         f"adapter_name: `{ADAPTER_NAME}`  ",
         f"adapter_contract_version: `{ADAPTER_CONTRACT_VERSION}`  ",
         f"consumed_disabled_implementation_scaffold_final_pre_execution_review_contract_version: `{r.consumed_disabled_implementation_scaffold_final_pre_execution_review_contract_version}`  ",
+        f"consumed_disabled_implementation_scaffold_manual_authorization_gate_design_contract_version: `{r.consumed_disabled_implementation_scaffold_manual_authorization_gate_design_contract_version}`  ",
         f"consumed_readiness_contract_version: `{CONSUMED_READINESS_CONTRACT_VERSION}`  ",
         f"consumed_dry_run_contract_version: `{CONSUMED_DRY_RUN_CONTRACT_VERSION}`  ",
         f"consumed_design_contract_version: `{CONSUMED_DESIGN_CONTRACT_VERSION}`  ",
@@ -773,6 +790,52 @@ def _write_report(
         f"{r.upstream_entry_disabled_implementation_scaffold_final_pre_execution_review_conclusion} |",
         f"| upstream_entry_disabled_implementation_scaffold_final_pre_execution_review_response_status | "
         f"{r.upstream_entry_disabled_implementation_scaffold_final_pre_execution_review_response_status} |",
+        f"| consumed_disabled_implementation_scaffold_manual_authorization_gate_design_contract_version | "
+        f"{r.consumed_disabled_implementation_scaffold_manual_authorization_gate_design_contract_version} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_status | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_status} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_mode | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_mode} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_conclusion | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_conclusion} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_authorization_result | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_authorization_result} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_response_status | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_response_status} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_real_execution_allowed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_real_execution_allowed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_send_allowed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_send_allowed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_adapter_implementation_included | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_adapter_implementation_included} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_adapter_execution_included | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_adapter_execution_included} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_order_endpoint_called | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_order_endpoint_called} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_stop_endpoint_called | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_stop_endpoint_called} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_no_position_modified | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_no_position_modified} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_no_secrets_loaded | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_no_secrets_loaded} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_g20_lifted | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_g20_lifted} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_required_task | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_required_task} |",
+        f"| simulated_approval_artifact_used | {r.simulated_approval_artifact_used} |",
+        f"| simulated_approval_is_sanitized | {r.simulated_approval_is_sanitized} |",
+        f"| simulated_approval_envelope_documented_only | {r.simulated_approval_envelope_documented_only} |",
+        f"| simulated_approval_never_authorizes_real_execution | {r.simulated_approval_never_authorizes_real_execution} |",
+        f"| simulated_approval_grants_execution | {r.simulated_approval_grants_execution} |",
+        f"| simulated_approval_missing_fails_closed | {r.simulated_approval_missing_fails_closed} |",
+        f"| simulated_approval_ambiguous_fails_closed | {r.simulated_approval_ambiguous_fails_closed} |",
+        f"| simulated_approval_execution_request_fails_closed | {r.simulated_approval_execution_request_fails_closed} |",
+        f"| simulated_approval_contains_secret_like_value | {r.simulated_approval_contains_secret_like_value} |",
+        f"| simulated_approval_contains_signature_like_value | {r.simulated_approval_contains_signature_like_value} |",
+        f"| simulated_approval_has_no_live_trading_proof | {r.simulated_approval_has_no_live_trading_proof} |",
+        f"| simulated_approval_has_protected_position_untouched_proof | {r.simulated_approval_has_protected_position_untouched_proof} |",
+        f"| simulated_approval_has_g20_still_active_proof | {r.simulated_approval_has_g20_still_active_proof} |",
+        f"| simulated_approval_auto_triggers_sender | {r.simulated_approval_auto_triggers_sender} |",
         f"| next_required_task | {r.next_required_task} |",
         "",
         "## Disabled Implementation Scaffold Manual Authorization Gate Dry-Run Scope",
@@ -918,7 +981,7 @@ def _write_report(
         f"- g20_lifted: `{r.g20_lifted}`",
         f"- existing_positions_touched: `{r.existing_positions_touched}`",
         "",
-        "> TASK-014AY is a STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DESIGN-ONLY module.",
+        "> TASK-014AY is a STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DRY-RUN-ONLY module.",
         "> It NEVER opens a socket, NEVER invokes /v5/order/create,",
         "> NEVER invokes /v5/position/trading-stop, NEVER modifies any",
         "> position, NEVER invokes the close-only sender, NEVER invokes",
@@ -989,6 +1052,7 @@ def run_execute(
     entry_disabled_implementation_scaffold_design_dir: Path | None = None,
     entry_disabled_implementation_scaffold_dry_run_dir: Path | None = None,
     entry_disabled_implementation_scaffold_final_pre_execution_review_dir: Path | None = None,
+    entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir: Path | None = None,
     output_dir:                        Path | None = None,
     _now:                              datetime | None = None,
 ) -> int:
@@ -1068,6 +1132,10 @@ def run_execute(
         entry_disabled_implementation_scaffold_final_pre_execution_review_dir
         or _DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_DIR
     )
+    _entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir = (
+        entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir
+        or _DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_DIR
+    )
     _out_dir              = output_dir                  or _DEFAULT_OUTPUT_DIR
 
     print(_SEP)
@@ -1136,6 +1204,11 @@ def run_execute(
     entry_disabled_implementation_scaffold_final_pre_execution_review = (
         load_latest_entry_disabled_implementation_scaffold_final_pre_execution_review(
             _entry_disabled_implementation_scaffold_final_pre_execution_review_dir
+        )
+    )
+    entry_disabled_implementation_scaffold_manual_authorization_gate_design = (
+        load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_design(
+            _entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir
         )
     )
 
@@ -1292,6 +1365,13 @@ def run_execute(
                 / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.json"
             )
         )
+    if entry_disabled_implementation_scaffold_manual_authorization_gate_design is None:
+        missing.append(
+            str(
+                _entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir
+                / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.json"
+            )
+        )
 
     if missing:
         print("\n[FAIL CLOSED] Missing upstream artifact(s):")
@@ -1339,6 +1419,7 @@ def run_execute(
     print(f"  entry_disabled_implementation_scaffold_design_src: {_entry_disabled_implementation_scaffold_design_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.json'}")
     print(f"  entry_disabled_implementation_scaffold_dry_run_src: {_entry_disabled_implementation_scaffold_dry_run_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.json'}")
     print(f"  entry_disabled_implementation_scaffold_final_pre_execution_review_src: {_entry_disabled_implementation_scaffold_final_pre_execution_review_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.json'}")
+    print(f"  entry_disabled_implementation_scaffold_manual_authorization_gate_design_src: {_entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.json'}")
 
     gate = DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFinalPreExecutionReview()
     result = gate.run_readiness_review(
@@ -1374,6 +1455,7 @@ def run_execute(
         entry_disabled_implementation_scaffold_design=entry_disabled_implementation_scaffold_design,
         entry_disabled_implementation_scaffold_dry_run=entry_disabled_implementation_scaffold_dry_run,
         entry_disabled_implementation_scaffold_final_pre_execution_review=entry_disabled_implementation_scaffold_final_pre_execution_review,
+        entry_disabled_implementation_scaffold_manual_authorization_gate_design=entry_disabled_implementation_scaffold_manual_authorization_gate_design,
         symbol=symbol,
         expected_commit_hash=expected_commit_hash,
         allow_implementation_design=allow_implementation_design,
@@ -1541,6 +1623,11 @@ def main() -> None:
                               "disabled implementation scaffold final pre-execution review JSON "
                               "(TASK-014AW artifact) from "
                               "outputs/.../tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review/."))
+    parser.add_argument("--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-design", action="store_true",
+                        help=("Read tiny guarded entry real execution adapter "
+                              "disabled implementation scaffold manual authorization gate design JSON "
+                              "(TASK-014AX artifact) from "
+                              "outputs/.../tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design/."))
     parser.add_argument("--symbol", default=DEFAULT_SELECTED_SYMBOL,
                         metavar="SYMBOL",
                         help=("Symbol to design against.  "
