@@ -21,6 +21,91 @@ Notes:
 
 ---
 
+### 2026-06-15（TASK-014AY-FIX2 — Enforce Fail-Closed Manual Authorization Gate Dry-Run Violations）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick direct chat instruction "Proceed with TASK-014AY-FIX2
+now" — close the FIX1 deviation where the 25 new gates only recorded in
+`blocked_gates` without flipping `status` to `FAIL_CLOSED`. Build on top
+of commit ac1d86b (TASK-014AY-FIX1) as a NEW FIX2 commit (do not delete
+aca4a9e or ac1d86b).
+
+Task: TASK-014AY-FIX2 — Wire the 25 hard-fail gates introduced in FIX1
+(15 AX-upstream + 10 simulated-approval) into the existing
+`_HARD_FAIL_GATES` frozenset and stage-classification set so any
+violation forces `status = FAIL_CLOSED` (instead of merely being
+recorded in `blocked_gates`). Add a FIX2 enforcement test class.
+Preserve all safety invariants. No real execution, no sender, no
+executable adapter, no endpoint calls, no secret reading, no G20
+lift, no position modification. main.py / src/risk.py / BybitExecutor
+untouched.
+
+Status before: AY-FIX1 (ac1d86b) DONE; 353/353 AY tests passing; chain
+2522/2522 passing. FIX1 final report flagged a documented-only
+deviation: the 25 new gates were recorded in `blocked_gates` but did
+not participate in the FAIL_CLOSED status decision, so the existing
+`status` remained on the baseline READY-NOT-EXECUTABLE path.
+
+Status after: AY src + tests now wire all 25 gates into the existing
+hard-fail decision path. AY suite 381/381 PASS (353 FIX1 baseline + 28
+new tests in `TestAYFIX2FailClosedEnforcement`: 15 AX-upstream
+FAIL_CLOSED enforcement + 10 simulated-approval FAIL_CLOSED enforcement
++ 3 invariant guards). Existing 15 `TestAYAXFIX1AXUpstreamGates` tests
+additionally assert `r.status == STATUS_FAIL_CLOSED` and that safety
+invariants remain protected. AX regression 299/299 PASS. Combined
+real_execution_adapter chain (AX + AW + AV + AU + AT +
+static_skeleton_dry_run + static_skeleton_design + implementation_design)
+1777/1777 PASS. AY + chain 2158/2158 PASS.
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py
+  (extends `_HARD_FAIL_GATES` frozenset with the 15 AX-upstream gates
+   and 10 simulated-approval gates; extends the matching
+   stage-classification set inside the FAIL_CLOSED decision helper so
+   `failed_stage` resolves correctly. No new fields, no new endpoints,
+   no new constants — purely re-classification of existing FIX1
+   gate names into the existing hard-fail decision path.)
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py
+  (updates 15 existing `TestAYAXFIX1AXUpstreamGates` tests with
+   `r.status == STATUS_FAIL_CLOSED` and safety-invariant assertions;
+   adds `TestAYFIX2FailClosedEnforcement` class with `_assert_fail_closed`
+   and `_assert_safety_invariants_hold` helpers + 28 enforcement tests
+   covering each of the 25 gates and 3 invariant guards.)
+- README.md (status board → TASK-014AY-FIX2; latest_commit + validation
+  counts refreshed; happy-path / allow-flag invariants noted unchanged.)
+- docs/research/commands/NEXT_ACTION.md (prepended TASK-014AY-FIX2
+  section with status table and next Rick action.)
+- docs/research/commands/COMMAND_LOG.md (this entry).
+
+Validation:
+- `python -m py_compile src/... scripts/... tests/...` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py -q` → **381/381 PASS**
+- 8 chain regressions (manual_authorization_gate_design /
+  final_pre_execution_review / readiness_review / dry_run / design /
+  static_skeleton_dry_run / static_skeleton_design / implementation_design)
+  → **1777/1777 PASS** combined.
+- Combined AY + chain: **2158/2158 PASS**.
+
+Safety invariants confirmed:
+- no real execution; `real_execution_allowed=False` on every FAIL_CLOSED path
+- no sender, no executable adapter
+- `send_allowed=False`, `order_endpoint_called=False`,
+  `stop_endpoint_called=False`, `no_position_modified=True`,
+  `no_live_endpoint=True`, `no_orders_sent=True`, `no_secrets_loaded=True`,
+  `g20_lifted=False` on every violation path
+- main.py / src/risk.py / BybitExecutor untouched (verified by git diff
+  showing only src/scripts/tests for AY-DRY-RUN module + README +
+  NEXT_ACTION + COMMAND_LOG modifications)
+
+Local commit: TASK-014AY-FIX2: enforce fail-closed manual authorization
+gate dry-run violations (local only — NOT pushed; commit chain
+preserves `aca4a9e` TASK-014AY base and `ac1d86b` TASK-014AY-FIX1).
+
+next_required_task: TASK-014AZ_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review
+(awaiting Rick explicit authorization in NEXT_ACTION.md).
+
+---
+
 ### 2026-06-15（TASK-014AY-FIX1 — Manual Authorization Gate Dry-Run Upstream + Simulated Approval Envelope Proof）
 
 Agent: Claude (Opus 4.7)

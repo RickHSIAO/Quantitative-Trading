@@ -1,14 +1,62 @@
 # Next Action
 
-> README shared status updated by TASK-014AY-FIX1 (2026-06-15) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ay-fix1-2026-06-15)
-> for the cross-agent status board. TASK-014AY-FIX1 completes the deferred
-> structural mirror: AX is now consumed as the full 34th-upstream artifact
-> (parallel to how AX consumed AW as the 33rd upstream), and a simulated-
-> approval envelope (documented only) is now validated by 10 fail-closed gates.
-> No real execution, no sender, no executable adapter, no endpoint calls,
-> no secret reading, no G20 lift, no position modification. main.py /
-> src/risk.py / BybitExecutor untouched.
+> README shared status updated by TASK-014AY-FIX2 (2026-06-15) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ay-fix2-2026-06-15)
+> for the cross-agent status board. TASK-014AY-FIX2 closes the FIX1 deviation:
+> the 25 new hard-fail gates added in FIX1 (15 AX-upstream + 10 simulated-
+> approval) are now wired into `_HARD_FAIL_GATES` so any violation forces
+> `status = FAIL_CLOSED` (instead of being merely recorded in `blocked_gates`).
+> Happy path, `--allow-real-entry-execution`, and the dry-run allow-flag
+> behaviors are unchanged. No real execution, no sender, no executable
+> adapter, no endpoint calls, no secret reading, no G20 lift, no position
+> modification. main.py / src/risk.py / BybitExecutor untouched.
+
+## TASK-014AY-FIX2 Status (2026-06-15)
+
+| item | status |
+|---|---|
+| root cause: FIX1's 25 new gates recorded violations in `blocked_gates` but did NOT flip `status` to `FAIL_CLOSED` — they were not true hard-fail gates | IDENTIFIED |
+| src: `_HARD_FAIL_GATES` frozenset extended with the 15 AX-upstream gates (`GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_*`) so any violation participates in the existing FAIL_CLOSED decision path | DONE |
+| src: `_HARD_FAIL_GATES` frozenset extended with the 10 simulated-approval gates (`GATE_SIMULATED_APPROVAL_*`) on the same path | DONE |
+| src: the same 25 gates added to the stage-classification set used by the FAIL_CLOSED path so `failed_stage` resolves correctly | DONE |
+| tests: existing `TestAYAXFIX1AXUpstreamGates` (17 tests) updated — every violation case additionally asserts `r.status == STATUS_FAIL_CLOSED` and that safety invariants (`real_execution_allowed=False`, `send_allowed=False`) remain protected | DONE |
+| tests: new `TestAYFIX2FailClosedEnforcement` class added — 15 AX-upstream FAIL_CLOSED cases + 10 simulated-approval FAIL_CLOSED cases + 3 invariant cases (happy path remains READY, `--allow-real-entry-execution` remains `REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED`, violation dominates the dry-run allow-flag) | DONE |
+| happy path | UNCHANGED — `TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY` |
+| `--allow-real-entry-execution` | UNCHANGED — returns `REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED` on the no-violation path |
+| `--allow-disabled-implementation-scaffold-manual-authorization-gate-dry-run` | UNCHANGED on happy path; any hard-fail violation now dominates the allow-flag and returns `FAIL_CLOSED` |
+| py_compile src + scripts + test | PASS |
+| pytest AY | **381/381 PASS** (353 FIX1 baseline + 28 FIX2 in TestAYFIX2FailClosedEnforcement) |
+| pytest AX regression | 299/299 PASS |
+| pytest AW (final_pre_execution_review) regression | (suite passed in chain run) |
+| pytest AV (readiness_review) regression | (suite passed in chain run) |
+| pytest AU (dry_run) regression | (suite passed in chain run) |
+| pytest AT (design) regression | (suite passed in chain run) |
+| pytest static_skeleton_dry_run / static_skeleton_design / implementation_design | (suites passed in chain run) |
+| combined real_execution_adapter chain (AX + AW + AV + AU + AT + static_skeleton_dry_run + static_skeleton_design + implementation_design) | **1777/1777 PASS** |
+| combined AY + chain | **2158/2158 PASS** |
+| safety invariants: no real execution, no sender, no executable adapter, no endpoint call, no secret read, no G20 lift, no position modification | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | DONE (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-15 TASK-014AY-FIX2)
+
+1. VPS git pull and validate:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py -q
+       # expect 381/381 PASS
+
+2. Once step 1 passes, decide whether to authorise TASK-014AZ
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate readiness review — next phase
+   in the sequential safety chain; still no real execution).
+
+---
+
+> Previous README banner: TASK-014AY-FIX1 (2026-06-15) — see archived block below.
 
 ## TASK-014AY-FIX1 Status (2026-06-15)
 

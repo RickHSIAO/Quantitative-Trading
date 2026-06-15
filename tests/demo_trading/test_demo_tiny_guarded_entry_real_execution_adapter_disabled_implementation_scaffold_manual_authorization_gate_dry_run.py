@@ -4779,78 +4779,109 @@ class TestAYAXFIX1AXUpstreamGates:
     def test_missing_axmag_blocked_gate_recorded(self):
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=None)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING in r.blocked_gates
+        # FIX2: violation must force FAIL_CLOSED and preserve safety invariants
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_status_unacceptable_blocked(self):
         bad = _bad_axmag(status="SOME_UNEXPECTED_STATUS")
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUS_UNACCEPTABLE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_mode_unacceptable_blocked(self):
         bad = _bad_axmag(mode="some_other_mode_not_in_whitelist")
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MODE_UNACCEPTABLE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_real_execution_allowed_true_blocked(self):
         bad = _bad_axmag(real_execution_allowed=True)
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_REAL_EXECUTION_ALLOWED_TRUE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_send_allowed_true_blocked(self):
         bad = _bad_axmag(send_allowed=True)
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_SEND_ALLOWED_TRUE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_adapter_implementation_included_true_blocked(self):
         bad = _bad_axmag(adapter_implementation_included=True)
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_adapter_execution_included_true_blocked(self):
         bad = _bad_axmag(adapter_execution_included=True)
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ADAPTER_EXECUTION_INCLUDED_TRUE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_order_endpoint_called_true_blocked(self):
         bad = _bad_axmag(order_endpoint_called=True)
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ORDER_ENDPOINT_CALLED_TRUE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_stop_endpoint_called_true_blocked(self):
         bad = _bad_axmag(stop_endpoint_called=True)
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STOP_ENDPOINT_CALLED_TRUE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_no_position_modified_false_blocked(self):
         bad = _bad_axmag(no_position_modified=False)
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NO_POSITION_MODIFIED_FALSE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_no_secrets_loaded_false_blocked(self):
         bad = _bad_axmag(no_secrets_loaded=False)
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NO_SECRETS_LOADED_FALSE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_g20_lifted_true_blocked(self):
         bad = _bad_axmag(g20_lifted=True)
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_G20_LIFTED_TRUE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_conclusion_mismatch_blocked(self):
         bad = _bad_axmag()
         bad["disabled_implementation_scaffold_manual_authorization_gate_design_conclusion"] = "SOME_OTHER_CONCLUSION"
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_CONCLUSION_MISMATCH in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_response_status_unacceptable_blocked(self):
         bad = _bad_axmag()
         bad["audit_artifacts"] = {"response_status": "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_SENT"}
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_RESPONSE_STATUS_UNACCEPTABLE in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
     def test_axmag_next_task_mismatch_blocked(self):
         bad = _bad_axmag(next_required_task="TASK-WRONG_next_task_name")
         r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
         assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        assert r.real_execution_allowed is False and r.send_allowed is False
 
 
 # ---------------------------------------------------------------------------
@@ -5167,3 +5198,238 @@ class TestAYAXFIX1SafetyInvariants:
         assert "    def send(" not in text
         assert "    def place_order(" not in text
         assert "    def execute(" not in text
+
+
+# ---------------------------------------------------------------------------
+# TestAYFIX2FailClosedEnforcement — 25 gates each must force FAIL_CLOSED
+# (15 AX-upstream + 10 simulated-approval)
+# Each test asserts:
+#   - status == STATUS_FAIL_CLOSED
+#   - the specific gate name is recorded in blocked_gates
+#   - failed_stage is non-empty
+#   - safety invariants stay protected
+# ---------------------------------------------------------------------------
+
+def _assert_safety_invariants_hold(r):
+    assert r.real_execution_allowed is False
+    assert r.send_allowed is False
+    assert r.order_endpoint_called is False
+    assert r.stop_endpoint_called is False
+    assert r.no_position_modified is True
+    assert r.no_live_endpoint is True
+    assert r.no_orders_sent is True
+    assert r.no_secrets_loaded is True
+    assert r.g20_lifted is False
+
+
+def _assert_fail_closed(r, gate_name):
+    assert r.status == STATUS_FAIL_CLOSED
+    assert r.mode == MODE_FAIL_CLOSED
+    assert gate_name in r.blocked_gates
+    assert r.failed_stage != ""
+    _assert_safety_invariants_hold(r)
+
+
+class TestAYFIX2FailClosedEnforcement:
+    # --- AX-upstream (15) -------------------------------------------------
+
+    def test_axmag_missing_forces_fail_closed(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=None)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING,
+        )
+
+    def test_axmag_status_unacceptable_forces_fail_closed(self):
+        bad = _bad_axmag(status="SOME_UNEXPECTED_STATUS")
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUS_UNACCEPTABLE,
+        )
+
+    def test_axmag_mode_unacceptable_forces_fail_closed(self):
+        bad = _bad_axmag(mode="some_other_mode_not_in_whitelist")
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MODE_UNACCEPTABLE,
+        )
+
+    def test_axmag_real_execution_allowed_true_forces_fail_closed(self):
+        bad = _bad_axmag(real_execution_allowed=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_REAL_EXECUTION_ALLOWED_TRUE,
+        )
+
+    def test_axmag_send_allowed_true_forces_fail_closed(self):
+        bad = _bad_axmag(send_allowed=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_SEND_ALLOWED_TRUE,
+        )
+
+    def test_axmag_adapter_implementation_included_true_forces_fail_closed(self):
+        bad = _bad_axmag(adapter_implementation_included=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE,
+        )
+
+    def test_axmag_adapter_execution_included_true_forces_fail_closed(self):
+        bad = _bad_axmag(adapter_execution_included=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ADAPTER_EXECUTION_INCLUDED_TRUE,
+        )
+
+    def test_axmag_order_endpoint_called_true_forces_fail_closed(self):
+        bad = _bad_axmag(order_endpoint_called=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_ORDER_ENDPOINT_CALLED_TRUE,
+        )
+
+    def test_axmag_stop_endpoint_called_true_forces_fail_closed(self):
+        bad = _bad_axmag(stop_endpoint_called=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_STOP_ENDPOINT_CALLED_TRUE,
+        )
+
+    def test_axmag_no_position_modified_false_forces_fail_closed(self):
+        bad = _bad_axmag(no_position_modified=False)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NO_POSITION_MODIFIED_FALSE,
+        )
+
+    def test_axmag_no_secrets_loaded_false_forces_fail_closed(self):
+        bad = _bad_axmag(no_secrets_loaded=False)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NO_SECRETS_LOADED_FALSE,
+        )
+
+    def test_axmag_g20_lifted_true_forces_fail_closed(self):
+        bad = _bad_axmag(g20_lifted=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_G20_LIFTED_TRUE,
+        )
+
+    def test_axmag_conclusion_mismatch_forces_fail_closed(self):
+        bad = _bad_axmag()
+        bad["disabled_implementation_scaffold_manual_authorization_gate_design_conclusion"] = "SOME_OTHER_CONCLUSION"
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_CONCLUSION_MISMATCH,
+        )
+
+    def test_axmag_response_status_unacceptable_forces_fail_closed(self):
+        bad = _bad_axmag()
+        bad["audit_artifacts"] = {"response_status": "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_SENT"}
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_RESPONSE_STATUS_UNACCEPTABLE,
+        )
+
+    def test_axmag_next_task_mismatch_forces_fail_closed(self):
+        bad = _bad_axmag(next_required_task="TASK-WRONG_next_task_name")
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH,
+        )
+
+    # --- Simulated approval (10) ------------------------------------------
+
+    def test_sa_missing_proof_forces_fail_closed(self):
+        env = _bad_sa(envelope_documented_only=False)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(r, GATE_SIMULATED_APPROVAL_MISSING)
+
+    def test_sa_ambiguous_forces_fail_closed(self):
+        env = _bad_sa(ambiguous=True)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(r, GATE_SIMULATED_APPROVAL_AMBIGUOUS)
+
+    def test_sa_requests_execution_forces_fail_closed(self):
+        env = _bad_sa(execution_request_fails_closed=False)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(r, GATE_SIMULATED_APPROVAL_REQUESTS_EXECUTION)
+
+    def test_sa_contains_secret_like_value_forces_fail_closed(self):
+        env = _bad_sa(contains_secret_like_value=True)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(r, GATE_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE)
+
+    def test_sa_contains_signature_like_value_forces_fail_closed(self):
+        env = _bad_sa(contains_signature_like_value=True)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(r, GATE_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE)
+
+    def test_sa_missing_no_live_trading_proof_forces_fail_closed(self):
+        env = _bad_sa(has_no_live_trading_proof=False)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(r, GATE_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF)
+
+    def test_sa_missing_protected_position_untouched_proof_forces_fail_closed(self):
+        env = _bad_sa(has_protected_position_untouched_proof=False)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(
+            r, GATE_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF
+        )
+
+    def test_sa_missing_g20_still_active_proof_forces_fail_closed(self):
+        env = _bad_sa(has_g20_still_active_proof=False)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(r, GATE_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF)
+
+    def test_sa_auto_triggers_sender_forces_fail_closed(self):
+        env = _bad_sa(auto_triggers_sender=True)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(r, GATE_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER)
+
+    def test_sa_grants_execution_forces_fail_closed(self):
+        env = _bad_sa(grants_execution=True)
+        r = _run(simulated_approval=env)
+        _assert_fail_closed(r, GATE_SIMULATED_APPROVAL_GRANTS_EXECUTION)
+
+    # --- Happy path remains unchanged --------------------------------------
+
+    def test_happy_path_no_violations_yields_ready_status(self):
+        r = _run()
+        assert r.status == \
+            "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY"
+        _assert_safety_invariants_hold(r)
+
+    def test_allow_real_entry_execution_still_returns_not_implemented(self):
+        r = _run(allow_real_entry_execution=True)
+        assert r.status == "REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED"
+        _assert_safety_invariants_hold(r)
+
+    def test_violation_dominates_allow_disabled_implementation_scaffold_flag(self):
+        # When --allow-disabled-implementation-scaffold-manual-authorization-gate-dry-run is set
+        # but a hard-fail gate trips, fail-closed must dominate the allow flag.
+        bad = _bad_axmag(real_execution_allowed=True)
+        r = _run(
+            allow_implementation_design=True,
+            entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad,
+        )
+        _assert_fail_closed(
+            r,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_REAL_EXECUTION_ALLOWED_TRUE,
+        )
