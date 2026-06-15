@@ -3225,6 +3225,42 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
                 entry_disdr_conclusion,
             "upstream_entry_disabled_implementation_scaffold_dry_run_response_status":
                 entry_disdr_response_status,
+            "consumed_disabled_implementation_scaffold_readiness_review_contract_version":
+                CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_CONTRACT_VERSION,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_status":
+                entry_disrr_status,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_mode":
+                entry_disrr_mode,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_real_execution_allowed":
+                entry_disrr_real_exec_allowed,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_send_allowed":
+                entry_disrr_send_allowed,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_adapter_implementation_included":
+                entry_disrr_impl_included,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_adapter_execution_included":
+                entry_disrr_exec_included,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_order_endpoint_called":
+                entry_disrr_order_called,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_stop_endpoint_called":
+                entry_disrr_stop_called,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_no_position_modified":
+                entry_disrr_no_pos_modified,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_no_secrets_loaded":
+                entry_disrr_no_secrets_loaded,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_g20_lifted":
+                entry_disrr_g20_lifted,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_no_live_endpoint":
+                entry_disrr_no_live_endpoint,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_no_auto_git_operations":
+                entry_disrr_no_auto_git_operations,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_real_entry_implemented":
+                entry_disrr_real_entry_implemented,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result":
+                entry_disrr_authorization_result,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_conclusion":
+                entry_disrr_conclusion,
+            "upstream_entry_disabled_implementation_scaffold_readiness_review_response_status":
+                entry_disrr_response_status,
             "next_required_task":                     NEXT_REQUIRED_TASK,
         }
 

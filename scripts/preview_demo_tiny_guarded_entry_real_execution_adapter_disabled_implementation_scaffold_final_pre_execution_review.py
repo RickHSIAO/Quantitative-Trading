@@ -100,7 +100,7 @@ IMPORTANT:
     mapping, NO real phrase validation, NO phrase-to-authorization
     mapping, NO real approval-input validation, NO adapter
     implementation, NO adapter `send` method.  Disabled implementation
-    scaffold final pre-execution review for the FUTURE TASK-014AW adapter
+    scaffold final pre-execution review for the FUTURE TASK-014AX adapter
     disabled implementation scaffold manual authorization gate design
     is documented only --- this task does NOT implement the adapter.
     No automatic git commit, no automatic git push.
@@ -676,8 +676,8 @@ def _write_report(
     md_lines: list[str] = [
         "# Tiny Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Final Pre-Execution Review (TASK-014AW)",
         "",
-        "_TASK-014AW consumes TASK-014AU disabled implementation scaffold dry-run output at "
-        "runtime and produces a disabled implementation scaffold final pre-execution review for TASK-014AW. "
+        "_TASK-014AW consumes TASK-014AV disabled implementation scaffold readiness review output at "
+        "runtime and produces a disabled implementation scaffold final pre-execution review for TASK-014AX. "
         "It does not implement the adapter, never sends an order, never "
         "calls any endpoint, never lifts G20._",
         "",
@@ -690,6 +690,7 @@ def _write_report(
         f"implementation_design_conclusion (alias): `{r.implementation_design_conclusion}`  ",
         f"adapter_name: `{ADAPTER_NAME}`  ",
         f"adapter_contract_version: `{ADAPTER_CONTRACT_VERSION}`  ",
+        f"consumed_disabled_implementation_scaffold_readiness_review_contract_version: `{r.consumed_disabled_implementation_scaffold_readiness_review_contract_version}`  ",
         f"consumed_readiness_contract_version: `{CONSUMED_READINESS_CONTRACT_VERSION}`  ",
         f"consumed_dry_run_contract_version: `{CONSUMED_DRY_RUN_CONTRACT_VERSION}`  ",
         f"consumed_design_contract_version: `{CONSUMED_DESIGN_CONTRACT_VERSION}`  ",
@@ -741,6 +742,36 @@ def _write_report(
         f"{r.upstream_entry_implementation_readiness_review_conclusion} |",
         f"| upstream_entry_implementation_readiness_review_response_status | "
         f"{r.upstream_entry_implementation_readiness_review_response_status} |",
+        f"| consumed_disabled_implementation_scaffold_readiness_review_contract_version | "
+        f"{r.consumed_disabled_implementation_scaffold_readiness_review_contract_version} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_status | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_status} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_mode | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_mode} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_real_execution_allowed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_real_execution_allowed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_send_allowed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_send_allowed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_adapter_implementation_included | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_adapter_implementation_included} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_adapter_execution_included | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_adapter_execution_included} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_order_endpoint_called | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_order_endpoint_called} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_stop_endpoint_called | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_stop_endpoint_called} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_no_position_modified | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_no_position_modified} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_no_secrets_loaded | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_no_secrets_loaded} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_g20_lifted | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_g20_lifted} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_conclusion | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_conclusion} |",
+        f"| upstream_entry_disabled_implementation_scaffold_readiness_review_response_status | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_readiness_review_response_status} |",
         f"| next_required_task | {r.next_required_task} |",
         "",
         "## Disabled Implementation Scaffold Final Pre-Execution Review Scope",

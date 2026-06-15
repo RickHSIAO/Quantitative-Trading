@@ -3224,10 +3224,9 @@ class TestARFIX2MarkdownReportTitleAndSections:
         # Mode shown in the report is the disabled_implementation_scaffold_final_pre_execution_review_checklist
         # string.
         assert "mode: `disabled_implementation_scaffold_final_pre_execution_review_checklist`" in md
-        # The narrative intro correctly names AV as the consumer of AU
-        # (disabled implementation scaffold dry-run output), not AT or AS.
-        assert "TASK-014AU" in md
-        assert "TASK-014AW" in md
+        # TASK-014AV appears in the Markdown (in audit_artifacts upstream proof
+        # fields for the readiness review artifact).
+        assert "TASK-014AV" in md
         assert "TASK-014AW" in md
 
     def test_markdown_report_footer_uses_readiness_review_wording(self, repo_tmp_path):
@@ -3279,15 +3278,15 @@ class TestARFIX2CLIBannerSaysStaticSkeleton:
         # multi-word substring assertions.
         normalized = " ".join(combined.split())
         # The CLI argparse description must advertise DISABLED
-        # IMPLEMENTATION SCAFFOLD READINESS REVIEW (TASK-014AW), not the
-        # legacy DRY-RUN / IMPLEMENTATION DESIGN phrasing.
-        # AV consumes TASK-014AU disabled implementation scaffold dry-run output.
+        # IMPLEMENTATION SCAFFOLD FINAL PRE-EXECUTION REVIEW (TASK-014AW),
+        # consuming TASK-014AV readiness review and producing for TASK-014AX.
         # Assert individual tokens rather than the full phrase so
         # line-wrap cannot split them.
         assert "DISABLED IMPLEMENTATION SCAFFOLD FINAL PRE-EXECUTION REVIEW" in normalized
-        assert "TASK-014AU" in normalized
-        assert "disabled implementation scaffold dry-run" in normalized
+        assert "TASK-014AV" in normalized
+        assert "disabled implementation scaffold readiness review output" in normalized
         assert "disabled implementation scaffold final pre-execution review" in normalized
+        assert "TASK-014AX" in normalized
         assert "TASK-014AW" in normalized
         # CLI description must reference --allow-disabled-implementation-scaffold-final-pre-execution-review,
         # not the legacy --allow-implementation-design flag.
@@ -3812,7 +3811,7 @@ class TestAUATASConsumptionStillIntact:
 class TestAUATFIX1ReportProof:
     """TASK-014AW-FIX1: upstream report proof and authorization_result correctness."""
 
-    def test_markdown_intro_names_au_not_at(self, repo_tmp_path):
+    def test_markdown_intro_names_av_not_au(self, repo_tmp_path):
         from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review import (
             _write_report,
         )
@@ -3825,9 +3824,11 @@ class TestAUATFIX1ReportProof:
             (ln for ln in md.splitlines() if ln.startswith("_TASK-014AW consumes")),
             "",
         )
-        assert "TASK-014AU disabled implementation scaffold dry-run output" in intro
+        assert "TASK-014AV disabled implementation scaffold readiness review output" in intro
+        assert "for TASK-014AX" in intro
+        assert "TASK-014AU disabled implementation scaffold dry-run output" not in intro
         assert "TASK-014AT disabled implementation scaffold design output" not in intro
-        assert "TASK-014AS static skeleton dry-run output" not in intro
+        assert "for TASK-014AW" not in intro
 
     def test_authorization_result_propagated_from_at_design_key(self):
         r = _run()
@@ -4443,3 +4444,120 @@ class TestAWAVATConsumptionStillIntact:
             == "DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_READY_NOT_EXECUTABLE"
         assert r.consumed_disabled_implementation_scaffold_design_contract_version \
             == "disabled_implementation_scaffold_design_v1"
+
+
+# ===========================================================================
+# TASK-014AW-FIX1: TestAWAVFIX1ReportProof —
+# Verify AV (READINESS REVIEW) upstream proof fields are exposed in
+# audit_artifacts, generated JSON, and generated Markdown. Also verifies
+# the Markdown intro names TASK-014AV (not TASK-014AU) as the direct
+# upstream and TASK-014AX (not TASK-014AW) as the forward-ref.
+# ===========================================================================
+
+class TestAWAVFIX1ReportProof:
+    """TASK-014AW-FIX1: AV upstream proof surfaces in all report outputs."""
+
+    def test_audit_artifacts_has_av_readiness_review_authorization_result(self):
+        a = _run().audit_artifacts
+        assert a["upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result"] \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+
+    def test_audit_artifacts_has_av_readiness_review_conclusion(self):
+        a = _run().audit_artifacts
+        assert a["upstream_entry_disabled_implementation_scaffold_readiness_review_conclusion"] \
+            == "DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_READY_NOT_EXECUTABLE"
+
+    def test_audit_artifacts_has_av_readiness_review_response_status(self):
+        a = _run().audit_artifacts
+        assert a["upstream_entry_disabled_implementation_scaffold_readiness_review_response_status"] \
+            == "DISABLED_IMPLEMENTATION_SCAFFOLD_READINESS_REVIEW_NOT_SENT"
+
+    def test_audit_artifacts_has_consumed_av_contract_version(self):
+        a = _run().audit_artifacts
+        assert a["consumed_disabled_implementation_scaffold_readiness_review_contract_version"] \
+            == "disabled_implementation_scaffold_readiness_review_v1"
+
+    def test_generated_json_has_av_authorization_result(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
+        json_text = (out_dir / f"latest_{base}.json").read_text(encoding="utf-8")
+        assert (
+            '"upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result":'
+            ' "DOCUMENTED_ONLY_NOT_AUTHORIZED"'
+        ) in json_text
+
+    def test_generated_json_does_not_have_empty_av_authorization_result(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
+        json_text = (out_dir / f"latest_{base}.json").read_text(encoding="utf-8")
+        assert (
+            '"upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result": ""'
+        ) not in json_text
+
+    def test_generated_markdown_has_av_authorization_result(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert (
+            '"upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result":'
+            ' "DOCUMENTED_ONLY_NOT_AUTHORIZED"'
+        ) in md
+
+    def test_generated_markdown_does_not_have_empty_av_authorization_result(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert (
+            '"upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result": ""'
+        ) not in md
+
+    def test_markdown_verdict_table_has_av_readiness_review_status(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert "upstream_entry_disabled_implementation_scaffold_readiness_review_status" in md
+        assert "upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result" in md
+        assert "upstream_entry_disabled_implementation_scaffold_readiness_review_conclusion" in md
+
+    def test_markdown_intro_names_av_not_au(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        intro = next(
+            (ln for ln in md.splitlines() if ln.startswith("_TASK-014AW consumes")),
+            "",
+        )
+        assert "TASK-014AV disabled implementation scaffold readiness review output" in intro
+        assert "for TASK-014AX" in intro
+        assert "TASK-014AU disabled implementation scaffold dry-run output" not in intro
+        assert "for TASK-014AW" not in intro

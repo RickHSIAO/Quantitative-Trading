@@ -21,6 +21,77 @@ Notes:
 
 ---
 
+### 2026-06-15（TASK-014AW-FIX1 — Expose Final Pre-Execution Review Upstream Proof）
+
+Agent: Claude (Sonnet 4.6)
+Command source: Rick VPS validation identified two blocking issues:
+(1) Markdown intro still said "consumes TASK-014AU disabled implementation
+scaffold dry-run output... produces... for TASK-014AW" — both upstream
+and forward-ref wrong.
+(2) AV upstream proof fields missing from audit_artifacts / generated
+JSON / generated Markdown (grep for authorization_result returned no
+match on VPS report).
+
+Task: Fix both issues and add 10 new FIX1 proof tests.
+
+Status before: TASK-014AW committed locally as `b1a3c27`; AW suite
+282/282 PASS; VPS pytest 282/282 PASS; VPS preview ran but Markdown
+intro was wrong and AV proof fields missing from report outputs.
+
+Status after: All surfaces corrected.  Markdown intro now correctly
+says "TASK-014AW consumes TASK-014AV disabled implementation scaffold
+readiness review output at runtime and produces a disabled
+implementation scaffold final pre-execution review for TASK-014AX."
+audit_artifacts extended with 18 AV proof fields + consumed contract
+version.  Markdown verdict table extended with 16 AV proof rows +
+contract version row.  Markdown header extended with contract version
+line.  10 new TestAWAVFIX1ReportProof tests; existing
+test_markdown_intro_names_au_not_at renamed to
+test_markdown_intro_names_av_not_au with corrected assertions.
+AW suite **292/292 PASS**; combined **1478/1478 PASS**.
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py
+  (audit_artifacts: added 18 AV readiness review proof fields +
+  consumed contract version before "next_required_task" key)
+- scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py
+  (Markdown intro: TASK-014AV readiness review → TASK-014AX; module
+  docstring: FUTURE TASK-014AX; Markdown header: added consumed
+  readiness review contract version line; Markdown verdict table:
+  added 16 AV upstream proof rows + contract version row)
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py
+  (renamed test_markdown_intro_names_au_not_at →
+  test_markdown_intro_names_av_not_au with TASK-014AV/AX assertions;
+  CLI description test: assert TASK-014AV + readiness review output +
+  TASK-014AX; markdown title test: assert TASK-014AV in md;
+  new TestAWAVFIX1ReportProof: 10 tests)
+- README.md (status board: latest_completed_task → TASK-014AW-FIX1;
+  292 PASS; combined 1478)
+- docs/research/commands/NEXT_ACTION.md (prepended TASK-014AW-FIX1
+  Status + Next Rick Action block)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+
+Validation:
+- `python -m py_compile` src + scripts + test → PASS
+- `python -m pytest` AW → **292/292 PASS**
+- AV regression → 259/259 PASS
+- AU regression → 235/235 PASS
+- AT regression → 199/199 PASS
+- AS regression → 180/180 PASS
+- AR regression → 175/175 PASS
+- AQ regression → 138/138 PASS
+- combined AW+AV+AU+AT+AS+AR+AQ → **1478/1478 PASS**
+
+Outputs: none at runtime; report would land at
+`outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review/`
+
+Notes: No network, no sender, no endpoint, no secret, no G20 lift,
+no position modification.  main.py / src/risk.py / BybitExecutor
+untouched.  Local commit only (per durable instruction: never push
+without explicit Rick instruction).
+
+---
+
 ### 2026-06-15（TASK-014AW — Add Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Final Pre-Execution Review）
 
 Agent: Claude (Opus 4.7)

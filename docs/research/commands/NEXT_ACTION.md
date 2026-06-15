@@ -1,13 +1,68 @@
 # Next Action
 
-> README shared status updated by TASK-014AW (2026-06-15) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014aw-2026-06-15)
-> for the cross-agent status board. TASK-014AW adds the guarded entry
-> real execution adapter DISABLED IMPLEMENTATION SCAFFOLD FINAL
-> PRE-EXECUTION REVIEW (src + scripts + tests), consuming TASK-014AV's
-> READINESS REVIEW artifact as the 32nd runtime upstream input. No real
+> README shared status updated by TASK-014AW-FIX1 (2026-06-15) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014aw-fix1-2026-06-15)
+> for the cross-agent status board. TASK-014AW-FIX1 fixes the Markdown
+> intro (was TASK-014AU dry-run → TASK-014AW; corrected to TASK-014AV
+> readiness review → TASK-014AX) and adds AV upstream proof fields
+> to audit_artifacts + generated JSON + generated Markdown. No real
 > execution, no sender, no endpoint calls, no G20 lift, no position
-> modification. NEXT_REQUIRED_TASK now points at TASK-014AX.
+> modification.
+
+## TASK-014AW-FIX1 Status (2026-06-15)
+
+| item | status |
+|---|---|
+| issue 1: Markdown intro said "TASK-014AW consumes TASK-014AU disabled implementation scaffold dry-run output at runtime and produces a disabled implementation scaffold final pre-execution review for TASK-014AW" — both the upstream and forward-ref were wrong | FIXED |
+| issue 2: audit_artifacts / generated JSON / generated Markdown did not expose AV upstream proof fields (`upstream_entry_disabled_implementation_scaffold_readiness_review_*`) | FIXED |
+| scripts: Markdown intro corrected to "TASK-014AW consumes TASK-014AV disabled implementation scaffold readiness review output at runtime and produces a disabled implementation scaffold final pre-execution review for TASK-014AX" | DONE |
+| scripts: module docstring "FUTURE TASK-014AW adapter" corrected to "FUTURE TASK-014AX adapter" | DONE |
+| src: audit_artifacts dict extended with 18 new AV readiness review proof fields + consumed contract version (mirrors dry-run block structure) | DONE |
+| scripts: Markdown verdict table extended with 16 new `upstream_entry_disabled_implementation_scaffold_readiness_review_*` rows + `consumed_disabled_implementation_scaffold_readiness_review_contract_version` row | DONE |
+| scripts: Markdown header extended with `consumed_disabled_implementation_scaffold_readiness_review_contract_version` line | DONE |
+| tests: `TestAUATFIX1ReportProof.test_markdown_intro_names_au_not_at` renamed to `test_markdown_intro_names_av_not_au`; assertion updated to TASK-014AV readiness review + for TASK-014AX; added negative assertions for TASK-014AU dry-run and "for TASK-014AW" | DONE |
+| tests: `TestARFIX2CLIBannerSaysStaticSkeleton` CLI description assertions updated — assert TASK-014AV + "readiness review output" + TASK-014AX (was TASK-014AU + dry-run) | DONE |
+| tests: `TestARFIX2MarkdownReportTitleAndSections` comment + assertions corrected — assert "TASK-014AV" in md (was "TASK-014AU") | DONE |
+| tests: new `TestAWAVFIX1ReportProof` class (10 tests) — audit_artifacts AV authorization_result / conclusion / response_status / contract version; generated JSON AV authorization_result present / empty absent; generated Markdown AV authorization_result present / empty absent; Markdown verdict table AV rows present; Markdown intro names AV / for AX | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AW | **292/292 PASS** |
+| pytest AV regression | 259/259 PASS |
+| pytest AU regression | 235/235 PASS |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| combined AW+AV+AU+AT+AS+AR+AQ | **1478/1478 PASS** |
+| no runtime behavior change / no endpoint / no secret / no G20 lift / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-15 TASK-014AW-FIX1)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py -q
+       # expect 292/292 PASS
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py --write-report \
+         --from-latest-entry-disabled-implementation-scaffold-design \
+         --from-latest-entry-disabled-implementation-scaffold-dry-run \
+         --from-latest-entry-disabled-implementation-scaffold-readiness-review
+       # confirm: Markdown intro says "TASK-014AW consumes TASK-014AV disabled implementation
+       # scaffold readiness review output at runtime and produces a disabled implementation
+       # scaffold final pre-execution review for TASK-014AX"
+       # confirm: generated JSON contains
+       #   upstream_entry_disabled_implementation_scaffold_readiness_review_authorization_result:
+       #   "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+       # confirm: next_required_task = TASK-014AX_..._manual_authorization_gate_design
+       # confirm: no socket opened, no endpoint called, no secret loaded,
+       # G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise TASK-014AX
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate design — next phase in the
+   sequential safety chain; still no real execution).
 
 ## TASK-014AW Status (2026-06-15)
 
