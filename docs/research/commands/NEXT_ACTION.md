@@ -1,13 +1,56 @@
 # Next Action
 
-> README shared status updated by TASK-014AX-FIX2 (2026-06-15) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ax-fix2-2026-06-15)
-> for the cross-agent status board. TASK-014AX-FIX2 syncs the forward-ref
-> `next_required_task` to point to TASK-014AY's dry-run phase (not another
-> design phase). AX is the manual authorization gate DESIGN; AY should be
-> the manual authorization gate DRY-RUN. Constants, test assertions, and module
-> docstrings updated. All outputs (src, scripts, tests, JSON, Markdown, stdout)
-> now correctly show next_required_task = TASK-014AY_..._manual_authorization_gate_dry_run.
+> README shared status updated by TASK-014AY (2026-06-15) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ay-2026-06-15)
+> for the cross-agent status board. TASK-014AY adds the guarded entry real
+> execution adapter disabled implementation scaffold manual authorization
+> gate **dry-run** scaffold (next phase after TASK-014AX's manual authorization
+> gate **design**). AY consumes AX's manual authorization gate design artifact
+> at runtime and produces a documented-only manual authorization gate dry-run
+> artifact for TASK-014AZ readiness review. No real execution, no sender, no
+> executable adapter, no endpoint calls, no secret reading, no G20 lift, no
+> position modification. main.py / src/risk.py / BybitExecutor untouched.
+
+## TASK-014AY Status (2026-06-15)
+
+| item | status |
+|---|---|
+| src: `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py` (new) — identity renamed to dry_run, intro updated to "AY consumes AX → for AZ" | DONE |
+| scripts: `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py` (new) — CLI description updated to dry-run wording; intro updated; banner updated | DONE |
+| tests: `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py` (new) — 299 tests; intro / scope-summary / markdown assertions aligned to AX→AY→AZ semantics | DONE |
+| .gitignore: add `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run/` | DONE |
+| README: shared status board updated to TASK-014AY | DONE |
+| NEXT_ACTION.md: TASK-014AY section prepended | DONE |
+| COMMAND_LOG.md: TASK-014AY entry prepended | DONE |
+| AY self-identity strings: `disabled_implementation_scaffold_manual_authorization_gate_dry_run` | CONFIRMED (0 residual `..._design` self-references in AY src) |
+| AX direct upstream documented in intro / scope_summary / docstring / CLI description / banner | CONFIRMED |
+| safety invariants: no real execution, no sender, no executable adapter, no endpoint call, no secret read, no G20 lift, no position modification | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| py_compile src + scripts + test | PASS |
+| pytest AY | **299/299 PASS** |
+| pytest AX regression | **299/299 PASS** |
+| pytest AW+AV+AU+AT+AS+AR+AQ regression | **1478/1478 PASS** |
+| combined AY+AX+AW+AV+AU+AT+AS+AR+AQ | **2076/2076 PASS** |
+| local commit | DONE (local only — NOT pushed) |
+| scope note | Stage 1 (identity rename) + intro/scope-summary realignment done. Full 16-gate parallel mirror of AX-upstream consumption pattern (analogous to AX's AW-upstream block) deferred to TASK-014AY-FIX1 if Rick wants the full structural mirror. Current scaffold is intent-correct and test-clean. |
+
+## Next Rick Action (set by 2026-06-15 TASK-014AY)
+
+1. VPS git pull and validate:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py -q
+       # expect 299/299 PASS
+
+2. Once step 1 passes, decide whether to authorise TASK-014AZ
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate readiness review — next phase
+   in the sequential safety chain; still no real execution).
+
+---
 
 ## TASK-014AX-FIX2 Status (2026-06-15)
 

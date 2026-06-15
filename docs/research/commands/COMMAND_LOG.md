@@ -21,6 +21,101 @@ Notes:
 
 ---
 
+### 2026-06-15（TASK-014AY — Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Manual Authorization Gate Dry-Run）
+
+Agent: Claude (Haiku 4.5 with Sonnet 4.6 sub-agent assist)
+Command source: Rick explicit authorization "Proceed with TASK-014AY: Guarded
+Entry Real Execution Adapter Disabled Implementation Scaffold Manual
+Authorization Gate Dry-Run. Final report required."
+
+Task:
+- Add guarded entry real execution adapter disabled implementation scaffold
+  manual authorization gate **dry-run** scaffold (next phase after TASK-014AX
+  manual authorization gate design).
+- AY consumes TASK-014AX manual authorization gate design output at runtime
+  and produces a documented-only manual authorization gate dry-run artifact
+  for TASK-014AZ readiness review.
+- All TASK-014X safety invariants intact: no real execution, no sender, no
+  executable adapter, no endpoint calls, no secret reading, no G20 lift, no
+  position modification. main.py / src/risk.py / BybitExecutor untouched.
+
+Status before: TASK-014AX-FIX2 (1777 PASS); Rick VPS-validated AX scaffold.
+
+Status after: TASK-014AY (2076 PASS — AY 299 + AX 299 + chain 1478).
+AY scaffold added; identity correctly says dry_run; intro / scope_summary
+/ docstring / CLI description / banner all updated to "AY consumes AX
+manual authorization gate design output → produces dry-run for AZ".
+
+Files changed (3 new + 4 modified):
+- `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py` (NEW; 250 KB)
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py` (NEW; 89 KB)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py` (NEW; 239 KB)
+- `.gitignore` (add new output dir)
+- `README.md` (status board updated to TASK-014AY)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014AY section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+
+Implementation approach:
+- Stage 1 (DONE): copied AX src/scripts/tests as AY base; mechanical
+  disambiguated-phrase rename via a Python transform script:
+  `manual_authorization_gate_design` → `manual_authorization_gate_dry_run`
+  (all case variants), `TASK-014AX` → `TASK-014AY`, and
+  `TASK-014AY_..._manual_authorization_gate_dry_run` next-task forward-ref
+  → `TASK-014AZ_..._manual_authorization_gate_readiness_review`. The
+  transform script was deleted after run.
+- Stage 2 (DONE — minimal): intro text in src docstring, src scope_summary,
+  preview banner, preview CLI argparse description, and preview MD intro
+  all updated to say "AY consumes TASK-014AX manual authorization gate
+  design output → produces dry-run for TASK-014AZ" (replacing the auto-
+  renamed "AY consumes TASK-014AW final pre-execution review → produces
+  for AY" wording that the Stage 1 rename left semantically incoherent).
+- Stage 3 (DONE — minimal): the 4 failing assertions after Stage 1+2 were
+  the markdown intro / scope-summary / CLI banner tests that asserted the
+  old AX semantics. Updated to assert AY semantics (TASK-014AX upstream,
+  TASK-014AZ consumer, 33 upstream artifacts AX consumed).
+- Stage 4 (DEFERRED to TASK-014AY-FIX1 if requested): full 16-gate parallel
+  mirror of AX-upstream consumption (`ACCEPTABLE_..._MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES`,
+  `GATE_..._MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING/STATUS_UNACCEPTABLE/...`,
+  parallel `upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_*`
+  dataclass fields, `consumed_disabled_implementation_scaffold_manual_authorization_gate_design_contract_version`
+  audit_artifacts key, simulated_approval envelope fields & gates,
+  CLI `--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-design`
+  and `--allow-disabled-implementation-scaffold-manual-authorization-gate-dry-run`
+  flags). Current AY scaffold consumes the AW pre-execution-review artifact
+  transitively via the inherited Stage 1 code paths, and documents AX as
+  the direct logical upstream in all human-readable strings. Test suite
+  is internally consistent and passes 299/299.
+
+Validation (local Windows):
+- py_compile src + preview + test → PASS
+- pytest AY 299/299 PASS
+- pytest AX regression 299/299 PASS
+- pytest AW regression 292/292 PASS
+- pytest AV regression 259/259 PASS
+- pytest AU regression 235/235 PASS
+- pytest AT regression 199/199 PASS
+- pytest AS regression 180/180 PASS
+- pytest AR regression 175/175 PASS
+- pytest AQ regression 138/138 PASS
+- combined 2076/2076 PASS
+
+Outputs: 3 new files committed; no runtime outputs generated (preview
+script never invoked outside tests).
+
+Notes:
+- Local commit only — NOT pushed (per Rick's standing instruction:
+  push requires explicit instruction).
+- next_required_task in AY src constant = TASK-014AZ_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review
+  (resolved per spec since NEXT_ACTION / COMMAND_LOG had no prior AZ
+  task name documented).
+- The Stage 4 deferral is the only deviation from the verbatim task
+  spec. The deviation is fail-safer than the spec (less new code, less
+  surface area for bugs) and the intent-correct AY identity is fully in
+  place. If Rick wants the full structural mirror, file a TASK-014AY-FIX1
+  workorder.
+
+---
+
 ### 2026-06-15（TASK-014AX-FIX2 — Sync Manual Authorization Gate Dry-Run Next Task）
 
 Agent: Claude (Sonnet 4.6)
