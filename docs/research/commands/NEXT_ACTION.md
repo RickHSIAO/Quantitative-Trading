@@ -1,13 +1,71 @@
 # Next Action
 
-> README shared status updated by TASK-014AW-FIX1 (2026-06-15) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014aw-fix1-2026-06-15)
-> for the cross-agent status board. TASK-014AW-FIX1 fixes the Markdown
-> intro (was TASK-014AU dry-run → TASK-014AW; corrected to TASK-014AV
-> readiness review → TASK-014AX) and adds AV upstream proof fields
-> to audit_artifacts + generated JSON + generated Markdown. No real
-> execution, no sender, no endpoint calls, no G20 lift, no position
-> modification.
+> README shared status updated by TASK-014AX (2026-06-15) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ax-2026-06-15)
+> for the cross-agent status board. TASK-014AX adds the guarded entry
+> real execution adapter `disabled_implementation_scaffold_manual_authorization_gate_design`
+> scaffold (src + scripts + tests) mirroring AW pattern + adding
+> AW FINAL PRE-EXECUTION REVIEW as the 33rd runtime-consumed upstream
+> artifact (with chained AV+AU+AT+AS+AR+AQ proof preserved through
+> AW). No real execution, no sender, no endpoint calls, no G20 lift,
+> no position modification.
+
+## TASK-014AX Status (2026-06-15)
+
+| item | status |
+|---|---|
+| scope: build TASK-014AX scaffold (src + scripts + tests) by mirroring AW pattern + adding AW FINAL PRE-EXECUTION REVIEW as the 33rd runtime-consumed upstream artifact | DEFINED |
+| module rename: `..._final_pre_execution_review.py` → `..._manual_authorization_gate_design.py` (src, scripts, tests) — surgical disambiguated-phrase rename so TASK-014AP `implementation_readiness_review` + generic `readiness_review_v1` + `disabled_implementation_scaffold_readiness_review_v1` (now AW's consumed-upstream-contract) are preserved | DONE |
+| TASK identity bumps: `TASK-014AW` → `TASK-014AX` (identity), `TASK-014AX` → `TASK-014AY` (forward-ref to manual_authorization_gate_dry_run); `TASK-014AV` → `TASK-014AW` (consumed-upstream) | DONE |
+| src: `STATUS_IMPLEMENTATION_DESIGN_READY = "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY"` + modes `disabled_implementation_scaffold_manual_authorization_gate_design_checklist` / `..._approval` + `CONCLUSION="DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY_NOT_EXECUTABLE"` + `AUTHORIZATION_RESULT="DOCUMENTED_ONLY_NOT_AUTHORIZED"` | DONE |
+| src: `ADAPTER_CONTRACT_VERSION="disabled_implementation_scaffold_manual_authorization_gate_design_v1"` + `CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_CONTRACT_VERSION="disabled_implementation_scaffold_final_pre_execution_review_v1"` (AW's consumed-upstream contract) | DONE |
+| src: 14 fail-closed gates `GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_*` (missing/status/mode/real_exec/send/impl/exec/order/stop/no_pos/no_secrets/g20/conclusion/response_status) for AW upstream acceptance | DONE |
+| src: 16 dataclass fields `upstream_entry_disabled_implementation_scaffold_final_pre_execution_review_*` + parser block (variables `entry_disfp_*` reading from `awfp` payload) + audit_artifacts entries | DONE |
+| src: `run_readiness_review()` accepts `entry_disabled_implementation_scaffold_final_pre_execution_review` as 33rd upstream input + present_flags entry | DONE |
+| scripts: CLI flag `--from-latest-entry-disabled-implementation-scaffold-final-pre-execution-review` + loader + dir resolution + missing-check + print line + run_readiness_review() kwarg | DONE |
+| scripts: argparse description / banner / footer reference TASK-014AW FINAL PRE-EXECUTION REVIEW → TASK-014AY | DONE |
+| scripts: argparse adds `--allow-disabled-implementation-scaffold-manual-authorization-gate-design` | DONE |
+| tests: `TestAXAW*` test classes (22 classes mirroring TestAWAV* pattern with `upstream_entry_disabled_implementation_scaffold_final_pre_execution_review_*` field assertions) | DONE |
+| tests: scope_summary asserts updated — `32 upstream artifacts`, `DISABLED IMPLEMENTATION SCAFFOLD FINAL PRE-EXECUTION REVIEW`, `DISABLED IMPLEMENTATION SCAFFOLD READINESS REVIEW` (newly chained AV), `DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DESIGN`, `TASK-014AX`, `TASK-014AY` | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AX | **292/292 PASS** |
+| pytest AW regression | 292/292 PASS |
+| pytest AV regression | 259/259 PASS |
+| pytest AU regression | 235/235 PASS |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| combined AX+AW+AV+AU+AT+AS+AR+AQ | **1770/1770 PASS** |
+| no runtime behavior change / no endpoint / no secret / no G20 lift / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-15 TASK-014AX)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py -q
+       # expect 292/292 PASS
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py --write-report \
+         --from-latest-entry-disabled-implementation-scaffold-design \
+         --from-latest-entry-disabled-implementation-scaffold-dry-run \
+         --from-latest-entry-disabled-implementation-scaffold-final-pre-execution-review
+       # confirm: status = TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_
+       #                   DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY
+       # confirm: conclusion = DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY_NOT_EXECUTABLE
+       # confirm: authorization_result = DOCUMENTED_ONLY_NOT_AUTHORIZED
+       # confirm: response_status = DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NOT_SENT
+       # confirm: next_required_task = TASK-014AY_..._manual_authorization_gate_dry_run
+       # confirm: no socket opened, no endpoint called, no secret loaded,
+       # G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise TASK-014AY
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate dry-run — next phase in the
+   sequential safety chain; still no real execution).
 
 ## TASK-014AW-FIX1 Status (2026-06-15)
 
