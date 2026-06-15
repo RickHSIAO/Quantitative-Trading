@@ -21,6 +21,87 @@ Notes:
 
 ---
 
+### 2026-06-15（TASK-014AX-FIX1 — Restore Entry Final Pre-Execution Upstream Path）
+
+Agent: Claude (Sonnet 4.6)
+Command source: Rick VPS validation identified preview fail-closed:
+`[FAIL CLOSED] Missing upstream artifact(s):
+/home/ubuntu/quant/outputs/demo_trading/tiny_guarded_entry_manual_authorization_gate_design/latest_tiny_guarded_entry_manual_authorization_gate_design.json`
+Root cause: Stage 1 broad substitution `("final_pre_execution_review",
+"manual_authorization_gate_design")` over-renamed the older TASK-014AI-era
+`tiny_guarded_entry_final_pre_execution_review` artifact path (not AX's own
+`disabled_implementation_scaffold_manual_authorization_gate_design` identity or
+AX's direct AW-upstream `disabled_implementation_scaffold_final_pre_execution_review`
+which were correctly disambiguated). Rick: "Proceed with TASK-014AX-FIX1 now."
+
+Task:
+- Restore all over-renamed older-upstream references in AX src/scripts/tests:
+  `entry_manual_authorization_gate_design` → `entry_final_pre_execution_review`,
+  `GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING` →
+  `GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING`,
+  `ACCEPTABLE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES` →
+  `ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES`,
+  `upstream_entry_manual_authorization_gate_design_status` →
+  `upstream_entry_final_pre_execution_review_status`,
+  `tiny_guarded_entry_manual_authorization_gate_design` path →
+  `tiny_guarded_entry_final_pre_execution_review`.
+- Do NOT change AX's own identity (`disabled_implementation_scaffold_manual_authorization_gate_design`).
+- Do NOT change AX's direct AW upstream (`disabled_implementation_scaffold_final_pre_execution_review`).
+- Add 7 new `TestAXFIX1OlderUpstreamPath` regression tests.
+
+Status before: TASK-014AX (1770 PASS on VPS); VPS preview fails closed on
+`tiny_guarded_entry_manual_authorization_gate_design` directory.
+
+Status after: TASK-014AX-FIX1 (1777 PASS). Preview default path correctly
+points to `tiny_guarded_entry_final_pre_execution_review`. Older upstream gate,
+frozenset, dataclass field, function param, dict keys, print lines, missing-check
+path all restored. 7 new regression tests lock the correct path.
+
+Files changed (3 modified):
+- `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py` —
+  restored: `ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES` (was `ACCEPTABLE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES`),
+  `GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING` (was `GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING`),
+  `upstream_entry_final_pre_execution_review_status` (was `upstream_entry_manual_authorization_gate_design_status`),
+  `entry_final_pre_execution_review` param (was `entry_manual_authorization_gate_design`),
+  frozenset values (`TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY` etc.),
+  `__all__` exports (2 names).
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py` —
+  restored: `_DEFAULT_ENTRY_FINAL_PRE_EXECUTION_REVIEW_DIR` + path `tiny_guarded_entry_final_pre_execution_review`,
+  `load_latest_entry_final_pre_execution_review()` function + `latest_tiny_guarded_entry_final_pre_execution_review.json`,
+  `entry_final_pre_execution_review_dir` param + default resolution,
+  `upstream_entry_final_pre_execution_review_status` print line,
+  `entry_final_pre_execution_review=entry_final_review` kwarg,
+  help text `tiny_guarded_entry_final_pre_execution_review` for `--from-latest-entry-final-pre-execution-review` flag,
+  missing-check error path `latest_tiny_guarded_entry_final_pre_execution_review.json`.
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py` —
+  restored imports, `_valid_entry_final_pre_execution_review()` fixture (with correct mode/status/dict keys),
+  `_run()` helper param + call, `test_missing_entry_final_pre_execution_review_blocked` test,
+  forbidden-import string, `upstream_entry_final_pre_execution_review_status` assertion,
+  `entry_final_pre_execution_review_dir=empty` in integration tests;
+  added `TestAXFIX1OlderUpstreamPath` (7 new tests).
+
+Validation (local Windows):
+- py_compile src + preview + test → PASS
+- pytest tests/demo_trading/test_demo_..._manual_authorization_gate_design.py -q → **299/299 PASS**
+- AX's own identity (`disabled_implementation_scaffold_manual_authorization_gate_design`): 0 regressions
+- AX's AW-upstream (`disabled_implementation_scaffold_final_pre_execution_review`): 116 occurrences intact
+- pre-existing `test_demo_emergency_close_sender.py` failure confirmed pre-existing (exists on TASK-014AX commit before FIX1)
+- combined AX+AW+AV+AU+AT+AS+AR+AQ → **1777/1777 PASS**
+
+Outputs: 3 files modified, no runtime outputs generated.
+
+Notes:
+- FIX1 lesson: the surgical rename must anchor on the FULL disambiguated phrase
+  (`disabled_implementation_scaffold_final_pre_execution_review`, not bare
+  `final_pre_execution_review`) so older TASK-014AI-era upstreams are untouched.
+- AX's identity: `disabled_implementation_scaffold_manual_authorization_gate_design`
+- AX's AW-upstream: `disabled_implementation_scaffold_final_pre_execution_review`
+- Older AI-era upstream: `tiny_guarded_entry_final_pre_execution_review` (restored)
+- main.py / src/risk.py / BybitExecutor / G20 sender policy still UNTOUCHED.
+- Local commit only (durable-memory instruction: don't push without explicit Rick approval).
+
+---
+
 ### 2026-06-15（TASK-014AX — Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Manual Authorization Gate Design）
 
 Agent: Claude (Sonnet 4.6)

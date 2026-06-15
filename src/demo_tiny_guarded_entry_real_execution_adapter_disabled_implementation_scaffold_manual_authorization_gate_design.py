@@ -258,9 +258,9 @@ ACCEPTABLE_ENTRY_MANUAL_AUTH_DRY_RUN_STATUSES: frozenset[str] = frozenset({
     "REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED",
 })
 
-ACCEPTABLE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES: frozenset[str] = frozenset({
-    "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_READY",
-    "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_READY_BUT_EXECUTION_DISABLED",
+ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES: frozenset[str] = frozenset({
+    "TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY",
+    "TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY_BUT_EXECUTION_DISABLED",
     "REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED",
 })
 
@@ -453,7 +453,7 @@ GATE_GUARDED_LIFECYCLE_SUMMARY_MISSING            = "guarded_lifecycle_summary_m
 GATE_ENTRY_REAL_PERMISSION_REVIEW_MISSING         = "entry_real_permission_review_missing"
 GATE_ENTRY_MANUAL_AUTH_DESIGN_MISSING             = "entry_manual_authorization_design_missing"
 GATE_ENTRY_MANUAL_AUTH_DRY_RUN_MISSING            = "entry_manual_authorization_dry_run_missing"
-GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING     = "entry_manual_authorization_gate_design_missing"
+GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING           = "entry_final_pre_execution_review_missing"
 GATE_ENTRY_MANUAL_APPROVAL_GATE_MISSING           = "entry_manual_approval_gate_missing"
 GATE_ENTRY_ADAPTER_DESIGN_MISSING                 = "entry_adapter_design_missing"
 GATE_ENTRY_ADAPTER_DRY_RUN_MISSING                = "entry_adapter_dry_run_missing"
@@ -900,7 +900,7 @@ _HARD_FAIL_GATES: frozenset[str] = frozenset({
     GATE_ENTRY_REAL_PERMISSION_REVIEW_MISSING,
     GATE_ENTRY_MANUAL_AUTH_DESIGN_MISSING,
     GATE_ENTRY_MANUAL_AUTH_DRY_RUN_MISSING,
-    GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING,
+    GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING,
     GATE_ENTRY_MANUAL_APPROVAL_GATE_MISSING,
     GATE_ENTRY_ADAPTER_DESIGN_MISSING,
     GATE_ENTRY_ADAPTER_DRY_RUN_MISSING,
@@ -1119,7 +1119,7 @@ class TinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFinalPre
     upstream_entry_real_permission_review_status:                       str = ""
     upstream_entry_manual_auth_design_status:                           str = ""
     upstream_entry_manual_auth_dry_run_status:                          str = ""
-    upstream_entry_manual_authorization_gate_design_status:                   str = ""
+    upstream_entry_final_pre_execution_review_status:                   str = ""
     upstream_entry_manual_approval_gate_status:                         str = ""
     upstream_entry_manual_approval_gate_approval_grants_execution:      bool = False
     upstream_entry_manual_approval_gate_exact_phrase_validated:         bool = False
@@ -1326,8 +1326,8 @@ class TinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFinalPre
                 self.upstream_entry_real_permission_review_status,
             "upstream_entry_manual_auth_design_status":  self.upstream_entry_manual_auth_design_status,
             "upstream_entry_manual_auth_dry_run_status": self.upstream_entry_manual_auth_dry_run_status,
-            "upstream_entry_manual_authorization_gate_design_status":
-                self.upstream_entry_manual_authorization_gate_design_status,
+            "upstream_entry_final_pre_execution_review_status":
+                self.upstream_entry_final_pre_execution_review_status,
             "upstream_entry_manual_approval_gate_status":
                 self.upstream_entry_manual_approval_gate_status,
             "upstream_entry_manual_approval_gate_approval_grants_execution":
@@ -1673,7 +1673,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
         entry_real_permission_review:         dict[str, Any] | None,
         entry_manual_authorization_design:    dict[str, Any] | None,
         entry_manual_authorization_dry_run:   dict[str, Any] | None,
-        entry_manual_authorization_gate_design:     dict[str, Any] | None,
+        entry_final_pre_execution_review:            dict[str, Any] | None,
         entry_manual_approval_gate:           dict[str, Any] | None,
         entry_adapter_design:                 dict[str, Any] | None,
         entry_adapter_dry_run:                dict[str, Any] | None,
@@ -1732,7 +1732,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
             "entry_perm_review":       isinstance(entry_real_permission_review, dict) and bool(entry_real_permission_review),
             "entry_auth_design":       isinstance(entry_manual_authorization_design, dict) and bool(entry_manual_authorization_design),
             "entry_auth_dry_run":      isinstance(entry_manual_authorization_dry_run, dict) and bool(entry_manual_authorization_dry_run),
-            "entry_final_review":      isinstance(entry_manual_authorization_gate_design, dict) and bool(entry_manual_authorization_gate_design),
+            "entry_final_review":      isinstance(entry_final_pre_execution_review, dict) and bool(entry_final_pre_execution_review),
             "entry_approval_gate":     isinstance(entry_manual_approval_gate, dict) and bool(entry_manual_approval_gate),
             "entry_adapter_design":    isinstance(entry_adapter_design, dict) and bool(entry_adapter_design),
             "entry_adapter_dry_run":   isinstance(entry_adapter_dry_run, dict) and bool(entry_adapter_dry_run),
@@ -1766,7 +1766,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
         entry_perm_review_status    = _safe_str((entry_real_permission_review or {}).get("status", ""))
         entry_auth_design_status    = _safe_str((entry_manual_authorization_design or {}).get("status", ""))
         entry_auth_dry_run_status   = _safe_str((entry_manual_authorization_dry_run or {}).get("status", ""))
-        entry_final_review_status   = _safe_str((entry_manual_authorization_gate_design or {}).get("status", ""))
+        entry_final_review_status   = _safe_str((entry_final_pre_execution_review or {}).get("status", ""))
         entry_approval_gate_status  = _safe_str((entry_manual_approval_gate or {}).get("status", ""))
         entry_approval_gate_grants = _safe_bool(
             (entry_manual_approval_gate or {}).get("approval_grants_execution", False)
@@ -2195,7 +2195,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
         if not present_flags["entry_perm_review"]:  blocked.append(GATE_ENTRY_REAL_PERMISSION_REVIEW_MISSING)
         if not present_flags["entry_auth_design"]:  blocked.append(GATE_ENTRY_MANUAL_AUTH_DESIGN_MISSING)
         if not present_flags["entry_auth_dry_run"]: blocked.append(GATE_ENTRY_MANUAL_AUTH_DRY_RUN_MISSING)
-        if not present_flags["entry_final_review"]: blocked.append(GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING)
+        if not present_flags["entry_final_review"]: blocked.append(GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING)
         if not present_flags["entry_approval_gate"]: blocked.append(GATE_ENTRY_MANUAL_APPROVAL_GATE_MISSING)
         if not present_flags["entry_adapter_design"]: blocked.append(GATE_ENTRY_ADAPTER_DESIGN_MISSING)
         if not present_flags["entry_adapter_dry_run"]: blocked.append(GATE_ENTRY_ADAPTER_DRY_RUN_MISSING)
@@ -3345,7 +3345,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
             upstream_entry_real_permission_review_status=entry_perm_review_status,
             upstream_entry_manual_auth_design_status=entry_auth_design_status,
             upstream_entry_manual_auth_dry_run_status=entry_auth_dry_run_status,
-            upstream_entry_manual_authorization_gate_design_status=entry_final_review_status,
+            upstream_entry_final_pre_execution_review_status=entry_final_review_status,
             upstream_entry_manual_approval_gate_status=entry_approval_gate_status,
             upstream_entry_manual_approval_gate_approval_grants_execution=entry_approval_gate_grants,
             upstream_entry_manual_approval_gate_exact_phrase_validated=entry_approval_gate_phrase,
@@ -3495,7 +3495,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
             GATE_ENTRY_REAL_PERMISSION_REVIEW_MISSING,
             GATE_ENTRY_MANUAL_AUTH_DESIGN_MISSING,
             GATE_ENTRY_MANUAL_AUTH_DRY_RUN_MISSING,
-            GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING,
+            GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING,
             GATE_ENTRY_MANUAL_APPROVAL_GATE_MISSING,
             GATE_ENTRY_ADAPTER_DESIGN_MISSING,
             GATE_ENTRY_ADAPTER_DRY_RUN_MISSING,
@@ -3602,7 +3602,7 @@ __all__ = [
     "ACCEPTABLE_ENTRY_REAL_PERMISSION_REVIEW_STATUSES",
     "ACCEPTABLE_ENTRY_MANUAL_AUTH_DESIGN_STATUSES",
     "ACCEPTABLE_ENTRY_MANUAL_AUTH_DRY_RUN_STATUSES",
-    "ACCEPTABLE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES",
+    "ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES",
     "ACCEPTABLE_ENTRY_MANUAL_APPROVAL_GATE_STATUSES",
     "ACCEPTABLE_ENTRY_ADAPTER_DESIGN_STATUSES",
     "ACCEPTABLE_ENTRY_ADAPTER_DRY_RUN_STATUSES",
@@ -3692,7 +3692,7 @@ __all__ = [
     "GATE_ENTRY_REAL_PERMISSION_REVIEW_MISSING",
     "GATE_ENTRY_MANUAL_AUTH_DESIGN_MISSING",
     "GATE_ENTRY_MANUAL_AUTH_DRY_RUN_MISSING",
-    "GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING",
+    "GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING",
     "GATE_ENTRY_MANUAL_APPROVAL_GATE_MISSING",
     "GATE_ENTRY_ADAPTER_DESIGN_MISSING",
     "GATE_ENTRY_ADAPTER_DRY_RUN_MISSING",

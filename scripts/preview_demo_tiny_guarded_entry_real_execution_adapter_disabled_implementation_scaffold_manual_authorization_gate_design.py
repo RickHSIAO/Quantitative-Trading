@@ -74,7 +74,7 @@ Reads (33 upstream artifacts):
   outputs/demo_trading/tiny_guarded_entry_real_permission_review/latest_tiny_guarded_entry_real_permission_review.json
   outputs/demo_trading/tiny_guarded_entry_manual_authorization_design/latest_tiny_guarded_entry_manual_authorization_design.json
   outputs/demo_trading/tiny_guarded_entry_manual_authorization_dry_run/latest_tiny_guarded_entry_manual_authorization_dry_run.json
-  outputs/demo_trading/tiny_guarded_entry_manual_authorization_gate_design/latest_tiny_guarded_entry_manual_authorization_gate_design.json
+  outputs/demo_trading/tiny_guarded_entry_final_pre_execution_review/latest_tiny_guarded_entry_final_pre_execution_review.json
   outputs/demo_trading/tiny_guarded_entry_real_execution_manual_approval_gate/latest_tiny_guarded_entry_real_execution_manual_approval_gate.json
   outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_design/latest_tiny_guarded_entry_real_execution_adapter_design.json
   outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_dry_run/latest_tiny_guarded_entry_real_execution_adapter_dry_run.json
@@ -211,8 +211,8 @@ _DEFAULT_ENTRY_MANUAL_AUTH_DESIGN_DIR = (
 _DEFAULT_ENTRY_MANUAL_AUTH_DRY_RUN_DIR = (
     ROOT / "outputs" / "demo_trading" / "tiny_guarded_entry_manual_authorization_dry_run"
 )
-_DEFAULT_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_DIR = (
-    ROOT / "outputs" / "demo_trading" / "tiny_guarded_entry_manual_authorization_gate_design"
+_DEFAULT_ENTRY_FINAL_PRE_EXECUTION_REVIEW_DIR = (
+    ROOT / "outputs" / "demo_trading" / "tiny_guarded_entry_final_pre_execution_review"
 )
 _DEFAULT_ENTRY_MANUAL_APPROVAL_GATE_DIR = (
     ROOT
@@ -427,12 +427,12 @@ def load_latest_entry_manual_auth_dry_run(
     )
 
 
-def load_latest_entry_manual_authorization_gate_design(
-    entry_manual_authorization_gate_design_dir: Path,
+def load_latest_entry_final_pre_execution_review(
+    entry_final_pre_execution_review_dir: Path,
 ) -> dict | None:
     return _load_json(
-        entry_manual_authorization_gate_design_dir
-        / "latest_tiny_guarded_entry_manual_authorization_gate_design.json"
+        entry_final_pre_execution_review_dir
+        / "latest_tiny_guarded_entry_final_pre_execution_review.json"
     )
 
 
@@ -593,7 +593,7 @@ def _print_result(
     print(f"  upstream_entry_real_permission_review_status   : {r.upstream_entry_real_permission_review_status}")
     print(f"  upstream_entry_manual_auth_design_status       : {r.upstream_entry_manual_auth_design_status}")
     print(f"  upstream_entry_manual_auth_dry_run_status      : {r.upstream_entry_manual_auth_dry_run_status}")
-    print(f"  upstream_entry_manual_authorization_gate_design_status: {r.upstream_entry_manual_authorization_gate_design_status}")
+    print(f"  upstream_entry_final_pre_execution_review_status: {r.upstream_entry_final_pre_execution_review_status}")
     print(f"  upstream_entry_manual_approval_gate_status     : {r.upstream_entry_manual_approval_gate_status}")
     print(f"  upstream_entry_manual_approval_gate_grants_exec: "
           f"{r.upstream_entry_manual_approval_gate_approval_grants_execution}")
@@ -978,7 +978,7 @@ def run_execute(
     entry_real_permission_review_dir:  Path | None = None,
     entry_manual_auth_design_dir:      Path | None = None,
     entry_manual_auth_dry_run_dir:     Path | None = None,
-    entry_manual_authorization_gate_design_dir: Path | None = None,
+    entry_final_pre_execution_review_dir: Path | None = None,
     entry_manual_approval_gate_dir:    Path | None = None,
     entry_adapter_design_dir:          Path | None = None,
     entry_adapter_dry_run_dir:         Path | None = None,
@@ -1025,8 +1025,8 @@ def run_execute(
         or _DEFAULT_ENTRY_MANUAL_AUTH_DRY_RUN_DIR
     )
     _entry_final_dir      = (
-        entry_manual_authorization_gate_design_dir
-        or _DEFAULT_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_DIR
+        entry_final_pre_execution_review_dir
+        or _DEFAULT_ENTRY_FINAL_PRE_EXECUTION_REVIEW_DIR
     )
     _entry_approval_gate_dir = (
         entry_manual_approval_gate_dir
@@ -1107,7 +1107,7 @@ def run_execute(
     entry_real_perm_review    = load_latest_entry_real_permission_review(_entry_review_dir)
     entry_manual_auth_design  = load_latest_entry_manual_auth_design(_entry_design_dir)
     entry_manual_auth_dry_run = load_latest_entry_manual_auth_dry_run(_entry_dry_run_dir2)
-    entry_final_review        = load_latest_entry_manual_authorization_gate_design(_entry_final_dir)
+    entry_final_review        = load_latest_entry_final_pre_execution_review(_entry_final_dir)
     entry_manual_approval_gate = load_latest_entry_manual_approval_gate(_entry_approval_gate_dir)
     entry_adapter_design      = load_latest_entry_adapter_design(_entry_adapter_design_dir)
     entry_adapter_dry_run     = load_latest_entry_adapter_dry_run(_entry_adapter_dry_run_dir2)
@@ -1220,7 +1220,7 @@ def run_execute(
         )
     if entry_final_review is None:
         missing.append(
-            str(_entry_final_dir / "latest_tiny_guarded_entry_manual_authorization_gate_design.json")
+            str(_entry_final_dir / "latest_tiny_guarded_entry_final_pre_execution_review.json")
         )
     if entry_manual_approval_gate is None:
         missing.append(
@@ -1328,7 +1328,7 @@ def run_execute(
     print(f"  entry_real_perm_review_src          : {_entry_review_dir / 'latest_tiny_guarded_entry_real_permission_review.json'}")
     print(f"  entry_manual_auth_design_src        : {_entry_design_dir / 'latest_tiny_guarded_entry_manual_authorization_design.json'}")
     print(f"  entry_manual_auth_dry_run_src       : {_entry_dry_run_dir2 / 'latest_tiny_guarded_entry_manual_authorization_dry_run.json'}")
-    print(f"  entry_manual_authorization_gate_design_src: {_entry_final_dir / 'latest_tiny_guarded_entry_manual_authorization_gate_design.json'}")
+    print(f"  entry_final_pre_execution_review_src       : {_entry_final_dir / 'latest_tiny_guarded_entry_final_pre_execution_review.json'}")
     print(f"  entry_manual_approval_gate_src      : {_entry_approval_gate_dir / 'latest_tiny_guarded_entry_real_execution_manual_approval_gate.json'}")
     print(f"  entry_adapter_design_src            : {_entry_adapter_design_dir / 'latest_tiny_guarded_entry_real_execution_adapter_design.json'}")
     print(f"  entry_adapter_dry_run_src           : {_entry_adapter_dry_run_dir2 / 'latest_tiny_guarded_entry_real_execution_adapter_dry_run.json'}")
@@ -1363,7 +1363,7 @@ def run_execute(
         entry_real_permission_review=entry_real_perm_review,
         entry_manual_authorization_design=entry_manual_auth_design,
         entry_manual_authorization_dry_run=entry_manual_auth_dry_run,
-        entry_manual_authorization_gate_design=entry_final_review,
+        entry_final_pre_execution_review=entry_final_review,
         entry_manual_approval_gate=entry_manual_approval_gate,
         entry_adapter_design=entry_adapter_design,
         entry_adapter_dry_run=entry_adapter_dry_run,
@@ -1493,7 +1493,7 @@ def main() -> None:
     parser.add_argument("--from-latest-entry-final-pre-execution-review", action="store_true",
                         help=("Read tiny guarded entry final pre-execution "
                               "review JSON (TASK-014AL artifact) from "
-                              "outputs/.../tiny_guarded_entry_manual_authorization_gate_design/."))
+                              "outputs/.../tiny_guarded_entry_final_pre_execution_review/."))
     parser.add_argument("--from-latest-entry-manual-approval-gate", action="store_true",
                         help=("Read tiny guarded entry real execution manual "
                               "approval gate JSON (TASK-014AM artifact) from "

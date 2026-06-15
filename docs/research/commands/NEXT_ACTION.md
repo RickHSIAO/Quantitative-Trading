@@ -1,5 +1,84 @@
 # Next Action
 
+> README shared status updated by TASK-014AX-FIX1 (2026-06-15) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ax-fix1-2026-06-15)
+> for the cross-agent status board. TASK-014AX-FIX1 restores the over-renamed
+> older TASK-014AI-era `tiny_guarded_entry_final_pre_execution_review` upstream
+> artifact path in AX src/scripts/tests. The broad Stage 1 rename substituted
+> bare `final_pre_execution_review` → `manual_authorization_gate_design` which
+> incorrectly renamed this older non-scaffold upstream; the disambiguated AX
+> identity (`disabled_implementation_scaffold_manual_authorization_gate_design`)
+> and AX's direct AW upstream (`disabled_implementation_scaffold_final_pre_execution_review`)
+> were unaffected. 7 new regression tests lock the correct older-upstream path.
+
+## TASK-014AX-FIX1 Status (2026-06-15)
+
+| item | status |
+|---|---|
+| root cause: Stage 1 rename helper broad `("final_pre_execution_review", "manual_authorization_gate_design")` substitution over-renamed the TASK-014AI-era `tiny_guarded_entry_final_pre_execution_review` upstream artifact | IDENTIFIED |
+| src: restore `ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES` (frozenset with `TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY` values) — was wrongly `ACCEPTABLE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES` | DONE |
+| src: restore `GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING = "entry_final_pre_execution_review_missing"` — was `GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING` | DONE |
+| src: restore `upstream_entry_final_pre_execution_review_status` dataclass field + dict key (all 4 occurrences) | DONE |
+| src: restore `entry_final_pre_execution_review` function parameter (3 occurrences in function body) | DONE |
+| src: restore `__all__` exports for `ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES` + `GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING` | DONE |
+| scripts: restore `_DEFAULT_ENTRY_FINAL_PRE_EXECUTION_REVIEW_DIR` with path `tiny_guarded_entry_final_pre_execution_review` | DONE |
+| scripts: restore `load_latest_entry_final_pre_execution_review(entry_final_pre_execution_review_dir)` function + `latest_tiny_guarded_entry_final_pre_execution_review.json` filename | DONE |
+| scripts: restore `upstream_entry_final_pre_execution_review_status` in print-report output | DONE |
+| scripts: restore `entry_final_pre_execution_review_dir` parameter + default resolution | DONE |
+| scripts: restore `entry_final_pre_execution_review=entry_final_review` keyword arg in run call | DONE |
+| scripts: restore help text `outputs/.../tiny_guarded_entry_final_pre_execution_review/.` for `--from-latest-entry-final-pre-execution-review` flag | DONE |
+| scripts: restore missing-check error path `latest_tiny_guarded_entry_final_pre_execution_review.json` | DONE |
+| tests: restore import `ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES` + `GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING` | DONE |
+| tests: restore `_valid_entry_final_pre_execution_review()` fixture (mode=`final_pre_execution_review_checklist`, status=`TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY`, correct dict keys) | DONE |
+| tests: restore `entry_final_pre_execution_review=_UNSET` parameter + `_run()` helper call | DONE |
+| tests: restore `test_missing_entry_final_pre_execution_review_blocked` + `GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING` assertion | DONE |
+| tests: restore forbidden-import `"src.demo_tiny_guarded_entry_final_pre_execution_review"` (older non-scaffold module) | DONE |
+| tests: restore `r.upstream_entry_final_pre_execution_review_status == "TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY"` assertion | DONE |
+| tests: restore `entry_final_pre_execution_review_dir=empty` in preview integration tests (2 occurrences) | DONE |
+| tests: add `TestAXFIX1OlderUpstreamPath` class (7 tests) — assert `--from-latest-entry-final-pre-execution-review` present; assert `tiny_guarded_entry_manual_authorization_gate_design` absent from help; assert gate constant value correct; assert frozenset values correct; assert report JSON/Markdown do NOT mention `tiny_guarded_entry_manual_authorization_gate_design` | DONE |
+| AX's own identity strings unchanged: `disabled_implementation_scaffold_manual_authorization_gate_design` | CONFIRMED |
+| AX's direct AW-upstream strings unchanged: `disabled_implementation_scaffold_final_pre_execution_review` (116 occurrences, all intact) | CONFIRMED |
+| py_compile src + scripts + test | PASS |
+| pytest AX | **299/299 PASS** |
+| pytest AW regression | 292/292 PASS |
+| pytest AV regression | 259/259 PASS |
+| pytest AU regression | 235/235 PASS |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| combined AX+AW+AV+AU+AT+AS+AR+AQ | **1777/1777 PASS** |
+| no runtime behavior change / no endpoint / no secret / no G20 lift / no position modification / main.py / src/risk.py / BybitExecutor untouched | CONFIRMED |
+| local commit | DONE (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-15 TASK-014AX-FIX1)
+
+1. VPS git pull and validate:
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py -q
+       # expect 299/299 PASS (incl. 7 FIX1 regression tests)
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py --write-report \
+         --from-latest-entry-disabled-implementation-scaffold-design \
+         --from-latest-entry-disabled-implementation-scaffold-dry-run \
+         --from-latest-entry-disabled-implementation-scaffold-final-pre-execution-review
+       # confirm: preview no longer fails closed on tiny_guarded_entry_manual_authorization_gate_design path
+       # confirm: status = TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_
+       #                   DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY
+       # confirm: conclusion = DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_READY_NOT_EXECUTABLE
+       # confirm: authorization_result = DOCUMENTED_ONLY_NOT_AUTHORIZED
+       # confirm: response_status = DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NOT_SENT
+       # confirm: next_required_task = TASK-014AY_..._manual_authorization_gate_dry_run
+
+2. Once step 1 passes, decide whether to authorise TASK-014AY
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate dry-run — next phase in the
+   sequential safety chain; still no real execution).
+
+---
+
 > README shared status updated by TASK-014AX (2026-06-15) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ax-2026-06-15)
 > for the cross-agent status board. TASK-014AX adds the guarded entry

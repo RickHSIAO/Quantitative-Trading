@@ -57,7 +57,7 @@ def repo_tmp_path():
 from src.demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design import (
     ACCEPTABLE_ENTRY_ADAPTER_DESIGN_STATUSES,
     ACCEPTABLE_ENTRY_ADAPTER_DRY_RUN_STATUSES,
-    ACCEPTABLE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES,
+    ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES,
     ACCEPTABLE_ENTRY_IMPLEMENTATION_DESIGN_STATUSES,
     ACCEPTABLE_ENTRY_IMPLEMENTATION_READINESS_REVIEW_STATUSES,
     ACCEPTABLE_ENTRY_MANUAL_APPROVAL_GATE_STATUSES,
@@ -224,7 +224,7 @@ from src.demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_
     GATE_ENTRY_ADAPTER_DRY_RUN_MISSING,
     GATE_ENTRY_ADAPTER_DRY_RUN_SEND_METHOD_PRESENT,
     GATE_ENTRY_ADAPTER_DRY_RUN_STATUS_UNACCEPTABLE,
-    GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING,
+    GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING,
     GATE_ENTRY_IMPLEMENTATION_DESIGN_CONCLUSION_MISMATCH,
     GATE_ENTRY_IMPLEMENTATION_DESIGN_EXECUTION_INCLUDED,
     GATE_ENTRY_IMPLEMENTATION_DESIGN_GRANTS_EXECUTION,
@@ -576,16 +576,16 @@ def _valid_entry_manual_auth_dry_run() -> dict:
     }
 
 
-def _valid_entry_manual_authorization_gate_design() -> dict:
+def _valid_entry_final_pre_execution_review() -> dict:
     return {
         "timestamp_utc":                "2026-06-12T11:59:59.9995Z",
-        "mode":                         "manual_authorization_gate_design_checklist",
+        "mode":                         "final_pre_execution_review_checklist",
         "selected_symbol":              "SOLUSDT",
-        "status":                       "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_READY",
+        "status":                       "TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY",
         "real_execution_allowed":              False,
         "real_entry_implemented":              False,
-        "guarded_entry_manual_authorization_gate_design": True,
-        "manual_authorization_gate_design_only":     True,
+        "guarded_entry_final_pre_execution_review": True,
+        "final_pre_execution_review_only":     True,
         "current_task_real_execution_allowed": False,
         "g20_policy_still_in_place":           True,
         "g20_lifted":                          False,
@@ -1070,7 +1070,7 @@ def _run(
     entry_real_permission_review=_UNSET,
     entry_manual_authorization_design=_UNSET,
     entry_manual_authorization_dry_run=_UNSET,
-    entry_manual_authorization_gate_design=_UNSET,
+    entry_final_pre_execution_review=_UNSET,
     entry_manual_approval_gate=_UNSET,
     entry_adapter_design=_UNSET,
     entry_adapter_dry_run=_UNSET,
@@ -1110,7 +1110,7 @@ def _run(
         entry_real_permission_review=_valid_entry_real_permission_review()        if entry_real_permission_review          is _UNSET else entry_real_permission_review,
         entry_manual_authorization_design=_valid_entry_manual_auth_design()       if entry_manual_authorization_design     is _UNSET else entry_manual_authorization_design,
         entry_manual_authorization_dry_run=_valid_entry_manual_auth_dry_run()     if entry_manual_authorization_dry_run    is _UNSET else entry_manual_authorization_dry_run,
-        entry_manual_authorization_gate_design=_valid_entry_manual_authorization_gate_design() if entry_manual_authorization_gate_design     is _UNSET else entry_manual_authorization_gate_design,
+        entry_final_pre_execution_review=_valid_entry_final_pre_execution_review() if entry_final_pre_execution_review     is _UNSET else entry_final_pre_execution_review,
         entry_manual_approval_gate=_valid_entry_manual_approval_gate()            if entry_manual_approval_gate            is _UNSET else entry_manual_approval_gate,
         entry_adapter_design=_valid_entry_adapter_design()                        if entry_adapter_design                  is _UNSET else entry_adapter_design,
         entry_adapter_dry_run=_valid_entry_adapter_dry_run()                      if entry_adapter_dry_run                 is _UNSET else entry_adapter_dry_run,
@@ -1347,10 +1347,10 @@ class TestAQ25MissingEntryManualAuthDryRun:
 
 
 class TestAQ26MissingEntryFinalPreExecutionReview:
-    def test_missing_entry_manual_authorization_gate_design_blocked(self):
-        r = _run(entry_manual_authorization_gate_design=None)
+    def test_missing_entry_final_pre_execution_review_blocked(self):
+        r = _run(entry_final_pre_execution_review=None)
         assert r.status == STATUS_FAIL_CLOSED
-        assert GATE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING in r.blocked_gates
+        assert GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING in r.blocked_gates
 
 
 class TestAQ27MissingEntryManualApprovalGate:
@@ -1731,7 +1731,7 @@ class TestAQ58NoForbiddenImports:
             "src.demo_tiny_guarded_entry_real_permission_review",
             "src.demo_tiny_guarded_entry_manual_authorization_design",
             "src.demo_tiny_guarded_entry_manual_authorization_dry_run",
-            "src.demo_tiny_guarded_entry_manual_authorization_gate_design",
+            "src.demo_tiny_guarded_entry_final_pre_execution_review",
             "src.demo_tiny_guarded_entry_real_execution_manual_approval_gate",
             "src.demo_tiny_guarded_entry_real_execution_adapter_design",
             "src.demo_tiny_guarded_entry_real_execution_adapter_dry_run",
@@ -2045,7 +2045,7 @@ class TestAQ82AcceptableStatusFrozensets:
             ACCEPTABLE_ENTRY_REAL_PERMISSION_REVIEW_STATUSES,
             ACCEPTABLE_ENTRY_MANUAL_AUTH_DESIGN_STATUSES,
             ACCEPTABLE_ENTRY_MANUAL_AUTH_DRY_RUN_STATUSES,
-            ACCEPTABLE_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_STATUSES,
+            ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES,
             ACCEPTABLE_ENTRY_MANUAL_APPROVAL_GATE_STATUSES,
             ACCEPTABLE_ENTRY_ADAPTER_DESIGN_STATUSES,
             ACCEPTABLE_ENTRY_ADAPTER_DRY_RUN_STATUSES,
@@ -2139,8 +2139,8 @@ class TestAQ87UpstreamStatusCapture:
             == "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DESIGN_READY"
         assert r.upstream_entry_manual_auth_dry_run_status \
             == "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_DRY_RUN_READY"
-        assert r.upstream_entry_manual_authorization_gate_design_status \
-            == "TINY_GUARDED_ENTRY_MANUAL_AUTHORIZATION_GATE_DESIGN_READY"
+        assert r.upstream_entry_final_pre_execution_review_status \
+            == "TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY"
         assert r.upstream_entry_manual_approval_gate_status \
             == "TINY_GUARDED_ENTRY_REAL_EXECUTION_MANUAL_APPROVAL_GATE_READY"
         assert r.upstream_entry_manual_approval_gate_approval_grants_execution is False
@@ -2210,7 +2210,7 @@ class TestAQ88CLIExitCodes:
             entry_real_permission_review_dir=empty,
             entry_manual_auth_design_dir=empty,
             entry_manual_auth_dry_run_dir=empty,
-            entry_manual_authorization_gate_design_dir=empty,
+            entry_final_pre_execution_review_dir=empty,
             entry_manual_approval_gate_dir=empty,
             entry_adapter_design_dir=empty,
             entry_adapter_dry_run_dir=empty,
@@ -2981,7 +2981,7 @@ class TestARFIX1PreviewCLISubprocess:
             entry_real_permission_review_dir=empty,
             entry_manual_auth_design_dir=empty,
             entry_manual_auth_dry_run_dir=empty,
-            entry_manual_authorization_gate_design_dir=empty,
+            entry_final_pre_execution_review_dir=empty,
             entry_manual_approval_gate_dir=empty,
             entry_adapter_design_dir=empty,
             entry_adapter_dry_run_dir=empty,
@@ -4562,3 +4562,69 @@ class TestAXAWFIX1ReportProof:
         assert "for TASK-014AY" in intro
         assert "TASK-014AU disabled implementation scaffold dry-run output" not in intro
         assert "for TASK-014AX" not in intro
+
+
+# ===========================================================================
+# TASK-014AX-FIX1: TestAXFIX1OlderUpstreamPath —
+# Regression guard: the broad rename that turned `final_pre_execution_review`
+# into `manual_authorization_gate_design` in Stage 1 over-renamed the OLDER
+# TASK-014AI-era `tiny_guarded_entry_final_pre_execution_review` upstream
+# artifact.  These tests lock the correct older-upstream artifact path so the
+# preview does not fail-closed looking for a non-existent directory.
+# ===========================================================================
+
+class TestAXFIX1OlderUpstreamPath:
+    """FIX1: preview default path for the older AI-era upstream is correct."""
+
+    def _help_normalized(self) -> str:
+        import os as _os
+        env = dict(_os.environ)
+        env["COLUMNS"] = "400"
+        result = subprocess.run(
+            [sys.executable, str(PREVIEW_PATH), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        assert result.returncode == 0
+        return " ".join((result.stdout + (result.stderr or "")).split())
+
+    def test_cli_flag_from_latest_entry_final_pre_execution_review_exists(self):
+        normalized = self._help_normalized()
+        assert "--from-latest-entry-final-pre-execution-review" in normalized
+
+    def test_cli_help_does_not_mention_manual_authorization_gate_design_path(self):
+        normalized = self._help_normalized()
+        assert "tiny_guarded_entry_manual_authorization_gate_design" not in normalized
+
+    def test_cli_flag_manual_authorization_gate_design_does_not_exist(self):
+        normalized = self._help_normalized()
+        assert "--from-latest-entry-manual-authorization-gate-design" not in normalized
+
+    def test_help_path_for_final_pre_execution_review_flag_is_correct(self):
+        normalized = self._help_normalized()
+        assert "tiny_guarded_entry_final_pre_execution_review" in normalized
+
+    def test_gate_constant_is_final_pre_execution_review_not_manual_auth_gate_design(self):
+        assert GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING == "entry_final_pre_execution_review_missing"
+        assert "manual_authorization_gate_design" not in GATE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_MISSING
+
+    def test_acceptable_statuses_frozenset_uses_final_pre_execution_review(self):
+        assert "TINY_GUARDED_ENTRY_FINAL_PRE_EXECUTION_REVIEW_READY" \
+            in ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES
+        for s in ACCEPTABLE_ENTRY_FINAL_PRE_EXECUTION_REVIEW_STATUSES:
+            assert "MANUAL_AUTHORIZATION_GATE_DESIGN" not in s
+
+    def test_report_does_not_mention_manual_authorization_gate_design_dir(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design"
+        json_text = (out_dir / f"latest_{base}.json").read_text(encoding="utf-8")
+        md_text = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert "tiny_guarded_entry_manual_authorization_gate_design" not in json_text
+        assert "tiny_guarded_entry_manual_authorization_gate_design" not in md_text
