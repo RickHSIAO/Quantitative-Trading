@@ -1,5 +1,79 @@
 # Next Action
 
+> README shared status updated by TASK-014BA (2026-06-16) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ba-2026-06-16)
+> for the cross-agent status board. TASK-014BA adds the
+> guarded entry real execution adapter disabled implementation scaffold
+> manual authorization gate **final pre-execution review** scaffold:
+> new BA src/scripts/test triple, AZ readiness_review as direct upstream
+> (AY/AX/AW/AV/AU/AT/AS/AR/AQ chained through AZ), 14 stage parser,
+> `_HARD_FAIL_GATES` registration, `FINAL-PRE-EXECUTION-REVIEW-ONLY`
+> identity wording, and `NEXT_REQUIRED_TASK = TASK-014BB_..._final_pre_execution_review_manual_authorization_review`.
+> Source-level chain-literal guards lock AY→AZ readiness_review /
+> AZ→BA final_pre_execution_review / BA→BB manual_authorization_review
+> forward refs against future bulk-rename contamination. Still no
+> sender, no real execution adapter, no endpoint call, no secret read,
+> no G20 lift, no position modification.
+
+## TASK-014BA Status (2026-06-16)
+
+| item | status |
+|---|---|
+| new src `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py` (BA triple) | DONE |
+| new scripts `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py` | DONE |
+| new tests `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py` | DONE |
+| identity wording: `STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-ONLY` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BB_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review"` | DONE |
+| direct upstream = AZ readiness_review; AY/AX/AW/AV/AU/AT/AS/AR/AQ chained through AZ | DONE |
+| 14-stage parser (`stage_0_artifact_preflight` … `stage_13_final_implementation_design_verdict`) | DONE |
+| `_HARD_FAIL_GATES` populated so violations force `status == FAIL_CLOSED` | DONE |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no secret read / no G20 lift / no position modification) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| `.gitignore` adds BA output dir | DONE |
+| py_compile BA src + scripts + tests | PASS |
+| pytest BA | **483/483 PASS** |
+| pytest AZ regression | 481/481 PASS |
+| pytest AY regression | 389/389 PASS |
+| pytest AX regression | 299/299 PASS |
+| pytest AW regression | 292/292 PASS |
+| pytest AV regression | 259/259 PASS |
+| pytest AU regression | 235/235 PASS |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| chain (BA + AZ..AQ) combined | **3130/3130 PASS** |
+| local commit | PENDING (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-16 TASK-014BA)
+
+1. VPS git pull and validate:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py -q
+       # expect 483/483 PASS
+
+   Then run the BA preview with the same upstream artifact set and confirm:
+       # status = TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_READY
+       # mode = disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_checklist
+       # failed_stage = (none)
+       # no socket opened, no endpoint called, no secret loaded, G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise TASK-014BB
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate final pre-execution review
+   **manual authorization review** — next phase in the sequential safety
+   chain; still no real execution).
+
+---
+
+> Previous README banner: TASK-014AZ-FIX2 (2026-06-16) — see archived block below.
+
+## TASK-014AZ-FIX2 Banner (archived 2026-06-16)
+
 > README shared status updated by TASK-014AZ-FIX2 (2026-06-16) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014az-fix2-2026-06-16)
 > for the cross-agent status board. TASK-014AZ-FIX2 fixes a bulk-rename

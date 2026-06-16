@@ -21,6 +21,94 @@ Notes:
 
 ---
 
+### 2026-06-16（TASK-014BA — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review scaffold）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit authorization in chat —
+"Go. Text-only lock is released. Proceed to execute TASK-014BA now using
+tools. ... Authorise TASK-014BA (guarded entry real execution adapter
+disabled implementation scaffold manual authorization gate final
+pre-execution review) for full implementation. Identity wording
+STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-ONLY.
+Forward-ref NEXT_REQUIRED_TASK literal =
+TASK-014BB_..._final_pre_execution_review_manual_authorization_review.
+AZ is the direct upstream; AY/AX/AW/AV/AU/AT/AS/AR/AQ are chained
+through AZ. No real execution, no sender, no executable adapter, no
+endpoint call, no secret read, no G20 lift, no position modification,
+no modification of main.py / src/risk.py / BybitExecutor. Single local
+commit, no push."
+
+Task: TASK-014BA — Add the disabled-implementation-scaffold manual
+authorization gate final pre-execution review scaffold layer on top of
+TASK-014AZ readiness_review. Mirror the AZ src/scripts/test triple,
+re-target the identity wording, set the forward-ref to TASK-014BB, and
+add source-level chain-literal guards. Do not implement any sender,
+adapter, endpoint call, secret read, position modification, or G20
+lift. Do not touch main.py / src/risk.py / BybitExecutor.
+
+Status before: TASK-014AZ-FIX3 DONE (preview dry-run identity wording
+sync); AZ chain VPS-validated (AZ 481/481, full chain 2647/2647);
+TASK-014BA queued for full implementation.
+
+Status after: TASK-014BA DONE (local commit only — NOT pushed);
+BA suite 483/483 PASS; AZ 481 / AY 389 / AX 299 / AW 292 / AV 259 /
+AU 235 / AT 199 / AS 180 / AR 175 / AQ 138 regression PASS;
+combined chain (BA + AZ..AQ) 3130/3130 PASS; safety invariants
+confirmed: no real execution, no sender, no executable adapter, no
+endpoint call, no secret read, no G20 lift, no position modification;
+main.py / src/risk.py / BybitExecutor untouched.
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py (NEW; copy-and-transform from AZ src — bulk renames of `readiness_review` → `final_pre_execution_review`, `TASK-014AZ` → `TASK-014BA`, `Readiness Review` → `Final Pre-Execution Review`, `READINESS-REVIEW-ONLY` → `FINAL-PRE-EXECUTION-REVIEW-ONLY`; `NEXT_REQUIRED_TASK` set to TASK-014BB; AY-dry-run forward-ref expected literal restored to `TASK-014AZ_..._readiness_review` after bulk-rename contamination; scope_summary "produces ... for TASK-014BB (the future ... manual authorization review)")
+- scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py (NEW; mirrors AZ preview with BA identity, intro / banner / argparse description say "for TASK-014BB")
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py (NEW; 483 tests including 5 source-level chain-literal guards locking AY src forward-ref = TASK-014AZ readiness_review / AZ src forward-ref = TASK-014BA final_pre_execution_review / BA src forward-ref = TASK-014BB manual_authorization_review / AZ src expects AX next-task = AY dry-run literal / BA src expects AY next-task = AZ readiness_review literal)
+- .gitignore (added outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review/)
+- README.md (Demo Trading Guarded Lifecycle Status section header bumped to TASK-014BA; latest_completed_task / latest_commit / current_phase / next_required_task / latest_validation / adapter identity / order link id prefix / audit response_status / conclusion rows updated)
+- docs/research/commands/NEXT_ACTION.md (TASK-014BA status block + Next Rick Action prepended; TASK-014AZ-FIX2 banner archived below)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+
+Validation:
+- `python -m py_compile` on BA src + scripts + tests → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py -q` → 483 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py -q` → 481 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py -q` → 389 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py -q` → 299 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py -q` → 292 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py -q` → 259 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py -q` → 235 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py -q` → 199 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py -q` → 180 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` → 175 PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` → 138 PASS
+- Combined: BA 483 + AZ..AQ 2647 = 3130 PASS
+- No outbound socket, no endpoint call, no secret loaded, no G20 lift,
+  no position modification (5 protected positions untouched:
+  ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT).
+- main.py / src/risk.py / BybitExecutor unchanged.
+
+Outputs: (none — scaffold-only; produces local report JSON + Markdown
+under outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review/
+when preview is invoked; directory git-ignored)
+
+Notes:
+- Identity wording: `STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-ONLY`.
+- Forward-ref: `NEXT_REQUIRED_TASK = "TASK-014BB_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review"` (verified absent from docs before authorization).
+- Direct upstream artifact = AZ readiness_review JSON; AY/AX/AW/AV/AU/AT/AS/AR/AQ proofs are chained through AZ.
+- Source-level chain-literal guards added so the next bulk rename
+  cannot silently overwrite cross-task forward-ref literals
+  (AY→AZ readiness_review, AZ→BA final_pre_execution_review,
+  BA→BB manual_authorization_review).
+- Debug cycle: initial copy-and-transform left 3 contaminated test
+  assertions ("for TASK-014BA" duplicated as both in/not-in;
+  "READINESS REVIEW" in scope_summary after rename). Fixed by:
+  (a) src scope_summary points to TASK-014BB future task,
+  (b) preview intro / banner / argparse description say "for TASK-014BB",
+  (c) tests updated to expect "for TASK-014BB" in intro and
+      "FINAL PRE-EXECUTION REVIEW" + "TASK-014BB" in scope_summary.
+- No push. Local commit only. Rick to VPS-validate per NEXT_ACTION.md.
+
+---
+
 ### 2026-06-16（TASK-014AZ-FIX2 — Fix chained AX design next-task expectation）
 
 Agent: Claude (Opus 4.7)
