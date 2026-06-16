@@ -52,7 +52,7 @@
 | CLI `--help` exposes renamed `--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review` | CONFIRMED |
 | safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no secret read / no G20 lift / no position modification) | CONFIRMED |
 | main.py / src/risk.py / BybitExecutor | UNTOUCHED |
-| local commit | PENDING (local only — NOT pushed) |
+| local commit | DONE — `57f382b` (local only — NOT pushed) |
 
 ## Next Rick Action (set by 2026-06-16 TASK-014BA-FIX1)
 
