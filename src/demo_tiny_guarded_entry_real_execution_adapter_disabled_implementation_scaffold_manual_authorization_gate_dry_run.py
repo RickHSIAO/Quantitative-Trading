@@ -41,9 +41,11 @@ Backward-compatible aliases are kept on the result object
 `final_implementation_design_verdict`, `implementation_design_scope`)
 so older tests / downstream docs continue to work.
 
-Inputs: 33 upstream artifacts (the 32 from TASK-014AW + AW's own
-        guarded entry real execution adapter disabled implementation
-        scaffold final pre-execution review output).
+Inputs: 34 upstream artifacts — the TASK-014AX manual authorization gate
+        design output (AX direct artifact) plus the 33 upstream artifacts
+        AX already consumed (the 32 from TASK-014AW + AW's own guarded
+        entry real execution adapter disabled implementation scaffold
+        final pre-execution review output).
 
 Stages:
   stage_0_artifact_preflight
@@ -2879,7 +2881,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
 
         stages[STAGE_0_ARTIFACT_PREFLIGHT] = {
             "stage":   STAGE_0_ARTIFACT_PREFLIGHT,
-            "summary": "Validate 33 upstream artifacts + runtime proof envelope + AM / AN / AO / AP / AQ / AR / AS / AT / AU / AV / AW acceptance flags.",
+            "summary": "Validate AX direct artifact (manual authorization gate design) + 33 upstream artifacts AX already consumed (AW chain) + runtime proof envelope + AX acceptance flags.",
             "present_flags":                     dict(present_flags),
             "endpoint_family_observed":          endpoint_family,
             "endpoint_family_expected":          EXPECTED_ENDPOINT_FAMILY,

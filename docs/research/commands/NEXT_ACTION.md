@@ -1,8 +1,59 @@
 # Next Action
 
-> README shared status updated by TASK-014AY-FIX2 (2026-06-15) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ay-fix2-2026-06-15)
-> for the cross-agent status board. TASK-014AY-FIX2 closes the FIX1 deviation:
+> README shared status updated by TASK-014AY-FIX3 (2026-06-15) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ay-fix3-2026-06-15)
+> for the cross-agent status board. TASK-014AY-FIX3 fixes residual wording
+> left from the AX→AY rename: the preview stdout banner now says
+> `DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN
+> CHECKLIST` (was DESIGN CHECKLIST); the src module docstring now says
+> "34 upstream artifacts — AX direct + 33 AX-already-consumed"; stage_0
+> summary now says "AX direct artifact + 33 upstream artifacts AX already
+> consumed (AW chain)". Eight FIX3 wording-guard tests added. All FIX2
+> fail-closed behavior preserved unchanged.
+
+## TASK-014AY-FIX3 Status (2026-06-15)
+
+| item | status |
+|---|---|
+| root cause: VPS preview run showed stdout banner still said "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DESIGN CHECKLIST" (AX identity) and stage_0 summary said "33 upstream artifacts + AW acceptance flags" (not reflecting AY consuming AX as 34th artifact) | IDENTIFIED |
+| scripts: preview stdout default-mode banner updated from `DESIGN CHECKLIST` → `DRY-RUN CHECKLIST` | DONE |
+| scripts: preview stdout approval-mode banner updated from `DESIGN APPROVAL` → `DRY-RUN APPROVAL` | DONE |
+| scripts: preview module docstring Usage line updated from `DESIGN CHECKLIST` → `DRY-RUN CHECKLIST` | DONE |
+| src: module docstring "Inputs" line updated from "33 upstream artifacts (the 32 from AW + AW's own...)" → "34 upstream artifacts — AX direct artifact + 33 upstream artifacts AX already consumed" | DONE |
+| src: stage_0 summary updated from "Validate 33 upstream artifacts + AW acceptance flags" → "Validate AX direct artifact (manual authorization gate design) + 33 upstream artifacts AX already consumed (AW chain) + AX acceptance flags" | DONE |
+| tests: new `TestAYFIX3WordingCorrection` class (8 tests) — preview text contains DRY-RUN CHECKLIST; preview text does NOT contain DESIGN CHECKLIST; preview text contains DRY-RUN APPROVAL; preview text does NOT contain DESIGN APPROVAL; stage_0 summary mentions "AX direct artifact"; stage_0 summary mentions "33 upstream artifacts AX already consumed"; stage_0 summary does NOT say "AW acceptance flags"; src docstring mentions "34 upstream artifacts" | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AY | **389/389 PASS** (381 FIX2 baseline + 8 FIX3 in TestAYFIX3WordingCorrection) |
+| pytest AX regression | 299/299 PASS |
+| combined real_execution_adapter chain (AX + AW + AV + AU + AT + static_skeleton_dry_run + static_skeleton_design + implementation_design) | **1777/1777 PASS** |
+| combined AY + chain | **2166/2166 PASS** |
+| all FIX2 fail-closed behavior | UNCHANGED |
+| safety invariants: no real execution, no sender, no executable adapter, no endpoint call, no secret read, no G20 lift, no position modification | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | DONE (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-15 TASK-014AY-FIX3)
+
+1. VPS git pull and validate:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py -q
+       # expect 389/389 PASS
+       # confirm preview stdout header: "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN CHECKLIST"
+
+2. Once step 1 passes, decide whether to authorise TASK-014AZ
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate readiness review — next phase
+   in the sequential safety chain; still no real execution).
+
+---
+
+> Previous README banner: TASK-014AY-FIX2 (2026-06-15) — see archived block below.
+
+## TASK-014AY-FIX2 Status (2026-06-15)
 > the 25 new hard-fail gates added in FIX1 (15 AX-upstream + 10 simulated-
 > approval) are now wired into `_HARD_FAIL_GATES` so any violation forces
 > `status = FAIL_CLOSED` (instead of being merely recorded in `blocked_gates`).

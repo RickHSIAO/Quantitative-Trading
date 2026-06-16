@@ -21,6 +21,56 @@ Notes:
 
 ---
 
+### 2026-06-15（TASK-014AY-FIX3 — Sync Dry-Run Identity Wording in Preview Report）
+
+Agent: Claude (Sonnet 4.6)
+Command source: Rick direct chat instruction "Proceed with TASK-014AY-FIX3
+now" — fix residual wording errors found during VPS validation: the AY
+preview stdout banner still said DESIGN CHECKLIST (AX identity), and the
+src stage_0 summary still said "33 upstream artifacts + AW acceptance flags"
+instead of reflecting AY's actual position (AX direct + 33 AX-already-consumed).
+
+Task: TASK-014AY-FIX3 — Wording-only fix: update preview stdout banner from
+DESIGN CHECKLIST → DRY-RUN CHECKLIST; update approval banner from DESIGN
+APPROVAL → DRY-RUN APPROVAL; update src module docstring Inputs line to
+"34 upstream artifacts" (AX direct + 33 AX-consumed); update stage_0 summary
+to "AX direct artifact + 33 upstream artifacts AX already consumed". Add 8
+wording-guard tests in TestAYFIX3WordingCorrection. All FIX2 fail-closed
+behavior preserved. No execution logic change.
+
+Status before: AY-FIX2 (b18862e); AY 381/381 PASS; chain 1777/1777 PASS.
+VPS validation revealed banner/stage_0 wording inconsistencies.
+
+Status after: AY 389/389 PASS (381 FIX2 baseline + 8 FIX3 wording-guard
+tests). Chain 1777/1777 PASS. Combined 2166/2166 PASS.
+
+Files changed:
+- scripts/preview_demo_..._manual_authorization_gate_dry_run.py
+  (line 6 docstring Usage + line 1145 approval banner + line 1147 default
+   banner: DESIGN CHECKLIST/APPROVAL → DRY-RUN CHECKLIST/APPROVAL)
+- src/demo_..._manual_authorization_gate_dry_run.py
+  (docstring Inputs line: 33 → 34 upstream artifacts with AX-direct framing;
+   stage_0 summary: "AW acceptance flags" → "AX direct artifact + 33 upstream
+   artifacts AX already consumed (AW chain) + AX acceptance flags")
+- tests/demo_trading/test_demo_..._manual_authorization_gate_dry_run.py
+  (appended TestAYFIX3WordingCorrection class, 8 tests)
+- README.md (status board → TASK-014AY-FIX3; validation count 389)
+- docs/research/commands/NEXT_ACTION.md (prepended FIX3 section)
+- docs/research/commands/COMMAND_LOG.md (this entry)
+
+Validation:
+- py_compile → PASS
+- pytest AY → **389/389 PASS**
+- pytest 8 chain regressions → **1777/1777 PASS**
+- Combined → **2166/2166 PASS**
+
+Safety invariants: unchanged from FIX2. main.py / src/risk.py / BybitExecutor
+untouched. Local only — NOT pushed.
+
+next_required_task: TASK-014AZ_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review
+
+---
+
 ### 2026-06-15（TASK-014AY-FIX2 — Enforce Fail-Closed Manual Authorization Gate Dry-Run Violations）
 
 Agent: Claude (Opus 4.7)

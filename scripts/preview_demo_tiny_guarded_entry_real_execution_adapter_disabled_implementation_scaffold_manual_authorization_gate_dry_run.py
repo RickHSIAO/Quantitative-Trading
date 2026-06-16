@@ -3,7 +3,7 @@ scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implemen
 TASK-014AY: Guarded Entry Real Execution Adapter Disabled
             Implementation Scaffold Design CLI.
 
-Usage (DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DESIGN CHECKLIST --- default, no network,
+Usage (DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN CHECKLIST --- default, no network,
        no implementation, no execution):
   python scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py \\
     --from-latest-readonly \\
@@ -1142,9 +1142,9 @@ def run_execute(
     if allow_real_entry_execution:
         print("REAL ENTRY EXECUTION GUARD --- NO NETWORK --- REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED")
     elif allow_implementation_design:
-        print("DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DESIGN APPROVAL --- NO NETWORK --- readiness-review-only")
+        print("DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN APPROVAL --- NO NETWORK --- readiness-review-only")
     else:
-        print("DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DESIGN CHECKLIST --- NO NETWORK --- readiness-review-only")
+        print("DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN CHECKLIST --- NO NETWORK --- readiness-review-only")
     print("TASK-014AY: Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Manual Authorization Gate Dry-Run")
     print("  consumes TASK-014AX disabled implementation scaffold manual authorization gate design output -> produces disabled implementation scaffold manual authorization gate dry-run for TASK-014AZ")
     print(f"  adapter_name                          : {ADAPTER_NAME}")

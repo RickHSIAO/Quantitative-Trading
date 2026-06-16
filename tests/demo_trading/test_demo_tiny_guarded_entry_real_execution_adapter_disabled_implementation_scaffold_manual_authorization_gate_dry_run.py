@@ -5433,3 +5433,56 @@ class TestAYFIX2FailClosedEnforcement:
             r,
             GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_REAL_EXECUTION_ALLOWED_TRUE,
         )
+
+
+# ---------------------------------------------------------------------------
+# TestAYFIX3WordingCorrection — preview banner says DRY-RUN CHECKLIST, not
+# DESIGN CHECKLIST; stage_0 summary says AX direct artifact + 33 upstream
+# already consumed (not merely "33 artifacts ending at AW").
+# ---------------------------------------------------------------------------
+
+class TestAYFIX3WordingCorrection:
+    def test_preview_script_banner_says_dry_run_checklist(self):
+        """Scripts source must print DRY-RUN CHECKLIST as the AY identity banner."""
+        text = PREVIEW_PATH.read_text(encoding="utf-8")
+        assert "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN CHECKLIST" in text
+
+    def test_preview_script_banner_does_not_say_design_checklist(self):
+        """The DESIGN CHECKLIST banner belongs to AX, not AY."""
+        text = PREVIEW_PATH.read_text(encoding="utf-8")
+        assert "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DESIGN CHECKLIST" not in text
+
+    def test_preview_script_approval_banner_says_dry_run(self):
+        """The --allow-implementation-design approval banner must also say DRY-RUN."""
+        text = PREVIEW_PATH.read_text(encoding="utf-8")
+        assert "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN APPROVAL" in text
+
+    def test_preview_script_approval_banner_does_not_say_design_approval(self):
+        """DESIGN APPROVAL belongs to AX; AY approval banner must say DRY-RUN."""
+        text = PREVIEW_PATH.read_text(encoding="utf-8")
+        assert "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DESIGN APPROVAL" not in text
+
+    def test_stage0_summary_mentions_ax_direct_artifact(self):
+        """Stage-0 summary must reference AX as the direct artifact consumed."""
+        r = _run()
+        summary = r.stages[STAGE_0_ARTIFACT_PREFLIGHT]["summary"]
+        assert "AX direct artifact" in summary
+
+    def test_stage0_summary_mentions_33_upstream_already_consumed_by_ax(self):
+        """Stage-0 summary must say the 33 upstreams are already consumed by AX
+        (not that AY validates 33 upstream artifacts ending at AW directly).""";
+        r = _run()
+        summary = r.stages[STAGE_0_ARTIFACT_PREFLIGHT]["summary"]
+        assert "33 upstream artifacts AX already consumed" in summary
+
+    def test_stage0_summary_does_not_claim_aw_as_direct_acceptance_target(self):
+        """AY does not validate AW directly; its direct upstream is AX."""
+        r = _run()
+        summary = r.stages[STAGE_0_ARTIFACT_PREFLIGHT]["summary"]
+        assert "AW acceptance flags" not in summary
+
+    def test_src_docstring_mentions_34_upstream_artifacts(self):
+        """Src module docstring must describe 34 inputs (AX direct + 33 AX-consumed)."""
+        import src.demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run as mod
+        doc = mod.__doc__ or ""
+        assert "34 upstream artifacts" in doc
