@@ -1,8 +1,97 @@
 # Next Action
 
-> README shared status updated by TASK-014BA-FIX1 (2026-06-16) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ba-fix1-2026-06-16)
-> for the cross-agent status board. TASK-014BA-FIX1 fixes the BA preview
+> README shared status updated by TASK-014BA-FIX2 (2026-06-17) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ba-fix2-2026-06-17)
+> for the cross-agent status board. TASK-014BA-FIX2 finishes the BA bulk-rename
+> cleanup: BA-FIX1 wired AZ readiness-review as BA's direct upstream and the
+> preview now succeeds on the VPS, but the generated BA report's
+> `scope_summary` field still carried over the old AY-direct wording
+> ("TASK-014BA consumes TASK-014AY DISABLED IMPLEMENTATION SCAFFOLD MANUAL
+> AUTHORIZATION GATE DRY-RUN output at runtime plus the 34 upstream artifacts
+> AY proves/chains, including AX manual authorization gate design, ...") plus
+> an "Itdocuments" typo. FIX2 rewrites the `scope_summary` to BA-correct
+> semantics ("TASK-014BA consumes TASK-014AZ DISABLED IMPLEMENTATION SCAFFOLD
+> MANUAL AUTHORIZATION GATE READINESS REVIEW output at runtime plus
+> AZ-proven chained proof, including AY dry-run, AX manual authorization
+> gate design, AW final pre-execution review, AV readiness review, AU dry-run,
+> AT design, AS static skeleton dry-run, AR static skeleton design, and AQ
+> implementation design, and produces a DISABLED IMPLEMENTATION SCAFFOLD
+> MANUAL AUTHORIZATION GATE FINAL PRE-EXECUTION REVIEW for TASK-014BB."),
+> repairs the "Itdocuments" → "It documents" typo, repoints two existing
+> tests whose assertions hardcoded the bulk-renamed wording, and adds 28
+> new BA-FIX2 regression tests (positive AZ-direct wording proofs, AY-only-as-
+> chained partition proof, negative AY/AX/AW/AV-direct grep, Itdocuments
+> typo grep, on-disk JSON+Markdown report wording, markdown intro
+> line preservation, and AZ-direct field-exposure regression). Still no
+> sender, no real execution adapter, no endpoint call, no secret read,
+> no G20 lift, no position modification. main.py / src/risk.py /
+> BybitExecutor untouched.
+
+## TASK-014BA-FIX2 Status (2026-06-17)
+
+| item | status |
+|---|---|
+| root cause: BA `scope_summary` carried bulk-rename contamination from AZ — still said "TASK-014BA consumes TASK-014AY DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN output at runtime plus the 34 upstream artifacts AY proves/chains, including AX manual authorization gate design, ..." with no AZ-direct mention, plus an "Itdocuments" no-space typo | IDENTIFIED |
+| BA src: rewrite `scope_summary` to "TASK-014BA consumes TASK-014AZ DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE READINESS REVIEW output at runtime plus AZ-proven chained proof, including AY dry-run, AX manual authorization gate design, AW final pre-execution review, AV readiness review, AU dry-run, AT design, AS static skeleton dry-run, AR static skeleton design, and AQ implementation design, and produces a DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE FINAL PRE-EXECUTION REVIEW for TASK-014BB" | DONE |
+| BA src: repair "Itdocuments" → "It documents" typo inside the same `scope_summary` block | DONE |
+| BA tests: repoint `TestARFIX2StaticSkeletonScopeAlias.test_to_dict_exposes_static_skeleton_scope_alias` from old AY-direct wording to new AZ-direct wording | DONE |
+| BA tests: rename/rewrite `TestAZScopeSummarySaysAY.test_scope_summary_names_ay_as_direct` → `TestBAFIX2ScopeSummarySaysAZ.test_scope_summary_names_az_as_direct` | DONE |
+| BA tests: add `TestBAFIX2ScopeSummaryNamesAZAsDirectUpstream` (7 tests — runtime positive proofs + AY-only-as-chained partition trick) | DONE |
+| BA tests: add `TestBAFIX2ScopeSummaryNegativeProof` (4 tests — grep-style negatives for AY/AX/AW/AV-direct phrasings) | DONE |
+| BA tests: add `TestBAFIX2GeneratedReportScopeSummaryWording` (11 tests — on-disk JSON+Markdown via `_write_report` with `repo_tmp_path` fixture) | DONE |
+| BA tests: add `TestBAFIX2MarkdownIntroLineRemainsCorrect` (1 test — intro line FIX1 wording preserved) | DONE |
+| BA tests: add `TestBAFIX2AZDirectUpstreamFieldsStillExposed` (5 tests — FIX1 AZ-direct + nested simulated_approval field-exposure regression) | DONE |
+| py_compile BA src + scripts + tests | PASS |
+| pytest BA | **536/536 PASS** (508 baseline + 28 FIX2) |
+| pytest AZ regression | 481/481 PASS |
+| pytest AY regression | 389/389 PASS |
+| pytest AX regression | 299/299 PASS |
+| pytest AW regression | 292/292 PASS |
+| pytest AV regression | 259/259 PASS |
+| pytest AU regression | 235/235 PASS |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| pytest combined chain (all 11 suites) | **3183/3183 PASS** (3155 baseline + 28 FIX2) |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no secret read / no G20 lift / no position modification) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | PENDING — `TASK-014BA-FIX2: correct BA scope summary direct-upstream wording` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-17 TASK-014BA-FIX2)
+
+1. VPS git pull and re-validate BA preview report wording:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py -q
+       # expect 536/536 PASS
+
+   Then re-run the BA preview with the AZ readiness-review (and AY dry-run) upstream artifacts present and confirm the generated report's `scope_summary` field:
+
+       # contains: "TASK-014BA consumes TASK-014AZ DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE READINESS REVIEW output at runtime plus AZ-proven chained proof, including AY dry-run, AX manual authorization gate design, ..."
+       # does NOT contain: "TASK-014BA consumes TASK-014AY"
+       # does NOT contain: "TASK-014BA consumes TASK-014AX"
+       # does NOT contain: "TASK-014BA consumes TASK-014AW"
+       # does NOT contain: "TASK-014BA consumes TASK-014AV"
+       # does NOT contain: "Itdocuments"
+       # contains: "It documents"
+       # status / mode / failed_stage / safety invariants all unchanged from FIX1.
+
+2. Once step 1 passes, decide whether to authorise TASK-014BB
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate final pre-execution review
+   **manual authorization review** — next phase; still no real execution).
+
+---
+
+> Previous README banner: TASK-014BA-FIX1 (2026-06-16) — see archived block below.
+
+## TASK-014BA-FIX1 Banner (archived 2026-06-17)
+
+> TASK-014BA-FIX1 fixes the BA preview
 > regression observed on the VPS after TASK-014BA shipped: the BA preview
 > CLI rejected `--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-readiness-review`
 > because the bulk-rename from AZ left BA wired to AY-dry-run as direct

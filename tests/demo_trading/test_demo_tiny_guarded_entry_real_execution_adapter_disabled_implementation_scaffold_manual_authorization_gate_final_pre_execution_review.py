@@ -3353,16 +3353,17 @@ class TestARFIX2StaticSkeletonScopeAlias:
         # Alias content must equal the legacy implementation_design_scope.
         assert d["disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_scope"] \
             == d["implementation_design_scope"]
-        # Scope summary text says AZ consumes AY disabled implementation
-        # scaffold manual authorization gate dry-run output (plus 34 chained
-        # artifacts) and produces a disabled implementation scaffold manual
-        # authorization gate readiness review for BA.
+        # Scope summary text (BA-FIX2): BA directly consumes TASK-014AZ
+        # disabled implementation scaffold manual authorization gate
+        # readiness review output; AY dry-run and AX/AW/AV/AU/AT/AS/AR/AQ
+        # appear only as AZ-proven chained proof, never as BA's direct
+        # upstream.
         summary = d["disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_scope"]["scope_summary"]
-        assert "TASK-014AY" in summary
-        assert "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN" in summary  # AY direct upstream
-        assert "34 upstream artifacts" in summary
+        assert "TASK-014BA consumes TASK-014AZ" in summary
+        assert "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE READINESS REVIEW" in summary
+        assert "AZ-proven chained proof" in summary
         assert "TASK-014BA" in summary
-        assert "TASK-014BA" in summary
+        assert "TASK-014BB" in summary
 
 
 class TestARFIX2FinalStaticSkeletonVerdictAlias:
@@ -5782,17 +5783,23 @@ class TestAZAYUpstreamProofWordingInReport:
         assert "TASK-014BA" in first_title
 
 
-class TestAZScopeSummarySaysAY:
-    def test_scope_summary_names_ay_as_direct(self):
+class TestBAFIX2ScopeSummarySaysAZ:
+    """BA-FIX2: scope_summary must name TASK-014AZ as BA's direct upstream
+    (not TASK-014AY). The bulk-rename from AZ left this string asserting
+    AY-direct; FIX1 fixed the runtime wiring but missed the scope_summary
+    text, which is what surfaces in BA's generated JSON+Markdown report.
+    """
+
+    def test_scope_summary_names_az_as_direct(self):
         r = _run()
         d = r.to_dict()
         s = d["disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_scope"]["scope_summary"]
-        assert "TASK-014AY" in s
+        assert "TASK-014BA consumes TASK-014AZ" in s
+        assert "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE READINESS REVIEW" in s
         assert "TASK-014BA" in s
         assert "TASK-014BB" in s
-        assert "34 upstream artifacts" in s
-        assert "DRY-RUN" in s
         assert "FINAL PRE-EXECUTION REVIEW" in s
+        assert "AZ-proven chained proof" in s
 
 
 class TestAZSafetyInvariantsAfterRename:
@@ -6945,3 +6952,200 @@ class TestBAFIX1FixtureValidatesHappyPath:
         )
         assert r.status == STATUS_IMPLEMENTATION_DESIGN_READY
         _assert_safety_invariants_hold(r)
+
+
+# ===========================================================================
+# TASK-014BA-FIX2 — BA scope_summary direct-upstream wording proof
+#
+# FIX1 wired AZ readiness review as BA's runtime direct upstream but
+# missed the scope_summary string baked into the BA report, which still
+# read "TASK-014BA consumes TASK-014AY DISABLED IMPLEMENTATION SCAFFOLD
+# MANUAL AUTHORIZATION GATE DRY-RUN output at runtime plus the 34
+# upstream artifacts AY proves/chains" — a leftover from the bulk-rename
+# off the AZ template. FIX2 corrects the wording (AY -> AZ direct;
+# AY/AX/AW/AV/AU/AT/AS/AR/AQ become chained proof through AZ) and locks
+# the correct wording with both runtime-result and on-disk
+# JSON+Markdown report assertions.
+# ===========================================================================
+
+class TestBAFIX2ScopeSummaryNamesAZAsDirectUpstream:
+    """Positive proof: scope_summary names AZ as BA's direct upstream."""
+
+    def _summary(self):
+        r = _run()
+        return r.to_dict()["disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_scope"]["scope_summary"]
+
+    def test_runtime_scope_summary_contains_ba_consumes_az(self):
+        assert "TASK-014BA consumes TASK-014AZ" in self._summary()
+
+    def test_runtime_scope_summary_contains_readiness_review_phrase(self):
+        s = self._summary()
+        assert "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE READINESS REVIEW" in s
+        assert "output at runtime" in s
+
+    def test_runtime_scope_summary_names_az_proven_chained_proof(self):
+        assert "AZ-proven chained proof" in self._summary()
+
+    def test_runtime_scope_summary_mentions_ay_only_as_chained(self):
+        """AY must appear ONLY in the chained-proof list (after 'AZ-proven
+        chained proof'), never as BA's direct upstream."""
+        s = self._summary()
+        anchor = "AZ-proven chained proof"
+        assert anchor in s
+        head, _, tail = s.partition(anchor)
+        # AY must not appear in the head (the direct-upstream clause).
+        assert "AY" not in head
+        # AY (dry-run) must appear in the chained-proof tail.
+        assert "AY dry-run" in tail
+
+    def test_runtime_scope_summary_names_bb_as_forward_ref(self):
+        s = self._summary()
+        assert "for TASK-014BB" in s
+
+    def test_runtime_scope_summary_produces_final_pre_execution_review(self):
+        s = self._summary()
+        assert "FINAL PRE-EXECUTION REVIEW for TASK-014BB" in s
+
+    def test_runtime_scope_summary_fixes_it_documents_typo(self):
+        """Old text was 'Itdocuments' (missing space across line wrap); fixed."""
+        s = self._summary()
+        assert "It documents" in s
+        assert "Itdocuments" not in s
+
+
+class TestBAFIX2ScopeSummaryNegativeProof:
+    """Grep-style negative proof: BA must never claim AY/AX/AW/AV/... as direct upstream."""
+
+    def _summary(self):
+        r = _run()
+        return r.to_dict()["disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_scope"]["scope_summary"]
+
+    def test_does_not_say_ba_consumes_ay(self):
+        assert "TASK-014BA consumes TASK-014AY" not in self._summary()
+
+    def test_does_not_say_ba_consumes_ax(self):
+        assert "TASK-014BA consumes TASK-014AX" not in self._summary()
+
+    def test_does_not_say_ba_consumes_aw(self):
+        assert "TASK-014BA consumes TASK-014AW" not in self._summary()
+
+    def test_does_not_say_ba_consumes_av(self):
+        assert "TASK-014BA consumes TASK-014AV" not in self._summary()
+
+
+class TestBAFIX2GeneratedReportScopeSummaryWording:
+    """The on-disk JSON+Markdown report must surface the corrected wording."""
+
+    def _write_and_read(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review"
+        json_text = (out_dir / f"latest_{base}.json").read_text(encoding="utf-8")
+        md_text = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        return json_text, md_text
+
+    def test_generated_json_scope_summary_says_ba_consumes_az(self, repo_tmp_path):
+        json_text, _ = self._write_and_read(repo_tmp_path)
+        assert "TASK-014BA consumes TASK-014AZ" in json_text
+
+    def test_generated_json_scope_summary_does_not_say_ba_consumes_ay(self, repo_tmp_path):
+        json_text, _ = self._write_and_read(repo_tmp_path)
+        assert "TASK-014BA consumes TASK-014AY" not in json_text
+
+    def test_generated_json_scope_summary_does_not_say_ba_consumes_ax(self, repo_tmp_path):
+        json_text, _ = self._write_and_read(repo_tmp_path)
+        assert "TASK-014BA consumes TASK-014AX" not in json_text
+
+    def test_generated_json_scope_summary_does_not_say_ba_consumes_aw(self, repo_tmp_path):
+        json_text, _ = self._write_and_read(repo_tmp_path)
+        assert "TASK-014BA consumes TASK-014AW" not in json_text
+
+    def test_generated_json_scope_summary_does_not_say_ba_consumes_av(self, repo_tmp_path):
+        json_text, _ = self._write_and_read(repo_tmp_path)
+        assert "TASK-014BA consumes TASK-014AV" not in json_text
+
+    def test_generated_markdown_scope_summary_says_ba_consumes_az(self, repo_tmp_path):
+        _, md_text = self._write_and_read(repo_tmp_path)
+        assert "TASK-014BA consumes TASK-014AZ" in md_text
+
+    def test_generated_markdown_scope_summary_does_not_say_ba_consumes_ay(self, repo_tmp_path):
+        _, md_text = self._write_and_read(repo_tmp_path)
+        assert "TASK-014BA consumes TASK-014AY" not in md_text
+
+    def test_generated_markdown_scope_summary_does_not_say_ba_consumes_ax(self, repo_tmp_path):
+        _, md_text = self._write_and_read(repo_tmp_path)
+        assert "TASK-014BA consumes TASK-014AX" not in md_text
+
+    def test_generated_report_says_az_proven_chained_proof(self, repo_tmp_path):
+        json_text, md_text = self._write_and_read(repo_tmp_path)
+        assert "AZ-proven chained proof" in json_text
+        assert "AZ-proven chained proof" in md_text
+
+    def test_generated_report_says_it_documents_not_itdocuments(self, repo_tmp_path):
+        json_text, md_text = self._write_and_read(repo_tmp_path)
+        assert "It documents" in json_text
+        assert "Itdocuments" not in json_text
+        assert "It documents" in md_text
+        assert "Itdocuments" not in md_text
+
+    def test_generated_report_mentions_ay_dry_run_chained(self, repo_tmp_path):
+        """AY appears in the report only as 'AY dry-run' (chained-proof
+        list item), never as a direct upstream claim."""
+        json_text, md_text = self._write_and_read(repo_tmp_path)
+        assert "AY dry-run" in json_text
+        assert "AY dry-run" in md_text
+
+
+class TestBAFIX2MarkdownIntroLineRemainsCorrect:
+    """The markdown intro paragraph (separate from scope_summary) was
+    already correct after FIX1 and must remain so after FIX2."""
+
+    def test_intro_says_ba_consumes_az_readiness_review(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        intro = next(
+            (ln for ln in md.splitlines() if ln.startswith("_TASK-014BA consumes")),
+            "",
+        )
+        assert "TASK-014AZ disabled implementation scaffold manual authorization gate readiness review output" in intro
+        assert "for TASK-014BB" in intro
+
+
+class TestBAFIX2AZDirectUpstreamFieldsStillExposed:
+    """Sanity proof that BA-FIX2 did not regress BA-FIX1's AZ direct
+    upstream proof fields."""
+
+    def test_contract_version_field_exposed(self):
+        d = _run().to_dict()
+        assert "consumed_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_contract_version" in d
+        assert d["consumed_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_contract_version"] \
+            == "disabled_implementation_scaffold_manual_authorization_gate_readiness_review_v1"
+
+    def test_az_direct_status_field_exposed(self):
+        d = _run().to_dict()
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_status" in d
+
+    def test_az_direct_response_status_field_exposed(self):
+        d = _run().to_dict()
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_response_status" in d
+
+    def test_az_direct_next_required_task_field_exposed(self):
+        d = _run().to_dict()
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_next_required_task" in d
+
+    def test_chained_through_az_ay_simulated_approval_field_exposed(self):
+        """BA's chained-through-AZ proof of AY simulated approval — nested
+        two-deep proof envelope still present after FIX2."""
+        d = _run().to_dict()
+        nested = "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used"
+        assert nested in d
