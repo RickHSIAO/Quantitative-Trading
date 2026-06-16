@@ -1,15 +1,56 @@
 # Next Action
 
-> README shared status updated by TASK-014AY-FIX3 (2026-06-15) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ay-fix3-2026-06-15)
-> for the cross-agent status board. TASK-014AY-FIX3 fixes residual wording
-> left from the AX→AY rename: the preview stdout banner now says
-> `DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN
-> CHECKLIST` (was DESIGN CHECKLIST); the src module docstring now says
-> "34 upstream artifacts — AX direct + 33 AX-already-consumed"; stage_0
-> summary now says "AX direct artifact + 33 upstream artifacts AX already
-> consumed (AW chain)". Eight FIX3 wording-guard tests added. All FIX2
-> fail-closed behavior preserved unchanged.
+> README shared status updated by TASK-014AZ (2026-06-16) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014az-2026-06-16)
+> for the cross-agent status board. TASK-014AZ adds the disabled
+> implementation scaffold **manual authorization gate readiness review**
+> module/preview/test, consuming TASK-014AY dry-run output as the AY
+> direct upstream plus the 34 upstream artifacts AY already chained. All
+> AY FIX1/FIX2/FIX3 hard-fail / simulated-approval / wording guards are
+> statically re-asserted from AZ. No real execution, no sender, no
+> endpoint call, no secret read, no G20 lift, no position modification.
+
+## TASK-014AZ Status (2026-06-16)
+
+| item | status |
+|---|---|
+| src/scripts/test 三檔新增（複製 AY identity → AZ） | DONE |
+| identity wording 為 `READINESS-REVIEW-ONLY`（非 DRY-RUN-ONLY、非 DESIGN-ONLY） | DONE |
+| `status=TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY` | DONE |
+| `conclusion=DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY_NOT_EXECUTABLE` | DONE |
+| `authorization_result=DOCUMENTED_ONLY_NOT_AUTHORIZED` | DONE |
+| `response_status=DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_NOT_SENT` | DONE |
+| `next_required_task=TASK-014BA_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review` | DONE |
+| CLI 新增 `--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-dry-run` 旗標 + loader | DONE |
+| AY direct artifact 為直接 upstream；AX/AW/AV/AU/AT/AS/AR/AQ 透過 AY 鏈式證明（非直接） | DONE |
+| 安全不變式（no real execution / no sender / no endpoint / no secret read / no G20 lift / no position modification） | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| .gitignore 新增 `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review/` | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AZ | **425/425 PASS** |
+| pytest AY regression | 389/389 PASS |
+| real_execution_adapter chain regression（AY/AX/AW/AV/AU/AT/AS/AR/implementation_design） | PASS |
+| local commit | PENDING（local only — NOT pushed） |
+
+## Next Rick Action (set by 2026-06-16 TASK-014AZ)
+
+1. VPS git pull and validate:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py -q
+       # expect 425/425 PASS
+
+2. Once step 1 passes, decide whether to authorise TASK-014BA
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate final pre-execution review —
+   next phase in the sequential safety chain; still no real execution).
+
+---
+
+> Previous README banner: TASK-014AY-FIX3 (2026-06-15) — see archived block below.
 
 ## TASK-014AY-FIX3 Status (2026-06-15)
 
