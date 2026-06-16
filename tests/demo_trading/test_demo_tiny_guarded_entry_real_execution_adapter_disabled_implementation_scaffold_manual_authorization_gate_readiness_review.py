@@ -1102,7 +1102,7 @@ def _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_desi
             "real_execution_allowed": False,
             "send_allowed": False,
         },
-        "next_required_task":           "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review",
+        "next_required_task":           "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run",
     }
 
 
@@ -4982,7 +4982,7 @@ class TestAYAXFIX1AXUpstreamPropagation:
     def test_next_required_task_propagated_to_result(self):
         r = _run()
         assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_required_task \
-            == "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review"
+            == "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
 
     def test_safety_booleans_propagated_to_result(self):
         r = _run()
@@ -6338,4 +6338,186 @@ class TestAZFIX1NoExecutionUnderApprovedAYUpstream:
         r = _run(allow_real_entry_execution=True)
         assert r.status == STATUS_REAL_ENTRY_NOT_IMPL
         _assert_safety_invariants_hold(r)
+
+
+# ===========================================================================
+# TASK-014AZ-FIX2: AX-design next_required_task expectation must be the
+# AX-FIX2 forward-ref literal (TASK-014AY_..._dry_run), not the AY
+# self-identity literal (..._readiness_review) inherited from the bulk
+# rename of AY -> AZ.  Real AX artifacts (after AX-FIX2) carry the
+# _dry_run literal, so the FIX1 src wrongly fired NEXT_TASK_MISMATCH
+# on the real preview happy path.  These regressions lock the correct
+# expected literal in src + fixture and add source-level guards so a
+# future bulk rename cannot silently re-introduce the bug.
+# ===========================================================================
+
+
+_AX_EXPECTED_NEXT_TASK_AFTER_FIX2 = (
+    "TASK-014AY_guarded_entry_real_execution_adapter_"
+    "disabled_implementation_scaffold_manual_authorization_gate_dry_run"
+)
+
+_AX_WRONG_NEXT_TASK_FROM_BULK_RENAME = (
+    "TASK-014AY_guarded_entry_real_execution_adapter_"
+    "disabled_implementation_scaffold_manual_authorization_gate_readiness_review"
+)
+
+
+class TestAZFIX2AXDesignNextTaskExpectation:
+    """Happy path with the AX-FIX2-correct next_required_task must be READY."""
+
+    def test_happy_path_does_not_fire_axmag_next_task_mismatch(self):
+        r = _run()
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH \
+            not in r.blocked_gates
+
+    def test_happy_path_status_is_readiness_review_ready(self):
+        r = _run()
+        assert r.status == \
+            "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY"
+
+    def test_happy_path_failed_stage_is_empty(self):
+        r = _run()
+        assert r.failed_stage == ""
+
+    def test_fixture_carries_ax_fix2_dry_run_literal(self):
+        f = _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_design()
+        assert f["next_required_task"] == _AX_EXPECTED_NEXT_TASK_AFTER_FIX2
+
+    def test_bad_ax_next_task_blocks_with_mismatch_and_fail_closed(self):
+        bad = _bad_axmag(next_required_task="TASK-WRONG_axmag_next_task")
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH \
+            in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+    def test_ax_next_task_with_bulk_rename_typo_blocks_with_mismatch(self):
+        """The exact literal that FIX1 wrongly expected must now FAIL_CLOSED
+        when seen as the AX next_required_task (i.e., the typo is no longer
+        the accepted form)."""
+        bad = _bad_axmag(next_required_task=_AX_WRONG_NEXT_TASK_FROM_BULK_RENAME)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_design=bad)
+        assert GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH \
+            in r.blocked_gates
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+
+class TestAZFIX2ReportHappyPath:
+    """Generated Markdown/JSON happy-path report must reflect READY status,
+    must not contain the NEXT_TASK_MISMATCH gate token, and must still
+    expose every AY direct-upstream proof field."""
+
+    def _write_and_load(self):
+        import tempfile, json as _json
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            out.mkdir()
+            from scripts import preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review as _S
+            r = _run()
+            _S._write_report(r, out)
+            md = (out / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.md").read_text(encoding="utf-8")
+            payload = _json.loads(
+                (out / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.json").read_text(encoding="utf-8")
+            )
+            return md, payload
+
+    def test_report_status_is_ready(self):
+        _, payload = self._write_and_load()
+        assert payload["status"] == \
+            "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY"
+
+    def test_report_does_not_contain_axmag_next_task_mismatch_token(self):
+        md, payload = self._write_and_load()
+        token = "entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_task_mismatch"
+        assert token not in payload.get("blocked_gates", [])
+        # Markdown row label for the gate constant should not appear as a blocked-gate entry either
+        assert "FAIL_CLOSED" not in payload["status"]
+        assert "fail_closed" not in payload.get("mode", "")
+
+    def test_report_exposes_ay_dry_run_upstream_proof_fields(self):
+        md, payload = self._write_and_load()
+        # JSON must carry every direct-AY-upstream proof field (including
+        # the contract-version pin).
+        for f in (
+            "consumed_disabled_implementation_scaffold_manual_authorization_gate_dry_run_contract_version",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_required_task",
+        ):
+            assert f in payload, f"missing payload field: {f}"
+        # Markdown verdict-table must surface the AY upstream rows
+        # (contract-version is JSON-only by design).
+        for f in (
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_required_task",
+        ):
+            assert f in md, f"missing markdown row: {f}"
+
+    def test_report_exposes_ay_dry_run_simulated_approval_fields(self):
+        md, payload = self._write_and_load()
+        for f in (
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only",
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution",
+        ):
+            assert f in payload, f"missing payload field: {f}"
+            assert f in md, f"missing markdown row: {f}"
+
+
+class TestAZFIX2SourceLevelChainLiterals:
+    """Source-level guards: prevent a future bulk rename from silently
+    rewriting the cross-task next_required_task expectations."""
+
+    def _src(self, name: str) -> str:
+        path = Path(__file__).parent.parent.parent / "src" / name
+        return path.read_text(encoding="utf-8")
+
+    def test_ax_src_forward_ref_is_ay_dry_run(self):
+        """AX design's own NEXT_REQUIRED_TASK literal must be the AY dry-run task."""
+        s = self._src(
+            "demo_tiny_guarded_entry_real_execution_adapter_"
+            "disabled_implementation_scaffold_manual_authorization_gate_design.py"
+        )
+        assert _AX_EXPECTED_NEXT_TASK_AFTER_FIX2 in s
+        # AX must NOT forward-ref the readiness-review identity
+        assert _AX_WRONG_NEXT_TASK_FROM_BULK_RENAME not in s
+
+    def test_ay_src_forward_ref_is_az_readiness_review(self):
+        """AY dry-run's own NEXT_REQUIRED_TASK literal must be the AZ readiness-review task."""
+        s = self._src(
+            "demo_tiny_guarded_entry_real_execution_adapter_"
+            "disabled_implementation_scaffold_manual_authorization_gate_dry_run.py"
+        )
+        ay_expected = (
+            "TASK-014AZ_guarded_entry_real_execution_adapter_"
+            "disabled_implementation_scaffold_manual_authorization_gate_readiness_review"
+        )
+        assert ay_expected in s
+
+    def test_az_src_forward_ref_is_ba_final_pre_execution_review(self):
+        """AZ readiness-review's own NEXT_REQUIRED_TASK literal must be the BA final-pre-exec-review task."""
+        s = self._src(
+            "demo_tiny_guarded_entry_real_execution_adapter_"
+            "disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py"
+        )
+        az_expected = (
+            "TASK-014BA_guarded_entry_real_execution_adapter_"
+            "disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review"
+        )
+        assert az_expected in s
+
+    def test_az_src_expects_ax_next_task_as_ay_dry_run_literal(self):
+        """AZ's NEXT_TASK_MISMATCH gate must compare AX's next_required_task
+        against the AY dry-run literal (AX-FIX2 forward-ref)."""
+        s = self._src(
+            "demo_tiny_guarded_entry_real_execution_adapter_"
+            "disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py"
+        )
+        assert _AX_EXPECTED_NEXT_TASK_AFTER_FIX2 in s
+        # The wrong bulk-rename literal must NOT be the AX expectation in AZ src
+        assert _AX_WRONG_NEXT_TASK_FROM_BULK_RENAME not in s
 

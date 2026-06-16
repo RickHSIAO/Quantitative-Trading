@@ -21,6 +21,90 @@ Notes:
 
 ---
 
+### 2026-06-16（TASK-014AZ-FIX2 — Fix chained AX design next-task expectation）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit authorization in chat —
+"Proceed with TASK-014AZ-FIX2 now. Inspect AZ source; find the logic
+for GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH;
+fix the expected chained AX design next_required_task to
+TASK-014AY_..._dry_run; fix the fixture; add regression tests
+including source-level chain literal guards. No push, no endpoint
+calls, no secrets, no sender, no executable adapter, no G20 lift,
+no main.py / src/risk.py / BybitExecutor modification."
+
+Task:
+- Fix bulk-rename contamination in AZ src and tests so the AZ preview
+  happy path on VPS no longer FAIL_CLOSED on
+  `entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_task_mismatch`.
+- AZ's `GATE_ENTRY_..._DESIGN_NEXT_TASK_MISMATCH` compared AX's
+  `next_required_task` against the AY self-identity literal
+  (`TASK-014AY_..._readiness_review`) instead of AX-FIX2's actual
+  forward-ref (`TASK-014AY_..._dry_run`).  Both src and the test
+  fixture carried the wrong literal, so tests passed while the real
+  preview failed.
+
+Status before: VPS preview happy path FAIL_CLOSED on
+`stage_0_artifact_preflight` with
+`entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_task_mismatch`
+in blocked_gates.  AZ pytest 467/467 PASS (FIX1).
+
+Status after: AZ pytest 481/481 PASS (467 baseline + 14 FIX2);
+local simulated preview happy path returns
+`TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY`
+with `failed_stage=''` and zero hard-fail-gate violations.
+
+Files changed:
+- src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py
+  (1 line — expected-literal comparison at the NEXT_TASK_MISMATCH gate)
+- tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py
+  (fixture `_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_design()` next_required_task corrected;
+   `TestAYAXFIX1AXUpstreamPropagation.test_next_required_task_propagated_to_result`
+   expected literal corrected; 14 new tests across 3 new classes:
+   `TestAZFIX2AXDesignNextTaskExpectation` (6),
+   `TestAZFIX2ReportHappyPath` (4),
+   `TestAZFIX2SourceLevelChainLiterals` (4))
+- README.md (Demo Trading Guarded Lifecycle Status section header bumped to TASK-014AZ-FIX2; latest_completed_task / latest_commit / current_phase / latest_validation rows updated)
+- docs/research/commands/NEXT_ACTION.md (TASK-014AZ-FIX2 status block + Next Rick Action prepended; TASK-014AZ-FIX1 block archived below)
+- docs/research/commands/COMMAND_LOG.md (this entry prepended)
+
+Validation:
+- `python -m py_compile src/..._readiness_review.py scripts/preview_..._readiness_review.py tests/demo_trading/test_..._readiness_review.py` → PASS
+- `python -m pytest tests/demo_trading/test_..._manual_authorization_gate_readiness_review.py -q` → **481/481 PASS**
+- AY  389/389 PASS
+- AX  299/299 PASS
+- AW  292/292 PASS
+- AV  259/259 PASS
+- AU  235/235 PASS
+- AT  199/199 PASS
+- AS  180/180 PASS
+- AR  175/175 PASS
+- AQ  138/138 PASS
+- chain (excluding AZ): **2166/2166 PASS**
+- chain (including AZ):  **2647/2647 PASS**
+- local simulated preview happy path (run_readiness_review with valid AX + AY fixtures):
+    * status = TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY
+    * mode   = disabled_implementation_scaffold_manual_authorization_gate_readiness_review_checklist
+    * failed_stage = '' (none)
+    * next_required_task = TASK-014BA_..._manual_authorization_gate_final_pre_execution_review
+    * `entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_task_mismatch` NOT in hard-fail set; hard_fail_violations = []
+    * real_execution_allowed = False; send_allowed = False
+
+Outputs: none (preview not re-run with --write-report; pytest only)
+
+Notes:
+- Safety invariants confirmed: no real execution, no sender, no
+  executable adapter, no endpoint call, no secret read, no G20 lift,
+  no position modification.
+- main.py / src/risk.py / BybitExecutor untouched.
+- Source-level guard tests now lock the AX→AY→AZ→BA forward-ref
+  chain literals into the test suite, so any future bulk rename
+  (e.g. AZ→BA stage 1) that touches an across-task literal will fail
+  pytest before reaching VPS.
+- Commit local only (NOT pushed).
+
+---
+
 ### 2026-06-16（TASK-014AZ-FIX1 — Complete AY dry-run upstream readiness review gates）
 
 Agent: Claude (Opus 4.7)

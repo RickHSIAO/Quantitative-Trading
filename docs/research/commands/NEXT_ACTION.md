@@ -1,14 +1,76 @@
 # Next Action
 
-> README shared status updated by TASK-014AZ-FIX1 (2026-06-16) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014az-2026-06-16)
-> for the cross-agent status board. TASK-014AZ-FIX1 completes the AY
-> direct-upstream wiring left structurally incomplete by TASK-014AZ: AY's
-> dry-run output is now actually consumed at runtime, exposed via 30 new
-> dataclass fields, gated by 29 new hard-fail gates (15 AY-upstream + 14
-> AY-simulated-approval), wired through the CLI loader, and rendered in
-> the Markdown/JSON report. No real execution, no sender, no endpoint
-> call, no secret read, no G20 lift, no position modification.
+> README shared status updated by TASK-014AZ-FIX2 (2026-06-16) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014az-fix2-2026-06-16)
+> for the cross-agent status board. TASK-014AZ-FIX2 fixes a bulk-rename
+> contamination left by TASK-014AZ-FIX1: AZ's
+> `GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH`
+> expected AX's `next_required_task` to be `TASK-014AY_..._readiness_review`
+> (the AY self-identity literal carried over by the AY→AZ rename), but
+> AX-FIX2 forward-refs `TASK-014AY_..._dry_run`. The VPS preview happy
+> path therefore FAIL_CLOSED on the wrong literal. FIX2 corrects the src
+> expectation, the AX fixture, and one stale propagation assertion, then
+> adds 14 regression tests including source-level chain-literal guards
+> that prevent any future bulk rename from silently re-introducing the
+> bug. No real execution, no sender, no endpoint call, no secret read,
+> no G20 lift, no position modification.
+
+## TASK-014AZ-FIX2 Status (2026-06-16)
+
+| item | status |
+|---|---|
+| root cause: AZ src `GATE_ENTRY_..._DESIGN_NEXT_TASK_MISMATCH` compared AX's `next_required_task` against `TASK-014AY_..._readiness_review` (the AY self-identity, propagated by the bulk AY→AZ rename) instead of AX-FIX2's actual forward-ref `TASK-014AY_..._dry_run` | IDENTIFIED |
+| src fix: AZ src line 3143 expected literal corrected to `TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run` | DONE |
+| fixture fix: `_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_design()` `next_required_task` field corrected to AX-FIX2 forward-ref | DONE |
+| assertion fix: `TestAYAXFIX1AXUpstreamPropagation.test_next_required_task_propagated_to_result` expected literal updated to dry-run forward-ref | DONE |
+| new tests: `TestAZFIX2AXDesignNextTaskExpectation` (6) — happy path no mismatch + status READY + failed_stage empty + fixture literal check + WRONG literal FAIL_CLOSED + bulk-rename-typo literal FAIL_CLOSED | DONE |
+| new tests: `TestAZFIX2ReportHappyPath` (4) — report status READY + no mismatch token in blocked_gates + JSON+Markdown exposes AY dry-run upstream proof + AY simulated-approval fields | DONE |
+| new tests: `TestAZFIX2SourceLevelChainLiterals` (4) — AX src forward-ref is dry_run / AY src forward-ref is readiness_review / AZ src forward-ref is BA final_pre_execution_review / AZ src expects AX next-task as dry_run literal (and does NOT contain readiness_review) | DONE |
+| local simulated preview happy path | status = `TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY`, mode = `disabled_implementation_scaffold_manual_authorization_gate_readiness_review_checklist`, failed_stage = `''`, hard_fail_violations = `[]` |
+| py_compile src + scripts + test | PASS |
+| pytest AZ | **481/481 PASS** (467 baseline + 14 FIX2) |
+| pytest AY regression | 389/389 PASS |
+| pytest AX regression | 299/299 PASS |
+| pytest AW regression | 292/292 PASS |
+| pytest AV regression | 259/259 PASS |
+| pytest AU regression | 235/235 PASS |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| combined chain (excluding AZ) | **2166/2166 PASS** |
+| combined chain (including AZ) | **2647/2647 PASS** |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no secret read / no G20 lift / no position modification) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | PENDING (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-16 TASK-014AZ-FIX2)
+
+1. VPS git pull and validate:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py -q
+       # expect 481/481 PASS
+
+   Then re-run the AZ preview with the same full flag set used previously
+   and confirm:
+       # status = TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY
+       # mode = disabled_implementation_scaffold_manual_authorization_gate_readiness_review_checklist
+       # failed_stage = (none)
+       # blocked_gates does NOT include entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_task_mismatch
+       # no socket opened, no endpoint called, no secret loaded, G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise TASK-014BA
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate final pre-execution review —
+   next phase in the sequential safety chain; still no real execution).
+
+---
+
+> Previous README banner: TASK-014AZ-FIX1 (2026-06-16) — see archived block below.
 
 ## TASK-014AZ-FIX1 Status (2026-06-16)
 

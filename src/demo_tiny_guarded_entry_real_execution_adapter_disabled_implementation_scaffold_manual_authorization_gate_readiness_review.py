@@ -3140,7 +3140,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
         if (
             present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_design"]
             and entry_axmag_next_required_task
-            and entry_axmag_next_required_task != "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review"
+            and entry_axmag_next_required_task != "TASK-014AY_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
         ):
             blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEXT_TASK_MISMATCH)
 
