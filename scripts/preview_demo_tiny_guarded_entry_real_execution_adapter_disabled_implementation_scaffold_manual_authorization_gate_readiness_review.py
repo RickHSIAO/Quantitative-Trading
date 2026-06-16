@@ -857,6 +857,64 @@ def _write_report(
         f"| simulated_approval_has_protected_position_untouched_proof | {r.simulated_approval_has_protected_position_untouched_proof} |",
         f"| simulated_approval_has_g20_still_active_proof | {r.simulated_approval_has_g20_still_active_proof} |",
         f"| simulated_approval_auto_triggers_sender | {r.simulated_approval_auto_triggers_sender} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_mode | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_mode} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_authorization_result | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_authorization_result} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_real_execution_allowed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_real_execution_allowed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_send_allowed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_send_allowed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_implementation_included | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_implementation_included} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_execution_included | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_execution_included} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_order_endpoint_called | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_order_endpoint_called} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_stop_endpoint_called | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_stop_endpoint_called} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_position_modified | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_position_modified} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_secrets_loaded | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_secrets_loaded} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_g20_lifted | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_g20_lifted} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_required_task | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_required_task} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender} |",
         f"| next_required_task | {r.next_required_task} |",
         "",
         "## Disabled Implementation Scaffold Manual Authorization Gate Readiness Review Scope",
@@ -1074,6 +1132,7 @@ def run_execute(
     entry_disabled_implementation_scaffold_dry_run_dir: Path | None = None,
     entry_disabled_implementation_scaffold_final_pre_execution_review_dir: Path | None = None,
     entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir: Path | None = None,
+    entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir: Path | None = None,
     output_dir:                        Path | None = None,
     _now:                              datetime | None = None,
 ) -> int:
@@ -1157,6 +1216,10 @@ def run_execute(
         entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir
         or _DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_DIR
     )
+    _entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir = (
+        entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir
+        or _DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_DIR
+    )
     _out_dir              = output_dir                  or _DEFAULT_OUTPUT_DIR
 
     print(_SEP)
@@ -1234,7 +1297,7 @@ def run_execute(
     )
     entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run = (
         load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run(
-            _DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_DIR
+            _entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir
         )
     )
 
@@ -1398,6 +1461,13 @@ def run_execute(
                 / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.json"
             )
         )
+    if entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run is None:
+        missing.append(
+            str(
+                _entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir
+                / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.json"
+            )
+        )
 
     if missing:
         print("\n[FAIL CLOSED] Missing upstream artifact(s):")
@@ -1446,6 +1516,7 @@ def run_execute(
     print(f"  entry_disabled_implementation_scaffold_dry_run_src: {_entry_disabled_implementation_scaffold_dry_run_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.json'}")
     print(f"  entry_disabled_implementation_scaffold_final_pre_execution_review_src: {_entry_disabled_implementation_scaffold_final_pre_execution_review_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.json'}")
     print(f"  entry_disabled_implementation_scaffold_manual_authorization_gate_design_src: {_entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.json'}")
+    print(f"  entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_src: {_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.json'}")
 
     gate = DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFinalPreExecutionReview()
     result = gate.run_readiness_review(
@@ -1482,6 +1553,7 @@ def run_execute(
         entry_disabled_implementation_scaffold_dry_run=entry_disabled_implementation_scaffold_dry_run,
         entry_disabled_implementation_scaffold_final_pre_execution_review=entry_disabled_implementation_scaffold_final_pre_execution_review,
         entry_disabled_implementation_scaffold_manual_authorization_gate_design=entry_disabled_implementation_scaffold_manual_authorization_gate_design,
+        entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run,
         symbol=symbol,
         expected_commit_hash=expected_commit_hash,
         allow_implementation_design=allow_implementation_design,

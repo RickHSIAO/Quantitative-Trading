@@ -21,6 +21,86 @@ Notes:
 
 ---
 
+### 2026-06-16（TASK-014AZ-FIX1 — Complete AY dry-run upstream readiness review gates）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit authorization in chat —
+"TASK-014AZ-FIX1: AZ src 必須實際把 AY dry-run wire 為 direct upstream，
+加入 16 個 upstream + 14 個 simulated_approval dataclass 欄位、29 個
+hard-fail gates、parser/to_dict/CLI/test/docs 全部補齊。No push, no
+endpoint, no secrets, no sender, no executable adapter, no G20 lift。"
+
+Task: TASK-014AZ-FIX1 — Complete the structural mirror of TASK-014AY's
+FIX1 pattern for AZ. The previous TASK-014AZ commit (0c6f5ae) created
+the AZ module via bulk rename from AY but did not actually wire the AY
+dry-run artifact into AZ's result model, parser, or hard-fail gates.
+This FIX1 adds: 15 `GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_*`
+hard-fail gates (MISSING / STATUS_UNACCEPTABLE / MODE_UNACCEPTABLE /
+REAL_EXECUTION_ALLOWED_TRUE / SEND_ALLOWED_TRUE /
+ADAPTER_IMPLEMENTATION_INCLUDED_TRUE / ADAPTER_EXECUTION_INCLUDED_TRUE /
+ORDER_ENDPOINT_CALLED_TRUE / STOP_ENDPOINT_CALLED_TRUE /
+NO_POSITION_MODIFIED_FALSE / NO_SECRETS_LOADED_FALSE / G20_LIFTED_TRUE /
+CONCLUSION_MISMATCH / RESPONSE_STATUS_UNACCEPTABLE /
+NEXT_TASK_MISMATCH); 14 `GATE_AY_DRY_RUN_SIMULATED_APPROVAL_*`
+hard-fail gates (MISSING_ARTIFACT / NOT_SANITIZED / NOT_DOCUMENTED_ONLY
+/ AUTHORIZES_REAL_EXECUTION / GRANTS_EXECUTION / MISSING_FAILS_OPEN /
+AMBIGUOUS_FAILS_OPEN / EXECUTION_REQUEST_FAILS_OPEN /
+CONTAINS_SECRET_LIKE_VALUE / CONTAINS_SIGNATURE_LIKE_VALUE /
+MISSING_NO_LIVE_TRADING_PROOF /
+MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF /
+MISSING_G20_STILL_ACTIVE_PROOF / AUTO_TRIGGERS_SENDER) — distinct
+prefix to avoid collision with chained `GATE_SIMULATED_APPROVAL_*`; 16
+`upstream_entry_..._dry_run_*` + 14
+`upstream_entry_..._dry_run_simulated_approval_*` dataclass fields
+plus `consumed_..._dry_run_contract_version`; full to_dict emission;
+parser block extracting + evaluating; all 29 new gates registered in
+`_HARD_FAIL_GATES`; `run_readiness_review(...)` extended with new kwarg;
+preview scripts pass loader output, exit 1 on missing AY artifact, emit
+30 new Markdown/JSON proof rows; tests add new fixture and 42 focused
+new tests. No real execution, no sender, no endpoint, no secret read,
+no G20 lift, no position modification. `main.py` / `src/risk.py` /
+`BybitExecutor` untouched.
+
+Status before: TASK-014AZ DONE; AZ structurally bulk-renamed from AY
+but AY dry-run not actually consumed at runtime.
+Status after: TASK-014AZ-FIX1 DONE (local commit only — NOT pushed); AY
+direct upstream fully wired with 29 new hard-fail gates and 30 new
+proof fields; AZ suite 467/467 PASS; full upstream chain 1907/1907 PASS.
+
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py`
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py`
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py`
+- `README.md`
+- `docs/research/commands/NEXT_ACTION.md`
+- `docs/research/commands/COMMAND_LOG.md`
+
+Validation:
+- `py_compile` src + scripts + test → PASS
+- `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py -q`
+  → **467/467 PASS** (425 baseline + 42 FIX1)
+- `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py -q`
+  → 389/389 PASS (AY regression)
+- `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py + _final_pre_execution_review + _dry_run + _design + _static_skeleton_dry_run + _static_skeleton_design + _implementation_design`
+  → **1907 PASS combined** (full real_execution_adapter regression chain)
+
+Outputs:
+- (local only) — no outputs/ artifacts changed.
+
+Notes:
+- 29 new hard-fail gates and the missing-AY-artifact gate force
+  `status == FAIL_CLOSED` on any AY violation; even with a valid AY
+  upstream, `--allow-real-entry-execution` still returns
+  REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED.
+- `GATE_AY_DRY_RUN_SIMULATED_APPROVAL_*` prefix is intentionally
+  distinct from the chained-from-AX `GATE_SIMULATED_APPROVAL_*` block
+  retained from the bulk-rename — both blocks coexist and are
+  registered in `_HARD_FAIL_GATES`.
+- `main.py`, `src/risk.py`, `BybitExecutor` untouched.
+- Local commit only — NOT pushed.
+
+---
+
 ### 2026-06-16（TASK-014AZ — Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Manual Authorization Gate Readiness Review）
 
 Agent: Claude (Opus 4.7)

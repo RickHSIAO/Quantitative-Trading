@@ -388,6 +388,24 @@ ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESI
     "disabled_implementation_scaffold_manual_authorization_gate_design_approval",
 })
 
+# 24th: AY disabled-implementation-scaffold-manual-authorization-gate-dry-run
+# upstream acceptance (NEW for TASK-014AZ-FIX1 - AY's output is consumed at
+# runtime as the 35th upstream artifact, the AY direct upstream - parallel to
+# how AY-FIX1 added AX as the 34th upstream).
+ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STATUSES: frozenset[str] = frozenset({
+    "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY",
+    "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_"
+    "READY_BUT_EXECUTION_DISABLED",
+    "REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED",
+})
+
+# AY's modes that AZ will accept.  AY exposes both checklist and approval
+# mode tokens - AZ treats either as acceptable but rejects anything else.
+ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MODES: frozenset[str] = frozenset({
+    "disabled_implementation_scaffold_manual_authorization_gate_dry_run_checklist",
+    "disabled_implementation_scaffold_manual_authorization_gate_dry_run_approval",
+})
+
 
 # ---------------------------------------------------------------------------
 # Adapter contract identity (documented only, never instantiated as sender)
@@ -402,6 +420,7 @@ CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_CONTRACT_VERSION = "disabled_im
 CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_DRY_RUN_CONTRACT_VERSION = "disabled_implementation_scaffold_dry_run_v1"
 CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_CONTRACT_VERSION = "disabled_implementation_scaffold_final_pre_execution_review_v1"
 CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_CONTRACT_VERSION = "disabled_implementation_scaffold_manual_authorization_gate_design_v1"
+CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONTRACT_VERSION = "disabled_implementation_scaffold_manual_authorization_gate_dry_run_v1"
 CONSUMED_READINESS_CONTRACT_VERSION   = "readiness_review_v1"
 CONSUMED_DRY_RUN_CONTRACT_VERSION     = "dry_run_v1"
 CONSUMED_DESIGN_CONTRACT_VERSION      = "design_only_v1"
@@ -813,6 +832,82 @@ GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_NEX
     "entry_disabled_implementation_scaffold_manual_authorization_gate_design_next_task_mismatch"
 )
 
+# AY (manual authorization gate dry-run) acceptance gates (NEW for TASK-014AZ-FIX1).
+# AY's output is consumed at runtime as the 35th upstream artifact (the AY
+# direct upstream); the AX block above is now reduced to "chained-through-AY"
+# proof but retained for backward compatibility.  These 15 gates mirror the
+# AX block exactly but target AY's dry-run output fields.
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MISSING = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_missing"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STATUS_UNACCEPTABLE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status_unacceptable"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MODE_UNACCEPTABLE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_mode_unacceptable"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_REAL_EXECUTION_ALLOWED_TRUE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_real_execution_allowed_true"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_SEND_ALLOWED_TRUE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_send_allowed_true"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_implementation_included_true"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_EXECUTION_INCLUDED_TRUE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_execution_included_true"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ORDER_ENDPOINT_CALLED_TRUE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_order_endpoint_called_true"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STOP_ENDPOINT_CALLED_TRUE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_stop_endpoint_called_true"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_POSITION_MODIFIED_FALSE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_position_modified_false"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_SECRETS_LOADED_FALSE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_secrets_loaded_false"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_G20_LIFTED_TRUE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_g20_lifted_true"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONCLUSION_MISMATCH = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion_mismatch"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_RESPONSE_STATUS_UNACCEPTABLE = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status_unacceptable"
+)
+GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NEXT_TASK_MISMATCH = (
+    "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_task_mismatch"
+)
+
+# AY dry-run simulated-approval envelope gates (NEW for TASK-014AZ-FIX1).
+# Prefixed with `GATE_AY_DRY_RUN_SIMULATED_APPROVAL_` to disambiguate from the
+# AX (chained) `GATE_SIMULATED_APPROVAL_*` constants already in this module.
+# All 14 gates fail-closed when the AY dry-run simulated-approval envelope is
+# missing / unsanitized / ambiguous / authorizes real execution / contains
+# secret-like or signature-like values / lacks proof of no-live-trading /
+# protected-position-untouched / g20-still-active / auto-triggers a sender /
+# grants execution.  These gates never authorize any real action.
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_ARTIFACT                       = "ay_dry_run_simulated_approval_missing_artifact"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_SANITIZED                          = "ay_dry_run_simulated_approval_not_sanitized"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_DOCUMENTED_ONLY                    = "ay_dry_run_simulated_approval_not_documented_only"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTHORIZES_REAL_EXECUTION              = "ay_dry_run_simulated_approval_authorizes_real_execution"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_GRANTS_EXECUTION                       = "ay_dry_run_simulated_approval_grants_execution"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_FAILS_OPEN                     = "ay_dry_run_simulated_approval_missing_fails_open"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AMBIGUOUS_FAILS_OPEN                   = "ay_dry_run_simulated_approval_ambiguous_fails_open"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_EXECUTION_REQUEST_FAILS_OPEN           = "ay_dry_run_simulated_approval_execution_request_fails_open"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE             = "ay_dry_run_simulated_approval_contains_secret_like_value"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE          = "ay_dry_run_simulated_approval_contains_signature_like_value"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF          = "ay_dry_run_simulated_approval_missing_no_live_trading_proof"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF = (
+    "ay_dry_run_simulated_approval_missing_protected_position_untouched_proof"
+)
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF         = "ay_dry_run_simulated_approval_missing_g20_still_active_proof"
+GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER                   = "ay_dry_run_simulated_approval_auto_triggers_sender"
+
 # Simulated-approval envelope gates (NEW for TASK-014AZ-FIX1).  All ten gates
 # hard-fail if the simulated approval envelope is missing, ambiguous, requests
 # execution, contains secret-like or signature-like values, lacks proof of
@@ -1135,6 +1230,38 @@ _HARD_FAIL_GATES: frozenset[str] = frozenset({
     GATE_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF,
     GATE_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER,
     GATE_SIMULATED_APPROVAL_GRANTS_EXECUTION,
+    # AY (manual authorization gate dry-run) direct-upstream acceptance gates
+    # (NEW for TASK-014AZ-FIX1 — 15 hard-fail gates)
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MISSING,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STATUS_UNACCEPTABLE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MODE_UNACCEPTABLE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_REAL_EXECUTION_ALLOWED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_SEND_ALLOWED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_EXECUTION_INCLUDED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ORDER_ENDPOINT_CALLED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STOP_ENDPOINT_CALLED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_POSITION_MODIFIED_FALSE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_SECRETS_LOADED_FALSE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_G20_LIFTED_TRUE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONCLUSION_MISMATCH,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_RESPONSE_STATUS_UNACCEPTABLE,
+    GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NEXT_TASK_MISMATCH,
+    # AY dry-run simulated-approval envelope (NEW for TASK-014AZ-FIX1 — 14 hard-fail gates)
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_ARTIFACT,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_SANITIZED,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_DOCUMENTED_ONLY,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTHORIZES_REAL_EXECUTION,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_GRANTS_EXECUTION,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_FAILS_OPEN,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AMBIGUOUS_FAILS_OPEN,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_EXECUTION_REQUEST_FAILS_OPEN,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF,
+    GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER,
 })
 
 
@@ -1379,6 +1506,43 @@ class TinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFinalPre
     simulated_approval_has_protected_position_untouched_proof:     bool = True
     simulated_approval_has_g20_still_active_proof:                 bool = True
     simulated_approval_auto_triggers_sender:                       bool = False
+    # AY (manual authorization gate dry-run) direct-upstream block - NEW for
+    # TASK-014AZ-FIX1 (the 35th upstream / direct upstream, parallel to AX's
+    # 34th upstream block above which is now retained as chained-through-AY proof).
+    consumed_disabled_implementation_scaffold_manual_authorization_gate_dry_run_contract_version:           str = CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONTRACT_VERSION
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status:                          str = ""
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_mode:                            str = ""
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion:                      str = ""
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_authorization_result:            str = ""
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status:                 str = ""
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_real_execution_allowed:          bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_send_allowed:                    bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_implementation_included: bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_execution_included:      bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_order_endpoint_called:           bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_stop_endpoint_called:            bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_position_modified:            bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_secrets_loaded:               bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_g20_lifted:                      bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_required_task:              str = ""
+    # AY dry-run simulated-approval envelope (NEW for TASK-014AZ-FIX1) -
+    # documented-only, never authorizes any real execution; mirrors AY-FIX1's
+    # simulated_approval block but pertains to AY's *dry-run* envelope (the AZ
+    # direct-upstream's own approval proof) rather than AX's design envelope.
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used:                              bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized:                               bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only:                   bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution:            bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution:                           bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed:                       bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed:                     bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed:             bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value:                 bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value:              bool = False
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof:                  bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof:     bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof:                 bool = True
+    upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender:                       bool = False
     consumed_disabled_implementation_scaffold_design_contract_version:                      str = CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_CONTRACT_VERSION
 
     blocked_gates:                list[str] = field(default_factory=list)
@@ -1741,6 +1905,68 @@ class TinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFinalPre
             "simulated_approval_has_protected_position_untouched_proof": self.simulated_approval_has_protected_position_untouched_proof,
             "simulated_approval_has_g20_still_active_proof":             self.simulated_approval_has_g20_still_active_proof,
             "simulated_approval_auto_triggers_sender":                   self.simulated_approval_auto_triggers_sender,
+            # AY (manual authorization gate dry-run) direct-upstream block — NEW for TASK-014AZ-FIX1
+            "consumed_disabled_implementation_scaffold_manual_authorization_gate_dry_run_contract_version":
+                self.consumed_disabled_implementation_scaffold_manual_authorization_gate_dry_run_contract_version,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_mode":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_mode,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_authorization_result":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_authorization_result,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_real_execution_allowed":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_real_execution_allowed,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_send_allowed":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_send_allowed,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_implementation_included":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_implementation_included,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_execution_included":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_execution_included,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_order_endpoint_called":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_order_endpoint_called,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_stop_endpoint_called":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_stop_endpoint_called,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_position_modified":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_position_modified,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_secrets_loaded":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_secrets_loaded,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_g20_lifted":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_g20_lifted,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_required_task":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_required_task,
+            # AY dry-run simulated-approval envelope — NEW for TASK-014AZ-FIX1
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof,
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender":
+                self.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender,
             "consumed_disabled_implementation_scaffold_design_contract_version":
                 self.consumed_disabled_implementation_scaffold_design_contract_version,
             "blocked_gates":                             list(self.blocked_gates),
@@ -1880,6 +2106,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
         entry_disabled_implementation_scaffold_dry_run: dict[str, Any] | None = None,
         entry_disabled_implementation_scaffold_final_pre_execution_review: dict[str, Any] | None = None,
         entry_disabled_implementation_scaffold_manual_authorization_gate_design: dict[str, Any] | None = None,
+        entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run: dict[str, Any] | None = None,
         simulated_approval: dict[str, Any] | None = None,
         symbol:                               str  = DEFAULT_SELECTED_SYMBOL,
         expected_commit_hash:                 str  = "",
@@ -1941,6 +2168,7 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
             "entry_disabled_implementation_scaffold_dry_run": isinstance(entry_disabled_implementation_scaffold_dry_run, dict) and bool(entry_disabled_implementation_scaffold_dry_run),
             "entry_disabled_implementation_scaffold_final_pre_execution_review": isinstance(entry_disabled_implementation_scaffold_final_pre_execution_review, dict) and bool(entry_disabled_implementation_scaffold_final_pre_execution_review),
             "entry_disabled_implementation_scaffold_manual_authorization_gate_design": isinstance(entry_disabled_implementation_scaffold_manual_authorization_gate_design, dict) and bool(entry_disabled_implementation_scaffold_manual_authorization_gate_design),
+            "entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run": isinstance(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run, dict) and bool(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run),
         }
 
         endpoint_family = _safe_str((readonly_smoke or {}).get("endpoint_family", ""))
@@ -2455,6 +2683,72 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
         sa_auto_triggers_sender                         = _safe_bool(sa_env.get("auto_triggers_sender", False))
         sa_ambiguous_flag                               = _safe_bool(sa_env.get("ambiguous", False))
 
+        # NEW for TASK-014AZ-FIX1: parse TASK-014AY disabled-implementation-
+        # scaffold-manual-authorization-gate-dry-run payload (the 35th /
+        # direct upstream artifact).  Mirrors the AX (axmag) block above but
+        # consumes AY's dry-run output fields.
+        aydr = entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run or {}
+        entry_aydr_status = _safe_str(aydr.get("status", ""))
+        entry_aydr_mode = _safe_str(aydr.get("mode", ""))
+        entry_aydr_real_exec_allowed = _safe_bool(aydr.get("real_execution_allowed", False))
+        entry_aydr_send_allowed = _safe_bool(aydr.get("send_allowed", False))
+        entry_aydr_impl_included = _safe_bool(aydr.get("adapter_implementation_included", False))
+        entry_aydr_exec_included = _safe_bool(aydr.get("adapter_execution_included", False))
+        entry_aydr_order_called = _safe_bool(aydr.get("order_endpoint_called", False))
+        entry_aydr_stop_called = _safe_bool(aydr.get("stop_endpoint_called", False))
+        entry_aydr_no_pos_modified = _safe_bool(aydr.get("no_position_modified", True))
+        entry_aydr_no_secrets_loaded = _safe_bool(aydr.get("no_secrets_loaded", True))
+        entry_aydr_g20_lifted = _safe_bool(aydr.get("g20_lifted", False))
+        _aydr_verdict = aydr.get(
+            "final_disabled_implementation_scaffold_manual_authorization_gate_dry_run_verdict"
+        ) if isinstance(
+            aydr.get("final_disabled_implementation_scaffold_manual_authorization_gate_dry_run_verdict"),
+            dict,
+        ) else {}
+        entry_aydr_authorization_result = _safe_str(
+            aydr.get(
+                "authorization_result",
+                aydr.get(
+                    "disabled_implementation_scaffold_manual_authorization_gate_dry_run_authorization_result",
+                    _aydr_verdict.get("authorization_result", "")
+                )
+            )
+        )
+        entry_aydr_conclusion = _safe_str(
+            aydr.get(
+                "disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion",
+                _aydr_verdict.get(
+                    "disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion", ""
+                ),
+            )
+        )
+        _aydr_audit = aydr.get("audit_artifacts") if isinstance(aydr.get("audit_artifacts"), dict) else {}
+        entry_aydr_response_status = _safe_str(
+            _aydr_audit.get("response_status", aydr.get("response_status", ""))
+        )
+        entry_aydr_next_required_task = _safe_str(aydr.get("next_required_task", ""))
+
+        # NEW for TASK-014AZ-FIX1: parse AY dry-run nested simulated-approval
+        # envelope (documented-only — never authorizes any real execution).
+        _aydr_sa_env = aydr.get("simulated_approval") if isinstance(
+            aydr.get("simulated_approval"), dict
+        ) else {}
+        aydr_sa_present = isinstance(aydr.get("simulated_approval"), dict)
+        aydr_sa_artifact_used                              = _safe_bool(_aydr_sa_env.get("artifact_used", True))
+        aydr_sa_is_sanitized                               = _safe_bool(_aydr_sa_env.get("is_sanitized", True))
+        aydr_sa_envelope_documented_only                   = _safe_bool(_aydr_sa_env.get("envelope_documented_only", True))
+        aydr_sa_never_authorizes_real_execution            = _safe_bool(_aydr_sa_env.get("never_authorizes_real_execution", True))
+        aydr_sa_grants_execution                           = _safe_bool(_aydr_sa_env.get("grants_execution", False))
+        aydr_sa_missing_fails_closed                       = _safe_bool(_aydr_sa_env.get("missing_fails_closed", True))
+        aydr_sa_ambiguous_fails_closed                     = _safe_bool(_aydr_sa_env.get("ambiguous_fails_closed", True))
+        aydr_sa_execution_request_fails_closed             = _safe_bool(_aydr_sa_env.get("execution_request_fails_closed", True))
+        aydr_sa_contains_secret_like_value                 = _safe_bool(_aydr_sa_env.get("contains_secret_like_value", False))
+        aydr_sa_contains_signature_like_value              = _safe_bool(_aydr_sa_env.get("contains_signature_like_value", False))
+        aydr_sa_has_no_live_trading_proof                  = _safe_bool(_aydr_sa_env.get("has_no_live_trading_proof", True))
+        aydr_sa_has_protected_position_untouched_proof     = _safe_bool(_aydr_sa_env.get("has_protected_position_untouched_proof", True))
+        aydr_sa_has_g20_still_active_proof                 = _safe_bool(_aydr_sa_env.get("has_g20_still_active_proof", True))
+        aydr_sa_auto_triggers_sender                       = _safe_bool(_aydr_sa_env.get("auto_triggers_sender", False))
+
         # Missing-artifact gates (29)
         if not present_flags["readonly"]:           blocked.append(GATE_READONLY_SMOKE_MISSING)
         if not present_flags["recon"]:              blocked.append(GATE_RECONCILIATION_MISSING)
@@ -2495,6 +2789,8 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
             blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_FINAL_PRE_EXECUTION_REVIEW_MISSING)
         if not present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_design"]:
             blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DESIGN_MISSING)
+        if not present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"]:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MISSING)
 
         if present_flags["readonly"] and endpoint_family and endpoint_family != EXPECTED_ENDPOINT_FAMILY:
             blocked.append(GATE_ENDPOINT_FAMILY_NOT_BYBIT_DEMO)
@@ -2877,12 +3173,98 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
             if sa_grants_execution:
                 blocked.append(GATE_SIMULATED_APPROVAL_GRANTS_EXECUTION)
 
+        # AY (manual authorization gate dry-run) direct-upstream acceptance
+        # (NEW for TASK-014AZ-FIX1 — TASK-014AZ consumes AY's dry-run output
+        # at runtime as the 35th / direct upstream).  These 15 gates exactly
+        # mirror the AX acceptance block above.
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and entry_aydr_status and (
+            entry_aydr_status not in ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STATUSES
+        ):
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STATUS_UNACCEPTABLE)
+        if (
+            present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"]
+            and entry_aydr_mode
+            and entry_aydr_mode not in ACCEPTABLE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MODES
+        ):
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MODE_UNACCEPTABLE)
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and entry_aydr_real_exec_allowed:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_REAL_EXECUTION_ALLOWED_TRUE)
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and entry_aydr_send_allowed:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_SEND_ALLOWED_TRUE)
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and entry_aydr_impl_included:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE)
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and entry_aydr_exec_included:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_EXECUTION_INCLUDED_TRUE)
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and entry_aydr_order_called:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ORDER_ENDPOINT_CALLED_TRUE)
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and entry_aydr_stop_called:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STOP_ENDPOINT_CALLED_TRUE)
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and not entry_aydr_no_pos_modified:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_POSITION_MODIFIED_FALSE)
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and not entry_aydr_no_secrets_loaded:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_SECRETS_LOADED_FALSE)
+        if present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"] and entry_aydr_g20_lifted:
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_G20_LIFTED_TRUE)
+        if (
+            present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"]
+            and entry_aydr_conclusion
+            and entry_aydr_conclusion != "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY_NOT_EXECUTABLE"
+        ):
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONCLUSION_MISMATCH)
+        if (
+            present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"]
+            and entry_aydr_response_status
+            and entry_aydr_response_status != "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NOT_SENT"
+        ):
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_RESPONSE_STATUS_UNACCEPTABLE)
+        if (
+            present_flags["entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run"]
+            and entry_aydr_next_required_task
+            and entry_aydr_next_required_task != "TASK-014AZ_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review"
+        ):
+            blocked.append(GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NEXT_TASK_MISMATCH)
+
+        # AY dry-run nested simulated-approval acceptance (NEW for TASK-014AZ-FIX1).
+        # These 14 gates fail-closed when the AY dry-run simulated-approval
+        # envelope is dangerous in any way.  Evaluated only when the envelope
+        # is present (defaults remain safe when absent — safe defaults all
+        # match the documented-only invariants).
+        if aydr_sa_present:
+            if not aydr_sa_artifact_used:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_ARTIFACT)
+            if not aydr_sa_is_sanitized:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_SANITIZED)
+            if not aydr_sa_envelope_documented_only:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_DOCUMENTED_ONLY)
+            if not aydr_sa_never_authorizes_real_execution:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTHORIZES_REAL_EXECUTION)
+            if aydr_sa_grants_execution:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_GRANTS_EXECUTION)
+            if not aydr_sa_missing_fails_closed:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_FAILS_OPEN)
+            if not aydr_sa_ambiguous_fails_closed:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AMBIGUOUS_FAILS_OPEN)
+            if not aydr_sa_execution_request_fails_closed:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_EXECUTION_REQUEST_FAILS_OPEN)
+            if aydr_sa_contains_secret_like_value:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE)
+            if aydr_sa_contains_signature_like_value:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE)
+            if not aydr_sa_has_no_live_trading_proof:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF)
+            if not aydr_sa_has_protected_position_untouched_proof:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF)
+            if not aydr_sa_has_g20_still_active_proof:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF)
+            if aydr_sa_auto_triggers_sender:
+                blocked.append(GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER)
+
         if sym and sym != DESIGN_EXPECTED_SYMBOL:
             blocked.append(GATE_SELECTED_SYMBOL_NOT_SOLUSDT)
 
         stages[STAGE_0_ARTIFACT_PREFLIGHT] = {
             "stage":   STAGE_0_ARTIFACT_PREFLIGHT,
-            "summary": "Validate AY direct artifact (manual authorization gate dry-run) + 34 upstream artifacts AY already consumed (AX chain) + AY acceptance flags.",
+            "summary": "Validate AY direct artifact (manual authorization gate dry-run) + 34 upstream artifacts AY already consumed (AX chain) + AY acceptance flags + AY dry-run simulated-approval envelope.",
             "present_flags":                     dict(present_flags),
             "endpoint_family_observed":          endpoint_family,
             "endpoint_family_expected":          EXPECTED_ENDPOINT_FAMILY,
@@ -3895,6 +4277,36 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
             simulated_approval_has_protected_position_untouched_proof=sa_has_protected_position_untouched_proof,
             simulated_approval_has_g20_still_active_proof=sa_has_g20_still_active_proof,
             simulated_approval_auto_triggers_sender=sa_auto_triggers_sender,
+            consumed_disabled_implementation_scaffold_manual_authorization_gate_dry_run_contract_version=CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONTRACT_VERSION,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status=entry_aydr_status,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_mode=entry_aydr_mode,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion=entry_aydr_conclusion,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_authorization_result=entry_aydr_authorization_result,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status=entry_aydr_response_status,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_real_execution_allowed=entry_aydr_real_exec_allowed,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_send_allowed=entry_aydr_send_allowed,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_implementation_included=entry_aydr_impl_included,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_execution_included=entry_aydr_exec_included,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_order_endpoint_called=entry_aydr_order_called,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_stop_endpoint_called=entry_aydr_stop_called,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_position_modified=entry_aydr_no_pos_modified,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_secrets_loaded=entry_aydr_no_secrets_loaded,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_g20_lifted=entry_aydr_g20_lifted,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_required_task=entry_aydr_next_required_task,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used=aydr_sa_artifact_used,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized=aydr_sa_is_sanitized,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only=aydr_sa_envelope_documented_only,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution=aydr_sa_never_authorizes_real_execution,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution=aydr_sa_grants_execution,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed=aydr_sa_missing_fails_closed,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed=aydr_sa_ambiguous_fails_closed,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed=aydr_sa_execution_request_fails_closed,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value=aydr_sa_contains_secret_like_value,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value=aydr_sa_contains_signature_like_value,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof=aydr_sa_has_no_live_trading_proof,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof=aydr_sa_has_protected_position_untouched_proof,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof=aydr_sa_has_g20_still_active_proof,
+            upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender=aydr_sa_auto_triggers_sender,
             consumed_disabled_implementation_scaffold_design_contract_version=CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_DESIGN_CONTRACT_VERSION,
             blocked_gates=unique,
             failed_stage=failed_stage,
@@ -4028,6 +4440,37 @@ class DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFina
             GATE_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF,
             GATE_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER,
             GATE_SIMULATED_APPROVAL_GRANTS_EXECUTION,
+            # AY-direct-upstream gates (TASK-014AZ-FIX1)
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MISSING,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STATUS_UNACCEPTABLE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MODE_UNACCEPTABLE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_REAL_EXECUTION_ALLOWED_TRUE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_SEND_ALLOWED_TRUE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_EXECUTION_INCLUDED_TRUE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ORDER_ENDPOINT_CALLED_TRUE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STOP_ENDPOINT_CALLED_TRUE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_POSITION_MODIFIED_FALSE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_SECRETS_LOADED_FALSE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_G20_LIFTED_TRUE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONCLUSION_MISMATCH,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_RESPONSE_STATUS_UNACCEPTABLE,
+            GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NEXT_TASK_MISMATCH,
+            # AY dry-run simulated-approval envelope (TASK-014AZ-FIX1)
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_ARTIFACT,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_SANITIZED,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_DOCUMENTED_ONLY,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTHORIZES_REAL_EXECUTION,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_GRANTS_EXECUTION,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_FAILS_OPEN,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AMBIGUOUS_FAILS_OPEN,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_EXECUTION_REQUEST_FAILS_OPEN,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF,
+            GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER,
         }
         for g in blocked:
             if g in stage_0_set:

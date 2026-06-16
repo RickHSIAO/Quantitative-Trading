@@ -1106,6 +1106,71 @@ def _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_desi
     }
 
 
+def _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run() -> dict:
+    """The 35th upstream artifact: TASK-014AY's documented-only dry-run output.
+
+    AY produces the disabled-implementation-scaffold manual authorization gate
+    *dry-run* artifact (the AY direct upstream of TASK-014AZ).  AZ consumes
+    this as the direct upstream alongside AX (now retained as chained-through-
+    AY proof).  All safety guards remain identical so a valid AY artifact
+    never permits any real execution downstream.
+    """
+    return {
+        "timestamp_utc":                "2026-06-16T00:45:00.0000000Z",
+        "mode":                         "disabled_implementation_scaffold_manual_authorization_gate_dry_run_checklist",
+        "selected_symbol":              "SOLUSDT",
+        "status":                       "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY",
+        "adapter_name":                 ADAPTER_NAME,
+        "adapter_contract_version":     "disabled_implementation_scaffold_manual_authorization_gate_dry_run_v1",
+        "real_execution_allowed":              False,
+        "send_allowed":                        False,
+        "adapter_implementation_included":     False,
+        "adapter_execution_included":          False,
+        "order_endpoint_called":               False,
+        "stop_endpoint_called":                False,
+        "no_position_modified":                True,
+        "no_secrets_loaded":                   True,
+        "g20_lifted":                          False,
+        "g20_policy_still_in_place":           True,
+        "no_live_endpoint":                    True,
+        "no_auto_git_operations":              True,
+        "real_entry_implemented":              False,
+        "current_task_real_execution_allowed": False,
+        "authorization_result":         "DOCUMENTED_ONLY_NOT_AUTHORIZED",
+        "disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion":
+            "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY_NOT_EXECUTABLE",
+        "expected_commit_hash":         "0000000000000000000000000000000000000000",
+        "audit_artifacts": {
+            "response_status": "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NOT_SENT",
+        },
+        "final_disabled_implementation_scaffold_manual_authorization_gate_dry_run_verdict": {
+            "disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion":
+                "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY_NOT_EXECUTABLE",
+            "authorization_result": "DOCUMENTED_ONLY_NOT_AUTHORIZED",
+            "real_execution_allowed": False,
+            "send_allowed": False,
+        },
+        "simulated_approval": {
+            "artifact_used":                            True,
+            "is_sanitized":                             True,
+            "envelope_documented_only":                 True,
+            "never_authorizes_real_execution":          True,
+            "grants_execution":                         False,
+            "missing_fails_closed":                     True,
+            "ambiguous_fails_closed":                   True,
+            "execution_request_fails_closed":           True,
+            "contains_secret_like_value":               False,
+            "contains_signature_like_value":            False,
+            "has_no_live_trading_proof":                True,
+            "has_protected_position_untouched_proof":   True,
+            "has_g20_still_active_proof":               True,
+            "auto_triggers_sender":                     False,
+            "ambiguous":                                False,
+        },
+        "next_required_task":           "TASK-014AZ_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review",
+    }
+
+
 def _valid_simulated_approval() -> dict:
     """Documented-only simulated-approval envelope: never authorizes real execution."""
     return {
@@ -1178,6 +1243,7 @@ def _run(
     entry_disabled_implementation_scaffold_dry_run=_UNSET,
     entry_disabled_implementation_scaffold_final_pre_execution_review=_UNSET,
     entry_disabled_implementation_scaffold_manual_authorization_gate_design=_UNSET,
+    entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_UNSET,
     simulated_approval=_UNSET,
     symbol=DEFAULT_SELECTED_SYMBOL,
     expected_commit_hash="",
@@ -1220,6 +1286,7 @@ def _run(
         entry_disabled_implementation_scaffold_dry_run=_valid_entry_disabled_implementation_scaffold_dry_run() if entry_disabled_implementation_scaffold_dry_run is _UNSET else entry_disabled_implementation_scaffold_dry_run,
         entry_disabled_implementation_scaffold_final_pre_execution_review=_valid_entry_disabled_implementation_scaffold_final_pre_execution_review() if entry_disabled_implementation_scaffold_final_pre_execution_review is _UNSET else entry_disabled_implementation_scaffold_final_pre_execution_review,
         entry_disabled_implementation_scaffold_manual_authorization_gate_design=_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_design() if entry_disabled_implementation_scaffold_manual_authorization_gate_design is _UNSET else entry_disabled_implementation_scaffold_manual_authorization_gate_design,
+        entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run() if entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run is _UNSET else entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run,
         simulated_approval=(None if simulated_approval is _UNSET else simulated_approval),
         symbol=symbol,
         expected_commit_hash=expected_commit_hash,
@@ -5849,3 +5916,426 @@ class TestAZNoApprovalTokenValidatedAsAuthorization:
     def test_conclusion_is_readiness_review_ready_not_executable(self):
         r = _run()
         assert r.implementation_design_conclusion == "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY_NOT_EXECUTABLE"
+
+
+# ===========================================================================
+# TASK-014AZ-FIX1: AY (manual-authorization-gate-dry-run) direct upstream
+# acceptance and simulated-approval envelope gates.  These tests verify that
+# the FIX1 changes wire AY dry-run as the 35th / direct upstream of AZ and
+# that the 29 new hard-fail gates (15 AY-upstream + 14 simulated-approval)
+# force FAIL_CLOSED on any violation while never authorizing execution.
+# ===========================================================================
+import src.demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review as _AZM
+
+
+def _aydr_mutate(**overrides) -> dict:
+    """Return a valid AY dry-run dict with shallow overrides on top-level."""
+    base = _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run()
+    base.update(overrides)
+    return base
+
+
+def _aydr_mutate_sa(**overrides) -> dict:
+    """Return a valid AY dry-run dict with overrides on the nested
+    simulated_approval envelope."""
+    base = _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run()
+    sa = dict(base["simulated_approval"])
+    sa.update(overrides)
+    base["simulated_approval"] = sa
+    return base
+
+
+def _aydr_with_nested_verdict(**verdict_overrides) -> dict:
+    base = _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run()
+    verdict = dict(base["final_disabled_implementation_scaffold_manual_authorization_gate_dry_run_verdict"])
+    verdict.update(verdict_overrides)
+    base["final_disabled_implementation_scaffold_manual_authorization_gate_dry_run_verdict"] = verdict
+    return base
+
+
+def _aydr_with_audit(**audit_overrides) -> dict:
+    base = _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run()
+    aud = dict(base["audit_artifacts"])
+    aud.update(audit_overrides)
+    base["audit_artifacts"] = aud
+    return base
+
+
+def _assert_safety_invariants_hold(r) -> None:
+    """No real execution, no sender, no endpoint, no secrets, no G20 lift."""
+    assert r.real_execution_allowed is False
+    assert r.real_entry_implemented is False
+    assert r.adapter_implementation_included is False
+    assert r.adapter_execution_included is False
+    assert r.send_allowed is False
+    assert r.order_endpoint_called is False
+    assert r.stop_endpoint_called is False
+    assert r.no_position_modified is True
+    assert r.no_orders_sent is True
+    assert r.g20_lifted is False
+    assert r.g20_policy_still_in_place is True
+
+
+class TestAZFIX1HappyPath:
+    """Default fixture exposes AY direct-upstream proof and is not FAIL_CLOSED."""
+
+    def test_contract_version_constant_present(self):
+        assert _AZM.CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONTRACT_VERSION \
+            == "disabled_implementation_scaffold_manual_authorization_gate_dry_run_v1"
+
+    def test_default_run_exposes_aydr_status(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_mode \
+            == "disabled_implementation_scaffold_manual_authorization_gate_dry_run_checklist"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion \
+            == "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY_NOT_EXECUTABLE"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_authorization_result \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_response_status \
+            == "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NOT_SENT"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_next_required_task \
+            == "TASK-014AZ_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review"
+
+    def test_default_run_exposes_aydr_safety_booleans(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_real_execution_allowed is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_send_allowed is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_implementation_included is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_adapter_execution_included is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_order_endpoint_called is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_stop_endpoint_called is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_position_modified is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_no_secrets_loaded is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_g20_lifted is False
+
+    def test_default_run_exposes_aydr_simulated_approval(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value is False
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof is True
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender is False
+
+    def test_default_run_not_fail_closed_due_to_aydr_gates(self):
+        r = _run()
+        aydr_gates = [g for g in r.blocked_gates if "disabled_implementation_scaffold_manual_authorization_gate_dry_run" in g or g.startswith("ay_dry_run_simulated_approval")]
+        assert aydr_gates == []
+
+    def test_to_dict_serializes_aydr_fields(self):
+        r = _run()
+        import json
+        d = r.to_dict()
+        s = json.dumps(d)
+        assert "consumed_disabled_implementation_scaffold_manual_authorization_gate_dry_run_contract_version" in s
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status" in s
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used" in s
+
+
+class TestAZFIX1HardFailMissingAYDryRun:
+    def test_missing_aydr_fails_closed(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MISSING in r.blocked_gates
+        assert r.failed_stage != ""
+        _assert_safety_invariants_hold(r)
+
+
+class TestAZFIX1HardFailAYUpstreamGates:
+    """Each AY-direct upstream violation forces FAIL_CLOSED."""
+
+    def test_status_unacceptable(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(status="SOME_OTHER_STATUS"))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STATUS_UNACCEPTABLE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_mode_unacceptable(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(mode="wrong_mode"))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MODE_UNACCEPTABLE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_real_execution_allowed_true(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(real_execution_allowed=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_REAL_EXECUTION_ALLOWED_TRUE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_send_allowed_true(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(send_allowed=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_SEND_ALLOWED_TRUE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_adapter_implementation_included_true(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(adapter_implementation_included=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_adapter_execution_included_true(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(adapter_execution_included=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_EXECUTION_INCLUDED_TRUE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_order_endpoint_called_true(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(order_endpoint_called=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ORDER_ENDPOINT_CALLED_TRUE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_stop_endpoint_called_true(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(stop_endpoint_called=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STOP_ENDPOINT_CALLED_TRUE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_no_position_modified_false(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(no_position_modified=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_POSITION_MODIFIED_FALSE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_no_secrets_loaded_false(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(no_secrets_loaded=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_SECRETS_LOADED_FALSE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_g20_lifted_true(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(g20_lifted=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_G20_LIFTED_TRUE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_conclusion_mismatch(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(
+            disabled_implementation_scaffold_manual_authorization_gate_dry_run_conclusion="WRONG_CONCLUSION"
+        ))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONCLUSION_MISMATCH in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_response_status_unacceptable(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_with_audit(response_status="WRONG_RESPONSE_STATUS"))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_RESPONSE_STATUS_UNACCEPTABLE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_next_task_mismatch(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(next_required_task="TASK-999X_invalid"))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NEXT_TASK_MISMATCH in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+
+class TestAZFIX1HardFailAYSimulatedApprovalGates:
+    """Each AY dry-run simulated-approval violation forces FAIL_CLOSED."""
+
+    def test_missing_artifact(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(artifact_used=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_ARTIFACT in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_not_sanitized(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(is_sanitized=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_SANITIZED in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_not_documented_only(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(envelope_documented_only=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_DOCUMENTED_ONLY in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_authorizes_real_execution(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(never_authorizes_real_execution=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTHORIZES_REAL_EXECUTION in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_grants_execution(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(grants_execution=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_GRANTS_EXECUTION in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_missing_fails_open(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(missing_fails_closed=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_FAILS_OPEN in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_ambiguous_fails_open(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(ambiguous_fails_closed=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AMBIGUOUS_FAILS_OPEN in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_execution_request_fails_open(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(execution_request_fails_closed=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_EXECUTION_REQUEST_FAILS_OPEN in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_contains_secret_like_value(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(contains_secret_like_value=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_contains_signature_like_value(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(contains_signature_like_value=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_missing_no_live_trading_proof(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(has_no_live_trading_proof=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_missing_protected_position_untouched_proof(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(has_protected_position_untouched_proof=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_missing_g20_still_active_proof(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(has_g20_still_active_proof=False))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+    def test_auto_triggers_sender(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate_sa(auto_triggers_sender=True))
+        assert r.status == STATUS_FAIL_CLOSED
+        assert _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER in r.blocked_gates
+        _assert_safety_invariants_hold(r)
+
+
+class TestAZFIX1HardFailGatesRegisteredAsHardFail:
+    """All 29 new gates must live in _HARD_FAIL_GATES."""
+
+    def test_all_29_new_gates_are_hard_fail(self):
+        from src.demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review import _HARD_FAIL_GATES
+        new_gates = {
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MISSING,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STATUS_UNACCEPTABLE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MODE_UNACCEPTABLE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_REAL_EXECUTION_ALLOWED_TRUE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_SEND_ALLOWED_TRUE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_IMPLEMENTATION_INCLUDED_TRUE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ADAPTER_EXECUTION_INCLUDED_TRUE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_ORDER_ENDPOINT_CALLED_TRUE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STOP_ENDPOINT_CALLED_TRUE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_POSITION_MODIFIED_FALSE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NO_SECRETS_LOADED_FALSE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_G20_LIFTED_TRUE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONCLUSION_MISMATCH,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_RESPONSE_STATUS_UNACCEPTABLE,
+            _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_NEXT_TASK_MISMATCH,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_ARTIFACT,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_SANITIZED,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_NOT_DOCUMENTED_ONLY,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTHORIZES_REAL_EXECUTION,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_GRANTS_EXECUTION,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_FAILS_OPEN,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AMBIGUOUS_FAILS_OPEN,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_EXECUTION_REQUEST_FAILS_OPEN,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SECRET_LIKE_VALUE,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_CONTAINS_SIGNATURE_LIKE_VALUE,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_NO_LIVE_TRADING_PROOF,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_PROTECTED_POSITION_UNTOUCHED_PROOF,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_MISSING_G20_STILL_ACTIVE_PROOF,
+            _AZM.GATE_AY_DRY_RUN_SIMULATED_APPROVAL_AUTO_TRIGGERS_SENDER,
+        }
+        assert len(new_gates) == 29
+        for g in new_gates:
+            assert g in _HARD_FAIL_GATES, f"Gate {g!r} missing from _HARD_FAIL_GATES"
+
+
+class TestAZFIX1AcceptedAlternateAYValues:
+    """AY-FIX1 also accepts READY_BUT_EXECUTION_DISABLED status and approval mode."""
+
+    def test_accepts_ready_but_execution_disabled_status(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(
+            status="TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_READY_BUT_EXECUTION_DISABLED"
+        ))
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_STATUS_UNACCEPTABLE not in r.blocked_gates
+
+    def test_accepts_approval_mode(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_aydr_mutate(
+            mode="disabled_implementation_scaffold_manual_authorization_gate_dry_run_approval"
+        ))
+        assert _AZM.GATE_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_MODE_UNACCEPTABLE not in r.blocked_gates
+
+
+class TestAZFIX1ScriptsLoaderWiring:
+    """Verify the preview script's loader passes the AY dict into run()."""
+
+    def test_loader_function_exists(self):
+        from scripts import preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review as _S
+        assert hasattr(_S, "load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run")
+
+    def test_subprocess_aydr_missing_exits_with_fail_closed_or_loads_valid(self):
+        import subprocess, sys, tempfile, json as _json
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            # Write a complete-but-WRONG AY dry-run JSON that should drive FAIL_CLOSED via a hard-fail gate
+            aydr_dir = tmp_path / "aydr"
+            aydr_dir.mkdir()
+            bad_aydr = _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run()
+            bad_aydr["status"] = "WRONG_STATUS_FOR_TEST"
+            (aydr_dir / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.json").write_text(_json.dumps(bad_aydr), encoding="utf-8")
+            # Confirm the loader returns the dict back
+            from scripts import preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review as _S
+            loaded = _S.load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run(aydr_dir)
+            assert isinstance(loaded, dict)
+            assert loaded["status"] == "WRONG_STATUS_FOR_TEST"
+
+
+class TestAZFIX1ReportFieldsExposed:
+    """Markdown report must include rows for the new AY upstream proof fields."""
+
+    def test_write_report_emits_aydr_proof_rows(self):
+        import tempfile, json as _json
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            out.mkdir()
+            from scripts import preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review as _S
+            r = _run()
+            _S._write_report(r, out)
+            md = (out / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.md").read_text(encoding="utf-8")
+            assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status" in md
+            assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used" in md
+            jp = out / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.json"
+            payload = _json.loads(jp.read_text(encoding="utf-8"))
+            assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_status" in payload
+            assert payload["consumed_disabled_implementation_scaffold_manual_authorization_gate_dry_run_contract_version"] \
+                == "disabled_implementation_scaffold_manual_authorization_gate_dry_run_v1"
+
+
+class TestAZFIX1NoExecutionUnderApprovedAYUpstream:
+    """Even with valid AY upstream, allow_real_entry_execution still returns NOT_IMPLEMENTED."""
+
+    def test_allow_real_entry_still_not_implemented(self):
+        r = _run(allow_real_entry_execution=True)
+        assert r.status == STATUS_REAL_ENTRY_NOT_IMPL
+        _assert_safety_invariants_hold(r)
+

@@ -1,14 +1,59 @@
 # Next Action
 
-> README shared status updated by TASK-014AZ (2026-06-16) — see
+> README shared status updated by TASK-014AZ-FIX1 (2026-06-16) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014az-2026-06-16)
-> for the cross-agent status board. TASK-014AZ adds the disabled
-> implementation scaffold **manual authorization gate readiness review**
-> module/preview/test, consuming TASK-014AY dry-run output as the AY
-> direct upstream plus the 34 upstream artifacts AY already chained. All
-> AY FIX1/FIX2/FIX3 hard-fail / simulated-approval / wording guards are
-> statically re-asserted from AZ. No real execution, no sender, no
-> endpoint call, no secret read, no G20 lift, no position modification.
+> for the cross-agent status board. TASK-014AZ-FIX1 completes the AY
+> direct-upstream wiring left structurally incomplete by TASK-014AZ: AY's
+> dry-run output is now actually consumed at runtime, exposed via 30 new
+> dataclass fields, gated by 29 new hard-fail gates (15 AY-upstream + 14
+> AY-simulated-approval), wired through the CLI loader, and rendered in
+> the Markdown/JSON report. No real execution, no sender, no endpoint
+> call, no secret read, no G20 lift, no position modification.
+
+## TASK-014AZ-FIX1 Status (2026-06-16)
+
+| item | status |
+|---|---|
+| AZ src adds `CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_CONTRACT_VERSION` constant | DONE |
+| AZ src adds `ACCEPTABLE_..._DRY_RUN_STATUSES` (3 values) + `ACCEPTABLE_..._DRY_RUN_MODES` (2 values) frozensets | DONE |
+| AZ src adds 15 AY-direct-upstream hard-fail gate constants (MISSING / STATUS_UNACCEPTABLE / MODE_UNACCEPTABLE / REAL_EXECUTION_ALLOWED_TRUE / SEND_ALLOWED_TRUE / ADAPTER_IMPLEMENTATION_INCLUDED_TRUE / ADAPTER_EXECUTION_INCLUDED_TRUE / ORDER_ENDPOINT_CALLED_TRUE / STOP_ENDPOINT_CALLED_TRUE / NO_POSITION_MODIFIED_FALSE / NO_SECRETS_LOADED_FALSE / G20_LIFTED_TRUE / CONCLUSION_MISMATCH / RESPONSE_STATUS_UNACCEPTABLE / NEXT_TASK_MISMATCH) | DONE |
+| AZ src adds 14 `GATE_AY_DRY_RUN_SIMULATED_APPROVAL_*` hard-fail gate constants (distinct prefix from chained AX `GATE_SIMULATED_APPROVAL_*`) | DONE |
+| All 29 new gates appended to `_HARD_FAIL_GATES` frozenset so violations force `status == FAIL_CLOSED` | DONE |
+| AZ result dataclass adds 16 `upstream_entry_..._dry_run_*` + 14 `upstream_entry_..._dry_run_simulated_approval_*` fields + `consumed_..._dry_run_contract_version` | DONE |
+| `to_dict()` emits all 30 new fields + contract version | DONE |
+| `run_readiness_review(...)` accepts new `entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run: dict[str, Any] \| None = None` kwarg | DONE |
+| Parser block evaluates the 29 gates and populates the 30 fields with observed (possibly invalid) values | DONE |
+| stage_0 summary text updated to reference the AY direct artifact + AY simulated-approval envelope | DONE |
+| Scripts preview adds `entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir` parameter, wires loader output into `run_readiness_review()`, emits missing-artifact `[FAIL CLOSED]` exit-1, prints AY dry-run source line, and renders 30 new Markdown rows for AY-upstream proof | DONE |
+| Test fixture `_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run()` + `_run()` helper extension | DONE |
+| 42 new tests: 6 happy-path field-exposure, 1 missing-AY-artifact, 15 AY-upstream FAIL_CLOSED, 14 AY-simulated-approval FAIL_CLOSED, 1 hard-fail-set registration, 2 alternate-accepted-values, 1 scripts loader, 1 report write, 1 approved-AY-upstream-still-not-implemented | DONE |
+| py_compile src + scripts + test | PASS |
+| pytest AZ | **467/467 PASS** (425 baseline + 42 FIX1) |
+| pytest AY regression | 389/389 PASS |
+| pytest real_execution_adapter chain (AX/AW/AV/AU/AT/static_skeleton_dry_run/static_skeleton_design/disabled_implementation_scaffold_design/dry_run/final_pre_execution_review/manual_authorization_gate_design/manual_authorization_gate_dry_run/implementation_design) | **1907/1907 PASS** |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no secret read / no G20 lift / no position modification) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | PENDING (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-16 TASK-014AZ-FIX1)
+
+1. VPS git pull and validate:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py -q
+       # expect 467/467 PASS
+
+2. Once step 1 passes, decide whether to authorise TASK-014BA
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate final pre-execution review —
+   next phase in the sequential safety chain; still no real execution).
+
+---
+
+> Previous README banner: TASK-014AZ (2026-06-16) — see archived block below.
 
 ## TASK-014AZ Status (2026-06-16)
 
