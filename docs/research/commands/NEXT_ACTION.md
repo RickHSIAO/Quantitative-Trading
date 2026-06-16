@@ -1,8 +1,90 @@
 # Next Action
 
-> README shared status updated by TASK-014BA (2026-06-16) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ba-2026-06-16)
-> for the cross-agent status board. TASK-014BA adds the
+> README shared status updated by TASK-014BA-FIX1 (2026-06-16) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ba-fix1-2026-06-16)
+> for the cross-agent status board. TASK-014BA-FIX1 fixes the BA preview
+> regression observed on the VPS after TASK-014BA shipped: the BA preview
+> CLI rejected `--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-readiness-review`
+> because the bulk-rename from AZ left BA wired to AY-dry-run as direct
+> upstream instead of AZ-readiness-review. FIX1 promotes AZ-readiness-review
+> to BA's direct upstream and demotes the existing AY-dry-run wiring to
+> chained-through-AZ proof, mirroring the AZ-FIX1 pattern that added an
+> AY-direct layer on top of AZ's chained-through-AY-of-AX. New: 1 contract
+> version constant, 15 AZ-direct hard-fail gates, 14 nested AZ→AY
+> simulated_approval hard-fail gates, 30 dataclass fields + `to_dict()`
+> exposure, `run_readiness_review` kwarg, scripts default dir + loader +
+> `--from-latest-...-readiness-review` flag + missing-AZ fail-closed exit-1
+> + AZ-upstream report rows, approval flag rename
+> `--allow-...-readiness-review` → `--allow-...-final-pre-execution-review`,
+> intro/banner wording update, and 25 new BA-FIX1 regression tests. Still
+> no sender, no real execution adapter, no endpoint call, no secret read,
+> no G20 lift, no position modification. main.py / src/risk.py /
+> BybitExecutor untouched.
+
+## TASK-014BA-FIX1 Status (2026-06-16)
+
+| item | status |
+|---|---|
+| root cause: BA scripts CLI lacked `--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-readiness-review`; BA was bulk-renamed from AZ but its direct upstream was still wired to AY-dry-run (AZ's old direct upstream) instead of AZ-readiness-review | IDENTIFIED |
+| BA src: add `CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_CONTRACT_VERSION` constant | DONE |
+| BA src: add `ACCEPTABLE_..._READINESS_REVIEW_STATUSES` + `ACCEPTABLE_..._READINESS_REVIEW_MODES` frozensets | DONE |
+| BA src: add 15 `GATE_ENTRY_..._READINESS_REVIEW_*` AZ-direct hard-fail gate constants | DONE |
+| BA src: add 14 `GATE_AZ_READINESS_REVIEW_AY_DRY_RUN_SIMULATED_APPROVAL_*` nested hard-fail gate constants | DONE |
+| BA src: append all 29 new gates to `_HARD_FAIL_GATES` frozenset | DONE |
+| BA src: add 30 dataclass fields (15 AZ-direct + 14 nested AZ→AY simulated_approval + 1 contract version) + `to_dict()` emission | DONE |
+| BA src: `run_readiness_review()` accepts `entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review: dict \| None = None` kwarg | DONE |
+| BA src: parser block evaluates 29 new gates and populates 30 new fields with observed values | DONE |
+| BA src: stage_0 summary references "AZ direct artifact + AZ's nested AY proof envelope" | DONE |
+| BA scripts: `_DEFAULT_ENTRY_..._READINESS_REVIEW_DIR` + `load_latest_entry_..._readiness_review()` loader | DONE |
+| BA scripts: `--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-readiness-review` CLI flag | DONE |
+| BA scripts: missing-AZ-artifact prints fail-closed message + `sys.exit(1)`, prints AZ source line in stdout banner | DONE |
+| BA scripts: approval flag renamed `--allow-...-readiness-review` → `--allow-...-final-pre-execution-review` (argparse + every docstring/banner mention + attribute access) | DONE |
+| BA scripts: intro/banner wording updated to "BA consumes AZ readiness review" | DONE |
+| BA scripts: `_write_report` markdown adds 30 new AZ-upstream-proof rows | DONE |
+| BA tests: `_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review()` fixture | DONE |
+| BA tests: `_run()` helper extended with `entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=_UNSET` parameter | DONE |
+| BA tests: 25 new BA-FIX1 regression tests (CLI help / subprocess happy-path / missing-AZ artifact fail-closed / 6+ representative hard-fail gates / field exposure / report contents / fixture happy-path) | DONE |
+| py_compile BA src + scripts + test | PASS |
+| pytest BA | **508/508 PASS** (483 baseline + 25 FIX1) |
+| pytest AZ regression | 481/481 PASS |
+| pytest combined chain (BA + AZ + upstream readiness/dry-run series) | **2867/2867 PASS** |
+| CLI `--help` exposes `--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-readiness-review` | CONFIRMED |
+| CLI `--help` exposes renamed `--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review` | CONFIRMED |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no secret read / no G20 lift / no position modification) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | PENDING (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-16 TASK-014BA-FIX1)
+
+1. VPS git pull and re-validate BA preview:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py -q
+       # expect 508/508 PASS
+
+   Then re-run the BA preview with both the AZ readiness-review and the AY dry-run upstream artifacts present and confirm:
+
+       # status  = TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_READY
+       # mode    = disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_checklist
+       # failed_stage = (none)
+       # CLI no longer rejects `--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-readiness-review`
+       # no socket opened, no endpoint called, no secret loaded, G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise TASK-014BB
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate final pre-execution review
+   **manual authorization review** — next phase; still no real execution).
+
+---
+
+> Previous README banner: TASK-014BA (2026-06-16) — see archived block below.
+
+## TASK-014BA Banner (archived 2026-06-16)
+
+> Original TASK-014BA adds the
 > guarded entry real execution adapter disabled implementation scaffold
 > manual authorization gate **final pre-execution review** scaffold:
 > new BA src/scripts/test triple, AZ readiness_review as direct upstream

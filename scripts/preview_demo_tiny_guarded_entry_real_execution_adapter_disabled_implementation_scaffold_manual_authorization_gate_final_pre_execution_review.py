@@ -43,7 +43,7 @@ Usage (DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE FINAL PRE-EXEC
     [--write-report]
 
 Usage (DISABLED IMPLEMENTATION SCAFFOLD DRY-RUN APPROVAL --- dry-run-only, no execution):
-  ... --allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review
+  ... --allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review
 
 Usage (REAL ENTRY EXECUTION GUARD --- always returns
        REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED, no socket opened,
@@ -105,7 +105,7 @@ IMPORTANT:
     disabled implementation scaffold manual authorization gate final pre-execution review
     is documented only --- this task does NOT implement the adapter.
     No automatic git commit, no automatic git push.
-  - Even with --allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review the module only emits
+  - Even with --allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review the module only emits
     a sanitized dry-run artifact.  disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_conclusion
     is fixed at DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_READY_NOT_EXECUTABLE.
   - Even with --allow-real-entry-execution the design returns
@@ -285,6 +285,12 @@ _DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RU
     / "outputs"
     / "demo_trading"
     / "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run"
+)
+_DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_DIR = (
+    ROOT
+    / "outputs"
+    / "demo_trading"
+    / "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review"
 )
 _DEFAULT_OUTPUT_DIR          = (
     ROOT
@@ -553,13 +559,32 @@ def load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate
 ) -> dict | None:
     """Load the latest TASK-014AY manual authorization gate dry-run artifact.
 
-    TASK-014BA's direct upstream. The artifact carries AX's manual
-    authorization gate design proof plus the 33 upstreams AX already
-    consumed plus AY's simulated-approval envelope proof.
+    Pre-BA-FIX1 this was TASK-014BA's DIRECT upstream.  BA-FIX1 demoted AY to
+    chained-through-AZ (still required as a proof envelope, but AZ readiness-
+    review is now the DIRECT upstream).  The artifact still carries AX's
+    manual-authorization-gate design proof plus the 33 upstreams AX already
+    consumed plus AY's simulated-approval envelope proof — all of which AZ
+    re-records in its own readiness-review artifact.
     """
     return _load_json(
         entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir
         / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.json"
+    )
+
+
+def load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review(
+    entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_dir: Path,
+) -> dict | None:
+    """Load the latest TASK-014AZ manual authorization gate readiness-review artifact.
+
+    TASK-014BA's DIRECT upstream (post-BA-FIX1).  The artifact carries AY's
+    manual-authorization-gate dry-run proof plus the 34 upstreams AY already
+    consumed plus AZ's flat-key record of AY's simulated-approval envelope
+    proof (the nested two-deep proof envelope BA validates).
+    """
+    return _load_json(
+        entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_dir
+        / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.json"
     )
 
 
@@ -714,7 +739,7 @@ def _write_report(
     md_lines: list[str] = [
         "# Tiny Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Manual Authorization Gate Final Pre-Execution Review (TASK-014BA)",
         "",
-        "_TASK-014BA consumes TASK-014AY disabled implementation scaffold manual authorization gate dry-run output at "
+        "_TASK-014BA consumes TASK-014AZ disabled implementation scaffold manual authorization gate readiness review output at "
         "runtime and produces a disabled implementation scaffold manual authorization gate final pre-execution review for TASK-014BB. "
         "It does not implement the adapter, never sends an order, never "
         "calls any endpoint, never lifts G20._",
@@ -915,6 +940,68 @@ def _write_report(
         f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof} |",
         f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender | "
         f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender} |",
+        # ----- TASK-014BA-FIX1: AZ direct upstream (readiness review) -----
+        f"| consumed_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_contract_version | "
+        f"{r.consumed_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_contract_version} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_status | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_status} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_mode | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_mode} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_conclusion | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_conclusion} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_authorization_result | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_authorization_result} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_response_status | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_response_status} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_real_execution_allowed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_real_execution_allowed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_send_allowed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_send_allowed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_adapter_implementation_included | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_adapter_implementation_included} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_adapter_execution_included | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_adapter_execution_included} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_order_endpoint_called | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_order_endpoint_called} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_stop_endpoint_called | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_stop_endpoint_called} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_no_position_modified | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_no_position_modified} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_no_secrets_loaded | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_no_secrets_loaded} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_g20_lifted | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_g20_lifted} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_next_required_task | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_next_required_task} |",
+        # AZ's nested AY-dry-run simulated-approval envelope (BA-FIX1 two-deep proof)
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof} |",
+        f"| upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender | "
+        f"{r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender} |",
         f"| next_required_task | {r.next_required_task} |",
         "",
         "## Disabled Implementation Scaffold Manual Authorization Gate Final Pre-Execution Review Scope",
@@ -1077,7 +1164,7 @@ def _write_report(
         "> sender G20 (protected_entry_policy_missing), NEVER performs",
         "> any automatic git commit, NEVER performs any automatic git",
         "> push.  The 5 existing demo positions are NEVER touched.",
-        "> Even with --allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review the module",
+        "> Even with --allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review the module",
         "> only emits a sanitized dry-run artifact",
         "> (disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_conclusion remains",
         "> DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_READY_NOT_EXECUTABLE).  Even with",
@@ -1133,6 +1220,7 @@ def run_execute(
     entry_disabled_implementation_scaffold_final_pre_execution_review_dir: Path | None = None,
     entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir: Path | None = None,
     entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir: Path | None = None,
+    entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_dir: Path | None = None,
     output_dir:                        Path | None = None,
     _now:                              datetime | None = None,
 ) -> int:
@@ -1220,6 +1308,10 @@ def run_execute(
         entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir
         or _DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_DRY_RUN_DIR
     )
+    _entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_dir = (
+        entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_dir
+        or _DEFAULT_ENTRY_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_DIR
+    )
     _out_dir              = output_dir                  or _DEFAULT_OUTPUT_DIR
 
     print(_SEP)
@@ -1230,7 +1322,7 @@ def run_execute(
     else:
         print("DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE FINAL PRE-EXECUTION REVIEW CHECKLIST --- NO NETWORK --- final-pre-execution-review-only")
     print("TASK-014BA: Guarded Entry Real Execution Adapter Disabled Implementation Scaffold Manual Authorization Gate Final Pre-Execution Review")
-    print("  consumes TASK-014AY disabled implementation scaffold manual authorization gate dry-run output -> produces disabled implementation scaffold manual authorization gate final pre-execution review for TASK-014BB")
+    print("  consumes TASK-014AZ disabled implementation scaffold manual authorization gate readiness review output at runtime -> produces disabled implementation scaffold manual authorization gate final pre-execution review for TASK-014BB")
     print(f"  adapter_name                          : {ADAPTER_NAME}")
     print(f"  adapter_contract_version              : {ADAPTER_CONTRACT_VERSION}")
     print(f"  consumed_readiness_contract_version   : {CONSUMED_READINESS_CONTRACT_VERSION}")
@@ -1298,6 +1390,11 @@ def run_execute(
     entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run = (
         load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run(
             _entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir
+        )
+    )
+    entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review = (
+        load_latest_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review(
+            _entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_dir
         )
     )
 
@@ -1468,6 +1565,13 @@ def run_execute(
                 / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.json"
             )
         )
+    if entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review is None:
+        missing.append(
+            str(
+                _entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_dir
+                / "latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.json"
+            )
+        )
 
     if missing:
         print("\n[FAIL CLOSED] Missing upstream artifact(s):")
@@ -1517,6 +1621,7 @@ def run_execute(
     print(f"  entry_disabled_implementation_scaffold_final_pre_execution_review_src: {_entry_disabled_implementation_scaffold_final_pre_execution_review_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.json'}")
     print(f"  entry_disabled_implementation_scaffold_manual_authorization_gate_design_src: {_entry_disabled_implementation_scaffold_manual_authorization_gate_design_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.json'}")
     print(f"  entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_src: {_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.json'}")
+    print(f"  entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_src: {_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_dir / 'latest_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.json'}")
 
     gate = DemoTinyGuardedEntryRealExecutionAdapterDisabledImplementationScaffoldFinalPreExecutionReview()
     result = gate.run_readiness_review(
@@ -1554,6 +1659,7 @@ def run_execute(
         entry_disabled_implementation_scaffold_final_pre_execution_review=entry_disabled_implementation_scaffold_final_pre_execution_review,
         entry_disabled_implementation_scaffold_manual_authorization_gate_design=entry_disabled_implementation_scaffold_manual_authorization_gate_design,
         entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run,
+        entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review,
         symbol=symbol,
         expected_commit_hash=expected_commit_hash,
         allow_implementation_design=allow_implementation_design,
@@ -1598,7 +1704,7 @@ def main() -> None:
             "git commit, no automatic git push.  Disabled implementation "
             "scaffold manual authorization gate final pre-execution review for the FUTURE TASK-014BA adapter "
             "disabled implementation scaffold manual authorization gate final pre-execution review.  Even with "
-            "--allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review "
+            "--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review "
             "this only emits a sanitized design artifact whose "
             "disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_conclusion remains "
             "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_READY_NOT_EXECUTABLE; "
@@ -1729,8 +1835,14 @@ def main() -> None:
     parser.add_argument("--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-dry-run", action="store_true",
                         help=("Read tiny guarded entry real execution adapter "
                               "disabled implementation scaffold manual authorization gate dry-run JSON "
-                              "(TASK-014AY artifact -- AZ's direct upstream) from "
+                              "(TASK-014AY artifact -- now chained-through-AZ, "
+                              "no longer BA's direct upstream) from "
                               "outputs/.../tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run/."))
+    parser.add_argument("--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-readiness-review", action="store_true",
+                        help=("Read tiny guarded entry real execution adapter "
+                              "disabled implementation scaffold manual authorization gate readiness-review JSON "
+                              "(TASK-014AZ artifact -- BA's DIRECT upstream) from "
+                              "outputs/.../tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review/."))
     parser.add_argument("--symbol", default=DEFAULT_SELECTED_SYMBOL,
                         metavar="SYMBOL",
                         help=("Symbol to design against.  "
@@ -1744,7 +1856,7 @@ def main() -> None:
                               "documentation sync review (recorded only; the "
                               "implementation design NEVER performs an automatic "
                               "git commit or push)."))
-    parser.add_argument("--allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review",
+    parser.add_argument("--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review",
                         dest="allow_implementation_design",
                         action="store_true",
                         help=("Promote envelope to disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_approval. "

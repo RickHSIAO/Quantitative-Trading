@@ -1171,6 +1171,74 @@ def _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_
     }
 
 
+def _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review() -> dict:
+    """The 36th upstream artifact — TASK-014AZ's documented-only readiness-review output.
+
+    TASK-014AZ produces the disabled-implementation-scaffold manual authorization
+    gate *readiness-review* artifact (the AZ DIRECT upstream of TASK-014BA).
+    BA consumes this as its direct upstream, with AY/AX/... demoted to chained-
+    through-AZ proof.  The artifact also carries a flat set of nested
+    `upstream_entry_..._dry_run_simulated_approval_*` fields documenting that
+    AZ already verified AY's simulated-approval envelope — BA validates that
+    two-deep proof envelope as well.  All safety guards remain identical so a
+    valid AZ artifact never permits any real execution downstream.
+    """
+    return {
+        "timestamp_utc":                "2026-06-16T01:15:00.0000000Z",
+        "mode":                         "disabled_implementation_scaffold_manual_authorization_gate_readiness_review_checklist",
+        "selected_symbol":              "SOLUSDT",
+        "status":                       "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY",
+        "adapter_name":                 ADAPTER_NAME,
+        "adapter_contract_version":     "disabled_implementation_scaffold_manual_authorization_gate_readiness_review_v1",
+        "real_execution_allowed":              False,
+        "send_allowed":                        False,
+        "adapter_implementation_included":     False,
+        "adapter_execution_included":          False,
+        "order_endpoint_called":               False,
+        "stop_endpoint_called":                False,
+        "no_position_modified":                True,
+        "no_secrets_loaded":                   True,
+        "g20_lifted":                          False,
+        "g20_policy_still_in_place":           True,
+        "no_live_endpoint":                    True,
+        "no_auto_git_operations":              True,
+        "real_entry_implemented":              False,
+        "current_task_real_execution_allowed": False,
+        "authorization_result":         "DOCUMENTED_ONLY_NOT_AUTHORIZED",
+        "disabled_implementation_scaffold_manual_authorization_gate_readiness_review_conclusion":
+            "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY_NOT_EXECUTABLE",
+        "expected_commit_hash":         "0000000000000000000000000000000000000000",
+        "audit_artifacts": {
+            "response_status": "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_NOT_SENT",
+        },
+        "final_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_verdict": {
+            "disabled_implementation_scaffold_manual_authorization_gate_readiness_review_conclusion":
+                "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY_NOT_EXECUTABLE",
+            "authorization_result": "DOCUMENTED_ONLY_NOT_AUTHORIZED",
+            "real_execution_allowed": False,
+            "send_allowed": False,
+        },
+        # Nested two-deep proof: AZ recorded that AY's dry-run simulated-approval
+        # envelope was safe, documented-only, and never authorizes real execution.
+        # BA validates this flat-key envelope so the chain remains traceable.
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_artifact_used":                          True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_is_sanitized":                           True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_envelope_documented_only":               True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution":        True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution":                       False,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_missing_fails_closed":                   True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_ambiguous_fails_closed":                 True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_execution_request_fails_closed":         True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value":             False,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_signature_like_value":          False,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_no_live_trading_proof":              True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_protected_position_untouched_proof": True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_has_g20_still_active_proof":             True,
+        "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender":                   False,
+        "next_required_task":           "TASK-014BA_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review",
+    }
+
+
 def _valid_simulated_approval() -> dict:
     """Documented-only simulated-approval envelope: never authorizes real execution."""
     return {
@@ -1244,6 +1312,7 @@ def _run(
     entry_disabled_implementation_scaffold_final_pre_execution_review=_UNSET,
     entry_disabled_implementation_scaffold_manual_authorization_gate_design=_UNSET,
     entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_UNSET,
+    entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=_UNSET,
     simulated_approval=_UNSET,
     symbol=DEFAULT_SELECTED_SYMBOL,
     expected_commit_hash="",
@@ -1287,6 +1356,7 @@ def _run(
         entry_disabled_implementation_scaffold_final_pre_execution_review=_valid_entry_disabled_implementation_scaffold_final_pre_execution_review() if entry_disabled_implementation_scaffold_final_pre_execution_review is _UNSET else entry_disabled_implementation_scaffold_final_pre_execution_review,
         entry_disabled_implementation_scaffold_manual_authorization_gate_design=_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_design() if entry_disabled_implementation_scaffold_manual_authorization_gate_design is _UNSET else entry_disabled_implementation_scaffold_manual_authorization_gate_design,
         entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run=_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run() if entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run is _UNSET else entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run,
+        entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=_valid_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review() if entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review is _UNSET else entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review,
         simulated_approval=(None if simulated_approval is _UNSET else simulated_approval),
         symbol=symbol,
         expected_commit_hash=expected_commit_hash,
@@ -3410,8 +3480,10 @@ class TestARFIX2MarkdownReportTitleAndSections:
         assert "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-DESIGN-ONLY module" not in md
         assert "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-DRY-RUN-ONLY module" not in md
         assert "IMPLEMENTATION-DESIGN-ONLY module" not in md
-        # Footer must reference --allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review flag.
-        assert "--allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review" in md
+        # BA-FIX1 renamed the approval flag to identify BA's own task
+        # (final pre-execution review), not its upstream (readiness review).
+        assert "--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review" in md
+        assert "--allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review" not in md
         # Footer conclusion reference must use disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review terminology.
         assert "disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_conclusion remains" in md
         assert "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_READY_NOT_EXECUTABLE" in md
@@ -3455,12 +3527,13 @@ class TestARFIX2CLIBannerSaysStaticSkeleton:
         assert "disabled implementation scaffold manual authorization gate final pre-execution review" in normalized
         assert "TASK-014BA" in normalized
         assert "TASK-014BA" in normalized
-        # CLI description must reference --allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review,
-        # not the legacy --allow-implementation-design flag.
-        assert "allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review" in normalized
+        # BA-FIX1 renamed the approval flag — CLI description must reference
+        # --allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review
+        # (BA's own task identity), not the legacy --allow-...-readiness-review (AZ's identity).
+        assert "allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review" in normalized
         # The argparse description must surface the conclusion contract so
         # operators see DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_READY_NOT_EXECUTABLE
-        # right next to --allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review.
+        # right next to --allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review.
         assert "disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_conclusion" in normalized
         assert "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_READY_NOT_EXECUTABLE" in normalized
 
@@ -3991,8 +4064,11 @@ class TestAUATFIX1ReportProof:
             (ln for ln in md.splitlines() if ln.startswith("_TASK-014BA consumes")),
             "",
         )
-        assert "TASK-014AY disabled implementation scaffold manual authorization gate dry-run output" in intro
+        # BA-FIX1: AZ readiness review is now BA's DIRECT upstream
+        # (AY dry-run is demoted to chained-through-AZ).
+        assert "TASK-014AZ disabled implementation scaffold manual authorization gate readiness review output" in intro
         assert "for TASK-014BB" in intro
+        assert "TASK-014AY disabled implementation scaffold manual authorization gate dry-run output" not in intro
         assert "TASK-014AX disabled implementation scaffold manual authorization gate design output" not in intro
         assert "TASK-014AU disabled implementation scaffold dry-run output" not in intro
         assert "TASK-014AT disabled implementation scaffold design output" not in intro
@@ -4725,8 +4801,11 @@ class TestAXAWFIX1ReportProof:
             (ln for ln in md.splitlines() if ln.startswith("_TASK-014BA consumes")),
             "",
         )
-        assert "TASK-014AY disabled implementation scaffold manual authorization gate dry-run output" in intro
+        # BA-FIX1: AZ readiness review is now BA's DIRECT upstream
+        # (AY dry-run is demoted to chained-through-AZ).
+        assert "TASK-014AZ disabled implementation scaffold manual authorization gate readiness review output" in intro
         assert "for TASK-014BB" in intro
+        assert "TASK-014AY disabled implementation scaffold manual authorization gate dry-run output" not in intro
         assert "TASK-014AX disabled implementation scaffold manual authorization gate design output" not in intro
         assert "TASK-014AU disabled implementation scaffold dry-run output" not in intro
         assert "for TASK-014BA" not in intro
@@ -5528,10 +5607,15 @@ class TestAYFIX3WordingCorrection:
         assert "DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DESIGN APPROVAL" not in text
 
     def test_stage0_summary_mentions_ay_direct_artifact(self):
-        """Stage-0 summary must reference AY as the direct artifact consumed."""
+        """Stage-0 summary now references AZ as direct artifact (BA-FIX1).
+
+        Pre-BA-FIX1 BA expected AY as direct.  BA-FIX1 demoted AY to chained-
+        through-AZ and promoted AZ (readiness-review) to direct upstream.  The
+        summary must therefore mention 'AZ direct artifact' instead.
+        """
         r = _run()
         summary = r.stages[STAGE_0_ARTIFACT_PREFLIGHT]["summary"]
-        assert "AY direct artifact" in summary
+        assert "AZ direct artifact" in summary
 
     def test_stage0_summary_mentions_34_upstream_already_consumed_by_ay(self):
         """Stage-0 summary must say the 34 upstreams are already consumed by AY
@@ -5676,8 +5760,10 @@ class TestAZAYUpstreamProofWordingInReport:
             (ln for ln in md.splitlines() if ln.startswith("_TASK-014BA consumes")),
             "",
         )
-        assert "TASK-014AY" in intro_line
-        assert "disabled implementation scaffold manual authorization gate dry-run output" in intro_line
+        # BA-FIX1: AZ readiness review is now BA's DIRECT upstream, not AY dry-run.
+        assert "TASK-014AZ" in intro_line
+        assert "disabled implementation scaffold manual authorization gate readiness review output" in intro_line
+        assert "TASK-014AY disabled implementation scaffold manual authorization gate dry-run output" not in intro_line
         assert "TASK-014AX disabled implementation scaffold manual authorization gate design output" not in intro_line
         assert "TASK-014AW disabled implementation scaffold final pre-execution review output" not in intro_line
         assert "TASK-014AV disabled implementation scaffold readiness review output" not in intro_line
@@ -6565,3 +6651,297 @@ class TestAZFIX2SourceLevelChainLiterals:
         )
         assert not bad_pattern.search(s), "BA src wrongly compares AY next_required_task to BA self literal"
 
+
+# ===========================================================================
+# TASK-014BA-FIX1: AZ (manual-authorization-gate-readiness-review) DIRECT
+# upstream acceptance + AZ's nested AY-dry-run simulated-approval envelope.
+#
+# These tests verify that BA-FIX1 correctly wires AZ readiness-review as the
+# 36th / DIRECT upstream (with AY/AX/... demoted to chained-through-AZ) and
+# that the 29 new hard-fail gates (15 AZ-direct + 14 nested-AY-sa) force
+# FAIL_CLOSED on any violation while never authorizing any real execution.
+# ===========================================================================
+def _azrr_mutate(**overrides) -> dict:
+    """Return a valid AZ readiness-review dict with shallow overrides."""
+    base = _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review()
+    base.update(overrides)
+    return base
+
+
+class TestBAFIX1HappyPath:
+    """Default _run() fixture exposes AZ direct-upstream proof and never FAIL_CLOSED."""
+
+    def test_contract_version_constant_present(self):
+        assert _AZM.CONSUMED_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_CONTRACT_VERSION \
+            == "disabled_implementation_scaffold_manual_authorization_gate_readiness_review_v1"
+
+    def test_default_run_exposes_azrr_status_and_mode(self):
+        r = _run()
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_status \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_mode \
+            == "disabled_implementation_scaffold_manual_authorization_gate_readiness_review_checklist"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_conclusion \
+            == "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY_NOT_EXECUTABLE"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_authorization_result \
+            == "DOCUMENTED_ONLY_NOT_AUTHORIZED"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_response_status \
+            == "DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_NOT_SENT"
+        assert r.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_next_required_task \
+            == "TASK-014BA_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review"
+
+    def test_default_run_propagates_consumed_readiness_review_contract_version(self):
+        r = _run()
+        assert r.consumed_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_contract_version \
+            == "disabled_implementation_scaffold_manual_authorization_gate_readiness_review_v1"
+
+    def test_default_run_status_is_ready_not_fail_closed(self):
+        r = _run()
+        assert r.status == STATUS_IMPLEMENTATION_DESIGN_READY
+        _assert_safety_invariants_hold(r)
+
+    def test_default_run_to_dict_exposes_readiness_review_fields(self):
+        d = _run().to_dict()
+        assert d["upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_status"] \
+            == "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY"
+        assert d["consumed_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_contract_version"] \
+            == "disabled_implementation_scaffold_manual_authorization_gate_readiness_review_v1"
+
+
+class TestBAFIX1MissingAZArtifactFailsClosed:
+    """When the AZ readiness-review artifact is missing, BA must FAIL_CLOSED."""
+
+    def test_missing_azrr_artifact_fails_closed(self):
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=None)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+
+class TestBAFIX1HardFailDirectGates:
+    """Each of the 6 representative AZ-direct hard-fail gates must yield FAIL_CLOSED."""
+
+    def test_azrr_status_unacceptable_fails_closed(self):
+        bad = _azrr_mutate(status="SOMETHING_UNACCEPTABLE")
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+    def test_azrr_real_execution_allowed_true_fails_closed(self):
+        bad = _azrr_mutate(real_execution_allowed=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+    def test_azrr_send_allowed_true_fails_closed(self):
+        bad = _azrr_mutate(send_allowed=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+    def test_azrr_order_endpoint_called_true_fails_closed(self):
+        bad = _azrr_mutate(order_endpoint_called=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+    def test_azrr_g20_lifted_true_fails_closed(self):
+        bad = _azrr_mutate(g20_lifted=True)
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+    def test_azrr_next_task_mismatch_fails_closed(self):
+        bad = _azrr_mutate(next_required_task="TASK-014SOMETHING_ELSE")
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+
+class TestBAFIX1NestedAYDryRunSimulatedApprovalGates:
+    """The nested AY-dry-run simulated-approval envelope (BA validates AZ's record)."""
+
+    def test_nested_sa_grants_execution_fails_closed(self):
+        bad = _azrr_mutate(**{
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution": True,
+        })
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+    def test_nested_sa_authorizes_real_execution_fails_closed(self):
+        bad = _azrr_mutate(**{
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_never_authorizes_real_execution": False,
+        })
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+    def test_nested_sa_contains_secret_like_value_fails_closed(self):
+        bad = _azrr_mutate(**{
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_contains_secret_like_value": True,
+        })
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+    def test_nested_sa_auto_triggers_sender_fails_closed(self):
+        bad = _azrr_mutate(**{
+            "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_auto_triggers_sender": True,
+        })
+        r = _run(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=bad)
+        assert r.status == STATUS_FAIL_CLOSED
+        _assert_safety_invariants_hold(r)
+
+
+class TestBAFIX1AllowRealEntryStillNotImplemented:
+    """Even with --allow-real-entry-execution and a valid AZ direct upstream,
+    BA must still return REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED."""
+
+    def test_allow_real_entry_still_not_implemented(self):
+        r = _run(allow_real_entry_execution=True)
+        assert r.status == STATUS_REAL_ENTRY_NOT_IMPL
+        _assert_safety_invariants_hold(r)
+
+
+class TestBAFIX1Stage0SummaryMentionsAZDirect:
+    """The stage-0 summary must mention AZ as direct artifact + AZ's nested AY proof envelope."""
+
+    def test_stage0_summary_mentions_az_direct_artifact(self):
+        r = _run()
+        summary = r.stages[STAGE_0_ARTIFACT_PREFLIGHT]["summary"]
+        assert "AZ direct artifact" in summary
+        assert "manual authorization gate readiness review" in summary
+
+    def test_stage0_summary_mentions_az_nested_ay_proof_envelope(self):
+        r = _run()
+        summary = r.stages[STAGE_0_ARTIFACT_PREFLIGHT]["summary"]
+        assert "nested AY proof envelope" in summary
+
+
+class TestBAFIX1ReportContent:
+    """The Markdown report must surface the new AZ direct + nested AY proof rows."""
+
+    def test_markdown_report_has_azrr_status_row(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_status" in md
+        assert "TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_READINESS_REVIEW_READY" in md
+        assert "consumed_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_contract_version" in md
+
+    def test_markdown_report_has_nested_ay_sa_row(self, repo_tmp_path):
+        from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review import (
+            _write_report,
+        )
+        r = _run(symbol="SOLUSDT")
+        out_dir = repo_tmp_path / "out"
+        _write_report(r, out_dir)
+        base = "tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review"
+        md = (out_dir / f"latest_{base}.md").read_text(encoding="utf-8")
+        assert "upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_dry_run_simulated_approval_grants_execution" in md
+
+
+class TestBAFIX1PreviewCLIFlag:
+    """The preview script must expose --from-latest-...-readiness-review (AZ direct)
+    and the renamed --allow-...-final-pre-execution-review approval flag."""
+
+    def test_preview_help_advertises_az_readiness_review_loader(self):
+        import os, subprocess, sys
+        env = dict(os.environ)
+        env["COLUMNS"] = "400"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py",
+                "--help",
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+        assert result.returncode == 0
+        normalized = " ".join((result.stdout + result.stderr).split())
+        assert "--from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-readiness-review" in normalized
+
+    def test_preview_help_renamed_approval_flag(self):
+        import os, subprocess, sys
+        env = dict(os.environ)
+        env["COLUMNS"] = "400"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py",
+                "--help",
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+        assert result.returncode == 0
+        normalized = " ".join((result.stdout + result.stderr).split())
+        assert "--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review" in normalized
+        # The legacy AZ-identity approval flag must NOT be exposed by BA.
+        assert "--allow-disabled-implementation-scaffold-manual-authorization-gate-readiness-review" not in normalized
+
+
+class TestBAFIX1MissingAZArtifactSubprocessExits1:
+    """End-to-end: when the AZ readiness-review JSON is absent, the preview
+    script exits with code 1 (fail-closed) and prints the missing path."""
+
+    def test_subprocess_missing_azrr_artifact_exits_nonzero(self, repo_tmp_path):
+        import os, subprocess, sys
+        # The preview script's loaders resolve from default dirs anchored at
+        # the script's ROOT (= the repo root).  Running from a scratch cwd
+        # under outputs/_test_scratch leaves the script's ROOT computation
+        # unchanged, so to force fail-closed on a MISSING AZ artifact we
+        # instead override the dirs to point at an empty scratch dir via the
+        # python -c entrypoint (which calls run_execute with explicit dirs).
+        empty_dir = repo_tmp_path / "empty"
+        empty_dir.mkdir()
+        script = (
+            "import sys\n"
+            f"sys.path.insert(0, r'{ROOT}')\n"
+            "from pathlib import Path\n"
+            "from scripts.preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review import run_execute\n"
+            f"rc = run_execute(entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review_dir=Path(r'{empty_dir}'))\n"
+            "sys.exit(rc)\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=str(ROOT),
+            capture_output=True,
+            timeout=60,
+            env={**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"},
+        )
+        # Decode bytes manually with errors='replace' to avoid Windows cp950
+        # codec errors when the script's banner contains non-ASCII bytes that
+        # don't round-trip through the default OEM code page.
+        stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+        stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+        # When the AZ readiness-review artifact is absent the script must
+        # exit non-zero and surface FAIL CLOSED in stdout/stderr.
+        assert result.returncode != 0
+        combined = stdout + stderr
+        assert "FAIL" in combined.upper()
+        assert "readiness_review" in combined
+
+
+class TestBAFIX1FixtureValidatesHappyPath:
+    """The new _valid_entry_..._readiness_review() fixture must yield READY."""
+
+    def test_fixture_run_yields_ready_status_and_safety_invariants(self):
+        r = _run(
+            entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review=
+                _valid_entry_disabled_implementation_scaffold_manual_authorization_gate_readiness_review(),
+        )
+        assert r.status == STATUS_IMPLEMENTATION_DESIGN_READY
+        _assert_safety_invariants_hold(r)
