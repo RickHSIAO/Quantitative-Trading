@@ -4,9 +4,11 @@ Stage 1 focused-core tests for TASK-014BD
 src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review.py
 
 These tests prove that the BD src is internally coherent: identity
-constants, the 36 hard-fail gate constants, the result dataclass
-default safety invariants, the BC artifact loader, and the run-function
-gate evaluation logic.  The full test pack (CLI subprocess tests,
+constants, the 37 hard-fail gate constants (FIX1: BD hardens one
+extra Group B phrase, "TASK-014BC consumes TASK-014AV", lifting the
+gate count from BC's 36 to 37), the result dataclass default safety
+invariants, the BC artifact loader, and the run-function gate
+evaluation logic.  The full test pack (CLI subprocess tests,
 on-disk JSON/MD inspection, identity-wording grep tests, all the
 BC-content-grep negative-proof tests) is Stage 3 and is intentionally
 NOT included here.
@@ -252,9 +254,12 @@ def test_scope_summary_literal_exact_match() -> None:
     assert SCOPE_SUMMARY_LITERAL == expected
 
 
-def test_hard_fail_gates_frozenset_contains_exactly_36() -> None:
+def test_hard_fail_gates_frozenset_contains_exactly_37() -> None:
+    # FIX1: BD hardens one extra Group B phrase ("TASK-014BC consumes
+    # TASK-014AV") into the enforced set, lifting BD's hard-fail gate
+    # count from BC's baseline of 36 to 37.
     assert isinstance(_HARD_FAIL_GATES, frozenset)
-    assert len(_HARD_FAIL_GATES) == 36
+    assert len(_HARD_FAIL_GATES) == 37
 
 
 def test_missing_bc_artifact_triggers_GATE_BC_ARTIFACT_MISSING_and_FAIL_CLOSED(tmp_path: Path) -> None:

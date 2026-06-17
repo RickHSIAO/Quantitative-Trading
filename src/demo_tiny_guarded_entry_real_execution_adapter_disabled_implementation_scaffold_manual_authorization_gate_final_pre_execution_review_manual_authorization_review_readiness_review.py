@@ -61,10 +61,13 @@ dry-run, AX manual authorization gate design, AW final pre-execution review,
 AV readiness review, AU dry-run, AT design, AS static skeleton dry-run, AR
 static skeleton design, and AQ implementation design."
 
-Stage 1 implementation only: identity constants, 36 hard-fail gate
-constants, result dataclass, BC artifact loader, BC upstream parser,
-gate evaluation, and the run function. CLI / preview script / markdown
-report writer / full test pack are deferred to Stage 2 / Stage 3.
+Stage 1 implementation only: identity constants, 37 hard-fail gate
+constants (BD hardens one extra forbidden direct-consumption phrase,
+"TASK-014BC consumes TASK-014AV", lifting BD's Group B count from 6
+to 7 and BD's total gate count from BC's 36 to 37), result dataclass,
+BC artifact loader, BC upstream parser, gate evaluation, and the run
+function. CLI / preview script / markdown report writer / full test
+pack are deferred to Stage 2 / Stage 3.
 """
 from __future__ import annotations
 
@@ -272,7 +275,14 @@ _COUPLING_PATTERNS: tuple[str, ...] = (
 
 
 # ===========================================================================
-# B. 36 hard-fail gate constants
+# B. 37 hard-fail gate constants  (FIX1: hardened from 36 -> 37)
+#
+# TASK-014BD-FIX1 hardens one extra forbidden direct-consumption phrase
+# ("TASK-014BC consumes TASK-014AV") into the enforced Group B set,
+# lifting BD's total hard-fail gate count from the BC-side baseline of
+# 36 to 37.  Rationale: BC's scope_summary explicitly references AV
+# only as BB-proven chained proof; any direct "BC consumes AV" wording
+# from upstream would invalidate that chain claim and must fail closed.
 # ===========================================================================
 
 # --- Group A: BC artifact / fields (18 gates) ---
@@ -322,11 +332,15 @@ GATE_BD_G20_LIFT                                    = "bd_g20_lift"
 GATE_BD_POSITION_MODIFICATION                       = "bd_position_modification"
 
 
-# The 36 hard-fail gates.  Counts mirror BC exactly:
-# A=18 + B=6 + C=3 + D=9 = 36.  Group B drops MISSING_BB_DIRECT_UPSTREAM
-# from the enforced set (its absence is also signalled via Group A
-# missing-bb-chained-proof) so that Group B is exactly 6 entries: the
-# 5 forbidden BC-consumes-* phrases + itdocuments-typo.
+# The 37 hard-fail gates (FIX1: BD hardens from BC's 36 -> 37).
+# Counts: A=18 + B=7 + C=3 + D=9 = 37.  Group B drops
+# MISSING_BB_DIRECT_UPSTREAM from the enforced set (its absence is also
+# signalled via Group A missing-bb-chained-proof); Group B is now 7
+# entries: 6 forbidden BC-consumes-* phrases (BA, AZ, AY, AX, AW, AV)
+# + itdocuments-typo.  Compared with BC's Group B (5 + 1 = 6), BD
+# adds AV because BC's scope_summary references AV only as BB-proven
+# chained proof and any direct "BC consumes AV" wording invalidates
+# that chain.
 _HARD_FAIL_GATES: frozenset[str] = frozenset({
     # Group A (18)
     GATE_BC_ARTIFACT_MISSING,
@@ -347,12 +361,19 @@ _HARD_FAIL_GATES: frozenset[str] = frozenset({
     GATE_BC_G20_LIFTED_TRUE,
     GATE_BC_MISSING_BB_CHAINED_PROOF,
     GATE_BC_MISSING_BB_PROVEN_CHAINED_PROOF,
-    # Group B (6) -- 5 forbidden BC-consumes phrases + itdocuments typo.
+    # Group B (7) -- 6 forbidden BC-consumes phrases + itdocuments typo.
+    # FIX1: BD hardens one extra forbidden direct-consumption phrase (AV)
+    # compared with the BC-side 6-gate Group B pattern, lifting BD's total
+    # hard-fail gate count from 36 to 37.  AV must be guarded because BC's
+    # scope_summary explicitly references AV only as BB-proven chained
+    # proof, and any direct "BC consumes AV" wording invalidates that
+    # chain claim.
     GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_BA,
     GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AZ,
     GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AY,
     GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AX,
     GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AW,
+    GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AV,
     GATE_BC_SCOPE_SUMMARY_HAS_ITDOCUMENTS_TYPO,
     # Group C (3)
     GATE_BC_STATUS_FAIL_CLOSED,
@@ -722,6 +743,7 @@ def _parse_bc_upstream(bc_artifact: dict, result: _Result) -> list[str]:
     has_no_bc_ay              = _BC_SCOPE_FORBIDDEN_AY not in bc_scope_summary
     has_no_bc_ax              = _BC_SCOPE_FORBIDDEN_AX not in bc_scope_summary
     has_no_bc_aw              = _BC_SCOPE_FORBIDDEN_AW not in bc_scope_summary
+    has_no_bc_av              = _BC_SCOPE_FORBIDDEN_AV not in bc_scope_summary
     has_no_itdoc_typo         = _BC_SCOPE_FORBIDDEN_ITDOC not in bc_scope_summary
 
     result.upstream_entry_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run_scope_summary_mentions_bb_direct_upstream = mentions_bb_direct
@@ -792,6 +814,8 @@ def _parse_bc_upstream(bc_artifact: dict, result: _Result) -> list[str]:
         triggered.append(GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AX)
     if not has_no_bc_aw:
         triggered.append(GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AW)
+    if not has_no_bc_av:
+        triggered.append(GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AV)
     if not has_no_itdoc_typo:
         triggered.append(GATE_BC_SCOPE_SUMMARY_HAS_ITDOCUMENTS_TYPO)
 

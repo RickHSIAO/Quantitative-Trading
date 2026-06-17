@@ -61,6 +61,7 @@ from src.demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_
     GATE_BC_ORDER_ENDPOINT_CALLED_TRUE,
     GATE_BC_REAL_EXECUTION_ALLOWED_TRUE,
     GATE_BC_RESPONSE_STATUS_MISMATCH,
+    GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AV,
     GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AW,
     GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AX,
     GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AY,
@@ -301,9 +302,12 @@ class TestBD00CoreRun:
             == _VALID_BB_SCOPE_SUMMARY
         )
 
-    def test_hard_fail_gates_frozenset_size_is_36(self) -> None:
+    def test_hard_fail_gates_frozenset_size_is_37(self) -> None:
+        # FIX1: BD hardens one extra Group B phrase ("TASK-014BC consumes
+        # TASK-014AV") into the enforced set, lifting BD's hard-fail gate
+        # count from BC's baseline of 36 to 37.
         assert isinstance(_HARD_FAIL_GATES, frozenset)
-        assert len(_HARD_FAIL_GATES) == 36
+        assert len(_HARD_FAIL_GATES) == 37
 
     def test_happy_path_scope_summary_mentions_bools_set_True(
         self, valid_bc_artifact: dict[str, Any]
@@ -479,6 +483,20 @@ class TestBD02BCScopeSummaryGates:
         result = run(bc_artifact=bad)
         _assert_fail_closed_invariants(
             result, GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AW
+        )
+
+    def test_bc_scope_summary_contains_bc_consumes_av_fails_closed(self, valid_bc_artifact) -> None:
+        # FIX1: BD hardens AV as a Group B forbidden direct-consumption
+        # phrase (count: 36 -> 37).  BC's scope_summary references AV
+        # only as BB-proven chained proof; any direct "BC consumes AV"
+        # wording from upstream invalidates that chain and must fail
+        # closed.
+        bad = dict(valid_bc_artifact) | {
+            "scope_summary": _VALID_BC_SCOPE_SUMMARY + " TASK-014BC consumes TASK-014AV"
+        }
+        result = run(bc_artifact=bad)
+        _assert_fail_closed_invariants(
+            result, GATE_BC_SCOPE_SUMMARY_HAS_BC_CONSUMES_AV
         )
 
     def test_bc_scope_summary_contains_Itdocuments_fails_closed(self, valid_bc_artifact) -> None:

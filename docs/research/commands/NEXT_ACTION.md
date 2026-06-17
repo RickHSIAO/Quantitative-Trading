@@ -7,9 +7,10 @@
 > manual authorization gate final pre-execution review manual
 > authorization review **readiness review** scaffold: new BD src/scripts/test
 > triple (Stage 1 focused-core 17 tests + Stage 3 full pack 111 tests, kept as
-> two separate files), 36 hard-fail gates (Group A 18 BC-upstream / Group B 6
-> scope_summary content / Group C 3 BC-failure passthrough / Group D 9 BD
-> own-source safety), a ~52-field result dataclass exposing 17 BC-upstream
+> two separate files), 37 hard-fail gates (FIX1 hardens AV; Group A 18
+> BC-upstream / Group B 7 scope_summary content (incl. FIX1 AV guard) /
+> Group C 3 BC-failure passthrough / Group D 9 BD own-source safety),
+> a ~52-field result dataclass exposing 17 BC-upstream
 > proof fields + 11 BC→BB chained-proof fields, BC artifact loader/parser,
 > CLI preview script with `--from-latest-entry-...-manual-authorization-review-dry-run`
 > + `--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review-manual-authorization-review-readiness-review`
@@ -38,13 +39,13 @@
 | identity wording: `STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-READINESS-REVIEW-ONLY` | DONE |
 | `NEXT_REQUIRED_TASK = "TASK-014BE_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review"` | DONE |
 | direct upstream = BC manual-authorization-review dry-run; BB/BA/AZ/AY/AX/AW/AV/AU/AT/AS/AR/AQ referenced ONLY as BC-proven chained proof | DONE |
-| 36 hard-fail gates registered in `_HARD_FAIL_GATES` (Group A 18 + Group B 6 + Group C 3 + Group D 9) — any one forces `status == FAIL_CLOSED` | DONE |
+| 37 hard-fail gates registered in `_HARD_FAIL_GATES` (FIX1: Group A 18 + Group B 7 + Group C 3 + Group D 9 = 37) — any one forces `status == FAIL_CLOSED`. BD hardens one extra Group B phrase (`TASK-014BC consumes TASK-014AV`) compared with BC's 36-gate baseline. | DONE |
 | 17 BC-upstream dataclass fields + 11 BC→BB chained-proof dataclass fields + `to_dict()` JSON emission | DONE |
 | `write_report` writes `latest_*.json` / `latest_*.md` / `*_<UTC_TS>.json` / `*_<UTC_TS>.md` to `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review/` | DONE |
 | .gitignore updated with the new BD readiness-review output dir | DONE |
 | README "Demo Trading Guarded Lifecycle Status" board re-targeted to TASK-014BD (2026-06-17) | DONE |
 | py_compile BD src + scripts + Stage 1 test + Stage 3 full test | PASS |
-| pytest BD Stage 3 full pack | **111/111 PASS** |
+| pytest BD Stage 3 full pack | **112/112 PASS** (FIX1: +1 test for AV guard) |
 | pytest BD Stage 1 focused-core | **17/17 PASS** |
 | pytest BC Stage 3 full pack | 105/105 PASS |
 | pytest BC Stage 1 focused-core | 16/16 PASS |
@@ -61,11 +62,11 @@
 | pytest AS regression | 180/180 PASS |
 | pytest AR regression | 175/175 PASS |
 | pytest AQ regression | 138/138 PASS |
-| pytest combined chain (all 17 suites: BD stage3 + BD stage1 + BC stage3 + BC stage1 + BB stage3 + BB stage1 + BA + AZ + AY + AX + AW + AV + AU + AT + AS + AR + AQ) | **3529/3529 PASS** (3401 prior baseline + BD stage3 111 + BD stage1 17) |
+| pytest combined chain (all 17 suites: BD stage3 + BD stage1 + BC stage3 + BC stage1 + BB stage3 + BB stage1 + BA + AZ + AY + AX + AW + AV + AU + AT + AS + AR + AQ) | **3530/3530 PASS** (3401 prior baseline + BD stage3 112 + BD stage1 17) |
 | BD preview smoke (synthetic BC artifact) | exit 0; status `..._MANUAL_AUTHORIZATION_REVIEW_READINESS_REVIEW_READY`; report JSON+MD contain `TASK-014BD consumes TASK-014BC`; report JSON+MD do NOT contain `TASK-014BD consumes TASK-014BB`, `TASK-014BD consumes TASK-014BA`, `TASK-014BD consumes TASK-014AZ`, `TASK-014BD consumes TASK-014AY`, `TASK-014BD consumes TASK-014AX`, `TASK-014BD consumes TASK-014AW`, or `TASK-014BD consumes TASK-014AV`; report JSON+MD do NOT describe BC as a readiness review |
 | safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no secret read / no G20 lift / no position modification / no approval-input-as-authorization / no automatic git commit / no automatic git push) | CONFIRMED |
 | main.py / src/risk.py / BybitExecutor | UNTOUCHED |
-| local commit | pending — `TASK-014BD: add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review readiness review` (local only — NOT pushed) |
+| local commits | `a18357e TASK-014BD: ...` + FIX1 commit `TASK-014BD-FIX1: harden readiness review upstream scope AV guard` (local only — NOT pushed) |
 
 ## Next Rick Action (set by 2026-06-17 TASK-014BD)
 
@@ -80,7 +81,7 @@
            tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review.py \
            tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review_stage1.py
        python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review.py -q
-       # expect 111/111 PASS
+       # expect 112/112 PASS (FIX1: +1 test for AV guard)
        python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review_stage1.py -q
        # expect 17/17 PASS
 
