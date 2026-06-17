@@ -1,28 +1,130 @@
 # Next Action
 
-> README shared status updated by TASK-014BA-FIX2 (2026-06-17) — see
-> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014ba-fix2-2026-06-17)
-> for the cross-agent status board. TASK-014BA-FIX2 finishes the BA bulk-rename
-> cleanup: BA-FIX1 wired AZ readiness-review as BA's direct upstream and the
-> preview now succeeds on the VPS, but the generated BA report's
-> `scope_summary` field still carried over the old AY-direct wording
-> ("TASK-014BA consumes TASK-014AY DISABLED IMPLEMENTATION SCAFFOLD MANUAL
-> AUTHORIZATION GATE DRY-RUN output at runtime plus the 34 upstream artifacts
-> AY proves/chains, including AX manual authorization gate design, ...") plus
-> an "Itdocuments" typo. FIX2 rewrites the `scope_summary` to BA-correct
-> semantics ("TASK-014BA consumes TASK-014AZ DISABLED IMPLEMENTATION SCAFFOLD
-> MANUAL AUTHORIZATION GATE READINESS REVIEW output at runtime plus
-> AZ-proven chained proof, including AY dry-run, AX manual authorization
-> gate design, AW final pre-execution review, AV readiness review, AU dry-run,
-> AT design, AS static skeleton dry-run, AR static skeleton design, and AQ
-> implementation design, and produces a DISABLED IMPLEMENTATION SCAFFOLD
-> MANUAL AUTHORIZATION GATE FINAL PRE-EXECUTION REVIEW for TASK-014BB."),
-> repairs the "Itdocuments" → "It documents" typo, repoints two existing
-> tests whose assertions hardcoded the bulk-renamed wording, and adds 28
-> new BA-FIX2 regression tests (positive AZ-direct wording proofs, AY-only-as-
-> chained partition proof, negative AY/AX/AW/AV-direct grep, Itdocuments
-> typo grep, on-disk JSON+Markdown report wording, markdown intro
-> line preservation, and AZ-direct field-exposure regression). Still no
+> README shared status updated by TASK-014BB (2026-06-17) — see
+> [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014bb-2026-06-17)
+> for the cross-agent status board. TASK-014BB adds the
+> guarded entry real execution adapter disabled implementation scaffold
+> manual authorization gate final pre-execution review **manual
+> authorization review** scaffold: new BB src/scripts/test triple (Stage 1
+> focused-core 13 tests + Stage 3 full pack 84 tests, kept as two separate
+> files), 36 hard-fail gates (Group A 18 BA-upstream / Group B 6
+> scope_summary content / Group C 3 BA-failure passthrough / Group D 9 BB
+> own-source safety), a ~52-field result dataclass exposing 17 BA-upstream
+> proof fields + 11 BA→AZ chained-proof fields, BA artifact loader/parser,
+> CLI preview script with `--from-latest-entry-...-final-pre-execution-review`
+> + `--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review-manual-authorization-review`
+> + `--allow-real-entry-execution` (still returns
+> `REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED`) + `--write-report`, JSON +
+> Markdown report writer, `STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-ONLY`
+> identity wording, and
+> `NEXT_REQUIRED_TASK=TASK-014BC_..._manual_authorization_review_dry_run`.
+> BA final-pre-execution-review JSON is the direct upstream; AZ
+> readiness-review and AY/AX/AW/AV/AU/AT/AS/AR/AQ are referenced ONLY as
+> BA-proven chained proof — BB never consumes them directly. Still no
+> sender, no real execution adapter, no endpoint call, no secret read,
+> no G20 lift, no position modification. main.py / src/risk.py /
+> BybitExecutor untouched.
+
+## TASK-014BB Status (2026-06-17)
+
+| item | status |
+|---|---|
+| new src `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review.py` (BB triple, 1462 lines) | DONE |
+| new scripts `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review.py` (CLI, 424 lines) | DONE |
+| new tests Stage 1 focused-core `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_stage1.py` (364 lines, 13 tests — kept as smaller focused proof) | DONE |
+| new tests Stage 3 full pack `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review.py` (primary regression pack, 84 tests covering core run / Group A / Group B / Group C / Group D / --allow flags / CLI subprocess / write_report JSON+MD on-disk inspection / identity wording / untouched main.py + src/risk.py + BybitExecutor) | DONE |
+| identity wording: `STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-ONLY` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BC_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run"` | DONE |
+| direct upstream = BA final-pre-execution-review; AZ readiness-review and AY/AX/AW/AV/AU/AT/AS/AR/AQ referenced ONLY as BA-proven chained proof | DONE |
+| 36 hard-fail gates registered in `_HARD_FAIL_GATES` (Group A 18 + Group B 6 + Group C 3 + Group D 9) — any one forces `status == FAIL_CLOSED` | DONE |
+| 17 BA-upstream dataclass fields + 11 BA→AZ chained-proof dataclass fields + `to_dict()` JSON emission | DONE |
+| `write_report` writes latest_*.json / latest_*.md / *_<UTC_TS>.json / *_<UTC_TS>.md to `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review/` | DONE |
+| .gitignore updated with the new BB output dir | DONE |
+| README "Demo Trading Guarded Lifecycle Status" board re-targeted to TASK-014BB (2026-06-17) | DONE |
+| py_compile BB src + scripts + Stage 1 test + Stage 3 full test | PASS |
+| pytest BB Stage 3 full pack | **84/84 PASS** |
+| pytest BB Stage 1 focused-core | **13/13 PASS** |
+| pytest BA regression | 536/536 PASS |
+| pytest AZ regression | 481/481 PASS |
+| pytest AY regression | 389/389 PASS |
+| pytest AX regression | 299/299 PASS |
+| pytest AW regression | 292/292 PASS |
+| pytest AV regression | 259/259 PASS |
+| pytest AU regression | 235/235 PASS |
+| pytest AT regression | 199/199 PASS |
+| pytest AS regression | 180/180 PASS |
+| pytest AR regression | 175/175 PASS |
+| pytest AQ regression | 138/138 PASS |
+| pytest combined chain (all 13 suites: BB stage3 + BB stage1 + BA + AZ + AY + AX + AW + AV + AU + AT + AS + AR + AQ) | **3280/3280 PASS** (3183 prior baseline + BB stage3 84 + BB stage1 13) |
+| BB preview smoke (synthetic BA artifact) | exit 0; status `..._MANUAL_AUTHORIZATION_REVIEW_READY`; report JSON+MD contain `TASK-014BB consumes TASK-014BA`; report JSON+MD do NOT contain `TASK-014BB consumes TASK-014AZ`, `TASK-014BB consumes TASK-014AY`, `TASK-014BB consumes TASK-014AX`, `TASK-014BB consumes TASK-014AW`, or `TASK-014BB consumes TASK-014AV` |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no secret read / no G20 lift / no position modification / no approval-input-as-authorization / no automatic git commit / no automatic git push) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | DONE — `TASK-014BB: add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-17 TASK-014BB)
+
+1. VPS git pull and re-validate BB locally:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       source .env.demo
+       python3 -m py_compile \
+           src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review.py \
+           scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review.py \
+           tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review.py \
+           tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_stage1.py
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review.py -q
+       # expect 84/84 PASS
+       python3 -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_stage1.py -q
+       # expect 13/13 PASS
+
+   Then run the BB preview with the real BA final-pre-execution-review artifact present and confirm:
+
+       python3 scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review.py \
+           --from-latest-entry-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review \
+           --symbol SOLUSDT \
+           --write-report
+       # status == TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_MANUAL_AUTHORIZATION_REVIEW_READY
+       # mode == disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_checklist
+       # failed_stage == (none)
+       # generated report JSON+MD contain "TASK-014BB consumes TASK-014BA"
+       # generated report JSON+MD do NOT contain "TASK-014BB consumes TASK-014AZ/AY/AX/AW/AV"
+       # no socket opened, no endpoint called, no secret loaded, G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise TASK-014BC
+   (guarded entry real execution adapter disabled implementation
+   scaffold manual authorization gate final pre-execution review
+   manual authorization review **dry-run** — next phase; still no
+   real execution).
+
+---
+
+> Previous README banner: TASK-014BA-FIX2 (2026-06-17) — see archived block below.
+
+## TASK-014BA-FIX2 Banner (archived 2026-06-17 by TASK-014BB)
+
+> TASK-014BA-FIX2 finishes the BA bulk-rename cleanup: BA-FIX1 wired AZ
+> readiness-review as BA's direct upstream and the preview now succeeds
+> on the VPS, but the generated BA report's `scope_summary` field still
+> carried over the old AY-direct wording ("TASK-014BA consumes TASK-014AY
+> DISABLED IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE DRY-RUN
+> output at runtime plus the 34 upstream artifacts AY proves/chains,
+> including AX manual authorization gate design, ...") plus an
+> "Itdocuments" typo. FIX2 rewrites the `scope_summary` to BA-correct
+> semantics ("TASK-014BA consumes TASK-014AZ DISABLED IMPLEMENTATION
+> SCAFFOLD MANUAL AUTHORIZATION GATE READINESS REVIEW output at runtime
+> plus AZ-proven chained proof, including AY dry-run, AX manual
+> authorization gate design, AW final pre-execution review, AV readiness
+> review, AU dry-run, AT design, AS static skeleton dry-run, AR static
+> skeleton design, and AQ implementation design, and produces a DISABLED
+> IMPLEMENTATION SCAFFOLD MANUAL AUTHORIZATION GATE FINAL PRE-EXECUTION
+> REVIEW for TASK-014BB."), repairs the "Itdocuments" → "It documents"
+> typo, repoints two existing tests whose assertions hardcoded the
+> bulk-renamed wording, and adds 28 new BA-FIX2 regression tests
+> (positive AZ-direct wording proofs, AY-only-as-chained partition
+> proof, negative AY/AX/AW/AV-direct grep, Itdocuments typo grep,
+> on-disk JSON+Markdown report wording, markdown intro line
+> preservation, and AZ-direct field-exposure regression). Still no
 > sender, no real execution adapter, no endpoint call, no secret read,
 > no G20 lift, no position modification. main.py / src/risk.py /
 > BybitExecutor untouched.
