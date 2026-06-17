@@ -21,6 +21,73 @@ Notes:
 
 ---
 
+### 2026-06-18（TASK-014BE — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review final pre-execution review）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit authorization in chat — "Execute TASK-014BE in
+3 stages (Stage 1 scaffold src + Stage 1 focused-core test file; Stage 2
+preview CLI + write_report; Stage 3 full test pack + .gitignore + docs +
+validation triple + 17 upstream regression suites + preview smoke + local
+commit)". Stages 1 and 2 were accepted earlier. This entry covers Stage 3.
+
+Task: Add the BE final-pre-execution-review scaffold that consumes
+TASK-014BD's manual-authorization-review READINESS REVIEW JSON artifact
+as the SOLE direct upstream and produces a documented-only-never-
+authorized final-pre-execution-review artifact. BC manual-authorization-
+review dry-run, BB manual-authorization-review, BA final-pre-execution-
+review, AZ readiness-review, and AY/AX/AW/AV/AU/AT/AS/AR/AQ are referenced
+ONLY as BD-proven chained proof — BE never consumes them directly. Still
+NO sender, NO real execution adapter, NO endpoint call, NO secret read,
+NO G20 lift, NO position modification, NO phrase/token/input as execution
+authorization.
+
+Status before: TASK-014BD + FIX1 + FIX2 DONE at local commits
+(`a18357e`, FIX1 commit, FIX2 commit). NEXT_REQUIRED_TASK =
+TASK-014BE_..._final_pre_execution_review.
+
+Status after: TASK-014BE DONE at new local commit (pending hash; local
+only — NOT pushed). BE gate count 37 (Group A 18 + Group B 7 + Group C
+3 + Group D 9 = 37). NEXT_REQUIRED_TASK now =
+`TASK-014BF_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_manual_authorization_review`
+(BF; still NOT implementation or execution). Real execution still
+FORBIDDEN. G20 sender policy still active.
+
+Files changed:
+- NEW `src/demo_tiny_..._final_pre_execution_review.py` (~1394 lines) — BE src with 37 hard-fail gates, ~52-field dataclass exposing 17 BD-upstream fields + 11 BD→BC chained-proof fields, `run_disabled_..._final_pre_execution_review()`, BD artifact loader/parser, write_report.
+- NEW `scripts/preview_demo_tiny_..._final_pre_execution_review.py` (408 lines) — CLI with `--from-latest-entry-...-readiness-review`, `--bd-artifact-path`, `--symbol`, `--expected-commit-hash`, `--allow-...-final-pre-execution-review`, `--allow-real-entry-execution`, `--write-report`, `--output-dir`.
+- NEW `tests/demo_trading/test_demo_tiny_..._final_pre_execution_review_stage1.py` (509 lines, 23 tests) — Stage 1 focused-core pack with `_valid_bd_artifact()` fixture.
+- NEW `tests/demo_trading/test_demo_tiny_..._final_pre_execution_review.py` (1401 lines, 119 tests) — Stage 3 full regression pack: TestBE00CoreRun (5) / TestBE01BDUpstreamGates (17) / TestBE02BDScopeSummaryGates (7) / TestBE03BDFailurePassthrough (3) / TestBE04GroupDSafetyGates (11) / TestBE05AllowFlags (2) / TestBE06CLIIntegration (12) / TestBE07WriteReport (~25 incl. 13-phrase parametrized negative-grep) / TestBE08IdentityWording (11) / TestBE09UntouchedFiles (3) / TestBE10BDLoader (5) / TestBE11NoAuthorizationViaInputs (1).
+- EDIT `.gitignore` — add `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review/`.
+- EDIT `README.md` — `Demo Trading Guarded Lifecycle Status` board re-targeted to TASK-014BE (2026-06-18); BD block archived; banner re-written for BE; latest_completed_task, next_required_task, current_phase, latest validation, adapter identity, order link id prefix, audit response_status, conclusion row all switched to BE.
+- EDIT `docs/research/commands/NEXT_ACTION.md` — prepended TASK-014BE banner + status table + Next Rick Action; BD banner archived below.
+- EDIT `docs/research/commands/COMMAND_LOG.md` — this entry.
+- UNTOUCHED: `main.py`, `src/risk.py`, `BybitExecutor`. No real execution / sender / endpoint / secret / G20 / position change.
+
+Validation:
+- `python -m py_compile` BE src + preview + Stage 1 test + Stage 3 full test → PASS.
+- `pytest BE Stage 3 full pack --basetemp=.pytest_basetemp -q` → **119/119 PASS**.
+- `pytest BE Stage 1 focused-core --basetemp=.pytest_basetemp -q` → **23/23 PASS**.
+- `pytest BD full + BD Stage1 + BC full + BC Stage1 + BB full + BB Stage1 (6 suites)` → **347/347 PASS** (112+17+105+16+84+13).
+- `pytest BA + AZ + AY + AX + AW + AV + AU + AT + AS + AR + AQ (11 suites)` → **3183/3183 PASS** (536+481+389+299+292+259+235+199+180+175+138).
+- Combined 19-suite chain (BE stage3 + BE stage1 + BD stage3 + BD stage1 + BC stage3 + BC stage1 + BB stage3 + BB stage1 + BA + AZ + AY + AX + AW + AV + AU + AT + AS + AR + AQ) → **3672/3672 PASS** (3530 prior BD baseline + BE stage3 119 + BE stage1 23).
+- BE preview smoke (synthetic BD artifact `.pytest_basetemp/be_preview_smoke/synthetic_bd.json`, `--bd-artifact-path` + `--symbol SOLUSDT` + `--write-report` + `--output-dir`):
+  - exit 0; `status = TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_MANUAL_AUTHORIZATION_REVIEW_FINAL_PRE_EXECUTION_REVIEW_READY`; `failed_stage = (none)`; `blocked_gates = []`.
+  - report JSON+MD contain `TASK-014BE consumes TASK-014BD`.
+  - report JSON+MD do NOT contain any of `TASK-014BE consumes TASK-014BC/BB/BA/AZ/AY/AX/AW/AV`.
+  - report header line: `TASK-014BE consumes TASK-014BD disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review readiness review output.` (BD correctly described as readiness review; BE itself is the final pre-execution review).
+- No socket opened, no endpoint called, no secret loaded, G20 still in place, 5 protected positions untouched.
+
+Outputs:
+- BE final-pre-execution-review output dir gitignored (`.gitignore` updated). Preview smoke wrote JSON+MD under `.pytest_basetemp/be_preview_smoke/be_out/` (not under tracked output dir; gitignored via `.pytest_basetemp/` not currently in `.gitignore`, but local-only scratch).
+- No commits pushed.
+
+Notes:
+- Identity wording: `IDENTITY_STRICT = STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-FINAL-PRE-EXECUTION-REVIEW-ONLY` — distinguishes BE from BD's `...-READINESS-REVIEW-ONLY` and BC's `...-DRY-RUN-ONLY` suffixes.
+- Direct-upstream rule: BD is BE's only direct upstream. BC/BB/BA/AZ/AY/AX/AW/AV/AU/AT/AS/AR/AQ are all referenced as `BD-proven chained proof`, never as `BE consumes`. The 13-phrase negative-grep partition in the full pack enforces this.
+- Local commit only. NOT pushed to remote.
+
+---
+
 ### 2026-06-17（TASK-014BD-FIX1 — Harden readiness review upstream scope AV guard）
 
 Agent: Claude (Opus 4.7)
