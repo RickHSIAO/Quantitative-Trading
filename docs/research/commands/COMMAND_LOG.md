@@ -21,6 +21,96 @@ Notes:
 
 ---
 
+### 2026-06-17（TASK-014BD — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review readiness review）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit authorization in chat — "Execute TASK-014BD in
+3 stages (Stage 1 scaffold src + Stage 1 focused-core test file; Stage 2
+preview CLI + write_report; Stage 3 full test pack + .gitignore + docs +
+local commit). Hard prohibitions: no remote push, no main.py / src/risk.py
+/ BybitExecutor modification, no real execution adapter, no endpoint
+call, no secret read, no G20 lift, no position modification, no
+treating any phrase/token/input as executable authorization, no
+describing BC as a readiness review." No real execution, no sender, no
+executable adapter, no endpoint call, no secret read, no G20 lift, no
+position modification — documented-only-never-authorized readiness
+review module.
+
+Task: Add guarded entry real execution adapter disabled implementation
+scaffold manual authorization gate final pre-execution review manual
+authorization review **readiness review** scaffold layer between BC
+manual-authorization-review dry-run and the future BE final
+pre-execution review. New BD src/scripts/test triple, 36 hard-fail gates
+(Group A 18 BC-upstream / Group B 6 scope_summary content / Group C 3
+BC-failure passthrough / Group D 9 BD own-source safety),
+~52-field result dataclass with 17 BC-upstream proof fields + 11 BC→BB
+chained-proof fields, BC artifact loader/parser, CLI preview script with
+`--from-latest-entry-...-manual-authorization-review-dry-run` +
+`--allow-disabled-...-readiness-review`
++ `--allow-real-entry-execution` (still returns
+`REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED`) + `--write-report`, JSON +
+Markdown report writer, `STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-READINESS-REVIEW-ONLY`
+identity wording, and `NEXT_REQUIRED_TASK = TASK-014BE_..._manual_authorization_review_final_pre_execution_review`.
+BC manual-authorization-review dry-run JSON is the direct upstream; BB
+manual-authorization-review, BA final-pre-execution-review, AZ
+readiness-review and AY/AX/AW/AV/AU/AT/AS/AR/AQ referenced ONLY as
+BC-proven chained proof. BC is never described as a readiness review;
+BD is the readiness review phase.
+
+Status before: TASK-014BC DONE at commit `6959f5f` (local only). README
+shared status pointed at TASK-014BC dry-run.
+
+Status after: TASK-014BD DONE at local commit (pending). README shared
+status re-targeted to TASK-014BD readiness review. NEXT_REQUIRED_TASK =
+TASK-014BE manual authorization review final pre-execution review (still
+not implementation or execution; still gated on Rick explicit
+authorization in NEXT_ACTION.md).
+
+Files changed:
+- ADD `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review.py` (~1416 lines)
+- ADD `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review.py`
+- ADD `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review.py` (111 tests)
+- ADD `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review_stage1.py` (17 tests)
+- EDIT `.gitignore` — add BD readiness-review output directory
+- EDIT `README.md` — re-target shared status board to TASK-014BD
+- EDIT `docs/research/commands/NEXT_ACTION.md` — new TASK-014BD banner + status table + Next Rick Action
+- EDIT `docs/research/commands/COMMAND_LOG.md` — this entry
+- UNTOUCHED: `main.py`, `src/risk.py`, `BybitExecutor`
+
+Validation:
+- `py_compile` BD src + preview + Stage 1 test + Stage 3 full test → PASS
+- `pytest tests/demo_trading/test_demo_tiny_..._readiness_review.py -q --basetemp=.pytest_tmp` → **111/111 PASS**
+- `pytest tests/demo_trading/test_demo_tiny_..._readiness_review_stage1.py -q --basetemp=.pytest_tmp` → **17/17 PASS**
+- 17-suite combined regression chain (BD stage3 111 + BD stage1 17 + BC
+  stage3 105 + BC stage1 16 + BB stage3 84 + BB stage1 13 + BA 536 + AZ
+  481 + AY 389 + AX 299 + AW 292 + AV 259 + AU 235 + AT 199 + AS 180 +
+  AR 175 + AQ 138) → **3529/3529 PASS**
+- BD preview smoke (synthetic BC artifact at
+  `.pytest_tmp/synthetic_bc_for_bd_preview.json`) → exit 0, status
+  `..._MANUAL_AUTHORIZATION_REVIEW_READINESS_REVIEW_READY`, conclusion
+  `..._READINESS_REVIEW_READY_NOT_EXECUTABLE`, JSON+MD report contain 4×
+  `TASK-014BD consumes TASK-014BC`, 0× any of `TASK-014BD consumes
+  TASK-014BB/BA/AZ/AY/AX/AW/AV`. No socket opened, no endpoint called,
+  no secret loaded, G20 still in place, 5 protected positions untouched.
+
+Outputs:
+- New disk layout `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review/` (gitignored; latest_*.json/md + UTC-timestamped pair from BD preview smoke).
+
+Notes:
+- BD is a documented-only-never-authorized readiness review. The
+  adapter is NOT instantiated; no `send()` method is exposed; no
+  endpoint is invoked; no secrets are read; the existing G20 sender
+  policy is preserved; the 5 demo positions (ENAUSDT, TIAUSDT,
+  AIXBTUSDT, POLYXUSDT, EDUUSDT) are NOT touched.
+- `--expected-commit-hash` is recorded ONLY — it is NOT validated as
+  authorization. `--allow-real-entry-execution` always returns
+  `REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED`.
+- Local commit only (NOT pushed). Future work needs Rick explicit
+  authorization in NEXT_ACTION.md before any push or before TASK-014BE
+  starts.
+
+---
+
 ### 2026-06-17（TASK-014BC — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review dry run）
 
 Agent: Claude (Opus 4.7)
