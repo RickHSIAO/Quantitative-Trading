@@ -21,6 +21,173 @@ Notes:
 
 ---
 
+### 2026-06-17（TASK-014BC — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review dry run）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit authorization in chat — "Execute TASK-014BC in
+3 stages (Stage 1 scaffold src + Stage 1 focused-core test file; Stage 2
+preview CLI + write_report; Stage 3 full test pack + .gitignore + docs +
+local commit). Hard prohibitions: no remote push, no main.py / src/risk.py
+/ BybitExecutor modification, no real execution adapter, no endpoint
+call, no secret read, no G20 lift, no position modification, no
+treating any phrase/token/input as executable authorization, no
+describing BB as a dry-run." No real execution, no sender, no
+executable adapter, no endpoint call, no secret read, no G20 lift, no
+position modification, no modification of main.py / src/risk.py /
+BybitExecutor.
+
+Task: TASK-014BC — Add the disabled implementation scaffold manual
+authorization gate final pre-execution review manual authorization
+review **dry-run** scaffold layer on top of TASK-014BB. New BC
+src/scripts/test triple plus a Stage 1 focused-core test file. BC
+consumes BB manual-authorization-review JSON as direct upstream; BA
+final-pre-execution-review, AZ readiness-review and AY/AX/AW/AV/AU/AT/AS/AR/AQ
+artifacts appear ONLY as BB-proven chained proof (BC never consumes
+them directly). BB is the manual-authorization-review phase; BC is the
+new dry-run phase — BB is never described as a dry-run. 36 hard-fail
+gates register in `_HARD_FAIL_GATES`; any one forces `status == FAIL_CLOSED`.
+Even with `--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review-manual-authorization-review-dry-run`
+the conclusion stays `..._DRY_RUN_READY_NOT_EXECUTABLE`; even with
+`--allow-real-entry-execution` the status becomes
+`REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED`. `NEXT_REQUIRED_TASK` points to
+TASK-014BD readiness review.
+
+Status before: TASK-014BB DONE (local commit `c37c401` — NOT pushed);
+BB Stage 3 84/84 PASS, BB Stage 1 13/13 PASS; 13-suite chain 3280/3280
+PASS. No BC src / scripts / tests existed in tree.
+
+Status after: TASK-014BC implementation complete (local commit
+pending — NOT pushed); BC Stage 3 full pack 105/105 PASS; BC Stage 1
+focused-core 16/16 PASS; 15-suite combined chain 3401/3401 PASS
+(3183 prior baseline + 84 BB stage3 + 13 BB stage1 + 105 BC stage3 + 16
+BC stage1). BC preview smoke (synthetic BB artifact) → exit 0; status
+`..._MANUAL_AUTHORIZATION_REVIEW_DRY_RUN_READY`; JSON+MD reports contain
+`TASK-014BC consumes TASK-014BB`; JSON+MD reports do NOT contain
+`TASK-014BC consumes TASK-014BA/AZ/AY/AX/AW/AV`; JSON+MD reports do NOT
+describe BB as a dry-run. NEXT_REQUIRED_TASK = TASK-014BD readiness review.
+
+Files changed:
+
+- `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run.py`
+  — NEW (1470 lines). 36 hard-fail gate constants, ~52-field result
+  dataclass with 17 BB-upstream fields + 11 BB→BA chained-proof fields,
+  BB artifact loader, BB upstream parser, BC self-source introspection
+  (Group D), public `run_...()` entrypoint, `write_report()` JSON +
+  Markdown writer. `IDENTITY_STRICT = "STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-DRY-RUN-ONLY"`;
+  `NEXT_REQUIRED_TASK = "TASK-014BD_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_readiness_review"`.
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run.py`
+  — NEW (391 lines). CLI with `--from-latest-entry-...-manual-authorization-review`,
+  `--bb-artifact-path`, `--symbol`, `--expected-commit-hash`,
+  `--allow-disabled-implementation-scaffold-manual-authorization-gate-final-pre-execution-review-manual-authorization-review-dry-run`,
+  `--allow-real-entry-execution`, `--write-report`, `--output-dir`.
+  No `--execute-real-*`, `--send-order`, `--place-order`, `--real-run`,
+  `--confirm-token`, `--auto-commit`, `--git-commit`, `--auto-push`, or
+  `--git-push` flag exposed.
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run_stage1.py`
+  — NEW (401 lines, 16 tests). Stage 1 focused-core proof of identity
+  constants, 36 hard-fail gate frozenset, default safety invariants,
+  loader round-trip, run-function gate evaluation, and the
+  `--allow-...-manual-authorization-review-dry-run` flag.
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run.py`
+  — NEW (Stage 3 full pack, 105 tests across 12 test classes:
+  `TestBC00CoreRun`, `TestBC01BBUpstreamGates` (Group A, 18),
+  `TestBC02BBScopeSummaryGates` (Group B, 6),
+  `TestBC03BBFailurePassthrough` (Group C, 3),
+  `TestBC04GroupDSafetyGates` (Group D, ~11), `TestBC05AllowFlags` (2),
+  `TestBC06CLIIntegration` (subprocess help + valid + missing),
+  `TestBC07WriteReport` (covering JSON+MD on-disk presence + BB
+  upstream key block + BB→BA chained-proof key block + scope_summary
+  positive `BC consumes BB` + negative `BC consumes BA/AZ/AY/AX/AW/AV`
+  in both JSON and MD + header wording + no BB-as-dry-run grep),
+  `TestBC08IdentityWording`, `TestBC09UntouchedFiles` (3 over
+  main.py / src/risk.py / BybitExecutor), `TestBC10BBLoader`,
+  `TestBC11NoAuthorizationViaInputs`).
+- `.gitignore` — append `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run/`.
+- `README.md` — Demo Trading Guarded Lifecycle Status banner re-targeted
+  to TASK-014BC (2026-06-17); `latest_completed_task`, `latest_commit`,
+  `current_phase`, `next_required_task`, `latest validation`,
+  `adapter identity`, `order link id prefix`, `audit response_status`,
+  and conclusion-row updated for BC; prior TASK-014BB record archived
+  below as `### TASK-014BB 完成記錄`.
+- `docs/research/commands/NEXT_ACTION.md` — prepend TASK-014BC banner +
+  status table + Next Rick Action block (VPS validation commands +
+  path forward to TASK-014BD); archive TASK-014BB banner.
+- `docs/research/commands/COMMAND_LOG.md` — this entry.
+
+NO changes to: `main.py`, `src/risk.py`, `BybitExecutor`, G20 sender
+policy, any real execution adapter, any endpoint client, any secret
+loader, any of the 5 protected positions (ENAUSDT / TIAUSDT / AIXBTUSDT
+/ POLYXUSDT / EDUUSDT). NO changes to the BB / BA / AZ / AY / AX / AW / AV
+/ AU / AT / AS / AR / AQ src/scripts/tests triples.
+
+Validation:
+
+- `python -m py_compile src/...BC_dry_run.py scripts/...BC_dry_run.py tests/...BC_dry_run.py tests/...BC_dry_run_stage1.py` → PASS
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run.py -q` → **105 passed in 1.90s**
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run_stage1.py -q` → **16 passed**
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review.py -q` → **84 passed** (BB regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_stage1.py -q` → **13 passed** (BB Stage 1 regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review.py -q` → **536 passed** (BA regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_readiness_review.py -q` → **481 passed** (AZ regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_dry_run.py -q` → **389 passed** (AY regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_design.py -q` → **299 passed** (AX regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_final_pre_execution_review.py -q` → **292 passed** (AW regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_readiness_review.py -q` → **259 passed** (AV regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_dry_run.py -q` → **235 passed** (AU regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_design.py -q` → **199 passed** (AT regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_dry_run.py -q` → **180 passed** (AS regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_static_skeleton_design.py -q` → **175 passed** (AR regression)
+- `python -m pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_implementation_design.py -q` → **138 passed** (AQ regression)
+- 15-suite combined chain: **3401/3401 PASS** (3183 prior baseline +
+  BB stage3 84 + BB stage1 13 + BC stage3 105 + BC stage1 16)
+- BC preview smoke (synthetic BB artifact written to canonical BB
+  output dir; report emitted to .pytest_tmp/bc_smoke):
+  `python scripts/...BC_dry_run.py --from-latest-entry-...-manual-authorization-review --symbol SOLUSDT --write-report --output-dir .pytest_tmp/bc_smoke`
+  → exit 0; `status = TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_MANUAL_AUTHORIZATION_REVIEW_DRY_RUN_READY`;
+  `failed_stage = (none)`; 4 files written (latest_*.json, latest_*.md,
+  *_<UTC_TS>.json, *_<UTC_TS>.md); generated report JSON+MD contain
+  `TASK-014BC consumes TASK-014BB`; generated report JSON+MD do NOT
+  contain `TASK-014BC consumes TASK-014BA`, `TASK-014BC consumes
+  TASK-014AZ`, `TASK-014BC consumes TASK-014AY`, `TASK-014BC consumes
+  TASK-014AX`, `TASK-014BC consumes TASK-014AW`, `TASK-014BC consumes
+  TASK-014AV`; generated report JSON+MD do NOT describe BB as a dry-run
+  (no `TASK-014BB dry-run`, no `BB dry-run output`, no `BB manual
+  authorization review dry-run` phrasing). .pytest_tmp/ cleaned up
+  before commit.
+
+Outputs:
+
+- BC output dir `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_dry_run/`
+  is now in `.gitignore` (so the smoke-generated JSON+MD are never
+  staged or committed).
+- `.pytest_tmp/` removed before commit (pytest temp dir).
+
+Notes:
+
+- Hard prohibitions all observed: no remote push, no main.py / src/risk.py
+  / BybitExecutor modification, no real execution adapter / sender /
+  send / place_order / execute method def, no endpoint call (no socket
+  / requests / urllib / httpx / websockets / aiohttp / http.client
+  import), no secret read (no os.environ / os.getenv / dotenv /
+  load_dotenv / hmac / hashlib.sha256 call), no G20 lift, no position
+  modification (no modify_position / close_position / set_leverage /
+  cancel_order / amend_order / place_order / create_order /
+  trading_stop call), no treating any phrase/token/input as
+  authorization (`approval_*_grants_execution`, `*_to_authorization_mapping`,
+  `manual_authorization_review_dry_run_accepts_runtime_approval`,
+  `manual_authorization_review_dry_run_translates_text_to_execution` all
+  default False and re-asserted False at end of `run()`), no describing
+  BB as a dry-run (report grep confirms absence of any BB-as-dry-run
+  phrasing).
+- DECISION: Stage 1 focused-core test file kept as-is and NOT merged
+  into the Stage 3 full pack — the two files coexist as
+  `*_manual_authorization_review_dry_run_stage1.py` (16 tests) and
+  `*_manual_authorization_review_dry_run.py` (105 tests). This avoids
+  edit churn on Stage 1 and keeps the smaller focused proof available.
+- No `--no-verify` / amend used. Single new local commit only — not pushed.
+
+---
+
 ### 2026-06-17（TASK-014BB — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review）
 
 Agent: Claude (Opus 4.7)
