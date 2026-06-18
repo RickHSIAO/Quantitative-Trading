@@ -21,6 +21,120 @@ Notes:
 
 ---
 
+### 2026-06-18（TASK-014BF — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review final pre-execution review manual authorization review）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit authorization in chat — "Execute TASK-014BF in
+3 stages (Stage 1 scaffold src + Stage 1 focused-core test file; Stage 2
+preview CLI + write_report; Stage 3 full test pack + .gitignore + docs +
+validation triple + 19 upstream regression suites + preview smoke + local
+commit)". Stages 1 and 2 were accepted earlier. This entry covers Stage 3.
+
+Task: Add the BF manual-authorization-review scaffold that consumes
+TASK-014BE's manual-authorization-review FINAL PRE-EXECUTION REVIEW JSON
+artifact as the SOLE direct upstream and produces a documented-only-
+never-authorized manual-authorization-review artifact. BD manual-
+authorization-review readiness-review, BC manual-authorization-review
+dry-run, BB manual-authorization-review, BA final-pre-execution-review,
+AZ readiness-review, and AY/AX/AW/AV/AU/AT/AS/AR/AQ are referenced
+ONLY as BE-proven chained proof — BF never consumes them directly.
+Still NO sender, NO real execution adapter, NO endpoint call, NO secret
+read, NO G20 lift, NO position modification, NO main.py / src/risk.py /
+BybitExecutor change. `--allow-real-entry-execution` still returns
+`REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED`. Identity wording locked to
+`STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-ONLY`,
+NEXT_REQUIRED_TASK locked to
+`TASK-014BG_..._manual_authorization_review_dry_run`.
+
+Status before: NEXT_ACTION.md banner targeted TASK-014BE (2026-06-18).
+README "Demo Trading Guarded Lifecycle Status" board targeted TASK-014BE.
+BF src + scripts + Stage 1 test pre-staged from earlier Stage 1/Stage 2
+work; BF Stage 3 full test pack absent; .gitignore lacked BF output dir.
+
+Status after: NEXT_ACTION.md banner re-targeted to TASK-014BF (2026-06-18).
+README "Demo Trading Guarded Lifecycle Status" board re-targeted to
+TASK-014BF. BF Stage 3 full regression test pack (124 tests) added.
+.gitignore extended with BF output dir. BE block archived in both README
+and NEXT_ACTION.md.
+
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review.py` (BF src, ~1412 lines; already present from Stage 1/2, no change in Stage 3)
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review.py` (CLI preview; already present from Stage 2, no change in Stage 3)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review_stage1.py` (BF Stage 1 focused-core, 23 tests; already present from Stage 1, no change in Stage 3)
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review.py` (BF Stage 3 full regression pack, 124 tests — NEW in this Stage 3)
+- `.gitignore` (+1 line: BF manual-authorization-review output dir)
+- `README.md` (status board re-targeted; BE block archived)
+- `docs/research/commands/NEXT_ACTION.md` (BF banner + status table + Next Rick Action; BE block archived)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+
+Validation:
+- `python -c "ast.parse + compile(...)"` (Windows MAX_PATH workaround
+  for long .pyc temp paths) on all four BF files → PASS
+- `pytest tests/demo_trading/test_demo_tiny_..._manual_authorization_review.py -q`
+  → **124/124 PASS** in 5.06s
+- `pytest tests/demo_trading/test_demo_tiny_..._manual_authorization_review_stage1.py -q`
+  → **23/23 PASS** in 0.40s
+- 19-suite upstream regression chain (BE/BD/BC/BB/BA/AZ/AY/AX/AW/AV/AU/AT/AS/AR/AQ stage3+stage1 where applicable)
+  → all PASS individually; combined 21-suite chain
+  (BF+BE+BD+BC+BB stage3+stage1 + BA + AZ + AY + AX + AW + AV + AU + AT + AS + AR + AQ)
+  → **3819/3819 PASS** (3672 prior BE baseline + BF stage3 124 + BF stage1 23)
+- Broad `pytest tests/demo_trading/ --ignore=test_demo_emergency_close_sender.py`
+  → **7620/7620 PASS** (the excluded test is a pre-existing
+  emergency_close_sender CLI dry-run failure introduced in TASK-014N,
+  unrelated to BF — confirmed by `git log` on the test file and by
+  `git status` showing only BF + .gitignore in the working tree)
+- BF preview smoke against synthetic BE artifact:
+  exit 0; printed status
+  `TINY_GUARDED_ENTRY_REAL_EXECUTION_ADAPTER_DISABLED_IMPLEMENTATION_SCAFFOLD_MANUAL_AUTHORIZATION_GATE_FINAL_PRE_EXECUTION_REVIEW_MANUAL_AUTHORIZATION_REVIEW_FINAL_PRE_EXECUTION_REVIEW_MANUAL_AUTHORIZATION_REVIEW_READY`;
+  printed mode
+  `disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review_checklist`;
+  failed_stage `(none)`; printed `real_execution_allowed: False`,
+  `send_allowed: False`, `g20_policy_still_in_place: True`,
+  `g20_lifted: False`, `no_position_modified: True`,
+  `no_secrets_loaded: True`. write_report wrote
+  `latest_*.json` + `latest_*.md` + `*_<UTC_TS>.json` + `*_<UTC_TS>.md`
+  under
+  `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review/`.
+  JSON+MD contain `TASK-014BF consumes TASK-014BE` and
+  `BE-proven chained proof`; JSON+MD do NOT contain
+  `TASK-014BF consumes TASK-014BD`, `...BC`, `...BB`, `...BA`,
+  `...AZ`, `...AY`, `...AX`, `...AW`, `...AV`; JSON+MD do NOT contain
+  `BF is the readiness review`, `BF is the dry-run`,
+  `BE is the readiness review`, or `BE is the dry-run`.
+
+Outputs:
+- `outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review/latest_*.json`
+  + `latest_*.md` + timestamped `*_20260618T030003Z.json` + `.md`
+  (written by the BF preview smoke run; gitignored)
+
+Notes:
+- BF is the manual authorization review phase (the second
+  manual-authorization-review in the chain, sitting one step after BE's
+  final-pre-execution-review); BE remains the final pre-execution review
+  phase; BD remains the readiness review phase (chained proof, not direct
+  upstream); BC remains the dry-run phase (chained proof, not direct
+  upstream). Identity must not collapse to "final pre-execution review
+  only" / "readiness review only" / "dry-run only" / "design only".
+- 37 hard-fail gates registered in `_HARD_FAIL_GATES`: Group A 18
+  (BE-upstream content), Group B 7 (BE scope_summary content incl. AV
+  guard), Group C 3 (BE-failure passthrough), Group D 9 (BF self-source
+  safety). Any one gate forces `status == FAIL_CLOSED`.
+- Adapter is still NOT instantiated. No `send()` method, no
+  `place_order()`, no `execute()`, no `urllib`/`requests`/`http.client`/
+  `socket` import in BF src or scripts. `--allow-real-entry-execution`
+  is documented but still returns the
+  `REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED` status. Expected-commit-hash
+  flag is record-only, never validated as authorization.
+- G20 sender policy remains active; 5 protected positions
+  (ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT) remain
+  untouched. main.py / src/risk.py / BybitExecutor remain untouched.
+- Local commit only — NOT pushed to remote (per user's standing
+  feedback memory: git push requires explicit instruction).
+- Next phase per Rick: TASK-014BG dry-run after the
+  manual-authorization-review (still scaffolded, still no execution).
+
+---
+
 ### 2026-06-18（TASK-014BE — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review final pre-execution review）
 
 Agent: Claude (Opus 4.7)
