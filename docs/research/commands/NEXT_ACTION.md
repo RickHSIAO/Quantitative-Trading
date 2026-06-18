@@ -1,5 +1,240 @@
 # Next Action
 
+> README shared status updated by TASK-014BM (2026-06-18). TASK-014BM
+> adds the explicit **demo-only tiny order execution path** on top of
+> TASK-014BH / TASK-014BI / TASK-014BJ / TASK-014BK / TASK-014BL. It is
+> the **first task** in the implementation-path chain that contains a
+> real `urllib.request` POST capable of sending exactly one tiny demo
+> order to `https://api-demo.bybit.com/v5/order/create`. The default
+> mode is non-sending (`readiness`) and the network call is hard-gated
+> behind two cooperating CLI flags **plus** sixteen ordered gates **plus**
+> the presence of demo-scoped credentials. New BM triplet:
+> [`src/demo_only_tiny_execution_adapter_tiny_order_execution.py`](../../../src/demo_only_tiny_execution_adapter_tiny_order_execution.py)
+> (single aggregator entry point `run_explicit_tiny_order_execution(mode,
+> execute_flag, confirm_flag, existing_positions, endpoint_target,
+> credentials, env, sender)`; module-import-time call to
+> `bh.assert_next_task_is_not_review_chain_suffix(NEXT_REQUIRED_TASK)`;
+> five frozen dataclasses `DemoCredentials` / `ExecutionGate` /
+> `ExecutionPlan` / `SendOutcome` / `ExecutionReport`; 16 ordered gates
+> split into 13 pre-network gates `bl_packet_loaded` /
+> `bl_packet_all_passed` / `packet_marked_not_execution_authorization` /
+> `packet_audit_status_from_bh` / `environment_is_bybit_demo` /
+> `symbol_is_solusdt` / `qty_within_tiny_cap` / `order_type_market` /
+> `time_in_force_ioc` / `reduce_only_false` / `endpoint_target_demo_only`
+> / `protected_symbols_not_in_scope` / `order_count_locked_to_one` and
+> 3 execute gates `explicit_execute_flag` / `explicit_confirm_flag` /
+> `demo_credentials_present`; three modes `dry_run` / `readiness` (both
+> always offline) / `execute_demo_order` (the only mode that may call
+> the network, and only if **both** `--execute-demo-order` and
+> `--i-understand-this-sends-one-bybit-demo-order` flags are present
+> AND all 16 gates pass AND demo credentials are present); six
+> `final_status` outcomes
+> `DRY_RUN_OK_NO_NETWORK` / `READINESS_OK_NO_NETWORK` /
+> `GATE_REJECTED_NO_NETWORK` / `MISSING_DEMO_CREDENTIALS` /
+> `EXECUTED_DEMO_ONLY` / `NETWORK_ERROR_DEMO_ONLY`; sender uses
+> dependency injection (default `_real_sender_via_urllib` hard-asserts
+> URL == `ALLOWED_DEMO_ENDPOINT_URL = https://api-demo.bybit.com/v5/order/create`
+> and POSTs exactly once via stdlib `urllib.request`, no retry, no
+> scheduler); Bybit V5 HMAC-SHA256 signing
+> `HMAC(secret, timestamp+api_key+recv_window+body)` with headers
+> `X-BAPI-API-KEY` / `X-BAPI-TIMESTAMP` / `X-BAPI-SIGN` /
+> `X-BAPI-RECV-WINDOW`; body shape is exactly 9 fields `category` /
+> `symbol` / `side` / `orderType` / `qty` / `timeInForce` / `reduceOnly`
+> / `closeOnTrigger` / `orderLinkId` — **no `stopLoss`, no `takeProfit`,
+> no `trading-stop` endpoint, no TP/SL attachment of any kind**;
+> demo credentials are read **only** from `BYBIT_DEMO_API_KEY` /
+> `BYBIT_DEMO_API_SECRET` / `BYBIT_DEMO_RECV_WINDOW`, never falling
+> back to live env names; missing credentials produce a safe
+> `MISSING_DEMO_CREDENTIALS` report (not a failure); `MAX_ORDER_COUNT=1`
+> hard-locks the per-run order count; `write_report` emits JSON +
+> Markdown to
+> `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_execution/`
+> as `latest_*.json` / `latest_*.md` / timestamped `*_<UTC_TS>.json` /
+> `*_<UTC_TS>.md`; chain-break markers `TASK_ID="TASK-014BM"`,
+> `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-EXECUTION"`,
+> `IMPLEMENTATION_PATH_PHASE="tiny_order_execution"`,
+> `IS_REVIEW_CHAIN_SUFFIX=False`,
+> `UPSTREAM_TASKS=("TASK-014BH","TASK-014BI","TASK-014BJ","TASK-014BK","TASK-014BL")`,
+> `NEXT_REQUIRED_TASK="TASK-014BN_demo_only_tiny_execution_postfill_audit"`,
+> `EXECUTION_CONTRACT_VERSION="demo_only_tiny_execution_adapter_tiny_order_execution_v1"`),
+> [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py`](../../../scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py)
+> (CLI; default `--mode readiness` (no network, no secret read);
+> `--mode execute_demo_order` **requires** both `--execute-demo-order`
+> and `--i-understand-this-sends-one-bybit-demo-order` flags otherwise
+> falls through to `GATE_REJECTED_NO_NETWORK`; `--endpoint-target`
+> override for tests; `--write-report` / `--output-dir`; includes ROOT
+> sys.path injection; exit code 0 for `DRY_RUN_OK_NO_NETWORK` /
+> `READINESS_OK_NO_NETWORK` / `EXECUTED_DEMO_ONLY`, 2 for
+> `MISSING_DEMO_CREDENTIALS`, 1 otherwise), and
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py)
+> (Stage 1 focused-core **69 tests** — identity / chain-break markers /
+> BM pointer is not a review-chain suffix and explicitly references
+> `demo_only_tiny_execution_postfill_audit` / `EXECUTION_CONTRACT_VERSION`
+> / 16 gate names + ordering / `ALLOWED_DEMO_ENDPOINT_URL` /
+> `MAX_ORDER_COUNT=1` constants; default `--mode dry_run` never calls
+> the sender; `--mode readiness` passes all 13 pre-network gates with
+> no network and a plan that is built; `--mode execute_demo_order`
+> without flags →`STATUS_GATE_REJECTED_NO_NETWORK` and sender is never
+> invoked; with both flags but no creds →`STATUS_MISSING_DEMO_CREDENTIALS`;
+> with both flags + creds + a fake injected sender →`STATUS_EXECUTED_DEMO_ONLY`
+> with `order_sent=True`, `order_endpoint_called=True`, sender call
+> counter exactly 1, and `bybit_order_id` captured; injected sender
+> raising `urllib.error.URLError` →`STATUS_NETWORK_ERROR_DEMO_ONLY`;
+> every pre-network reject path (3 live URLs, 3 non-SOLUSDT symbols, 5
+> protected symbols, 5 protected existing positions, 4 over-cap qty,
+> `reduceOnly=True`, missing packet, tampered
+> `_demo_only_bh_audit_response_status`, tampered
+> `packet_is_not_execution_authorization=False`) confirms sender is
+> never called via a sentinel-raising sender; credential loader only
+> reads `BYBIT_DEMO_*` env names; LIVE env names `BYBIT_API_KEY` /
+> `BYBIT_API_SECRET` set without DEMO names → returns not present;
+> `_real_sender_via_urllib` raises if URL ≠ allowed demo URL (real and
+> via plan); `ExecutionPlan` / `ExecutionReport` are frozen-immutable;
+> AST-based static-source checks: no import of `requests` / `pybit` /
+> `aiohttp` / `httpx`, no import of `main` / `src.risk` /
+> `src.executors.bybit`, no `BybitExecutor` `Name`/`Attribute`
+> reference, docstring-stripped source contains no LIVE env names and
+> no `set-trading-stop` / `stopLoss` / `takeProfit` / retry / scheduler
+> tokens; BM source imports BH/BI/BJ/BK/BL directly (single-source
+> upstream chain); BH `assert_next_task_is_not_review_chain_suffix`
+> accepts BM's own `NEXT_REQUIRED_TASK` and rejects each of the 3
+> forbidden review-chain suffixes; BK
+> `run_final_pre_execution_checklist().all_passed` and BL
+> `run_tiny_order_preparation().all_passed` still True under BM
+> import; cross-module `BybitExecutor` / `main` / `src.risk` not loaded;
+> report writer emits 4 files + JSON round-trip + Markdown contains
+> `TASK-014BM` / `tiny_order_execution` / `READINESS_OK_NO_NETWORK` /
+> `max_order_count` / SOLUSDT / 0.01 / IOC / Bybit V5 envelope; body
+> preview shape is exactly the 9 allowed fields with no stop/TP fields;
+> signed request headers contain a 64-char SHA-256 hex
+> `X-BAPI-SIGN`). Module does not import `requests` / `pybit` /
+> `aiohttp` / `httpx`; does not reference `BybitExecutor`; does not
+> import `main` / `src.risk` / `src.executors.bybit`; does not open
+> a stop endpoint; does not attach `stopLoss` or `takeProfit`; does
+> not retry; does not schedule; and **never** reads live secret names.
+> Next step `TASK-014BN_demo_only_tiny_execution_postfill_audit`
+> (explicit demo-only tiny execution postfill audit; **not** a
+> review-chain suffix; requires Rick's explicit authorization).
+> Still G20 sender policy is in effect — there is no `set-trading-stop`
+> path and no live-endpoint surface; the only network surface is the
+> demo `/v5/order/create` POST gated by the double-flag + 16 gates +
+> demo-creds-present chain; protected positions
+> (ENA / TIA / AIXBT / POLYX / EDU) are unreferenced; main.py /
+> src/risk.py / BybitExecutor are untouched.
+>
+> Previous BL banner archived below.
+
+## TASK-014BM Status (2026-06-18)
+
+| item | status |
+|---|---|
+| new src `src/demo_only_tiny_execution_adapter_tiny_order_execution.py` (single aggregator entry point `run_explicit_tiny_order_execution()`; consumes BH+BI+BJ+BK+BL directly; emits structured `ExecutionPlan`+`SendOutcome`+`ExecutionReport`; 16 ordered execution gates; HMAC-SHA256 V5 signing; stdlib urllib POST; sender dependency injection) | DONE |
+| new scripts `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py` (`--mode {dry_run,readiness,execute_demo_order}` default readiness; `--execute-demo-order` + `--i-understand-this-sends-one-bybit-demo-order` double-flag gate; `--endpoint-target` / `--write-report` / `--output-dir`; exit codes 0/1/2) | DONE |
+| new tests `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py` (Stage 1 focused-core 69 tests) | DONE |
+| chain-break markers: `TASK_ID="TASK-014BM"`, `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-EXECUTION"`, `IMPLEMENTATION_PATH_PHASE="tiny_order_execution"`, `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASKS=("TASK-014BH","TASK-014BI","TASK-014BJ","TASK-014BK","TASK-014BL")` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BN_demo_only_tiny_execution_postfill_audit"` (does not end in `_readiness_review` / `_final_pre_execution_review` / `_manual_authorization_review`; passes `bh.assert_next_task_is_not_review_chain_suffix`; explicitly references `demo_only` and `postfill_audit`) | DONE |
+| default mode is non-sending (`readiness`); `execute_demo_order` mode requires both `--execute-demo-order` AND `--i-understand-this-sends-one-bybit-demo-order` flags before any sender invocation | CONFIRMED |
+| demo credential loader reads `BYBIT_DEMO_API_KEY` / `BYBIT_DEMO_API_SECRET` / `BYBIT_DEMO_RECV_WINDOW` only; never falls back to `BYBIT_API_KEY` / `BYBIT_API_SECRET`; missing creds → safe `MISSING_DEMO_CREDENTIALS` report | CONFIRMED |
+| 13 pre-network gates evaluated in strict order; any failure → `STATUS_GATE_REJECTED_NO_NETWORK` and sender is never called | CONFIRMED via parametrize across 20+ reject paths |
+| 3 execute gates (`explicit_execute_flag`, `explicit_confirm_flag`, `demo_credentials_present`) evaluated only after pre-network gates pass; any failure → `STATUS_GATE_REJECTED_NO_NETWORK` or `STATUS_MISSING_DEMO_CREDENTIALS` | CONFIRMED |
+| `MAX_ORDER_COUNT=1`; only one POST per run; no retry; no scheduler; no loop | CONFIRMED via tokenize+ast tests |
+| body shape exactly 9 allowed fields (`category`, `symbol`, `side`, `orderType`, `qty`, `timeInForce`, `reduceOnly`, `closeOnTrigger`, `orderLinkId`); no `stopLoss`, no `takeProfit`, no `trading-stop` endpoint, no TP/SL attachment | CONFIRMED via body_preview shape test + static-source token check |
+| BM source static-source safety invariants (no `requests` / `pybit` / `aiohttp` / `httpx` import; no `main` / `src.risk` / `src.executors.bybit` import; no `BybitExecutor` `Name`/`Attribute` reference; no LIVE env names in code (docstring-stripped); no `set-trading-stop` / `stopLoss` / `takeProfit` / retry / scheduler tokens; chain-break literals present; BH+BI+BJ+BK+BL all imported directly) | CONFIRMED via AST tests |
+| `_real_sender_via_urllib` hard-asserts URL == `ALLOWED_DEMO_ENDPOINT_URL`; raises if any caller tries a non-demo URL | CONFIRMED via two parametrize cases (real + via plan) |
+| Bybit V5 HMAC-SHA256 signature shape (`X-BAPI-SIGN` is 64-char hex) + standard envelope headers (`X-BAPI-API-KEY` / `X-BAPI-TIMESTAMP` / `X-BAPI-RECV-WINDOW`) | CONFIRMED |
+| report writer emits `latest_*.json` / `latest_*.md` / `*_<UTC_TS>.json` / `*_<UTC_TS>.md` to `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_execution/` | DONE |
+| `.gitignore` updated with BM output dir | DONE |
+| py_compile BM src + scripts + tests | PASS |
+| pytest BM Stage 1 focused-core | **69/69 PASS** |
+| pytest BH + BI + BJ + BK + BL Stage 1 regression | **228/228 PASS** (45 + 44 + 61 + 31 + 47) |
+| pytest BH + BI + BJ + BK + BL + BM safety-chain | **297/297 PASS** |
+| pytest broad `tests/demo_trading/ --ignore=test_demo_emergency_close_sender.py --basetemp=.pytest_basetemp` | **7998/7998 PASS** (excludes pre-existing emergency_close_sender failure unrelated to BM) |
+| pytest broad sweep `pytest --basetemp=.pytest_basetemp` | 8313 PASS + 18 pre-existing failures + 21 pre-existing errors (all in forward_record/* and apps/monitor/safety.py SyntaxError; none touch BH→BM chain) |
+| BM preview smoke `--mode readiness --write-report` | exit 0; `final_status=READINESS_OK_NO_NETWORK`; `network_attempted=False`; `order_endpoint_called=False`; `order_sent=False`; `bl_packet_loaded=True`; `bl_packet_all_passed=True`; `packet_is_not_execution_authorization=True`; `packet_audit_response_status='NOT_SENT_PREPARED_ONLY_NOT_EXECUTED'`; `live_endpoint_denied=True`; `protected_symbols_untouched=True`; `max_order_count=1`; `all_pre_network_gates_passed=True`; 4 report files written under `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_execution/` |
+| BM execute-with-fake-sender smoke (in-test) | `final_status=EXECUTED_DEMO_ONLY`; `order_sent=True`; `order_endpoint_called=True`; sender call counter == 1; `bybit_order_id` populated |
+| safety invariants (no live endpoint call / no live secret read / no stop endpoint / no TP-SL attachment / no retry / no scheduler / no G20 lift / no position modification / no protected position interaction; protected ENA / TIA / AIXBT / POLYX / EDU untouched) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | pending: `TASK-014BM: add demo-only tiny execution adapter explicit tiny order execution path (offline default; double-flag gate; consumes BH+BI+BJ+BK+BL; sends at most one Bybit Demo SOLUSDT order when creds present)` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-18 TASK-014BM)
+
+1. VPS git pull and re-validate BM offline first (no `.env.demo` sourced):
+
+       git pull --ff-only
+       source .venv/bin/activate
+       python3 -m py_compile \
+           src/demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py
+       python3 -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py -q --basetemp=.pytest_basetemp
+       # expect 69/69 PASS
+
+   Then run the BM readiness preview (still no network):
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py --mode readiness --write-report
+       # exit 0
+       # final_status=READINESS_OK_NO_NETWORK
+       # network_attempted=False  order_endpoint_called=False  order_sent=False
+       # bl_packet_loaded=True  bl_packet_all_passed=True
+       # packet_is_not_execution_authorization=True
+       # packet_audit_response_status='NOT_SENT_PREPARED_ONLY_NOT_EXECUTED'
+       # live_endpoint_denied=True  protected_symbols_untouched=True
+       # all_pre_network_gates_passed=True
+       # next_required_task == TASK-014BN_demo_only_tiny_execution_postfill_audit
+       # 4 report files written under outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_execution/
+       # no socket opened, no live endpoint called, no live secret loaded; G20 still in place; 5 protected positions untouched.
+
+2. Confirm `execute_demo_order` mode is hard-gated **without** any
+   credentials present:
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py --mode execute_demo_order
+       # exit 1
+       # final_status=GATE_REJECTED_NO_NETWORK (two missing confirm flags)
+       # network_attempted=False  order_sent=False
+
+   Add the flags but no demo credentials:
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           --mode execute_demo_order \
+           --execute-demo-order \
+           --i-understand-this-sends-one-bybit-demo-order
+       # exit 2
+       # final_status=MISSING_DEMO_CREDENTIALS
+       # network_attempted=False  order_sent=False
+
+3. Only after the above two offline gates behave exactly as
+   documented, **and only if Rick chooses to**, source `.env.demo`
+   (which must define `BYBIT_DEMO_API_KEY` / `BYBIT_DEMO_API_SECRET`
+   and **must not** define any `BYBIT_API_KEY` / `BYBIT_API_SECRET`
+   live names — strict separation), and run the explicit-send command
+   exactly once:
+
+       set -a; source .env.demo; set +a
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           --mode execute_demo_order \
+           --execute-demo-order \
+           --i-understand-this-sends-one-bybit-demo-order \
+           --write-report
+       # exit 0
+       # final_status=EXECUTED_DEMO_ONLY
+       # network_attempted=True  order_endpoint_called=True  order_sent=True
+       # bybit_order_id populated
+       # max_order_count=1
+       # 4 report files written under outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_execution/
+
+   Then decide whether to authorise **TASK-014BN** —
+   `TASK-014BN_demo_only_tiny_execution_postfill_audit` (the postfill
+   audit / reconcile step). Any successor that ends with
+   `_readiness_review` / `_final_pre_execution_review` /
+   `_manual_authorization_review` is forbidden by
+   `bh.assert_next_task_is_not_review_chain_suffix`.
+
+---
+
+> Previous README banner: TASK-014BL (2026-06-18) — see archived block below.
+
+## TASK-014BL Banner (archived 2026-06-18 by TASK-014BM)
+
 > README shared status updated by TASK-014BL (2026-06-18). TASK-014BL
 > adds the **tiny order preparation** layer on top of TASK-014BH /
 > TASK-014BI / TASK-014BJ / TASK-014BK. It produces the explicit
@@ -98,7 +333,7 @@
 >
 > Previous BK banner archived below.
 
-## TASK-014BL Status (2026-06-18)
+## TASK-014BL Status (archived 2026-06-18 by TASK-014BM)
 
 | item | status |
 |---|---|
@@ -122,7 +357,7 @@
 | main.py / src/risk.py / BybitExecutor | UNTOUCHED |
 | local commit | pending: `TASK-014BL: add demo-only tiny execution adapter tiny order preparation packet (offline; consumes BH+BI+BJ+BK; emits JSON+MD report; NOT execution authorization)` (local only — NOT pushed) |
 
-## Next Rick Action (set by 2026-06-18 TASK-014BL)
+## Next Rick Action (archived 2026-06-18 by TASK-014BM — superseded above)
 
 1. VPS git pull and re-validate BL locally:
 
