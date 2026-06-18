@@ -1,5 +1,145 @@
 # Next Action
 
+> README shared status updated by TASK-014BJ (2026-06-18). TASK-014BJ
+> adds the **endpoint guard integration** layer on top of TASK-014BH /
+> TASK-014BI. It exposes a single future-safe offline integration
+> entry point
+> [`integrate_demo_only_tiny_request`](../../../src/demo_only_tiny_execution_adapter_endpoint_guard_integration.py)
+> that wraps every BH guard plus the optional endpoint-target live
+> denylist check, so future demo-only call sites cannot bypass the
+> `bybit_demo`-only environment, the SOLUSDT-only symbol, the protected
+> symbols denylist (`{ENAUSDT, TIAUSDT, AIXBTUSDT, POLYXUSDT,
+> EDUUSDT}`), the tiny size cap (5 USDT / 0.05 SOL), or the live
+> endpoint denylist (`api.bybit.com`, `api.bytick.com`,
+> `stream.bybit.com`, `stream.bytick.com`). New BJ triplet:
+> [`src/demo_only_tiny_execution_adapter_endpoint_guard_integration.py`](../../../src/demo_only_tiny_execution_adapter_endpoint_guard_integration.py)
+> (single entry point `integrate_demo_only_tiny_request` running 8
+> guard steps in order — `environment` / `symbol` / `existing_positions`
+> / `side` / `qty_cap` / `notional_cap` / `order_link_id_prefix` /
+> `endpoint_target`; frozen dataclasses `IntegrationRequest` /
+> `GuardDecision` / `IntegrationResult` / `IntegrationCase` /
+> `IntegrationOutcome` / `IntegrationReport`;
+> `default_integration_cases()` returning a 20-case table (4 happy
+> paths: SOLUSDT Buy with demo endpoint / SOLUSDT Sell with no endpoint
+> / qty-cap edge with demo endpoint / no-mark-price; 16 rejections:
+> BTCUSDT / ETHUSDT / 5 protected symbols / protected-in-existing /
+> `bybit_live` environment / 3 live URLs (root / order endpoint /
+> mirror order endpoint) / live websocket / qty-cap fail / notional-cap
+> fail / unknown side / custom order_link_id without prefix);
+> `run_integration_dry_run` calling `integrate_demo_only_tiny_request`
+> per case and `bh.assert_next_task_is_not_review_chain_suffix` at
+> module-import time on `NEXT_REQUIRED_TASK`; built audit dict carries
+> both `_demo_only_audit_response_status=DEMO_ONLY_TINY_BH_NOT_SENT`
+> and `_demo_only_bj_audit_response_status=DEMO_ONLY_TINY_BJ_NOT_SENT`
+> plus `_demo_only_bj_integration_contract_version`,
+> `_demo_only_bj_endpoint_target_validated`,
+> `_demo_only_bj_endpoint_target`; `write_report` emitting JSON +
+> Markdown to
+> `outputs/demo_trading/demo_only_tiny_execution_adapter_endpoint_guard_integration/`
+> as `latest_*.json` / `latest_*.md` / timestamped
+> `*_<UTC_TS>.json` / `*_<UTC_TS>.md`; chain-break markers
+> `TASK_ID="TASK-014BJ"`,
+> `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-ENDPOINT-GUARD-INTEGRATION"`,
+> `IMPLEMENTATION_PATH_PHASE="endpoint_guard_integration"`,
+> `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASK="TASK-014BI"`,
+> `NEXT_REQUIRED_TASK="TASK-014BK_demo_only_tiny_execution_adapter_final_pre_execution_checklist"`),
+> [`scripts/preview_demo_only_tiny_execution_adapter_endpoint_guard_integration.py`](../../../scripts/preview_demo_only_tiny_execution_adapter_endpoint_guard_integration.py)
+> (CLI; `--write-report` / `--output-dir` / `--print-payloads` /
+> `--print-decisions`; exit 0 iff all 20 outcomes match expectation,
+> exit 1 otherwise), and
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_endpoint_guard_integration.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter_endpoint_guard_integration.py)
+> (Stage 1 focused-core **61 tests** — identity / chain-break markers /
+> `GUARD_STEPS` coverage / 20-case canonical table / direct
+> `integrate_demo_only_tiny_request` reject-step validation for
+> BTCUSDT / ETHUSDT / each of 5 protected symbols (parametrized) /
+> protected-in-existing / `bybit_live` env / live root / live order
+> endpoint / live mirror order endpoint / live websocket / qty cap fail
+> / notional cap fail / unknown side / custom order_link_id missing
+> prefix; happy-path payload-audit carries BJ NOT_SENT marker;
+> aggregate `run_integration_dry_run` summary consistency + BH
+> identity snapshot + ok≥2 + rejected≥14; report writer creates 4
+> files + JSON round-trip + Markdown contents; static-source: no
+> network library import / no `src.executors.bybit` / no `getenv` /
+> `environ` / `load_dotenv` / no `def send` / `.send(` / `place_order`
+> / `post_order` / `submit_order` / no `main` / `src.risk` import /
+> BJ imports BH directly / `IMPLEMENTATION_PATH_PHASE =
+> "endpoint_guard_integration"` literal + `IS_REVIEW_CHAIN_SUFFIX =
+> False` literal + `final_pre_execution_checklist` literal present;
+> runtime: BybitExecutor / main / src.risk modules not loaded; BH and
+> BI markers still hold; default_integration_cases not mutated).
+> Module does not import any network library, does not read env, does
+> not reference `BybitExecutor`, does not define any send method, and
+> does not call any endpoint; it only calls BH's pure guard functions
+> in-memory and writes JSON / Markdown reports to outputs/. Next step
+> `TASK-014BK_demo_only_tiny_execution_adapter_final_pre_execution_checklist`
+> (or equivalent explicit demo-only tiny order preparation variant;
+> **not** a review-chain suffix). Still no sender, no real execution
+> adapter, no endpoint call, no secret read, no G20 lift, no position
+> modification. main.py / src/risk.py / BybitExecutor still untouched.
+>
+> Previous BI banner archived below.
+
+## TASK-014BJ Status (2026-06-18)
+
+| item | status |
+|---|---|
+| new src `src/demo_only_tiny_execution_adapter_endpoint_guard_integration.py` (single future-safe `integrate_demo_only_tiny_request` entry point; consumes BH directly; 8-step ordered guard pipeline; emits structured report) | DONE |
+| new scripts `scripts/preview_demo_only_tiny_execution_adapter_endpoint_guard_integration.py` (`--write-report` / `--output-dir` / `--print-payloads` / `--print-decisions`; exit 0 iff all outcomes match expectation) | DONE |
+| new tests `tests/demo_trading/test_demo_only_tiny_execution_adapter_endpoint_guard_integration.py` (Stage 1 focused-core 61 tests) | DONE |
+| chain-break markers: `TASK_ID="TASK-014BJ"`, `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-ENDPOINT-GUARD-INTEGRATION"`, `IMPLEMENTATION_PATH_PHASE="endpoint_guard_integration"`, `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASK="TASK-014BI"` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BK_demo_only_tiny_execution_adapter_final_pre_execution_checklist"` (does not end in `_readiness_review` / `_final_pre_execution_review` / `_manual_authorization_review`; passes `bh.assert_next_task_is_not_review_chain_suffix`) | DONE |
+| canonical 20-case integration coverage: 4 happy paths (SOLUSDT Buy with demo endpoint / SOLUSDT Sell with no endpoint / qty-cap edge with demo endpoint / no-mark-price) + 16 rejections (BTCUSDT / ETHUSDT / 5 protected symbols / protected-in-existing / bybit_live env / 3 live URLs / live websocket / qty-cap fail / notional-cap fail / unknown side / custom order_link_id missing prefix) | DONE |
+| BJ audit-dict additions: `_demo_only_bj_audit_response_status=DEMO_ONLY_TINY_BJ_NOT_SENT`, `_demo_only_bj_integration_contract_version=demo_only_tiny_execution_adapter_endpoint_guard_integration_v1`, `_demo_only_bj_endpoint_target_validated`, `_demo_only_bj_endpoint_target` | DONE |
+| report writer emits `latest_*.json` / `latest_*.md` / `*_<UTC_TS>.json` / `*_<UTC_TS>.md` to `outputs/demo_trading/demo_only_tiny_execution_adapter_endpoint_guard_integration/` | DONE |
+| `.gitignore` updated with BJ output dir | DONE |
+| static-source safety invariants (no `requests`/`urllib`/`urllib3`/`http`/`socket`/`ssl`/`pybit`/`websocket`/`aiohttp`/`httpx`; no `src.executors.bybit`; no `getenv`/`environ`/`load_dotenv`; no `def send`/`.send(`/`place_order`/`post_order`/`submit_order`; no `main`/`src.risk`; BJ imports BH directly; phase literal + `IS_REVIEW_CHAIN_SUFFIX = False` literal + `final_pre_execution_checklist` literal present) | CONFIRMED via tokenize + ast tests |
+| py_compile BJ src + scripts + tests | PASS |
+| pytest BJ Stage 1 focused-core | **61/61 PASS** |
+| pytest BH + BI Stage 1 regression | **89/89 PASS** (45 + 44) |
+| pytest broad `tests/demo_trading/ --ignore=test_demo_emergency_close_sender.py --basetemp=.pytest_basetemp` | **7793/7793 PASS** (= prior BI baseline 7732 + BJ stage1 61; excludes pre-existing emergency_close_sender CLI dry-run failure unrelated to BJ) |
+| BJ preview smoke (`--write-report`) | exit 0; 20 outcomes total (4 ok happy paths + 16 rejected guard cases including 3 live URLs + live websocket); all match expectation; 4 report files written (latest JSON+MD + timestamped JSON+MD) under `outputs/demo_trading/demo_only_tiny_execution_adapter_endpoint_guard_integration/` |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no socket opened / no secret read / no credential load / no G20 lift / no position modification / no protected position interaction) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | pending: `TASK-014BJ: add demo-only tiny execution adapter endpoint guard integration (single future-safe entry point; consumes BH directly; emits JSON+MD report)` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-18 TASK-014BJ)
+
+1. VPS git pull and re-validate BJ locally:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       # No .env.demo source — BJ must run with zero credentials.
+       python3 -m py_compile \
+           src/demo_only_tiny_execution_adapter_endpoint_guard_integration.py \
+           scripts/preview_demo_only_tiny_execution_adapter_endpoint_guard_integration.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_endpoint_guard_integration.py
+       python3 -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_endpoint_guard_integration.py -q --basetemp=.pytest_basetemp
+       # expect 61/61 PASS
+
+   Then run the BJ preview and confirm:
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter_endpoint_guard_integration.py --write-report
+       # exit 0
+       # total=20 ok=4 rejected=16 unexpected=0 all_match=True
+       # next_required_task == TASK-014BK_demo_only_tiny_execution_adapter_final_pre_execution_checklist
+       # report files written under outputs/demo_trading/demo_only_tiny_execution_adapter_endpoint_guard_integration/
+       # no socket opened, no endpoint called, no secret loaded, G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise **TASK-014BK** —
+   `TASK-014BK_demo_only_tiny_execution_adapter_final_pre_execution_checklist`
+   (offline final demo-only pre-execution checklist that aggregates
+   BH+BI+BJ identity / guard coverage / report-dir state into a single
+   sign-off document) OR an explicit demo-only tiny order preparation
+   variant. Either successor is acceptable; what is NOT acceptable is
+   another `_readiness_review` / `_final_pre_execution_review` /
+   `_manual_authorization_review` suffix.
+
+---
+
+> Previous README banner: TASK-014BI (2026-06-18) — see archived block below.
+
+## TASK-014BI Banner (archived 2026-06-18 by TASK-014BJ)
+
 > README shared status updated by TASK-014BI (2026-06-18). TASK-014BI
 > adds the **offline payload dry-run** layer on top of TASK-014BH. It
 > consumes
