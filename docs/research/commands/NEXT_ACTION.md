@@ -1,5 +1,176 @@
 # Next Action
 
+> README shared status updated by TASK-014BL (2026-06-18). TASK-014BL
+> adds the **tiny order preparation** layer on top of TASK-014BH /
+> TASK-014BI / TASK-014BJ / TASK-014BK. It produces the explicit
+> *offline* authorization packet that the future
+> `TASK-014BM_explicit_demo_only_tiny_order_execution` task will
+> consume. New BL triplet:
+> [`src/demo_only_tiny_execution_adapter_tiny_order_preparation.py`](../../../src/demo_only_tiny_execution_adapter_tiny_order_preparation.py)
+> (single aggregator entry point `run_tiny_order_preparation()` plus a
+> direct `build_preparation_packet()` entry; module-import-time call to
+> `bh.assert_next_task_is_not_review_chain_suffix(NEXT_REQUIRED_TASK)`;
+> two frozen dataclasses `PreparationPacket` / `PreparationReport`;
+> aggregation flow: (1) `bk.run_final_pre_execution_checklist()` must
+> return `all_passed=True`; (2)
+> `bj.integrate_demo_only_tiny_request(IntegrationRequest)` for the
+> canonical SOLUSDT Buy 0.01 @ mark 100 + demo endpoint
+> `https://api-demo.bybit.com/v5/order/create` request, which itself
+> chains BH's 8 guard steps; (3) the BJ audit dict is wrapped with a
+> third layer of BL markers:
+> `_demo_only_bl_audit_response_status=NOT_SENT_PREPARED_ONLY_NOT_EXECUTED`,
+> `_demo_only_bl_target_future_task=TASK-014BM_explicit_demo_only_tiny_order_execution`,
+> `_demo_only_bl_authorization_is_not_execution_authorization=True`,
+> `_demo_only_bl_preparation_contract_version=demo_only_tiny_execution_adapter_tiny_order_preparation_v1`,
+> `_demo_only_bl_implementation_path_task=TASK-014BL`,
+> `_demo_only_bl_is_review_chain_suffix=False`, and an
+> `_demo_only_bl_packet_note` literal that states "PREPARATION ONLY ...
+> does NOT authorize execution"; `write_report` emitting JSON +
+> Markdown to
+> `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_preparation/`
+> as `latest_*.json` / `latest_*.md` / timestamped
+> `*_<UTC_TS>.json` / `*_<UTC_TS>.md`; chain-break markers
+> `TASK_ID="TASK-014BL"`,
+> `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-PREPARATION"`,
+> `IMPLEMENTATION_PATH_PHASE="tiny_order_preparation"`,
+> `IS_REVIEW_CHAIN_SUFFIX=False`,
+> `UPSTREAM_TASKS=("TASK-014BH","TASK-014BI","TASK-014BJ","TASK-014BK")`,
+> `NEXT_REQUIRED_TASK="TASK-014BM_explicit_demo_only_tiny_order_execution"`,
+> `TARGET_FUTURE_TASK="TASK-014BM_explicit_demo_only_tiny_order_execution"`,
+> `PREPARATION_CONTRACT_VERSION="demo_only_tiny_execution_adapter_tiny_order_preparation_v1"`,
+> `BL_AUDIT_RESPONSE_STATUS_NOT_SENT="NOT_SENT_PREPARED_ONLY_NOT_EXECUTED"`),
+> [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_preparation.py`](../../../scripts/preview_demo_only_tiny_execution_adapter_tiny_order_preparation.py)
+> (CLI; `--write-report` / `--output-dir` / `--symbol` / `--side` /
+> `--qty` / `--mark-price`; includes ROOT sys.path injection; exit 0
+> iff `all_passed=True`, exit 1 otherwise), and
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_preparation.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_preparation.py)
+> (Stage 1 focused-core **47 tests** — identity / chain-break markers /
+> BL pointer not a review-chain suffix and explicitly references
+> `demo_only` + `tiny_order_execution` / `PREPARATION_CONTRACT_VERSION`
+> / `BL_AUDIT_RESPONSE_STATUS_NOT_SENT` / `DEFAULT_*` constants /
+> packet note literal states "NOT authorize execution"; aggregate
+> `run_tiny_order_preparation` `all_passed=True` + BK checklist counts
+> identical to a direct `bk.run_final_pre_execution_checklist()` call +
+> three-layer BH/BI/BJ/BK identity snapshot;
+> `PreparationPacket` / `PreparationReport` frozen-immutable; packet
+> default request fields (SOLUSDT, Buy, 0.01 qty, mark 100, Market,
+> IOC, reduceOnly=False, `DEMO_ONLY_TINY_BH_` orderLinkId prefix,
+> notional estimate 1 USDT ≤ BH 5 USDT cap, qty ≤ 0.05 SOL cap); packet
+> audit dict carries all three BH+BJ+BL marker layers and retains
+> SOLUSDT / Market / IOC / reduceOnly=False; `build_preparation_packet`
+> direct entry rejected via parametrize for 3 non-SOLUSDT symbols + 5
+> protected symbols + protected-in-existing + live endpoint + qty cap
+> fail + notional cap fail + bybit_live environment; BL self
+> tokenize+ast static-source 6 checks (no network library import; no
+> `getenv`/`environ`/`load_dotenv` token; no `def send`/`.send(`/
+> `place_order`/`post_order`/`submit_order` surface; no
+> `main`/`src.risk`/`src.executors.bybit` import;
+> `IS_REVIEW_CHAIN_SUFFIX=False` + non-empty `IMPLEMENTATION_PATH_PHASE`
+> literal both present); BL source imports all four upstream modules
+> directly (`src.demo_only_tiny_execution_adapter`,
+> `..._payload_dry_run`, `..._endpoint_guard_integration`,
+> `..._final_pre_execution_checklist`); cross-module
+> `src.executors.bybit` not loaded + BK
+> `run_final_pre_execution_checklist().all_passed` still True under BL;
+> 4 report files written + JSON round-trip + Markdown contains
+> "TASK-014BL" / phase / `NOT_SENT_PREPARED_ONLY_NOT_EXECUTED` /
+> target_future_task / "PREPARATION ONLY"; `DEFAULT_OUTPUT_DIR` ==
+> `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_preparation`;
+> BH `assert_next_task_is_not_review_chain_suffix` rejects each of the
+> 3 forbidden suffixes under BL, and accepts BL's own
+> `NEXT_REQUIRED_TASK`). Module does not import any network library,
+> does not read env, does not reference `BybitExecutor`, does not
+> define any send method, does not open a socket, and does not call
+> any endpoint; it only calls BK's offline `run_final_pre_execution_checklist`
+> and BJ's offline `integrate_demo_only_tiny_request` in-memory and
+> writes JSON / Markdown reports to outputs/. The produced
+> `PreparationPacket.packet_is_not_execution_authorization` flag is
+> hard-coded `True` and the
+> `_demo_only_bl_authorization_is_not_execution_authorization` audit
+> marker is hard-coded `True`, making the non-authorization status
+> machine-checkable in downstream consumers. Next step
+> `TASK-014BM_explicit_demo_only_tiny_order_execution` (explicit
+> demo-only tiny order execution authorization; **not** a review-chain
+> suffix; requires Rick's explicit authorization + manual approval).
+> Still no sender, no real execution adapter, no endpoint call, no
+> secret read, no G20 lift, no position modification. main.py /
+> src/risk.py / BybitExecutor still untouched.
+>
+> Previous BK banner archived below.
+
+## TASK-014BL Status (2026-06-18)
+
+| item | status |
+|---|---|
+| new src `src/demo_only_tiny_execution_adapter_tiny_order_preparation.py` (single aggregator entry point `run_tiny_order_preparation()` + direct `build_preparation_packet()`; consumes BH+BI+BJ+BK directly; emits structured `PreparationPacket` + `PreparationReport` with three-layer BH+BJ+BL audit markers) | DONE |
+| new scripts `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_preparation.py` (`--write-report` / `--output-dir` / `--symbol` / `--side` / `--qty` / `--mark-price`; exit 0 iff `all_passed=True`) | DONE |
+| new tests `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_preparation.py` (Stage 1 focused-core 47 tests) | DONE |
+| chain-break markers: `TASK_ID="TASK-014BL"`, `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-PREPARATION"`, `IMPLEMENTATION_PATH_PHASE="tiny_order_preparation"`, `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASKS=("TASK-014BH","TASK-014BI","TASK-014BJ","TASK-014BK")` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BM_explicit_demo_only_tiny_order_execution"` (does not end in `_readiness_review` / `_final_pre_execution_review` / `_manual_authorization_review`; passes `bh.assert_next_task_is_not_review_chain_suffix`; explicitly references `demo_only` and `tiny_order_execution`) | DONE |
+| packet hard-codes `packet_is_not_execution_authorization=True` + audit `_demo_only_bl_authorization_is_not_execution_authorization=True` + packet note literal "PREPARATION ONLY ... NOT authorize execution" | DONE |
+| three-layer BH+BJ+BL audit markers carried in `payload_audit` (`_demo_only_audit_response_status=DEMO_ONLY_TINY_BH_NOT_SENT`, `_demo_only_bj_audit_response_status=DEMO_ONLY_TINY_BJ_NOT_SENT`, `_demo_only_bl_audit_response_status=NOT_SENT_PREPARED_ONLY_NOT_EXECUTED`) | CONFIRMED |
+| BL source static-source safety invariants (no network/secret/send surface/main/risk/executor imports; chain-break literals; BH+BI+BJ+BK all imported directly) | CONFIRMED via tokenize + ast tests |
+| `run_tiny_order_preparation()` aggregate `all_passed=True` + `bk_checklist_all_passed=True` + `bj_integration_ok=True` + packet present | CONFIRMED |
+| report writer emits `latest_*.json` / `latest_*.md` / `*_<UTC_TS>.json` / `*_<UTC_TS>.md` to `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_preparation/` | DONE |
+| `.gitignore` updated with BL output dir | DONE |
+| py_compile BL src + scripts + tests | PASS |
+| pytest BL Stage 1 focused-core | **47/47 PASS** |
+| pytest BH + BI + BJ + BK Stage 1 regression | **181/181 PASS** (45 + 44 + 61 + 31) |
+| pytest broad `tests/demo_trading/ --ignore=test_demo_emergency_close_sender.py --basetemp=.pytest_basetemp` | **7871/7871 PASS** (= prior BK baseline 7824 + BL stage1 47; excludes pre-existing emergency_close_sender CLI dry-run failure unrelated to BL) |
+| BL preview smoke (`--write-report`) | exit 0; `all_passed=True`; `bk_checklist total=36 passed=36 failed=0 all_passed=True`; `bj_integration ok=True`; packet `symbol=SOLUSDT side=Buy qty=0.01 mark_price=100 notional=1.00 order_link_id='DEMO_ONLY_TINY_BH_SOLUSDT_OFFLINE_BUILD' audit_response_status='NOT_SENT_PREPARED_ONLY_NOT_EXECUTED' packet_is_not_execution_authorization=True`; 4 report files written under `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_preparation/` |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no socket opened / no secret read / no credential load / no G20 lift / no position modification / no protected position interaction) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | pending: `TASK-014BL: add demo-only tiny execution adapter tiny order preparation packet (offline; consumes BH+BI+BJ+BK; emits JSON+MD report; NOT execution authorization)` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-18 TASK-014BL)
+
+1. VPS git pull and re-validate BL locally:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       # No .env.demo source — BL must run with zero credentials.
+       python3 -m py_compile \
+           src/demo_only_tiny_execution_adapter_tiny_order_preparation.py \
+           scripts/preview_demo_only_tiny_execution_adapter_tiny_order_preparation.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_preparation.py
+       python3 -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_preparation.py -q --basetemp=.pytest_basetemp
+       # expect 47/47 PASS
+
+   Then run the BL preview and confirm:
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_preparation.py --write-report
+       # exit 0
+       # all_passed=True
+       # bk_checklist total=36 passed=36 failed=0 all_passed=True
+       # bj_integration ok=True rejection_step='' rejection_reason=''
+       # packet symbol=SOLUSDT side=Buy qty=0.01 mark_price=100 notional=1.00
+       #   order_link_id='DEMO_ONLY_TINY_BH_SOLUSDT_OFFLINE_BUILD'
+       #   audit_response_status='NOT_SENT_PREPARED_ONLY_NOT_EXECUTED'
+       #   packet_is_not_execution_authorization=True
+       # next_required_task == TASK-014BM_explicit_demo_only_tiny_order_execution
+       # target_future_task == TASK-014BM_explicit_demo_only_tiny_order_execution
+       # report files written under outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_preparation/
+       # no socket opened, no endpoint called, no secret loaded, G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise **TASK-014BM** —
+   `TASK-014BM_explicit_demo_only_tiny_order_execution` (the explicit
+   demo-only tiny order execution authorization task; the first task
+   that may write any sender code). Note that BL's
+   `PreparationPacket.packet_is_not_execution_authorization=True` flag
+   and its `_demo_only_bl_authorization_is_not_execution_authorization=True`
+   audit marker are intentional safety hard-codes: the BL packet is NOT
+   itself an execution authorization, and TASK-014BM must add its own
+   independent manual authorization gate on top. Any successor that
+   ends with `_readiness_review` / `_final_pre_execution_review` /
+   `_manual_authorization_review` is forbidden by
+   `bh.assert_next_task_is_not_review_chain_suffix`.
+
+---
+
+> Previous README banner: TASK-014BK (2026-06-18) — see archived block below.
+
+## TASK-014BK Banner (archived 2026-06-18 by TASK-014BL)
+
 > README shared status updated by TASK-014BK (2026-06-18). TASK-014BK
 > aggregates the BH (scaffold) + BI (offline payload dry-run) + BJ
 > (endpoint guard integration) safety proofs into one offline **final
@@ -78,7 +249,7 @@
 >
 > Previous BJ banner archived below.
 
-## TASK-014BK Status (2026-06-18)
+## TASK-014BK Status (archived 2026-06-18 by TASK-014BL)
 
 | item | status |
 |---|---|
@@ -102,7 +273,7 @@
 | main.py / src/risk.py / BybitExecutor | UNTOUCHED |
 | local commit | pending: `TASK-014BK: add demo-only tiny execution adapter final pre-execution checklist (offline; aggregates BH+BI+BJ; emits JSON+MD report)` (local only — NOT pushed) |
 
-## Next Rick Action (set by 2026-06-18 TASK-014BK)
+## Next Rick Action (archived 2026-06-18 by TASK-014BL — superseded above)
 
 1. VPS git pull and re-validate BK locally:
 
