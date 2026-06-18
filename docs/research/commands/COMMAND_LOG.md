@@ -21,6 +21,79 @@ Notes:
 
 ---
 
+### 2026-06-18（TASK-014BG — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review final pre-execution review manual authorization review dry-run (chain-closing)）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit authorization in chat — "TASK-014BG_..._dry_run
+Stage 1 only: build BG dry-run proof layer that consumes the real BF
+artifact, proves the adapter remains disabled/non-executable, and
+declares NEXT_REQUIRED_TASK to be the demo-only tiny execution adapter
+implementation path (chain-closing — NOT another readiness_review /
+final_pre_execution_review / manual_authorization_review suffix)".
+
+Task: Add the BG dry-run scaffold that consumes TASK-014BF's manual-
+authorization-review FINAL PRE-EXECUTION REVIEW MANUAL AUTHORIZATION
+REVIEW JSON artifact as the SOLE direct upstream and produces a
+documented-only-never-authorized dry-run artifact. BE final pre-
+execution review, BD readiness review, BC dry-run, BB manual
+authorization review, BA final-pre-execution-review, AZ readiness-
+review, and AY/AX/AW/AV/AU/AT/AS/AR/AQ are referenced ONLY as BF-proven
+chained proof — BG never consumes them directly. Still NO sender, NO
+real execution adapter, NO endpoint call, NO secret read, NO G20 lift,
+NO position modification, NO main.py / src/risk.py / BybitExecutor
+change. `--allow-real-entry-execution` still returns
+`REAL_ENTRY_EXECUTION_NOT_IMPLEMENTED`. Identity wording locked to
+`STRICT DISABLED-IMPLEMENTATION-SCAFFOLD-MANUAL-AUTHORIZATION-GATE-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-FINAL-PRE-EXECUTION-REVIEW-MANUAL-AUTHORIZATION-REVIEW-DRY-RUN-ONLY`,
+NEXT_REQUIRED_TASK locked to
+`TASK-014BH_demo_only_tiny_execution_adapter_implementation_path`
+(chain-closing). Result dataclass additionally exposes three explicit
+chain-closure booleans:
+`closes_disabled_review_chain=True`,
+`prepares_demo_only_tiny_execution_adapter_implementation_path=True`,
+`spawns_additional_review_chain_suffix=False`.
+
+Status before: NEXT_ACTION.md banner targeted TASK-014BF (2026-06-18).
+README "Demo Trading Guarded Lifecycle Status" board targeted TASK-014BF.
+No BG src / scripts / tests existed.
+
+Status after: NEXT_ACTION.md banner re-targeted to TASK-014BG (2026-06-18).
+BG src + preview script + Stage 1 focused-core test (23 tests) added.
+.gitignore extended with the BG dry-run output dir. BF block archived in
+NEXT_ACTION.md.
+
+Files changed:
+- `src/demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review_dry_run.py` (new, ~1448 lines): identity literal, 37 hard-fail gates (A18+B7+C3+D9), 92-field result dataclass with 17 BF-upstream + 11 BF→BE chained-proof + 3 chain-closure boolean fields, BF artifact loader/parser, token-based Group D self-source introspection, run function with defense-in-depth invariant re-assertion, JSON+Markdown report writer.
+- `scripts/preview_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review_dry_run.py` (new): CLI with `--from-latest-entry-...-manual-authorization-review`, `--bf-artifact-path`, `--symbol`, `--expected-commit-hash`, `--allow-...-dry-run`, `--allow-real-entry-execution`, `--write-report`, `--output-dir`.
+- `tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review_dry_run_stage1.py` (new, 23 tests): identity/scope_summary exact match, chain-closing NEXT_REQUIRED_TASK constant + negative checks, 37-gate count + GATE_TO_STAGE coverage, AV-guard constant, run-with-valid-synthetic-BF returns READY, default-dataclass safety + chain-closure invariants, BF artifact missing → FAIL_CLOSED, BF status FAIL_CLOSED passthrough, BF mode mismatch, BF next_required mismatch, BF real_execution_allowed/send_allowed True, BF scope_summary missing BE direct upstream / has BF-consumes-BB / has BF-consumes-AV, allow-dry-run flag returns READY_BUT_EXECUTION_DISABLED, allow-real-entry returns NOT_IMPLEMENTED, to_dict round-trip, BF→BE chained-proof exposure, load_bf_artifact roundtrip.
+- `.gitignore`: appended BG dry-run output dir line.
+- `docs/research/commands/NEXT_ACTION.md`: BG banner + status table + Next Rick Action, archived BF block.
+- `docs/research/commands/COMMAND_LOG.md`: this entry.
+
+Validation:
+- py_compile (ast.parse + compile fallback on Windows MAX_PATH): PASS for BG src + scripts + Stage 1 test.
+- pytest BG Stage 1 focused-core: **23/23 PASS**.
+- pytest BG+BF+BE+BD+BC+BB combined chain (11 suites): **1179/1179 PASS**.
+- pytest broad `tests/demo_trading/ --ignore=test_demo_emergency_close_sender.py`: **7643/7643 PASS** (prior BF baseline 7620 + BG stage1 23).
+- BG preview smoke against synthetic BF artifact: exit 0; status `..._MANUAL_AUTHORIZATION_REVIEW_DRY_RUN_READY`; mode `..._dry_run_checklist`; `next_required_task = TASK-014BH_demo_only_tiny_execution_adapter_implementation_path`; `closes_disabled_review_chain=True`; `prepares_demo_only_tiny_execution_adapter_implementation_path=True`; `spawns_additional_review_chain_suffix=False`. Report JSON+MD contain `TASK-014BG consumes TASK-014BF` and `BF-proven chained proof`. Report JSON+MD do NOT contain `TASK-014BG consumes TASK-014BE/BD/BC/BB/BA/AZ/AY/AX/AW/AV`.
+- Safety invariants: real_execution_allowed=False, send_allowed=False, no_orders_sent=True, no_position_modified=True, no_live_endpoint=True, no_secrets_loaded=True, g20_policy_still_in_place=True, g20_lifted=False, executable_adapter_included=False, adapter_implementation_included=False, adapter_execution_included=False, send_method_included=False, real_entry_implemented=False, every grants_execution=False, existing_positions_touched=[].
+- main.py / src/risk.py / BybitExecutor: UNTOUCHED.
+
+Outputs:
+- outputs/demo_trading/tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review_dry_run/latest_*.{json,md} + timestamped *_<UTC_TS>.{json,md}` (local-only; .gitignored).
+
+Notes:
+- BG is the chain-closing dry-run. Its NEXT_REQUIRED_TASK
+  `TASK-014BH_demo_only_tiny_execution_adapter_implementation_path`
+  deliberately breaks the disabled review-chain naming pattern (no
+  `_readiness_review` / `_final_pre_execution_review` /
+  `_manual_authorization_review` / `_dry_run` suffix). The result
+  dataclass additionally exposes three explicit chain-closure booleans
+  so that future tasks can hard-assert that BG ends the disabled review
+  chain rather than spawning another suffix.
+- Local commit only (no `git push`) per saved memory.
+
+---
+
 ### 2026-06-18（TASK-014BF — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review final pre-execution review manual authorization review）
 
 Agent: Claude (Opus 4.7)
