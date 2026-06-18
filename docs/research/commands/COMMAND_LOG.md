@@ -21,6 +21,59 @@ Notes:
 
 ---
 
+### 2026-06-18（TASK-014BI — Add demo-only tiny execution adapter payload dry-run (offline; consumes BH directly; emits JSON+MD report)）
+
+Agent: Claude (Opus 4.7; model guidance per workorder: Sonnet)
+Command source: Rick explicit authorization in chat — "TASK-014BI_demo_only_tiny_execution_adapter_payload_dry_run Stage 1 only: create an offline payload dry-run layer for TASK-014BH; must exercise the BH offline payload builder with realistic SOLUSDT tiny payload cases and emit structured JSON / Markdown proof; must NOT send any order, must NOT call any endpoint, must NOT create another review-chain suffix."
+Task: TASK-014BI demo-only tiny execution adapter payload dry-run — offline canonical-case dry-run layer that consumes BH directly, runs 18 BH-builder cases + 4 live-endpoint denial checks, and emits `latest_*.json` / `latest_*.md` / timestamped JSON+MD reports.
+Status before: TASK-014BH CLOSED (local commit 5abe3b9); BH scaffold landed; no BI dry-run layer yet.
+Status after: BI offline payload dry-run landed: new BI src/scripts/test triplet; 44 Stage 1 focused-core tests PASS; BH Stage 1 regression PASS; broad demo_trading sweep 7732/7732 PASS; BI preview smoke (`--write-report`) exit 0 with 22 outcomes (4 built + 18 rejected) all matching expectation; 4 report files written to `outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/`. main.py / src/risk.py / BybitExecutor / G20 sender policy untouched.
+
+Files changed:
+
+- NEW `src/demo_only_tiny_execution_adapter_payload_dry_run.py` — `DryRunCase` / `DryRunOutcome` / `DryRunReport` frozen dataclasses; `default_cases()` returning the 18-case canonical table (4 happy paths: SOLUSDT Buy/Sell tiny, qty-cap edge, no-mark-price + 14 rejections: qty above cap, qty zero, notional above cap, BTCUSDT, ETHUSDT, 5 protected symbols as entry, protected-in-existing, non-demo environment, unknown side, custom order_link_id without prefix); `LIVE_ENDPOINT_CASES` tuple with 4 live URLs (api.bybit.com root + /v5/order/create, api.bytick.com /v5/order/create, wss://stream.bybit.com/v5/public/linear); `_execute_case` calling `bh.build_demo_only_tiny_solusdt_entry_payload`; `_verify_live_endpoints_denied` calling `bh.assert_endpoint_is_demo_only`; `run_dry_run` aggregating outcomes + counts + `all_match_expectation` boolean + guarding own `NEXT_REQUIRED_TASK` via `bh.assert_next_task_is_not_review_chain_suffix`; `_render_markdown` and `write_report` emitting JSON+MD with `latest_*` + timestamped names; chain-break markers `TASK_ID="TASK-014BI"`, `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-PAYLOAD-DRY-RUN"`, `IMPLEMENTATION_PATH_PHASE="offline_payload_dry_run"`, `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASK="TASK-014BH"`, `NEXT_REQUIRED_TASK="TASK-014BJ_demo_only_tiny_execution_adapter_endpoint_guard_integration"`.
+- NEW `scripts/preview_demo_only_tiny_execution_adapter_payload_dry_run.py` — argparse CLI with `--write-report`, `--output-dir`, `--print-payloads`; prints per-case status with OK/FAIL marker; exit 0 iff `all_match_expectation`, exit 1 otherwise.
+- NEW `tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py` — 44 focused-core tests covering identity / chain-break markers / case-table coverage including required BTCUSDT, ETHUSDT, and per-protected-symbol parametrized rejections / live-endpoint denial outcomes / report writer 4-file emission / JSON round-trip / Markdown content / static-source ast+tokenize: no network library import / no `src.executors.bybit` / no `getenv`/`environ`/`load_dotenv` / no `def send`/`.send(`/`place_order`/`post_order`/`submit_order` / no `main`/`src.risk` import / BI imports BH directly via `from src import demo_only_tiny_execution_adapter as bh` / `IMPLEMENTATION_PATH_PHASE = "offline_payload_dry_run"` literal + `IS_REVIEW_CHAIN_SUFFIX = False` literal present / runtime: BybitExecutor module not loaded by BI import / BH chain-break markers still hold / `run_dry_run` does not mutate `default_cases()`.
+- `.gitignore` — added `outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/`.
+- `docs/research/commands/NEXT_ACTION.md` — prepended TASK-014BI banner, status table, Next Rick Action; archived BH banner.
+- `docs/research/commands/COMMAND_LOG.md` — this entry.
+- `README.md` — updated shared status board to TASK-014BI; archived BH completion record.
+
+Validation:
+
+- `python -m py_compile src/demo_only_tiny_execution_adapter_payload_dry_run.py scripts/preview_demo_only_tiny_execution_adapter_payload_dry_run.py tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py` → OK.
+- `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py -q` → **44 passed**.
+- `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter.py -q` (BH regression) → **45 passed**.
+- `pytest tests/demo_trading/ --ignore=tests/demo_trading/test_demo_emergency_close_sender.py -q` → **7732 passed in 66.99s** (= prior BH baseline 7688 + BI stage1 44; excludes pre-existing emergency_close_sender failure unrelated to BI).
+- BI preview smoke (`--write-report`) → exit 0; summary `total=22 built=4 rejected=18 unexpected=0 all_match=True`; 4 reports written: `latest_demo_only_tiny_execution_adapter_payload_dry_run.json`, `latest_demo_only_tiny_execution_adapter_payload_dry_run.md`, timestamped JSON, timestamped MD.
+- BI preview smoke without args → exit 0 (same 22 outcomes, no file write).
+- `git diff --stat HEAD` confirmed BI-only: 3 new files + .gitignore + README.md + NEXT_ACTION.md + COMMAND_LOG.md. main.py / src/risk.py / src/executors/bybit.py / live executor wiring / secret loading: NOT in diff.
+
+Outputs:
+
+- `outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/latest_demo_only_tiny_execution_adapter_payload_dry_run.json`
+- `outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/latest_demo_only_tiny_execution_adapter_payload_dry_run.md`
+- `outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/demo_only_tiny_execution_adapter_payload_dry_run_<UTC_TS>.json`
+- `outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/demo_only_tiny_execution_adapter_payload_dry_run_<UTC_TS>.md`
+
+Notes:
+
+- BI explicitly carries the implementation path forward; `NEXT_REQUIRED_TASK = "TASK-014BJ_demo_only_tiny_execution_adapter_endpoint_guard_integration"`. The chain-suffix pattern `_readiness_review` / `_final_pre_execution_review` / `_manual_authorization_review` remains discontinued (and is rejected at module import time by `bh.assert_next_task_is_not_review_chain_suffix`).
+- Module-level invariants enforced statically (via tokenize + ast tests):
+    * No network import (`requests`, `urllib`, `urllib3`, `http`, `socket`, `ssl`, `pybit`, `websocket`, `aiohttp`, `httpx`).
+    * No `BybitExecutor` / `src.executors.bybit` import.
+    * No `getenv` / `environ` / `load_dotenv` reference.
+    * No `def send` / `.send(` / `place_order` / `post_order` / `submit_order` in source.
+    * No `main` or `src.risk` import.
+    * BI consumes BH via `from src import demo_only_tiny_execution_adapter as bh` — a direct, single source of truth (no parallel implementation).
+- G20 sender policy: still active; BI has no sender, no endpoint call code, and only inspects URLs by passing them to `bh.assert_endpoint_is_demo_only` which raises on every live host.
+- Protected positions ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT remain untouched; BI proves each is rejected both as the entry symbol and when present in `existing_positions`.
+- The only allowed entry symbol is `SOLUSDT`; the only allowed environment is `bybit_demo`; the tiny size cap is `5 USDT` (or `0.05 SOL`) — all inherited from BH, never overridden.
+- Real execution remains disabled; no sender exists to be enabled by any flag. A future explicit demo-only tiny order execution task remains required (and unauthorized here) before any sender code is written.
+- Local commit only (no push) per Rick's standing rule.
+
+---
+
 ### 2026-06-18（TASK-014BH — Start demo-only tiny execution adapter implementation path (chain-break)）
 
 Agent: Claude (Opus 4.7)

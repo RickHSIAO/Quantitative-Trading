@@ -1,5 +1,121 @@
 # Next Action
 
+> README shared status updated by TASK-014BI (2026-06-18). TASK-014BI
+> adds the **offline payload dry-run** layer on top of TASK-014BH. It
+> consumes
+> [`src/demo_only_tiny_execution_adapter.py`](../../../src/demo_only_tiny_execution_adapter.py)
+> (BH) directly via `from src import demo_only_tiny_execution_adapter`
+> and runs an 18-case canonical table plus 4 live-endpoint denial checks
+> through the BH payload builder. New BI triplet:
+> [`src/demo_only_tiny_execution_adapter_payload_dry_run.py`](../../../src/demo_only_tiny_execution_adapter_payload_dry_run.py)
+> (frozen `DryRunCase` / `DryRunOutcome` / `DryRunReport` dataclasses,
+> `default_cases()` returning the 18-case table covering happy Buy /
+> Sell / qty-cap edge / no-mark-price / qty-above-cap / qty-zero /
+> notional-above-cap / BTCUSDT / ETHUSDT / each of the 5 protected
+> symbols / protected-in-existing-positions / non-demo environment /
+> unknown side / custom order_link_id without prefix; `run_dry_run`
+> calling `bh.build_demo_only_tiny_solusdt_entry_payload` per case and
+> `bh.assert_endpoint_is_demo_only` against the live-endpoint list;
+> `write_report` emitting JSON + Markdown to
+> `outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/`
+> as `latest_*.json` / `latest_*.md` / timestamped `*_<UTC_TS>.json` /
+> `*_<UTC_TS>.md`; chain-break markers `TASK_ID="TASK-014BI"`,
+> `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-PAYLOAD-DRY-RUN"`,
+> `IMPLEMENTATION_PATH_PHASE="offline_payload_dry_run"`,
+> `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASK="TASK-014BH"`,
+> `NEXT_REQUIRED_TASK="TASK-014BJ_demo_only_tiny_execution_adapter_endpoint_guard_integration"`),
+> [`scripts/preview_demo_only_tiny_execution_adapter_payload_dry_run.py`](../../../scripts/preview_demo_only_tiny_execution_adapter_payload_dry_run.py)
+> (CLI; `--write-report` / `--output-dir` / `--print-payloads`; exit 0
+> iff all 22 outcomes match expectation, exit 1 otherwise), and
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py)
+> (Stage 1 focused-core **44 tests** — identity / chain-break markers /
+> case-table coverage / unique case ids / live-endpoint case table /
+> `run_dry_run` happy path / summary consistency / live-endpoint
+> rejection / built payload audit marker / per-case BTC / ETH / 5
+> protected symbols parametrized / protected-in-existing / non-demo
+> environment / qty-cap pass+fail / notional-cap pass+fail / Buy + Sell
+> built / live-endpoint reason text / report writer creates 4 files /
+> JSON round-trip / Markdown contents / BI does not name itself with
+> review-chain suffix / static-source: no network library import / no
+> `src.executors.bybit` / no `getenv`/`environ`/`load_dotenv` / no `def
+> send`/`.send(`/`place_order`/`post_order`/`submit_order` / no `main`
+> or `src.risk` import / BI imports BH directly /
+> `IMPLEMENTATION_PATH_PHASE = "offline_payload_dry_run"` literal +
+> `IS_REVIEW_CHAIN_SUFFIX = False` literal present / runtime: BybitExecutor
+> module not loaded / BH chain-break markers still hold / `run_dry_run`
+> does not mutate `default_cases()`). Module 不 import 任何 network
+> library、不讀 env、不 reference `BybitExecutor`、不定義任何 send
+> 方法、不呼叫任何 endpoint；只在記憶體裡呼叫 BH 的 pure 函式並寫
+> JSON/Markdown 報告到 outputs/。下一步
+> `TASK-014BJ_demo_only_tiny_execution_adapter_endpoint_guard_integration`
+> （或等價 final demo-only pre-execution checklist 變體；**不是**
+> review-chain 後綴）。仍無 sender、無 real execution adapter、無 endpoint
+> call、無 secret 讀取、無 G20 lift、無 position 修改。
+> main.py / src/risk.py / BybitExecutor 仍未動。
+>
+> Previous BH banner archived below.
+
+## TASK-014BI Status (2026-06-18)
+
+| item | status |
+|---|---|
+| new src `src/demo_only_tiny_execution_adapter_payload_dry_run.py` (consumes BH directly; pure-offline 18-case table + 4 live-endpoint denial checks; emits structured report) | DONE |
+| new scripts `scripts/preview_demo_only_tiny_execution_adapter_payload_dry_run.py` (`--write-report` / `--output-dir` / `--print-payloads`; exit 0 iff all outcomes match expectation) | DONE |
+| new tests `tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py` (Stage 1 focused-core 44 tests) | DONE |
+| chain-break markers: `TASK_ID="TASK-014BI"`, `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-PAYLOAD-DRY-RUN"`, `IMPLEMENTATION_PATH_PHASE="offline_payload_dry_run"`, `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASK="TASK-014BH"` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BJ_demo_only_tiny_execution_adapter_endpoint_guard_integration"` (does not end in `_readiness_review` / `_final_pre_execution_review` / `_manual_authorization_review`; passes `bh.assert_next_task_is_not_review_chain_suffix`) | DONE |
+| canonical 18-case BH-builder coverage: 4 happy paths (Buy / Sell / qty-cap edge / no-mark-price) + 14 rejections (qty above cap / qty zero / notional above cap / BTCUSDT / ETHUSDT / each of 5 protected symbols / protected-in-existing / non-demo env / unknown side / custom order_link_id without prefix) | DONE |
+| 4 live-endpoint denial checks (api.bybit.com root / api.bybit.com/v5/order/create / api.bytick.com/v5/order/create / wss://stream.bybit.com/v5/public/linear) | DONE |
+| report writer emits `latest_*.json` / `latest_*.md` / `*_<UTC_TS>.json` / `*_<UTC_TS>.md` to `outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/` | DONE |
+| `.gitignore` updated with BI output dir | DONE |
+| static-source safety invariants (no `requests`/`urllib`/`urllib3`/`http`/`socket`/`ssl`/`pybit`/`websocket`/`aiohttp`/`httpx`; no `src.executors.bybit`; no `getenv`/`environ`/`load_dotenv`; no `def send`/`.send(`/`place_order`/`post_order`/`submit_order`; no `main`/`src.risk`; BI imports BH directly; `IMPLEMENTATION_PATH_PHASE = "offline_payload_dry_run"` + `IS_REVIEW_CHAIN_SUFFIX = False` literals present) | CONFIRMED via tokenize + ast tests |
+| py_compile BI src + scripts + tests | PASS |
+| pytest BI Stage 1 focused-core | **44/44 PASS** |
+| pytest BH Stage 1 regression | **45/45 PASS** |
+| pytest broad `tests/demo_trading/ --ignore=test_demo_emergency_close_sender.py` | **7732/7732 PASS** (= prior BH baseline 7688 + BI stage1 44; excludes pre-existing emergency_close_sender CLI dry-run failure unrelated to BI) |
+| BI preview smoke (`--write-report`) | exit 0; 22 outcomes total (4 built happy paths + 18 rejected guard cases including 4 live-endpoint denials); all match expectation; 4 report files written (latest JSON+MD + timestamped JSON+MD) under `outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/` |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no socket opened / no secret read / no credential load / no G20 lift / no position modification / no protected position interaction) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | pending: `TASK-014BI: add demo-only tiny execution adapter payload dry-run (offline; consumes BH directly; emits JSON+MD report)` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-18 TASK-014BI)
+
+1. VPS git pull and re-validate BI locally:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       # No .env.demo source — BI must run with zero credentials.
+       python3 -m py_compile \
+           src/demo_only_tiny_execution_adapter_payload_dry_run.py \
+           scripts/preview_demo_only_tiny_execution_adapter_payload_dry_run.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py
+       python3 -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py -q
+       # expect 44/44 PASS
+
+   Then run the BI preview and confirm:
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter_payload_dry_run.py --write-report
+       # exit 0
+       # total=22 built=4 rejected=18 unexpected=0 all_match=True
+       # next_required_task == TASK-014BJ_demo_only_tiny_execution_adapter_endpoint_guard_integration
+       # report files written under outputs/demo_trading/demo_only_tiny_execution_adapter_payload_dry_run/
+       # no socket opened, no endpoint called, no secret loaded, G20 still in place, 5 protected positions untouched.
+
+2. Once step 1 passes, decide whether to authorise **TASK-014BJ** —
+   `TASK-014BJ_demo_only_tiny_execution_adapter_endpoint_guard_integration`
+   (offline integration of an endpoint-guard layer that statically
+   forbids any live Bybit host in any module-import path that could
+   reach a real sender) OR a final demo-only pre-execution checklist
+   variant. Either successor is acceptable; what is NOT acceptable is
+   another `_readiness_review` / `_final_pre_execution_review` /
+   `_manual_authorization_review` suffix.
+
+---
+
+> Previous README banner: TASK-014BH (2026-06-18) — see archived block below.
+
+## TASK-014BH Banner (archived 2026-06-18 by TASK-014BI)
+
 > README shared status updated by TASK-014BH (2026-06-18). TASK-014BH
 > **breaks the disabled-implementation-scaffold review chain** that ran
 > from TASK-014AQ through TASK-014BG and **starts the demo-only tiny
