@@ -1,8 +1,119 @@
 # Next Action
 
+> README shared status updated by TASK-014BH (2026-06-18). TASK-014BH
+> **breaks the disabled-implementation-scaffold review chain** that ran
+> from TASK-014AQ through TASK-014BG and **starts the demo-only tiny
+> execution adapter implementation path**. New BH triplet:
+> [`src/demo_only_tiny_execution_adapter.py`](../../../src/demo_only_tiny_execution_adapter.py)
+> (strict immutable constants — allowed env `bybit_demo`, allowed symbol
+> `SOLUSDT`, protected denylist `{ENAUSDT, TIAUSDT, AIXBTUSDT, POLYXUSDT,
+> EDUUSDT}`, tiny size cap `5 USDT` / `0.05 SOL`, live endpoint denylist,
+> pure offline payload builder
+> `build_demo_only_tiny_solusdt_entry_payload`, guard helpers,
+> `DemoOnlyTinyEntryPayload` frozen dataclass with `to_exchange_payload`
+> / `to_audit_dict`, chain-break markers `TASK_ID="TASK-014BH"` /
+> `IS_REVIEW_CHAIN_SUFFIX=False` /
+> `CLOSES_DISABLED_REVIEW_CHAIN_UPSTREAM_TASK="TASK-014BG"` /
+> `NEXT_REQUIRED_TASK="TASK-014BI_demo_only_tiny_execution_adapter_payload_dry_run"`),
+> [`scripts/preview_demo_only_tiny_execution_adapter.py`](../../../scripts/preview_demo_only_tiny_execution_adapter.py)
+> (offline preview CLI; exit 0 on payload-built, exit 1 on rejection),
+> and [`tests/demo_trading/test_demo_only_tiny_execution_adapter.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter.py)
+> (Stage 1 focused-core **45 tests** covering identity / chain-break
+> markers / immutable constants / happy-path payload build / non-SOL
+> symbol rejection / protected symbol rejection / protected position in
+> existing scope rejection / non-demo environment rejection / unknown
+> side rejection / qty above tiny-qty-cap rejection / qty zero or
+> negative rejection / notional above tiny-usdt-cap rejection / live
+> endpoint denial / demo endpoint documented-only acceptance /
+> assert_next_task_is_not_review_chain_suffix invariant / static-source
+> safety: no network library import / no BybitExecutor import / no
+> getenv/environ/load_dotenv / no live host outside string literals / no
+> `send` / `place_order` / `post_order` / `submit_order` definition / no
+> main.py or src/risk.py import / IS_REVIEW_CHAIN_SUFFIX = False literal
+> present / frozen-dataclass mutation rejected / custom order_link_id
+> prefix required). The module imports zero network libraries, reads zero
+> environment variables, references zero exchange credentials, defines
+> no `send`/`place_order`/`post_order`/`submit_order` method, and never
+> touches `main.py` / `src/risk.py` / `BybitExecutor`. The implementation
+> path's next step is
+> `TASK-014BI_demo_only_tiny_execution_adapter_payload_dry_run` (or
+> equivalent endpoint-guard-integration task) — NOT another
+> `_readiness_review` / `_final_pre_execution_review` /
+> `_manual_authorization_review` suffix.
+>
+> Previous BG banner archived below.
+
+## TASK-014BH Status (2026-06-18)
+
+| item | status |
+|---|---|
+| new src `src/demo_only_tiny_execution_adapter.py` (chain-break implementation-path scaffold) | DONE |
+| new scripts `scripts/preview_demo_only_tiny_execution_adapter.py` (offline preview CLI) | DONE |
+| new tests `tests/demo_trading/test_demo_only_tiny_execution_adapter.py` (Stage 1 focused-core 45 tests) | DONE |
+| chain-break markers: `TASK_ID = "TASK-014BH"`, `IDENTITY = "DEMO-ONLY-TINY-EXECUTION-ADAPTER-IMPLEMENTATION-PATH-SCAFFOLD"`, `IS_REVIEW_CHAIN_SUFFIX = False`, `CLOSES_DISABLED_REVIEW_CHAIN_UPSTREAM_TASK = "TASK-014BG"` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BI_demo_only_tiny_execution_adapter_payload_dry_run"` (does not end in `_readiness_review` / `_final_pre_execution_review` / `_manual_authorization_review`) | DONE |
+| strict immutable constants: `ALLOWED_ENVIRONMENT="bybit_demo"`, `ALLOWED_SYMBOL="SOLUSDT"`, `PROTECTED_SYMBOLS={ENAUSDT,TIAUSDT,AIXBTUSDT,POLYXUSDT,EDUUSDT}`, `TINY_SIZE_CAP_USDT=5`, `TINY_QTY_CAP_SOL=0.05`, `LIVE_ENDPOINT_DENYLIST` includes `api.bybit.com` / `api.bytick.com` / `stream.bybit.com` / `stream.bytick.com` | DONE |
+| pure offline `build_demo_only_tiny_solusdt_entry_payload` returns frozen `DemoOnlyTinyEntryPayload`; `to_exchange_payload` strips audit metadata; `to_audit_dict` includes `_demo_only_audit_response_status="DEMO_ONLY_TINY_BH_NOT_SENT"` | DONE |
+| guard helpers reject: non-SOL symbol / protected symbol / protected position in existing scope / non-demo environment / unknown side / qty above 0.05 SOL / qty <= 0 / notional above 5 USDT / live endpoint / custom order_link_id missing required prefix / next-task with review-chain suffix | DONE |
+| static-source safety invariants (no `requests`/`urllib`/`urllib3`/`http`/`socket`/`ssl`/`pybit`/`websocket`/`aiohttp`/`httpx` import; no `src.executors.bybit` import; no `getenv`/`environ`/`load_dotenv`; no `def send`/`.send(`/`place_order`/`post_order`/`submit_order`; no `main`/`src.risk` import) | CONFIRMED via tokenize + ast tests |
+| `IS_REVIEW_CHAIN_SUFFIX = False` literal in source | CONFIRMED via tokenize test |
+| py_compile BH src + scripts + tests | PASS |
+| pytest BH Stage 1 focused-core | **45/45 PASS** |
+| pytest BG Stage 1 focused-core regression | **23/23 PASS** |
+| pytest broad `tests/demo_trading/ --ignore=test_demo_emergency_close_sender.py` | **7688/7688 PASS** (previous BG baseline 7643 + BH stage1 45; excludes pre-existing emergency_close_sender CLI dry-run failure unrelated to BH) |
+| BH preview smoke (SOL Buy 0.01 @ mark 100) | exit 0; payload built offline; `_demo_only_audit_response_status = DEMO_ONLY_TINY_BH_NOT_SENT`; `_demo_only_is_review_chain_suffix = false` |
+| BH preview smoke (BTCUSDT) | exit 1; `REJECTED: symbol 'BTCUSDT' not allowed; only 'SOLUSDT' is permitted` |
+| safety invariants (no real execution / no sender / no executable adapter / no endpoint call / no socket / no secret read / no credential load / no G20 lift / no position modification / no protected position interaction) | CONFIRMED |
+| main.py / src/risk.py / BybitExecutor | UNTOUCHED |
+| local commit | pending: `TASK-014BH: start demo-only tiny execution adapter implementation path (chain-break; offline-only scaffold; non-sending)` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-18 TASK-014BH)
+
+1. VPS git pull and re-validate BH locally:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       # NOTE: do NOT source .env.demo for this task — BH must run with
+       # zero credentials present to prove it never reads them.
+       python3 -m py_compile \
+           src/demo_only_tiny_execution_adapter.py \
+           scripts/preview_demo_only_tiny_execution_adapter.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter.py
+       python3 -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter.py -q
+       # expect 45/45 PASS
+
+   Then run the BH preview and confirm:
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter.py \
+           --symbol SOLUSDT --side Buy --qty 0.01 --mark-price 100
+       # exit 0
+       # next_required_task == TASK-014BI_demo_only_tiny_execution_adapter_payload_dry_run
+       # _demo_only_audit_response_status == DEMO_ONLY_TINY_BH_NOT_SENT
+       # _demo_only_is_review_chain_suffix == false
+       # no socket opened, no endpoint called, no secret loaded, G20 still in place, 5 protected positions untouched.
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter.py --symbol BTCUSDT --side Buy --qty 0.01
+       # exit 1
+       # REJECTED: symbol 'BTCUSDT' not allowed; only 'SOLUSDT' is permitted
+
+2. Once step 1 passes, decide whether to authorise **TASK-014BI** —
+   `TASK-014BI_demo_only_tiny_execution_adapter_payload_dry_run` (offline
+   payload dry-run that exercises the BH guards with realistic
+   precision-rounded SOL qty / mark-price combinations and emits a JSON
+   report) — OR an endpoint-guard-integration variant. Either successor
+   is acceptable; what is NOT acceptable is another `_readiness_review`
+   / `_final_pre_execution_review` / `_manual_authorization_review`
+   suffix.
+
+---
+
+> Previous README banner: TASK-014BG (2026-06-18) — see archived block below.
+
+## TASK-014BG Banner (archived 2026-06-18 by TASK-014BH)
+
 > README shared status updated by TASK-014BG (2026-06-18) — see
 > [Demo Trading Guarded Lifecycle Status](../../../README.md#demo-trading-guarded-lifecycle-statusupdated-by-task-014bg-2026-06-18)
-> for the cross-agent status board. TASK-014BG adds the
+> for the cross-agent status board. TASK-014BG added the
 > guarded entry real execution adapter disabled implementation scaffold
 > manual authorization gate final pre-execution review manual
 > authorization review final pre-execution review manual authorization

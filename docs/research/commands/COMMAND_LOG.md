@@ -21,6 +21,53 @@ Notes:
 
 ---
 
+### 2026-06-18（TASK-014BH — Start demo-only tiny execution adapter implementation path (chain-break)）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit authorization in chat — "TASK-014BH_demo_only_tiny_execution_adapter_implementation_path Stage 1 only: start the demo-only tiny execution adapter implementation path and stop the previous infinite review-chain pattern. May create a demo-only tiny execution adapter implementation scaffold / payload builder / safety gate tests, but must NOT send any order and must NOT call any exchange endpoint."
+Task: TASK-014BH demo-only tiny execution adapter implementation-path scaffold (chain-break — replaces the prior `_readiness_review` / `_final_pre_execution_review` / `_manual_authorization_review` / `_dry_run` review-chain pattern with an implementation track).
+Status before: TASK-014BG CLOSED (local commit fd04ecc); disabled-implementation-scaffold review chain closed; no implementation-path module yet.
+Status after: BH implementation-path scaffold landed: new BH src/scripts/test triplet; 45 Stage 1 focused-core tests PASS; BG Stage 1 regression PASS; broad demo_trading sweep PASS. Module is pure-offline, non-sending, contains zero network library imports, reads zero env vars, defines no `send` / `place_order` / `post_order` / `submit_order` method, and references no `BybitExecutor`. main.py / src/risk.py / BybitExecutor / G20 sender policy untouched.
+
+Files changed:
+
+- NEW `src/demo_only_tiny_execution_adapter.py` — strict immutable safety constants (allowed env `bybit_demo`, allowed symbol `SOLUSDT`, protected denylist `{ENAUSDT,TIAUSDT,AIXBTUSDT,POLYXUSDT,EDUUSDT}`, tiny size cap `5 USDT` / `0.05 SOL`, live endpoint denylist, demo-endpoint documented-only set), pure offline `build_demo_only_tiny_solusdt_entry_payload`, `DemoOnlyTinyEntryPayload` frozen dataclass with `to_exchange_payload` / `to_audit_dict`, guard helpers (`assert_environment_is_demo`, `assert_symbol_is_allowed`, `assert_no_protected_position_in_scope`, `assert_endpoint_is_demo_only`, `assert_side_is_allowed`, `assert_qty_under_tiny_cap`, `assert_notional_under_tiny_cap`, `assert_next_task_is_not_review_chain_suffix`), `describe_implementation_path`, chain-break markers (`TASK_ID="TASK-014BH"`, `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-IMPLEMENTATION-PATH-SCAFFOLD"`, `IS_REVIEW_CHAIN_SUFFIX=False`, `CLOSES_DISABLED_REVIEW_CHAIN_UPSTREAM_TASK="TASK-014BG"`, `NEXT_REQUIRED_TASK="TASK-014BI_demo_only_tiny_execution_adapter_payload_dry_run"`).
+- NEW `scripts/preview_demo_only_tiny_execution_adapter.py` — offline preview CLI; argparse with `--symbol` / `--side` / `--qty` / `--mark-price` / `--existing-positions` / `--order-link-id`; exit 0 on payload-built, exit 1 on rejection.
+- NEW `tests/demo_trading/test_demo_only_tiny_execution_adapter.py` — 45 focused-core tests covering identity / chain-break markers / immutable constants / happy-path Buy + Sell / `to_exchange_payload` excludes audit metadata / `to_audit_dict` includes audit metadata + `DEMO_ONLY_TINY_BH_NOT_SENT` / non-SOL symbol rejection / each protected symbol as target rejected / protected position in existing_positions rejected / non-demo environment rejected / unknown side rejected / qty above 0.05 SOL rejected / qty 0 rejected / negative qty rejected / notional above 5 USDT rejected / notional under cap passes / live endpoint root + with-path denied / demo endpoint documented-only accepted / `assert_next_task_is_not_review_chain_suffix` rejects each forbidden suffix and accepts BI target / `describe_implementation_path` exposes chain-break markers / static-source ast+tokenize tests for: no network library import, no `src.executors.bybit` import, no `getenv`/`environ`/`load_dotenv`, no live host outside string literals, no `def send`/`.send(`/`place_order`/`post_order`/`submit_order`, no `main`/`src.risk` import, `IS_REVIEW_CHAIN_SUFFIX = False` literal present / runtime invariants: bh import does not load `src.executors.bybit` / does not require env vars / does not mutate `existing_positions` tuple / `DemoOnlyTinyEntryPayload` is frozen / custom order_link_id must start with `DEMO_ONLY_TINY_BH_`.
+- `docs/research/commands/NEXT_ACTION.md` — prepended TASK-014BH banner, status table, and Next Rick Action; archived BG banner block.
+- `docs/research/commands/COMMAND_LOG.md` — added this entry.
+- `README.md` — updated shared status board (see commit).
+
+Validation:
+
+- `python -m py_compile src/demo_only_tiny_execution_adapter.py scripts/preview_demo_only_tiny_execution_adapter.py tests/demo_trading/test_demo_only_tiny_execution_adapter.py` → OK.
+- `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter.py -q` → **45 passed**.
+- `pytest tests/demo_trading/test_demo_tiny_guarded_entry_real_execution_adapter_disabled_implementation_scaffold_manual_authorization_gate_final_pre_execution_review_manual_authorization_review_final_pre_execution_review_manual_authorization_review_dry_run_stage1.py -q` (BG Stage 1 regression) → **23 passed**.
+- `pytest tests/demo_trading/ --ignore=tests/demo_trading/test_demo_emergency_close_sender.py -q` → **7688 passed in 60.30s** (= prior BG baseline 7643 + BH stage1 45; excludes the pre-existing emergency_close_sender CLI dry-run failure unrelated to BH).
+- BH preview smoke (`--symbol SOLUSDT --side Buy --qty 0.01 --mark-price 100`) → exit 0; identity dict printed; offline payload printed with `_demo_only_audit_response_status = DEMO_ONLY_TINY_BH_NOT_SENT`, `_demo_only_is_review_chain_suffix = false`, `orderLinkId = DEMO_ONLY_TINY_BH_SOLUSDT_OFFLINE_BUILD`.
+- BH preview smoke (`--symbol BTCUSDT --side Buy --qty 0.01`) → exit 1; `REJECTED: symbol 'BTCUSDT' not allowed; only 'SOLUSDT' is permitted`.
+- `git diff --stat HEAD` confirmed BH-only: 3 new files + README.md + NEXT_ACTION.md + COMMAND_LOG.md. main.py / src/risk.py / src/executors/bybit.py / live executor wiring / secret loading: NOT in diff.
+
+Outputs: none persisted (BH writes no report files; the preview prints to stdout only). No JSON / Markdown artifacts under outputs/.
+
+Notes:
+
+- BH **breaks the review chain**: `NEXT_REQUIRED_TASK = "TASK-014BI_demo_only_tiny_execution_adapter_payload_dry_run"`. The chain `_readiness_review` / `_final_pre_execution_review` / `_manual_authorization_review` suffix pattern is **discontinued**; `assert_next_task_is_not_review_chain_suffix` is a hard-fail guard against re-introducing it.
+- Module-level invariants enforced statically (via tokenize + ast tests):
+    * No network import (`requests`, `urllib`, `urllib3`, `http`, `socket`, `ssl`, `pybit`, `websocket`, `aiohttp`, `httpx`).
+    * No `BybitExecutor` / `src.executors.bybit` import.
+    * No `getenv` / `environ` / `load_dotenv` reference anywhere in source tokens.
+    * No `def send` / `.send(` / `place_order` / `post_order` / `submit_order` in source.
+    * `api.bybit.com` appears only inside string literals (the denylist), never as a code identifier.
+- G20 sender policy: still active; BH has no sender adapter, no `send` method, no endpoint call code.
+- Protected positions ENAUSDT / TIAUSDT / AIXBTUSDT / POLYXUSDT / EDUUSDT remain untouched; BH rejects any attempt to use them as the entry symbol or to list them in `existing_positions`.
+- The only allowed entry symbol is `SOLUSDT`; the only allowed environment is `bybit_demo`; the tiny size cap is `5 USDT` (or `0.05 SOL`).
+- `--allow-real-entry-execution` style override flags are NOT introduced by BH; the module simply has no real-execution code path to allow.
+- Real execution remains disabled and must be re-authorized in a separate explicit demo-only tiny order execution task before any sender code is written.
+- Local commit only (no push) per Rick's standing rule.
+
+---
+
 ### 2026-06-18（TASK-014BG — Add guarded entry real execution adapter disabled implementation scaffold manual authorization gate final pre-execution review manual authorization review final pre-execution review manual authorization review dry-run (chain-closing)）
 
 Agent: Claude (Opus 4.7)
