@@ -1,6 +1,245 @@
 # Next Action
 
-> README shared status updated by TASK-014BM_CAP_ESCALATION_GATE (2026-06-19).
+> README shared status updated by TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY (2026-06-19).
+> TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY_demo_only_SOLUSDT_execution_path is
+> a **Stage 1, decision-only, demo-only** extension on top of
+> TASK-014BM / TASK-014BM_FIX / TASK-014BM_MIN_QTY_FIX /
+> TASK-014BM_CAP_ESCALATION_GATE. It adds a narrow **wiring layer**
+> that converts the cap-escalation gate's authorized decision into
+> a `execution_qty_resolved` value surfaced on BM `ExecutionReport`
+> for the readiness / planning path only, so BM can record that the
+> authorized candidate qty (=0.1, from TASK-014BM_MIN_QTY_FIX) is the
+> only legal execution qty for this single SOLUSDT demo path and
+> that the original BL packet `qty=0.01` has been confirmed invalid.
+> The wiring is decision-only — it **never** sends an order,
+> **never** calls `/v5/order/create`, **never** retries
+> `execute_demo_order`, **never** touches a live endpoint, **never**
+> reads any LIVE or DEMO secret env, **never** touches protected
+> positions, **never** loosens `MAX_ORDER_COUNT=1` or the
+> double-confirmation flags, **never** globally raises
+> `TINY_QTY_CAP_SOL` / `TINY_SIZE_CAP_USDT`, and **never** mutates
+> BL packet `DEFAULT_QTY="0.01"`. The wiring also does **not** switch
+> BM's actual `execute_demo_order` body qty to 0.1 — that would be a
+> follow-up Stage 2 task with a separate explicit authorization.
+>
+> New module
+> [`src/demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py`](../../../src/demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py):
+> single decision entry point
+> `run_authorized_execution_qty_wiring(instrument_rules_report,
+> cap_escalation_report)`; immutable locks
+> `ALLOWED_ENVIRONMENT="bybit_demo"`, `ALLOWED_SYMBOL="SOLUSDT"`,
+> `ALLOWED_SIDE="Buy"`, `ALLOWED_ORDER_TYPE="Market"`,
+> `ALLOWED_TIME_IN_FORCE="IOC"`, `ALLOWED_MAX_ORDER_COUNT=1`,
+> `ORIGINAL_PACKET_QTY="0.01"`,
+> `MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT=Decimal("20")`; 12 decision
+> statuses (`WIRING_AUTHORIZED_CANDIDATE_QTY` /
+> `WIRING_NOT_REQUIRED_ORIGINAL_PASSES` /
+> `WIRING_NOT_AUTHORIZED_NO_OVERRIDE` /
+> `WIRING_REJECTED_RULES_NOT_LOADED` /
+> `WIRING_REJECTED_GATE_MISSING` /
+> `WIRING_REJECTED_GATE_OVER_CAP` /
+> `WIRING_REJECTED_WRONG_SYMBOL` /
+> `WIRING_REJECTED_WRONG_ENVIRONMENT` /
+> `WIRING_REJECTED_WRONG_SIDE` /
+> `WIRING_REJECTED_QTY_MISMATCH` /
+> `WIRING_REJECTED_PROTECTED_SYMBOL` /
+> `WIRING_REJECTED_CANDIDATE_INVALID`); 3 source enums
+> (`CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY` for authorized success,
+> `REJECTED_NO_FALLBACK_TO_0_01` for rejected paths that explicitly
+> refuse to fall back to 0.01, `NONE` for not-required paths).
+> Strict precedence (fail-closed): missing IR → REJECTED_RULES_NOT_LOADED;
+> missing gate → REJECTED_GATE_MISSING; wrong env →
+> REJECTED_WRONG_ENVIRONMENT; protected symbol →
+> REJECTED_PROTECTED_SYMBOL; wrong symbol → REJECTED_WRONG_SYMBOL;
+> wrong side → REJECTED_WRONG_SIDE; gate `ESCALATION_NOT_REQUIRED`
+> or `original_tiny_cap_passed=True` →
+> NOT_REQUIRED_ORIGINAL_PASSES (execution_qty="", source=NONE);
+> gate `ESCALATION_AUTHORIZED` → validate
+> `cap_escalated_demo_only=True` AND
+> `explicit_demo_min_qty_cap_authorized=True` AND gate's own
+> `decision.candidate_qty` / `decision.candidate_notional` parse to
+> valid `Decimal` (no IR fallback — gate-only) AND notional ≤ 20 AND
+> proposed_qty == candidate_qty → AUTHORIZED_CANDIDATE_QTY
+> (execution_qty="0.1", source=CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY);
+> gate `ESCALATION_REJECTED_NOTIONAL_OVER_CAP` →
+> REJECTED_GATE_OVER_CAP; otherwise → NOT_AUTHORIZED_NO_OVERRIDE.
+> Every rejected path emits `execution_qty=""`; the module **never**
+> silently substitutes 0.01 for execute mode.
+>
+> BM `ExecutionReport` is extended with 6 additional *defaulted*
+> fields (`wiring_loaded`, `wiring_status`, `original_packet_qty`,
+> `execution_qty_source`, `execution_qty_resolved`,
+> `execution_notional_estimate_resolved`) and
+> `run_explicit_tiny_order_execution()` grows one optional keyword
+> `authorized_execution_qty_wiring` so callers can inject the
+> wiring report. When the kwarg is omitted, every existing
+> BH→BM_CAP_ESCALATION_GATE call site behaves identically; the
+> 417 existing chain tests still pass unchanged. BM's
+> `execute_demo_order` body qty source (= BL packet `DEFAULT_QTY="0.01"`)
+> is NOT modified by this task — wiring the resolved candidate qty
+> into the actual BM POST body requires another explicit Stage 2
+> authorized task.
+>
+> New preview CLI
+> [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py`](../../../scripts/preview_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py)
+> (`--mark-price`; `--ir-mode {offline,discover}` default offline;
+> `--proposed-qty`; `--max-demo-min-qty-notional-cap-usdt` default 20;
+> `--i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap`;
+> `--authorization-marker`; `--write-report` / `--output-dir`;
+> exit 0 for any of the 12 documented decision statuses, 1 for
+> unrecognized status or raised exception). Default unauthorized
+> offline run → exit 0,
+> `status=WIRING_REJECTED_RULES_NOT_LOADED` (offline IR has no
+> rules → wiring fails closed by design).
+>
+> New test file
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py)
+> (33 tests) covers: identity / chain-break / upstream / immutable
+> locks; default fail-closed when IR missing / gate missing / both
+> missing (rules-not-loaded takes precedence); authorized success
+> path resolves execution_qty="0.1", notional=Decimal("10.0"),
+> cap_gate_status=ESCALATION_AUTHORIZED,
+> cap_escalated_demo_only=True, original_packet_qty="0.01",
+> qty_0_01_confirmed_invalid=True; not authorized → execution_qty="";
+> mark=250 over-cap → WIRING_REJECTED_GATE_OVER_CAP;
+> ESCALATION_NOT_REQUIRED → NOT_REQUIRED_ORIGINAL_PASSES /
+> source=NONE; gate's own qty mismatch blocks the wiring;
+> synthetic tampered-gate helper proves wiring still fail-closes on
+> wrong_environment / parametrized protected symbols (5) /
+> wrong_symbol / wrong_side / qty_mismatch / candidate_invalid /
+> authorized-but-not-cap-escalated paths; BM ExecutionReport defaults
+> hide all 6 wiring fields; injected wiring surfaces both authorized
+> and rejected paths; AST static-source rules (no `urllib` /
+> `requests` / `pybit` / `aiohttp` / `httpx` / `websocket` /
+> `websockets` / `urllib.request` / `http.client` import; no
+> `main` / `src.risk` / `src.executors.bybit` import; no
+> `BybitExecutor` `Name`/`Attribute` reference; no
+> `os.environ` / `os.getenv` access; no non-docstring string literal
+> references a LIVE or DEMO secret env name; each
+> `FORBIDDEN_URL_TOKENS` token appears at most once as a non-docstring
+> string constant; no `api-demo.bybit.com` non-docstring constant);
+> global tiny caps (`TINY_QTY_CAP_SOL=0.05` /
+> `TINY_SIZE_CAP_USDT=5` / `TINY_QTY_STEP_SOL=0.01`) and
+> `PROTECTED_SYMBOLS` frozenset are not mutated; report writer emits
+> 4 files + JSON round-trip.
+>
+> No safety-critical surface was modified: no live endpoint, no
+> live or demo secret loading, no `main.py` / `src/risk.py` /
+> `src/executors/bybit.py` change, no `BybitExecutor` live behavior
+> change, no protected-position code touched, no retry, no
+> scheduler, no stop endpoint, no TP/SL, no `/v5/order/create` call,
+> no new real Bybit Demo order sent, no BL packet
+> `DEFAULT_QTY="0.01"` change, no BM `execute_demo_order` body qty
+> source change.
+>
+> Validation (this commit):
+> py_compile of all 4 changed Python files PASS;
+> `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py
+> -q --basetemp=.pytest_basetemp` → **33/33 PASS**;
+> BH→BM chain regression (BH + BI + BJ + BK + BL + BM + BM_FIX +
+> BM_MIN_QTY_FIX + BM_CAP_ESCALATION_GATE +
+> BM_WIRE_AUTHORIZED_CANDIDATE_QTY, 10 demo_trading adapter test
+> files) → **450/450 PASS**;
+> preview offline smoke `--mark-price 100 --proposed-qty 0.1` (no
+> authorization) → exit 0,
+> `status=WIRING_REJECTED_RULES_NOT_LOADED`,
+> `network_attempted=False`, `order_endpoint_called=False`,
+> `order_sent=False`; cap-escalation preview, BM readiness preview,
+> and BM_MIN_QTY_FIX preview all still exit 0, no order sent.
+>
+> No new real Bybit Demo order was sent during this Stage 1 task.
+>
+> Previous BM_CAP_ESCALATION_GATE banner archived below.
+
+## TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY Status (2026-06-19)
+
+| item | status |
+|---|---|
+| new src `src/demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py` (decision-only entry point `run_authorized_execution_qty_wiring()`; immutable env/symbol/side/order_type/TIF/max_order_count locks; gate-only candidate-qty validation with no IR fallback; 12 decision statuses; 3 execution-qty-source enums; JSON+MD report writer) | DONE |
+| new scripts `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py` (`--mark-price`; `--ir-mode {offline,discover}`; `--proposed-qty`; `--max-demo-min-qty-notional-cap-usdt`; explicit auth flag; authorization marker; `--write-report` / `--output-dir`) | DONE |
+| new tests `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py` (Stage 1 focused-core 33 tests) | DONE |
+| BM `ExecutionReport` extended with 6 defaulted wiring fields (`wiring_loaded`, `wiring_status`, `original_packet_qty`, `execution_qty_source`, `execution_qty_resolved`, `execution_notional_estimate_resolved`); `run_explicit_tiny_order_execution()` grows optional `authorized_execution_qty_wiring` kwarg; existing 417 BH→BM_CAP_ESCALATION_GATE tests unchanged and still PASS | DONE |
+| chain-break markers: `TASK_ID="TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY"`, `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-AUTHORIZED-EXECUTION-QTY-WIRING"`, `IMPLEMENTATION_PATH_PHASE="tiny_order_authorized_execution_qty_wiring"`, `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASKS=("TASK-014BH","TASK-014BM","TASK-014BM_FIX","TASK-014BM_MIN_QTY_FIX","TASK-014BM_CAP_ESCALATION_GATE")` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BN_demo_only_tiny_execution_postfill_audit"` (passes `bh.assert_next_task_is_not_review_chain_suffix`) | DONE |
+| default wiring behaviour is **fail-closed**; rejected paths emit `execution_qty_resolved=""` and `execution_qty_source` ∈ `{REJECTED_NO_FALLBACK_TO_0_01, NONE}` — **never** silently substitutes BL's 0.01 for execute mode | CONFIRMED |
+| `cap_escalation` gate result is the sole source of truth for authorized candidate qty — wiring uses `decision.candidate_qty` / `decision.candidate_notional` from the gate and never silently falls back to `instrument_rules_report.candidate.qty`; tampered-gate helper test proves this | CONFIRMED |
+| `MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT = Decimal("20")` re-validated at the wiring layer; even when gate is authorized, candidate_notional > 20 → `WIRING_REJECTED_GATE_OVER_CAP` | CONFIRMED |
+| environment / symbol / side / protected symbols / qty match all have dedicated fail-closed paths with distinct `WIRING_REJECTED_*` statuses | CONFIRMED |
+| `ORIGINAL_PACKET_QTY="0.01"` constant surfaced on every report; `qty_0_01_confirmed_invalid=True` when authorized candidate ≠ 0.01 | CONFIRMED |
+| global `TINY_QTY_CAP_SOL=0.05` / `TINY_SIZE_CAP_USDT=5` / `TINY_QTY_STEP_SOL=0.01` constants in BH are NOT modified; protected symbols denylist `{ENA, TIA, AIXBT, POLYX, EDU}USDT` is NOT modified; BL packet `DEFAULT_QTY="0.01"` is NOT modified; BM `execute_demo_order` body qty source is NOT modified | CONFIRMED |
+| AST static-source safety invariants (no `urllib` / `requests` / `pybit` / `aiohttp` / `httpx` / `websocket` / `websockets` / `urllib.request` / `http.client` import; no `main` / `src.risk` / `src.executors.bybit` import; no `BybitExecutor` `Name`/`Attribute` reference; no non-docstring secret env name; no `os.environ` / `os.getenv`; each `FORBIDDEN_URL_TOKENS` token used at most once outside docstrings; no `api-demo.bybit.com` non-docstring string constant) | CONFIRMED |
+| report writer emits `latest_*.json` / `latest_*.md` / `*_<UTC_TS>.json` / `*_<UTC_TS>.md` to `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring/` | DONE |
+| py_compile (src + scripts + tests) | PASS |
+| pytest BM_WIRE_AUTHORIZED_CANDIDATE_QTY Stage 1 focused-core | **33/33 PASS** |
+| pytest BH + BI + BJ + BK + BL + BM + BM_FIX + BM_MIN_QTY_FIX + BM_CAP_ESCALATION_GATE + BM_WIRE_AUTHORIZED_CANDIDATE_QTY safety-chain regression | **450/450 PASS** (417 prior chain + 33 new) |
+| BM_WIRE preview offline smoke `--mark-price 100 --proposed-qty 0.1` (no authorization) | exit 0; `status=WIRING_REJECTED_RULES_NOT_LOADED`; `network_attempted=False`; `order_endpoint_called=False`; `order_sent=False` |
+| BM cap-escalation preview (post-change regression) | exit 0; no order sent |
+| BM readiness preview (post-change regression) | exit 0; `final_status=READINESS_OK_NO_NETWORK`; no network, no order sent |
+| BM_MIN_QTY_FIX preview (post-change regression) | exit 0; `discovery_status=DISCOVERY_OFFLINE_NO_NETWORK`; no network, no order sent |
+| safety invariants (no live endpoint call / no live secret read / no demo secret read / no stop endpoint / no TP-SL attachment / no retry / no scheduler / no G20 lift / no position modification / no protected position interaction / no `/v5/order/create` call / no new real demo order / no global tiny cap lift / no BL packet default-qty change / no BM execute_demo_order body qty source change) | CONFIRMED |
+| main.py / src/risk.py / src/executors/bybit.py / BybitExecutor | UNTOUCHED |
+| local commit | pending: `TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY: add demo-only SOLUSDT authorized execution qty wiring layer (decision-only; locked bybit_demo+SOLUSDT+Buy+Market+IOC; consumes BM_MIN_QTY_FIX + BM_CAP_ESCALATION_GATE; BM ExecutionReport gains 6 defaulted wiring fields; rejected paths NEVER fall back to 0.01; 33 new tests; existing 417 BH→BM_CAP_ESCALATION_GATE tests unchanged)` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-19 TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY)
+
+1. VPS git pull and re-validate the new module offline first:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       python3 -m py_compile \
+           src/demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py \
+           src/demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           scripts/preview_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py
+       python3 -m pytest \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py \
+           -q --basetemp=.pytest_basetemp
+       # expect 33/33 PASS
+       python3 -m pytest \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_endpoint_guard_integration.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_final_pre_execution_checklist.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_preparation.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_fix.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py \
+           -q --basetemp=.pytest_basetemp
+       # expect 450/450 PASS
+
+2. Run the offline wiring preview in three decision modes (still no
+   network, no order, no `--write-report`) to see the wiring
+   transitions:
+
+       # Unauthorized + offline IR -> WIRING_REJECTED_RULES_NOT_LOADED (exit 0).
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py \
+           --mark-price 100 --proposed-qty 0.1
+
+       # Authorized but over 20 USDT cap -> WIRING_REJECTED_GATE_OVER_CAP (exit 0).
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py \
+           --ir-mode discover \
+           --mark-price 250 --proposed-qty 0.1 \
+           --i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap \
+           --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+
+       # Authorized AND within cap -> WIRING_AUTHORIZED_CANDIDATE_QTY (exit 0).
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py \
+           --ir-mode discover \
+           --mark-price 100 --proposed-qty 0.1 \
+           --i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap \
+           --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+
+3. Do NOT retry `execute_demo_order` -- BM still uses BL packet
+   `DEFAULT_QTY="0.01"` for the actual POST body. The wiring report's
+   `execution_qty_resolved="0.1"` is **readiness/planning surface only**;
+   wiring it into BM's actual POST body is **not** part of this Stage 1
+   task and requires another explicit Stage 2 authorized task (which
+   will change BL packet's qty source under a separate double-confirmation
+   flag).
+
+> Previous BM_CAP_ESCALATION_GATE banner archived below.
 > TASK-014BM_CAP_ESCALATION_GATE_demo_only_SOLUSDT_min_qty_authorization is a
 > **Stage 1, decision-only, demo-only** extension on top of
 > TASK-014BM / TASK-014BM_FIX / TASK-014BM_MIN_QTY_FIX. It adds a

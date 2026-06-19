@@ -14,12 +14,125 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_CAP_ESCALATION_GATE, 2026-06-19）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY, 2026-06-19）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_CAP_ESCALATION_GATE 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
-> **TASK-014BM_CAP_ESCALATION_GATE**（2026-06-19）在
+> **TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY**（2026-06-19）在
+> TASK-014BM / TASK-014BM_FIX / TASK-014BM_MIN_QTY_FIX /
+> TASK-014BM_CAP_ESCALATION_GATE 之上，新增一個 **narrow、decision-only、
+> demo-only 的 SOLUSDT authorized execution qty wiring 層**，把 cap-escalation
+> 閘的「明確雙重授權通過」結果轉成 BM ExecutionReport 上可被 readiness 路徑
+> 讀取的 `execution_qty_resolved` 欄位（值 = TASK-014BM_MIN_QTY_FIX 算出的
+> candidate qty=0.1），讓 BM readiness/planning 路徑明確知道「原 BL packet
+> `qty=0.01` 已被確認 invalid，授權後的 candidate_qty 才是合法 execution qty」。
+> 本任務 **Stage 1 only — 仍不送單、不呼叫 `/v5/order/create`、不重試
+> `execute_demo_order`、不接 live endpoint、不讀任何 live/demo secret、不動
+> protected positions、不上 retry、不上 scheduler、不掛 stop / TP / SL、不
+> 改 BL packet 的 `DEFAULT_QTY="0.01"`、不解除 `MAX_ORDER_COUNT=1` 或雙重
+> 授權旗標、不全域抬升 `TINY_QTY_CAP_SOL` / `TINY_SIZE_CAP_USDT`**。具體變更：
+> (1) 新增 [`src/demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py`](src/demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py)：
+> 單一決策入口 `run_authorized_execution_qty_wiring(instrument_rules_report,
+> cap_escalation_report)`；常數鎖死 `ALLOWED_ENVIRONMENT="bybit_demo"` /
+> `ALLOWED_SYMBOL="SOLUSDT"` / `ALLOWED_SIDE="Buy"` / `ALLOWED_ORDER_TYPE="Market"` /
+> `ALLOWED_TIME_IN_FORCE="IOC"` / `ALLOWED_MAX_ORDER_COUNT=1` /
+> `ORIGINAL_PACKET_QTY="0.01"` / `MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT=Decimal("20")`；
+> 12 個 decision status：`WIRING_AUTHORIZED_CANDIDATE_QTY` /
+> `WIRING_NOT_REQUIRED_ORIGINAL_PASSES` / `WIRING_NOT_AUTHORIZED_NO_OVERRIDE` /
+> `WIRING_REJECTED_RULES_NOT_LOADED` / `WIRING_REJECTED_GATE_MISSING` /
+> `WIRING_REJECTED_GATE_OVER_CAP` / `WIRING_REJECTED_WRONG_SYMBOL` /
+> `WIRING_REJECTED_WRONG_ENVIRONMENT` / `WIRING_REJECTED_WRONG_SIDE` /
+> `WIRING_REJECTED_QTY_MISMATCH` / `WIRING_REJECTED_PROTECTED_SYMBOL` /
+> `WIRING_REJECTED_CANDIDATE_INVALID`；3 個 source enum：
+> `CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY` (授權成功) /
+> `REJECTED_NO_FALLBACK_TO_0_01` (失敗永不退回 0.01) / `NONE` (不需要 override)；
+> JSON+MD 報告寫入 `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring/`。
+> (2) 決策順序（precedence）嚴格 fail-closed：missing IR → REJECTED_RULES_NOT_LOADED；
+> missing gate → REJECTED_GATE_MISSING；non-`bybit_demo` env → REJECTED_WRONG_ENVIRONMENT；
+> protected symbol → REJECTED_PROTECTED_SYMBOL；非 SOLUSDT → REJECTED_WRONG_SYMBOL；
+> 非 Buy → REJECTED_WRONG_SIDE；gate 回 `ESCALATION_NOT_REQUIRED` 或
+> `original_tiny_cap_passed=True` → NOT_REQUIRED_ORIGINAL_PASSES、
+> `execution_qty=""`、`execution_qty_source=NONE`；gate 回 `ESCALATION_AUTHORIZED`
+> → 驗證 `cap_escalated_demo_only=True` AND `explicit_demo_min_qty_cap_authorized=True`
+> AND 閘自身的 `decision.candidate_qty` / `decision.candidate_notional` 合法（**不
+> silently fallback 到 IR 的 candidate**） AND notional ≤ 20 AND
+> proposed_qty == candidate_qty → AUTHORIZED_CANDIDATE_QTY，
+> `execution_qty="0.1"`、`execution_qty_source=CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY`、
+> `original_packet_qty="0.01"`、`qty_0_01_confirmed_invalid=True`；
+> gate 回 `ESCALATION_REJECTED_NOTIONAL_OVER_CAP` → REJECTED_GATE_OVER_CAP；
+> 其他 → NOT_AUTHORIZED_NO_OVERRIDE。**任何 rejected 路徑 `execution_qty=""`、
+> source=`REJECTED_NO_FALLBACK_TO_0_01` 或 `NONE`，絕不退回 BL 的 0.01 給
+> execute 模式**。
+> (3) 在 BM `ExecutionReport` 上再新增 6 個 *defaulted* 欄位
+> `wiring_loaded` / `wiring_status` / `original_packet_qty` /
+> `execution_qty_source` / `execution_qty_resolved` /
+> `execution_notional_estimate_resolved`，並新增 optional
+> `authorized_execution_qty_wiring` kwarg 於 `run_explicit_tiny_order_execution()`，
+> 未傳時欄位全為安全預設值（False / ""）；既有 BH→BM_CAP_ESCALATION_GATE
+> 共 417 條測試完全不變、繼續 PASS。BM `execute_demo_order` 行為（包括
+> hardcoded body qty 來源 = BL packet `DEFAULT_QTY="0.01"`）**未被本任務改動** —
+> 這層只把授權後的 candidate_qty surface 到 readiness/planning，**並未真把
+> BM 的執行 body qty 切換到 0.1**。
+> (4) 新增 preview CLI
+> [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py`](scripts/preview_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py)
+> （`--mark-price`；`--ir-mode {offline,discover}` 預設 offline；`--proposed-qty`；
+> `--max-demo-min-qty-notional-cap-usdt` 預設 20；授權旗標
+> `--i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap` +
+> `--authorization-marker`；`--write-report` / `--output-dir`；exit 0 = 任一
+> 預期 12 個決策狀態，1 = 其他終態 / 例外）。預設未授權路徑 → exit 0、
+> `status=WIRING_REJECTED_RULES_NOT_LOADED`（offline IR 無 rules → fail-closed）。
+> (5) 新增 [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py)
+> 33 條 Stage 1 focused-core，覆蓋 identity / chain-break / upstream / immutable
+> locks；missing IR / missing gate / 兩者皆缺 fail-closed；授權成功路徑
+> execution_qty=0.1, notional=10.0, cap_gate_status=ESCALATION_AUTHORIZED；
+> 未授權 → WIRING_NOT_AUTHORIZED_NO_OVERRIDE / execution_qty=""；
+> mark=250 over-cap → WIRING_REJECTED_GATE_OVER_CAP；ESCALATION_NOT_REQUIRED →
+> WIRING_NOT_REQUIRED_ORIGINAL_PASSES / source=NONE；gate 自身 qty mismatch
+> 阻斷 wiring；tampered gate 合成 helper 證明即使 gate 被竄改，wiring
+> 仍依 wrong_environment / protected symbols (5 parametrize) / wrong_symbol /
+> wrong_side / qty_mismatch / candidate_invalid / authorized-but-not-cap-escalated
+> 各路徑 fail closed；AST static-source 拒絕 `urllib` / `requests` / `pybit` /
+> `aiohttp` / `httpx` / `websocket` / `websockets` / `urllib.request` /
+> `http.client` import、拒絕 `BybitExecutor` / `main` / `src.risk` /
+> `src.executors.bybit` 引用、拒絕 `os.environ` / `os.getenv`、拒絕 docstring
+> 以外的 secret env name string-const、拒絕 docstring 以外的
+> `FORBIDDEN_URL_TOKENS` 中任一 token 出現超過 1 次（denylist 行內）、
+> 拒絕 `api-demo.bybit.com` string-const；global tiny caps
+> (`TINY_QTY_CAP_SOL=0.05` / `TINY_SIZE_CAP_USDT=5` / `TINY_QTY_STEP_SOL=0.01`)
+> 與 `PROTECTED_SYMBOLS` frozenset 不被本層改動；報告 writer 寫 4 個檔 +
+> JSON round-trip；BM `ExecutionReport` 預設不暴露 wiring 欄位，傳入後正確
+> surface 授權與未授權兩種情境。
+>
+> 安全面：**本任務沒有送出任何真實 demo 單**、**沒有重試 execute_demo_order**、
+> **沒有呼叫 /v5/order/create**、**沒接 live endpoint**、**沒讀任何 live/demo
+> secret env**、**沒動 protected positions**、**沒動 `main.py` / `src/risk.py` /
+> `src/executors/bybit.py` / `BybitExecutor`**、**沒解除 max_order_count=1
+> 或 double-confirmation 旗標**、**沒全域抬升 `TINY_QTY_CAP_SOL` /
+> `TINY_SIZE_CAP_USDT`**、**沒改 BL packet 的 `DEFAULT_QTY="0.01"`**、
+> **沒新增 stop endpoint / TP / SL / retry / scheduler**、**沒把 BM 的執行
+> body qty 切到 0.1**。本層只在 cap-escalation 閘明確授權的前提下，把
+> candidate_qty=0.1 浮出到 readiness/planning 欄位，提供 Stage 2 任務做
+> 後續 BL packet 切換的事實基礎。
+>
+> 本次驗證：`py_compile` 4 個 changed/added Python 檔 PASS；
+> `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring.py`
+> → **33/33 PASS**；BH→BM 鏈 10 個 adapter 測試檔合計 **450/450 PASS**
+> (417 既有 + 33 新增)；offline 預覽 smoke (`--mark-price 100 --proposed-qty 0.1`，
+> 未授權路徑) → exit 0、`status=WIRING_REJECTED_RULES_NOT_LOADED`、
+> `network_attempted=False`、`order_endpoint_called=False`、`order_sent=False`；
+> cap-escalation preview / BM readiness preview / BM_MIN_QTY_FIX preview
+> 皆仍 exit 0、`order_sent=False`。
+>
+> 後續 next-step：Rick 在 VPS 上跑 wiring preview 觀察「offline rules-not-loaded
+> → discover 模式 IR 載入 → 加 explicit 雙重授權」三種狀態轉換，再決定是否
+> 啟動 Stage 2 — 把 `execution_qty_resolved` 真的接到 BM execute_demo_order
+> 的 body qty（會涉及 BL packet `DEFAULT_QTY="0.01"` 來源切換 + 一輪新的雙重
+> 授權任務）。
+>
+> 上一個 CAP_ESCALATION_GATE banner 保留於下方。
+
+> **TASK-014BM_CAP_ESCALATION_GATE**（2026-06-19，已歸檔）在
 > TASK-014BM / TASK-014BM_FIX / TASK-014BM_MIN_QTY_FIX 之上新增一個
 > **narrow、decision-only、demo-only 的 SOLUSDT cap escalation 授權閘**，用來在
 > Rick 明確簽署授權的前提下、針對「Bybit Demo 當前對 SOLUSDT linear 的

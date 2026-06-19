@@ -347,6 +347,20 @@ class ExecutionReport:
     cap_escalated_demo_only: bool = False
     cap_escalation_status: str = ""
     max_demo_min_qty_notional_cap_usdt: str = ""
+    # TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY: optional execution-qty
+    # wiring surface. Populated only when the caller passes an
+    # ``AuthorizedExecutionQtyWiringReport`` to
+    # ``run_explicit_tiny_order_execution``; otherwise stays at the safe
+    # defaults below. ``execution_qty_resolved`` is the only field BM
+    # planning surfaces use to honor the authorized override, and stays
+    # empty whenever wiring rejects the request -- BM execute mode then
+    # fails closed instead of silently falling back to qty=0.01.
+    wiring_loaded: bool = False
+    wiring_status: str = ""
+    original_packet_qty: str = ""
+    execution_qty_source: str = ""
+    execution_qty_resolved: str = ""
+    execution_notional_estimate_resolved: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -416,6 +430,14 @@ class ExecutionReport:
             "cap_escalation_status": self.cap_escalation_status,
             "max_demo_min_qty_notional_cap_usdt": (
                 self.max_demo_min_qty_notional_cap_usdt
+            ),
+            "wiring_loaded": self.wiring_loaded,
+            "wiring_status": self.wiring_status,
+            "original_packet_qty": self.original_packet_qty,
+            "execution_qty_source": self.execution_qty_source,
+            "execution_qty_resolved": self.execution_qty_resolved,
+            "execution_notional_estimate_resolved": (
+                self.execution_notional_estimate_resolved
             ),
         }
 
@@ -984,6 +1006,7 @@ def run_explicit_tiny_order_execution(
     sender: Sender | None = None,
     instrument_rules: Any | None = None,
     cap_escalation: Any | None = None,
+    authorized_execution_qty_wiring: Any | None = None,
 ) -> ExecutionReport:
     """Run the BM explicit one-shot tiny order execution path.
 
@@ -1183,6 +1206,46 @@ def run_explicit_tiny_order_execution(
                 or ""
             )
 
+    wiring_loaded = False
+    wiring_status = ""
+    original_packet_qty_str = ""
+    execution_qty_source_str = ""
+    execution_qty_resolved_str = ""
+    execution_notional_estimate_resolved_str = ""
+    if authorized_execution_qty_wiring is not None:
+        wiring_loaded = True
+        original_packet_qty_str = str(
+            getattr(
+                authorized_execution_qty_wiring, "original_packet_qty", ""
+            )
+            or ""
+        )
+        wr_resolution = getattr(
+            authorized_execution_qty_wiring, "resolution", None
+        )
+        if wr_resolution is not None:
+            wiring_status = str(
+                getattr(wr_resolution, "status", "") or ""
+            )
+            execution_qty_source_str = str(
+                getattr(wr_resolution, "execution_qty_source", "") or ""
+            )
+            execution_qty_resolved_str = str(
+                getattr(wr_resolution, "execution_qty", "") or ""
+            )
+            execution_notional_estimate_resolved_str = str(
+                getattr(
+                    wr_resolution, "execution_notional_estimate", ""
+                )
+                or ""
+            )
+            # Defense-in-depth: never silently inherit a non-empty
+            # original_packet_qty from a tampered wiring report.
+            if not original_packet_qty_str:
+                original_packet_qty_str = str(
+                    getattr(wr_resolution, "original_packet_qty", "") or ""
+                )
+
     return ExecutionReport(
         task_id=TASK_ID,
         identity=IDENTITY,
@@ -1239,6 +1302,14 @@ def run_explicit_tiny_order_execution(
         cap_escalated_demo_only=ce_escalated_demo_only,
         cap_escalation_status=ce_status,
         max_demo_min_qty_notional_cap_usdt=ce_notional_cap,
+        wiring_loaded=wiring_loaded,
+        wiring_status=wiring_status,
+        original_packet_qty=original_packet_qty_str,
+        execution_qty_source=execution_qty_source_str,
+        execution_qty_resolved=execution_qty_resolved_str,
+        execution_notional_estimate_resolved=(
+            execution_notional_estimate_resolved_str
+        ),
     )
 
 
@@ -1404,6 +1475,26 @@ def _render_markdown(report: ExecutionReport) -> str:
     lines.append(
         f"- max_demo_min_qty_notional_cap_usdt: "
         f"`{report.max_demo_min_qty_notional_cap_usdt}`"
+    )
+    lines.append("")
+    lines.append(
+        "## Authorized execution qty wiring (TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY)"
+    )
+    lines.append("")
+    lines.append(f"- wiring_loaded: `{report.wiring_loaded}`")
+    lines.append(f"- wiring_status: `{report.wiring_status}`")
+    lines.append(
+        f"- original_packet_qty: `{report.original_packet_qty}`"
+    )
+    lines.append(
+        f"- execution_qty_source: `{report.execution_qty_source}`"
+    )
+    lines.append(
+        f"- execution_qty_resolved: `{report.execution_qty_resolved}`"
+    )
+    lines.append(
+        f"- execution_notional_estimate_resolved: "
+        f"`{report.execution_notional_estimate_resolved}`"
     )
     lines.append("")
     lines.append(
