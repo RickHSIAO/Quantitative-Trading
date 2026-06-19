@@ -14,10 +14,54 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM, 2026-06-18）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_FIX, 2026-06-19）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014BM_FIX 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_FIX**（2026-06-19）在 TASK-014BM 上的 **corrective patch**：
+> 修復 Bybit V5 HMAC 簽名路徑（先前一次真實 demo 嘗試被 Bybit 回 `retCode=10004
+> "Error sign, please check your signature generation algorithm"`），並收緊
+> `final_status` 對應關係。具體變更：
+> (1) 新增 `_serialize_signed_body(body_preview) -> (json_body_string, body_bytes)`
+> 提供唯一 canonical compact JSON 序列化
+> （`json.dumps(..., separators=(",", ":"), ensure_ascii=False)`），且斷言
+> `body_bytes.decode("utf-8") == json_body_string`，保證 **POST 出去的 bytes
+> 與 HMAC prehash 用的 body string byte-identical**；
+> (2) `_sign_bybit_v5` 改為直接吃 `json_body_string: str`，prehash 形式為
+> `timestamp_ms + api_key + recv_window + json_body_string`；
+> (3) 補上先前缺失的 `X-BAPI-SIGN-TYPE: "2"` header，與 `X-BAPI-API-KEY` /
+> `X-BAPI-TIMESTAMP` / `X-BAPI-SIGN` / `X-BAPI-RECV-WINDOW` /
+> `Content-Type: application/json` 同時送出；
+> (4) 新增終態 `STATUS_BYBIT_REJECTED_NO_ORDER_SENT = "BYBIT_REJECTED_NO_ORDER_SENT"`；
+> (5) `final_status` 改為 5-condition 連言式 — **只有** `network_attempted AND
+> order_endpoint_called AND order_sent AND bybit_ret_code == 0 AND bybit_order_id
+> 非空** 才會被標為 `EXECUTED_DEMO_ONLY`；任何非零 retCode（含觀察到的 `10004`）
+> 或空 `bybit_order_id` 都對應到 `BYBIT_REJECTED_NO_ORDER_SENT` 並保證
+> `order_sent=False`；sender 拋網路錯誤仍優先對應 `NETWORK_ERROR_DEMO_ONLY`；
+> (6) 新增 `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_fix.py`
+> 19 條 FIX 專屬 regression，含 `retCode=10004` 精確重現、parametrize 多種非零
+> retCode、posted body bytes vs. signed body string byte-equality、compact JSON
+> 與 lowercase JSON booleans、`X-BAPI-SIGN-TYPE="2"`、`X-BAPI-SIGN` lowercase
+> hex SHA-256、完整 6-header V5 envelope、`MAX_ORDER_COUNT`/`ALLOWED_DEMO_ENDPOINT_URL`/
+> demo-only env 名稱維持不動。
+>
+> 安全面：FIX **沒有再送出第二次真實 demo 單**；preview CLI 行為旗標不變
+> （只更新 docstring 把 `BYBIT_REJECTED_NO_ORDER_SENT` 標到 exit code 1）；
+> 沒動 `main.py` / `src/risk.py` / `src/executors/bybit.py`；沒動
+> `BybitExecutor` live 行為；沒新增 stop endpoint；沒加 TP/SL；沒加 retry；
+> 沒加 scheduler；沒接 live secret；16 個 gate、`MAX_ORDER_COUNT=1`、
+> `ALLOWED_DEMO_ENDPOINT_URL`、protected positions（ENA/TIA/AIXBT/POLYX/EDU）
+> 全部維持。
+>
+> 本次驗證：`py_compile` 三個 changed Python 檔 PASS；
+> `pytest test_demo_only_tiny_execution_adapter_tiny_order_execution.py
+> + test_demo_only_tiny_execution_adapter_tiny_order_execution_fix.py` → **88/88 PASS**
+> (69 原 BM + 19 FIX)；BH→BL→BM 鏈 7 個 adapter 測試檔合計 **316/316 PASS**；
+> preview readiness smoke exit 0、`final_status=READINESS_OK_NO_NETWORK`、
+> `network_attempted=False`、`order_sent=False`、`live_endpoint_denied=True`、
+> `protected_symbols_untouched=True`、`max_order_count=1`、
+> `all_pre_network_gates_passed=True`。
 
 > **TASK-014BM 在 BH/BI/BJ/BK/BL 安全鏈上加 explicit demo-only tiny order execution 路徑**。
 > 新增 BM 三件套：

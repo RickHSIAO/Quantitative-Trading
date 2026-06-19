@@ -1,5 +1,91 @@
 # Next Action
 
+> README shared status updated by TASK-014BM_FIX (2026-06-19).
+> TASK-014BM_FIX_demo_only_tiny_order_execution_signature_and_status_mapping
+> is a **Stage 1 corrective patch** on top of TASK-014BM. It fixes the
+> Bybit V5 HMAC signing path (the previously sent execution attempt was
+> rejected with `retCode=10004 "Error sign, please check your signature
+> generation algorithm"`) and tightens the `final_status` mapping so that
+> `EXECUTED_DEMO_ONLY` is **only** assigned when an order was actually
+> accepted by Bybit Demo. The FIX does **not** send any new real order.
+>
+> What changed in
+> [`src/demo_only_tiny_execution_adapter_tiny_order_execution.py`](../../../src/demo_only_tiny_execution_adapter_tiny_order_execution.py):
+> (a) a new helper `_serialize_signed_body(body_preview) -> (json_body_string, body_bytes)`
+> produces a single canonical compact JSON serialization
+> (`json.dumps(..., separators=(",", ":"), ensure_ascii=False)`) and
+> asserts `body_bytes.decode("utf-8") == json_body_string` so the **exact
+> bytes posted are byte-identical** to the body string used in the
+> HMAC prehash; (b) `_sign_bybit_v5` now takes `json_body_string: str`
+> directly instead of reconstructing it, ensuring the prehash is
+> `timestamp_ms + api_key + recv_window + json_body_string`; (c) the
+> HTTP envelope now includes the previously-missing
+> `X-BAPI-SIGN-TYPE: "2"` header alongside `X-BAPI-API-KEY` /
+> `X-BAPI-TIMESTAMP` / `X-BAPI-SIGN` / `X-BAPI-RECV-WINDOW` /
+> `Content-Type: application/json`; (d) `final_status` mapping in
+> `run_explicit_tiny_order_execution` is hard-gated — `EXECUTED_DEMO_ONLY`
+> is only set when `outcome.order_sent is True AND
+> outcome.bybit_ret_code == 0 AND outcome.bybit_order_id` is non-empty;
+> any non-zero `retCode` (including the observed `10004`) or empty
+> `bybit_order_id` now maps to the **new** `STATUS_BYBIT_REJECTED_NO_ORDER_SENT`
+> with `order_sent=False`; `NETWORK_ERROR_DEMO_ONLY` continues to take
+> precedence when the sender raises a network error.
+>
+> New constants exported: `STATUS_BYBIT_REJECTED_NO_ORDER_SENT =
+> "BYBIT_REJECTED_NO_ORDER_SENT"`, `BAPI_SIGN_TYPE_HEADER =
+> "X-BAPI-SIGN-TYPE"`, `BAPI_SIGN_TYPE_VALUE = "2"`. `__all__` extended
+> to expose `_serialize_signed_body`, `_sign_bybit_v5`, and the new
+> constants for testability.
+>
+> CLI ([`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py`](../../../scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py))
+> docstring updated to map `BYBIT_REJECTED_NO_ORDER_SENT` under exit
+> code 1 alongside `GATE_REJECTED_NO_NETWORK` / `NETWORK_ERROR_DEMO_ONLY`.
+> The existing dispatcher fallthrough handles the new status — no
+> behavioral CLI flag change.
+>
+> New regression test file
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_fix.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_fix.py)
+> (~19 tests) covers: exact `retCode=10004 "Error sign"` regression →
+> `BYBIT_REJECTED_NO_ORDER_SENT` with `order_sent=False` and empty
+> `bybit_order_id` and status != `EXECUTED_DEMO_ONLY`; parametrized
+> non-zero retCodes (`10003 / 10004 / 10005 / 10010 / 110007`) all
+> mapping to `BYBIT_REJECTED_NO_ORDER_SENT`; `retCode=0` with empty
+> `orderId` still rejects (never `EXECUTED_DEMO_ONLY`); the five-condition
+> conjunction for `EXECUTED_DEMO_ONLY` is enforced; recomputing HMAC
+> over the posted body bytes equals the `X-BAPI-SIGN` header (byte
+> equality of posted body vs. signed body string); compact JSON is
+> stable, contains no Python-style `True`/`False` literals, and uses
+> JSON-style `false`; `X-BAPI-SIGN-TYPE` header is exactly `"2"`;
+> `X-BAPI-SIGN` matches `^[0-9a-f]{64}$`; full V5 envelope contains all
+> 6 required headers; safety constants preserved
+> (`MAX_ORDER_COUNT=1`, `ALLOWED_DEMO_ENDPOINT_URL` unchanged, demo-only
+> env names unchanged).
+>
+> No safety-critical surface was modified: no live endpoint, no live
+> secret loading, no `main.py` / `src/risk.py` / `src/executors/bybit.py`
+> change, no `BybitExecutor` live behavior change, no protected-position
+> code touched, no retry, no scheduler, no stop endpoint, no TP/SL.
+> The fix touches only the signing serialization, the signature header
+> set, and the success-mapping conjunction.
+>
+> Validation (this commit):
+> py_compile of all three changed Python files PASS;
+> `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py
+> tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_fix.py
+> -q --basetemp=.pytest_basetemp` → **88/88 PASS**
+> (69 original BM + 19 FIX);
+> BH→BL→BM chain regression (all 7 demo_trading adapter files) →
+> **316/316 PASS**;
+> preview readiness smoke `--mode readiness` → exit 0,
+> `final_status=READINESS_OK_NO_NETWORK`, `network_attempted=False`,
+> `order_endpoint_called=False`, `order_sent=False`,
+> `live_endpoint_denied=True`, `protected_symbols_untouched=True`,
+> `max_order_count=1`, `all_pre_network_gates_passed=True`.
+>
+> No new real Bybit Demo order was sent during this FIX task.
+>
+> Previous BM banner archived below.
+
 > README shared status updated by TASK-014BM (2026-06-18). TASK-014BM
 > adds the explicit **demo-only tiny order execution path** on top of
 > TASK-014BH / TASK-014BI / TASK-014BJ / TASK-014BK / TASK-014BL. It is

@@ -137,6 +137,14 @@ STATUS_GATE_REJECTED_NO_NETWORK = "GATE_REJECTED_NO_NETWORK"
 STATUS_MISSING_DEMO_CREDENTIALS = "MISSING_DEMO_CREDENTIALS"
 STATUS_EXECUTED_DEMO_ONLY = "EXECUTED_DEMO_ONLY"
 STATUS_NETWORK_ERROR_DEMO_ONLY = "NETWORK_ERROR_DEMO_ONLY"
+# Bybit accepted the HTTP POST but returned a non-zero retCode (e.g.
+# 10004 "Error sign"), so no order was actually placed. order_sent
+# stays False; final_status is NEVER EXECUTED_DEMO_ONLY in this case.
+STATUS_BYBIT_REJECTED_NO_ORDER_SENT = "BYBIT_REJECTED_NO_ORDER_SENT"
+
+# Bybit V5 sign-type header. For HMAC-SHA256 the documented value is "2".
+BAPI_SIGN_TYPE_HEADER = "X-BAPI-SIGN-TYPE"
+BAPI_SIGN_TYPE_VALUE = "2"
 
 # Ordered gate names -- gates 1..13 are evaluated in every mode; gates
 # 14..16 are evaluated only in MODE_EXECUTE_DEMO_ORDER.
@@ -733,17 +741,43 @@ def _evaluate_gates(
 Sender = Callable[[str, Mapping[str, str], bytes], Mapping[str, Any]]
 
 
+def _serialize_signed_body(body_preview: Mapping[str, Any]) -> tuple[str, bytes]:
+    """Serialize the order body once, used identically for sign + POST.
+
+    Returns ``(json_body_string, json_body_bytes)`` where
+    ``json_body_bytes == json_body_string.encode("utf-8")`` -- guaranteed
+    byte-for-byte equal to what is hashed and what is sent in the HTTP
+    request. Compact (no whitespace) and stable key order are required
+    by Bybit V5 HMAC.
+    """
+
+    body_dict = dict(body_preview)
+    json_body_string = json.dumps(
+        body_dict,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    json_body_bytes = json_body_string.encode("utf-8")
+    assert json_body_bytes.decode("utf-8") == json_body_string  # nosec: B101
+    return json_body_string, json_body_bytes
+
+
 def _sign_bybit_v5(
     *,
     timestamp_ms: str,
     api_key: str,
     api_secret: str,
     recv_window: str,
-    body: bytes,
+    json_body_string: str,
 ) -> str:
-    """Compute the Bybit V5 HMAC-SHA256 signature."""
+    """Compute the Bybit V5 HMAC-SHA256 signature.
 
-    payload = f"{timestamp_ms}{api_key}{recv_window}{body.decode('utf-8')}"
+    Prehash is ``timestamp_ms + api_key + recv_window + json_body_string``
+    where ``json_body_string`` MUST be the exact same string that is
+    encoded and sent as the HTTP POST body. The digest is lowercase hex.
+    """
+
+    payload = f"{timestamp_ms}{api_key}{recv_window}{json_body_string}"
     return hmac.new(
         api_secret.encode("utf-8"),
         payload.encode("utf-8"),
@@ -825,20 +859,20 @@ def _send_one_demo_order(
         )
 
     timestamp_ms = str(int(_dt.datetime.now(_dt.timezone.utc).timestamp() * 1000))
-    body_dict = dict(plan.body_preview)
-    body_bytes = json.dumps(body_dict, separators=(",", ":")).encode("utf-8")
+    json_body_string, body_bytes = _serialize_signed_body(plan.body_preview)
     sign = _sign_bybit_v5(
         timestamp_ms=timestamp_ms,
         api_key=credentials.api_key,
         api_secret=credentials.api_secret,
         recv_window=credentials.recv_window,
-        body=body_bytes,
+        json_body_string=json_body_string,
     )
     headers = {
         "Content-Type": "application/json",
         "X-BAPI-API-KEY": credentials.api_key,
         "X-BAPI-TIMESTAMP": timestamp_ms,
         "X-BAPI-SIGN": sign,
+        BAPI_SIGN_TYPE_HEADER: BAPI_SIGN_TYPE_VALUE,
         "X-BAPI-RECV-WINDOW": credentials.recv_window,
     }
 
@@ -1001,8 +1035,17 @@ def run_explicit_tiny_order_execution(
             bybit_ret_msg = outcome.bybit_ret_msg
             if outcome.sender_kind == "network_error":
                 final_status = STATUS_NETWORK_ERROR_DEMO_ONLY
-            else:
+            elif (
+                outcome.order_sent is True
+                and outcome.bybit_ret_code == 0
+                and bool(outcome.bybit_order_id)
+            ):
                 final_status = STATUS_EXECUTED_DEMO_ONLY
+            else:
+                # Network completed, Bybit replied, but the order was
+                # not actually placed (e.g. retCode=10004 "Error sign").
+                # NEVER report EXECUTED_DEMO_ONLY in this branch.
+                final_status = STATUS_BYBIT_REJECTED_NO_ORDER_SENT
 
     return ExecutionReport(
         task_id=TASK_ID,
@@ -1201,6 +1244,8 @@ __all__ = [
     "ALLOWED_DEMO_CATEGORY",
     "ALLOWED_DEMO_ENDPOINT_HOST",
     "ALLOWED_DEMO_ENDPOINT_URL",
+    "BAPI_SIGN_TYPE_HEADER",
+    "BAPI_SIGN_TYPE_VALUE",
     "CONFIRM_FLAG_NAME",
     "DEFAULT_OUTPUT_DIR",
     "DEFAULT_RECV_WINDOW",
@@ -1227,6 +1272,7 @@ __all__ = [
     "NEXT_REQUIRED_TASK",
     "PRE_NETWORK_GATE_NAMES",
     "REPORT_NAME",
+    "STATUS_BYBIT_REJECTED_NO_ORDER_SENT",
     "STATUS_DRY_RUN_OK_NO_NETWORK",
     "STATUS_EXECUTED_DEMO_ONLY",
     "STATUS_GATE_REJECTED_NO_NETWORK",
@@ -1238,6 +1284,8 @@ __all__ = [
     "Sender",
     "TASK_ID",
     "UPSTREAM_TASKS",
+    "_serialize_signed_body",
+    "_sign_bybit_v5",
     "build_execution_plan",
     "load_demo_credentials_from_env",
     "run_explicit_tiny_order_execution",

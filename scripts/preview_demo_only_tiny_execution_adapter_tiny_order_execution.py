@@ -14,6 +14,7 @@ Exit codes:
     0 -- final_status is DRY_RUN_OK_NO_NETWORK / READINESS_OK_NO_NETWORK
          / EXECUTED_DEMO_ONLY
     1 -- final_status is GATE_REJECTED_NO_NETWORK / NETWORK_ERROR_DEMO_ONLY
+         / BYBIT_REJECTED_NO_ORDER_SENT
     2 -- final_status is MISSING_DEMO_CREDENTIALS
 """
 
