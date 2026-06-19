@@ -21,6 +21,43 @@ Notes:
 
 ---
 
+### 2026-06-19（TASK-014BM_MIN_QTY_FIX — add demo-only, read-only SOLUSDT instrument-rules discovery layer (`/v5/market/instruments-info` linear+SOLUSDT only); compute candidate tiny qty aligned to qtyStep / bumped to minNotionalValue; fail-closed when exchange minimum exceeds tiny cap; BM ExecutionReport gains 9 defaulted instrument-rules fields with optional `instrument_rules` kwarg; no order create, no live endpoint, no live/demo secret, no new real demo order）
+
+Agent: Claude (Opus 4.7; model guidance per workorder: Opus)
+Command source: Rick explicit authorization in chat — "TASK-014BM_MIN_QTY_FIX_demo_only_tiny_order_instrument_rules Stage 1 only. Add demo-only SOLUSDT instrument rules discovery and candidate tiny qty calculation. Do not retry real order execution, do not call order create, no live endpoint, no live secrets, no protected positions." Observed Bybit Demo failure after TASK-014BM_FIX: `bybit_ret_code=10001 bybit_ret_msg='The number of contracts exceeds minimum limit allowed'` with `order_sent=False` — SOLUSDT current `minOrderQty` exceeds the hardcoded `qty=0.01`.
+Task: TASK-014BM_MIN_QTY_FIX Stage 1 — add a narrowly-scoped, demo-only, read-only instrument-rules discovery layer for SOLUSDT. Hard-lock the read endpoint to `https://api-demo.bybit.com/v5/market/instruments-info` with `category=linear` and `symbol=SOLUSDT`. Parse `lotSizeFilter.{minOrderQty, qtyStep, minNotionalValue, maxMktOrderQty}` + `priceFilter.tickSize`. Compute a candidate tiny qty that is the smallest `qtyStep`-aligned value at least equal to `minOrderQty` and (when `minNotionalValue > 0`) bumped up to satisfy notional against the supplied mark price. Fail closed with `STATUS_TINY_CAP_TOO_LOW_FOR_EXCHANGE_MIN` if either tiny cap (`TINY_QTY_CAP_SOL=0.05`, `TINY_SIZE_CAP_USDT=5`) is exceeded; never silently lift the cap. Surface the discovery result on BM `ExecutionReport` via 9 *defaulted* fields and an optional `instrument_rules` kwarg, leaving all 88 existing BM / BM_FIX tests untouched. Do NOT retry `execute_demo_order`. Do NOT call `/v5/order/create`. Do NOT touch the live endpoint. Do NOT read any live or demo secret. Do NOT modify `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`. Do NOT modify protected symbols.
+Status before: TASK-014BM and TASK-014BM_FIX both CLOSED at commit `6889303`; observed live demo behavior after FIX returned `retCode=10001 "The number of contracts exceeds minimum limit allowed"` and `order_sent=False`; no instrument-rules discovery surface; BM still references a hardcoded `qty=0.01` via the BL packet default.
+Status after: new module `src/demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py` provides `run_instrument_rules_discovery()` with frozen `InstrumentRules` / `CandidateQty` / `InstrumentRulesReport` dataclasses, locked-input assertions (`ALLOWED_DEMO_HOST="api-demo.bybit.com"`, `ALLOWED_READONLY_URL="https://api-demo.bybit.com/v5/market/instruments-info"`, `ALLOWED_CATEGORY="linear"`, `ALLOWED_SYMBOL="SOLUSDT"`), forbidden-token list (`/v5/order/create`, `/v5/order/cancel`, `/v5/position/set-trading-stop`, live hosts, websocket hosts), `parse_instrument_rules` enforcing presence of `lotSizeFilter.{minOrderQty,qtyStep,minNotionalValue}`, and `compute_candidate_tiny_qty` deriving a `qty_step`-aligned candidate that satisfies `minNotionalValue` and fails closed on tiny caps. BM `ExecutionReport` extended with `instrument_rules_loaded`, `instrument_rules_discovery_status`, `instrument_rules_min_order_qty`, `instrument_rules_qty_step`, `instrument_rules_min_notional_value`, `computed_candidate_qty`, `computed_candidate_notional`, `candidate_is_executable_under_tiny_caps`, `qty_0_01_confirmed_invalid` (all defaulted to safe values); `run_explicit_tiny_order_execution()` gains optional `instrument_rules` kwarg; defaults preserve the 88 existing BM / BM_FIX test outcomes. New preview CLI `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py` with `--mode {offline,discover}` default offline. New 52-test focused-core regression file. **No new real Bybit Demo order was sent during this task. No `/v5/order/create` call. No live endpoint. No live or demo secret read.**
+Files changed:
+- `src/demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py` (NEW)
+- `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py` (NEW)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py` (NEW; 52 tests)
+- `src/demo_only_tiny_execution_adapter_tiny_order_execution.py` (BM `ExecutionReport` gains 9 defaulted instrument-rules fields; `run_explicit_tiny_order_execution()` grows optional `instrument_rules` kwarg; markdown renderer surfaces new fields)
+- `README.md` (TASK-014BM_MIN_QTY_FIX banner prepended)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BM_MIN_QTY_FIX banner + status table + Next Rick Action block prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry prepended)
+
+Validation:
+- `python -m py_compile` on all 4 changed Python files → **PASS**
+- `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py -q --basetemp=.pytest_basetemp` → **52/52 PASS**
+- BH→BM chain regression (BH + BI + BJ + BK + BL + BM original + BM_FIX + BM_MIN_QTY_FIX, 8 demo_trading adapter test files) → **368/368 PASS** (316 prior chain + 52 new)
+- BM_MIN_QTY_FIX preview offline smoke `python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py --mode offline --mark-price 100` → exit 0; `discovery_status=DISCOVERY_OFFLINE_NO_NETWORK`; `network_attempted=False`; `order_endpoint_called=False`; `order_sent=False`; `rules: <not loaded>`; `candidate.status=CANDIDATE_RULES_NOT_LOADED`
+- BM readiness preview `python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py --mode readiness` → exit 0; `final_status=READINESS_OK_NO_NETWORK`; `network_attempted=False`; `order_endpoint_called=False`; `order_sent=False`; `live_endpoint_denied=True`; `protected_symbols_untouched=True`; `max_order_count=1`; `all_pre_network_gates_passed=True` (3 execute gates correctly fail offline)
+- `git diff --name-only HEAD` returns only `src/demo_only_tiny_execution_adapter_tiny_order_execution.py` modified plus the 3 NEW files; **no main.py, no src/risk.py, no src/executors live behavior, no live endpoint wiring, no live secret loading, no protected-symbol code touched**
+
+Outputs:
+- New instrument-rules module + new preview CLI + new 52-test focused-core regression
+- BM `ExecutionReport` extended (9 defaulted fields + optional kwarg) without behavior change for existing call sites
+- README / NEXT_ACTION / COMMAND_LOG documentation updates
+- Local commit (no push)
+
+Notes:
+- Stage 1 only. The BM `execute_demo_order` path and BL packet `DEFAULT_QTY="0.01"` are untouched — changing the execute-time qty is explicitly out of scope and requires another authorized task.
+- This task does NOT decide whether to widen the tiny cap or adopt the discovered minimum as the new BL qty; it only reports the facts.
+- Discovery is offline by default. Even in `discover` mode, the only outbound URL is the public read-only instruments-info endpoint; no signing, no API key, no recv-window header.
+
+---
+
 ### 2026-06-19（TASK-014BM_FIX — Fix Bybit V5 HMAC signing (exact body string == prehash body), add X-BAPI-SIGN-TYPE: 2 header, and gate EXECUTED_DEMO_ONLY behind retCode==0 + non-empty order id (retCode=10004 → BYBIT_REJECTED_NO_ORDER_SENT, no order_sent)）
 
 Agent: Claude (Opus 4.7; model guidance per workorder: Opus)

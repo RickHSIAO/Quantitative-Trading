@@ -1,6 +1,236 @@
 # Next Action
 
-> README shared status updated by TASK-014BM_FIX (2026-06-19).
+> README shared status updated by TASK-014BM_MIN_QTY_FIX (2026-06-19).
+> TASK-014BM_MIN_QTY_FIX_demo_only_tiny_order_instrument_rules
+> is a **Stage 1, read-only, demo-only** extension on top of
+> TASK-014BM / TASK-014BM_FIX. It adds a new narrow instrument-rules
+> discovery layer for SOLUSDT so the tiny order preparation / execution
+> path can stop assuming `qty=0.01` when Bybit's current SOLUSDT linear
+> `lotSizeFilter.minOrderQty` is larger (observed `retCode=10001 "The
+> number of contracts exceeds minimum limit allowed"` after the
+> signing fix). The task is allowed to call only the **public**
+> `/v5/market/instruments-info?category=linear&symbol=SOLUSDT` endpoint
+> on the demo domain. It does **not** send any new real order, does
+> **not** retry `execute_demo_order`, does **not** call
+> `/v5/order/create`, does **not** touch live endpoint, and does
+> **not** read any live or demo secret env.
+>
+> New module
+> [`src/demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py`](../../../src/demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py):
+> single aggregator entry point
+> `run_instrument_rules_discovery(mode, mark_price, category, symbol,
+> sender, pre_parsed_response)`; immutable constants
+> `ALLOWED_DEMO_HOST = "api-demo.bybit.com"`,
+> `ALLOWED_READONLY_URL = "https://api-demo.bybit.com/v5/market/instruments-info"`,
+> `ALLOWED_CATEGORY = "linear"`, `ALLOWED_SYMBOL = "SOLUSDT"`;
+> `_assert_locked_inputs` rejects non-linear, non-SOLUSDT, and any
+> endpoint URL that is not exactly `ALLOWED_READONLY_URL`;
+> `FORBIDDEN_URL_TOKENS = ("/v5/order/create", "/v5/order/cancel",
+> "/v5/position/set-trading-stop", "https://api.bybit.com",
+> "https://api.bytick.com", "wss://stream.bybit.com",
+> "wss://stream.bytick.com")`; default mode `offline` (no network);
+> `discover` mode performs a single bounded `urllib.request` GET via
+> the supplied sender (default `_real_public_get_via_urllib` which
+> hard-asserts URL prefix `ALLOWED_READONLY_URL + "?"`); no API key,
+> no signing, no recv-window; no retry, no scheduler. Parser
+> `parse_instrument_rules(parsed)` finds the SOLUSDT linear entry,
+> raises on missing `lotSizeFilter`, exposes `minOrderQty`, `qtyStep`,
+> `minNotionalValue`, and optional `maxMktOrderQty` / `tickSize`.
+> Candidate computation `compute_candidate_tiny_qty(rules, mark_price,
+> tiny_qty_cap_sol=TINY_QTY_CAP_SOL,
+> tiny_size_cap_usdt=TINY_SIZE_CAP_USDT)` starts from
+> `max(minOrderQty, qty_step)` aligned UP to `qty_step`, bumps up to
+> the smallest `qty_step` multiple satisfying `minNotionalValue` when
+> needed, then compares against BH's `TINY_QTY_CAP_SOL = 0.05` and
+> `TINY_SIZE_CAP_USDT = 5`. If either cap is exceeded the candidate
+> reports `STATUS_TINY_CAP_TOO_LOW_FOR_EXCHANGE_MIN` with
+> `is_executable_under_tiny_caps=False` — the module **never silently
+> lifts the cap**, and the report also surfaces `confirms_qty_0_01_invalid`
+> when `0.01 < minOrderQty`.
+>
+> BM ExecutionReport is extended with 9 *defaulted* fields
+> (`instrument_rules_loaded`, `instrument_rules_discovery_status`,
+> `instrument_rules_min_order_qty`, `instrument_rules_qty_step`,
+> `instrument_rules_min_notional_value`, `computed_candidate_qty`,
+> `computed_candidate_notional`,
+> `candidate_is_executable_under_tiny_caps`,
+> `qty_0_01_confirmed_invalid`) and `run_explicit_tiny_order_execution()`
+> grows one optional keyword `instrument_rules` so callers can inject
+> an `InstrumentRulesReport`. When the kwarg is omitted every existing
+> BM / BM_FIX call site behaves identically; the 88 existing BM /
+> BM_FIX tests still pass unchanged. BM's `execute_demo_order` path
+> and BL packet `DEFAULT_QTY="0.01"` are NOT modified by this task —
+> changing the execute-time qty requires another explicit authorized
+> task.
+>
+> New preview CLI
+> [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py`](../../../scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py)
+> (`--mode {offline,discover}` default offline; `--mark-price`;
+> `--write-report` / `--output-dir`; exit code 0 for
+> `DISCOVERY_OK` / `DISCOVERY_OFFLINE_NO_NETWORK` and expected
+> `TINY_CAP_TOO_LOW_FOR_EXCHANGE_MIN` fail-closed reporting, 1
+> otherwise).
+>
+> New test file
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py)
+> (~52 tests) covers: identity / chain-break / non-review-chain-suffix
+> assertion; endpoint + category + symbol hard lock; `_real_public_get_via_urllib`
+> refuses any non-allowed URL prefix (including live host and
+> `/v5/order/create` on demo host); parser parses minimal SOLUSDT
+> linear `instruments-info` response with optional fields; parser
+> rejects missing `lotSizeFilter` / missing `minOrderQty` / non-SOLUSDT
+> entry / empty list; candidate aligns to `qty_step`; candidate bumps
+> qty up to satisfy `minNotionalValue` (e.g. min_qty=0.01 / step=0.01 /
+> min_notional=5 / mark=100 → candidate 0.05); fail-closed when
+> exchange minimum exceeds tiny cap (e.g. min_qty=0.1 →
+> `TINY_CAP_TOO_LOW_FOR_EXCHANGE_MIN`, not executable); confirms
+> `qty=0.01` invalid when `0.01 < minOrderQty`; invalid rules
+> (negative `min_order_qty`) → `CANDIDATE_INVALID_RULES`; missing
+> mark price with positive `minNotionalValue` →
+> `CANDIDATE_INVALID_MARK_PRICE`; offline default → no network, no
+> rules; pre-parsed response path; injected sender records the
+> request URL and is the ONLY URL contacted (sentinel asserts no
+> `/v5/order/create` / no live host); network error path; non-zero
+> retCode path; AST static-source: no `requests` / `pybit` / `aiohttp`
+> / `httpx` / `websocket` import, no `main` / `src.risk` /
+> `src.executors.bybit` import, no `BybitExecutor` `Name`/`Attribute`
+> reference, no non-docstring string literal references any LIVE or
+> DEMO secret env name, no `os.environ` / `os.getenv` attribute
+> access; report writer emits 4 files + JSON round-trip + Markdown
+> contains `TASK-014BM_MIN_QTY_FIX` / `minOrderQty`; BM
+> `ExecutionReport` defaults leave the 9 new fields at safe defaults;
+> BM `ExecutionReport` with injected `instrument_rules` correctly
+> surfaces the three discovery fields, the two candidate qty /
+> notional fields, the executable-under-tiny-caps boolean, and the
+> `qty_0_01_confirmed_invalid` boolean.
+>
+> No safety-critical surface was modified: no live endpoint, no live
+> secret loading, no `main.py` / `src/risk.py` / `src/executors/bybit.py`
+> change, no `BybitExecutor` live behavior change, no protected-position
+> code touched, no retry, no scheduler, no stop endpoint, no TP/SL,
+> no `/v5/order/create` call, no new real Bybit Demo order sent.
+>
+> Validation (this commit):
+> py_compile of all 4 changed Python files PASS;
+> `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py
+> -q --basetemp=.pytest_basetemp` → **52/52 PASS**;
+> BH→BM chain regression (BH + BI + BJ + BK + BL + BM original + BM
+> FIX + BM_MIN_QTY_FIX, 8 demo_trading adapter test files) →
+> **368/368 PASS**;
+> preview offline smoke `--mode offline --mark-price 100` → exit 0,
+> `discovery_status=DISCOVERY_OFFLINE_NO_NETWORK`,
+> `network_attempted=False`, `order_endpoint_called=False`,
+> `order_sent=False`; BM readiness preview `--mode readiness` → exit 0,
+> `final_status=READINESS_OK_NO_NETWORK`, no network, no order
+> endpoint called.
+>
+> No new real Bybit Demo order was sent during this Stage 1 task.
+>
+> Previous BM_FIX banner archived below.
+
+## TASK-014BM_MIN_QTY_FIX Status (2026-06-19)
+
+| item | status |
+|---|---|
+| new src `src/demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py` (single aggregator entry point `run_instrument_rules_discovery()`; locked read-only endpoint; locked category=linear, symbol=SOLUSDT; parser; candidate qty computation with tiny-cap fail-closed; report writer) | DONE |
+| new scripts `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py` (`--mode {offline,discover}` default offline; `--mark-price`; `--write-report` / `--output-dir`; exit codes 0/1) | DONE |
+| new tests `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py` (Stage 1 focused-core 52 tests) | DONE |
+| BM `ExecutionReport` extended with 9 defaulted instrument-rules fields; `run_explicit_tiny_order_execution()` grows optional `instrument_rules` kwarg; existing 88 BM / BM_FIX tests unchanged and still PASS | DONE |
+| chain-break markers: `TASK_ID="TASK-014BM_MIN_QTY_FIX"`, `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-INSTRUMENT-RULES"`, `IMPLEMENTATION_PATH_PHASE="tiny_order_instrument_rules"`, `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASKS=("TASK-014BH","TASK-014BM","TASK-014BM_FIX")` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BN_demo_only_tiny_execution_postfill_audit"` (does not end in `_readiness_review` / `_final_pre_execution_review` / `_manual_authorization_review`; passes `bh.assert_next_task_is_not_review_chain_suffix`) | DONE |
+| default mode is non-network (`offline`); `discover` mode performs ONE bounded GET via injected or stdlib urllib sender; no signing, no API key, no recv-window | CONFIRMED |
+| endpoint URL hard-locked to `https://api-demo.bybit.com/v5/market/instruments-info`; `_assert_locked_inputs` + `_real_public_get_via_urllib` URL-prefix check both reject any other URL (including live `api.bybit.com`, `api.bytick.com`, and `/v5/order/create` on demo host) | CONFIRMED |
+| `FORBIDDEN_URL_TOKENS` includes `/v5/order/create`, `/v5/order/cancel`, `/v5/position/set-trading-stop`, all live hosts and all websocket hosts | CONFIRMED |
+| candidate qty derived from `minOrderQty` and `qtyStep`, aligned UP to `qtyStep`, bumped up to satisfy `minNotionalValue` against supplied `mark_price` | CONFIRMED via 4 parametrize-style tests |
+| candidate **fails closed** with `STATUS_TINY_CAP_TOO_LOW_FOR_EXCHANGE_MIN` when exchange minimum exceeds either `TINY_QTY_CAP_SOL=0.05` or `TINY_SIZE_CAP_USDT=5`; never silently lifts cap | CONFIRMED |
+| `confirms_qty_0_01_invalid` is True when observed `minOrderQty > 0.01` (the observed Bybit Demo retCode=10001 failure case) | CONFIRMED |
+| sender sentinel test guarantees the only URL contacted is `ALLOWED_READONLY_URL?category=linear&symbol=SOLUSDT`; `/v5/order/create` / `api.bybit.com` / `api.bytick.com` never appear | CONFIRMED |
+| AST static-source safety invariants (no `requests` / `pybit` / `aiohttp` / `httpx` / `websocket` import; no `main` / `src.risk` / `src.executors.bybit` import; no `BybitExecutor` `Name`/`Attribute` reference; no non-docstring secret env name; no `os.environ` / `os.getenv`) | CONFIRMED |
+| report writer emits `latest_*.json` / `latest_*.md` / `*_<UTC_TS>.json` / `*_<UTC_TS>.md` to `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_instrument_rules/` | DONE |
+| py_compile (src + scripts + tests) | PASS |
+| pytest BM_MIN_QTY_FIX Stage 1 focused-core | **52/52 PASS** |
+| pytest BH + BI + BJ + BK + BL + BM + BM_FIX + BM_MIN_QTY_FIX safety-chain regression | **368/368 PASS** (316 prior chain + 52 new) |
+| BM_MIN_QTY_FIX preview offline smoke `--mode offline --mark-price 100` | exit 0; `discovery_status=DISCOVERY_OFFLINE_NO_NETWORK`; `network_attempted=False`; `order_endpoint_called=False`; `order_sent=False` |
+| BM readiness preview `--mode readiness` (post-change regression) | exit 0; `final_status=READINESS_OK_NO_NETWORK`; `network_attempted=False`; `order_endpoint_called=False`; `order_sent=False`; `live_endpoint_denied=True`; `protected_symbols_untouched=True`; `max_order_count=1`; `all_pre_network_gates_passed=True` |
+| safety invariants (no live endpoint call / no live secret read / no demo secret read / no stop endpoint / no TP-SL attachment / no retry / no scheduler / no G20 lift / no position modification / no protected position interaction / no `/v5/order/create` call / no new real demo order) | CONFIRMED |
+| main.py / src/risk.py / src/executors/bybit.py / BybitExecutor | UNTOUCHED |
+| local commit | pending: `TASK-014BM_MIN_QTY_FIX: add demo-only tiny execution adapter SOLUSDT instrument rules discovery layer (read-only public /v5/market/instruments-info; locked linear+SOLUSDT; candidate qty aligned to qtyStep; tiny-cap fail-closed; BM ExecutionReport gains 9 defaulted instrument-rules fields; existing 88 BM/BM_FIX tests unchanged)` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-19 TASK-014BM_MIN_QTY_FIX)
+
+1. VPS git pull and re-validate the new module offline first:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       python3 -m py_compile \
+           src/demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py \
+           src/demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py
+       python3 -m pytest \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py \
+           -q --basetemp=.pytest_basetemp
+       # expect 52/52 PASS
+       python3 -m pytest \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_endpoint_guard_integration.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_final_pre_execution_checklist.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_preparation.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_fix.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py \
+           -q --basetemp=.pytest_basetemp
+       # expect 368/368 PASS
+
+2. Run the offline preview (still no network, no order):
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py \
+           --mode offline --mark-price 100 --write-report
+       # exit 0
+       # discovery_status=DISCOVERY_OFFLINE_NO_NETWORK
+       # network_attempted=False  order_endpoint_called=False  order_sent=False
+       # rules: <not loaded>; candidate.status=CANDIDATE_RULES_NOT_LOADED
+       # 4 report files written under
+       # outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_instrument_rules/
+
+3. **Optional and only if Rick wants to actually look up current
+   Bybit Demo SOLUSDT linear instrument rules** (no secrets, no
+   order create, no signing — public endpoint):
+
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py \
+           --mode discover --mark-price 100 --write-report
+       # exit 0
+       # network_attempted=True  order_endpoint_called=False  order_sent=False
+       # http_status=200  bybit_ret_code=0
+       # rules: symbol=SOLUSDT minOrderQty=<observed> qtyStep=<observed> ...
+       # candidate.status one of CANDIDATE_OK / TINY_CAP_TOO_LOW_FOR_EXCHANGE_MIN
+       # If TINY_CAP_TOO_LOW_FOR_EXCHANGE_MIN: candidate.is_executable_under_tiny_caps=False
+       #   confirms_qty_0_01_invalid=True (when minOrderQty > 0.01)
+       #   reason: "candidate qty=... notional=... exceeds tiny cap ... fail closed, do NOT send"
+
+4. Use the discovery report (offline pre-parsed or `--mode discover`)
+   to decide the next authorized task. Options Rick may consider —
+   **none of them are pre-authorized by this task**:
+     * `TASK-014BN_demo_only_tiny_execution_postfill_audit` (still the
+       documented successor; the BM execute path is currently blocked
+       by retCode=10001 so this only proceeds after an explicit
+       sizing decision).
+     * a new explicit task to widen `TINY_QTY_CAP_SOL` /
+       `TINY_SIZE_CAP_USDT` to match the current Bybit Demo SOLUSDT
+       minimum (only with a documented risk delta and a refreshed
+       set of gates), then re-run `execute_demo_order` once.
+     * a new explicit task to change BL packet `DEFAULT_QTY` (and BM
+       `qty_within_tiny_cap` gate) from `0.01` to the computed
+       candidate (only after Rick agrees that the resulting notional
+       is still inside the intended tiny risk envelope).
+
+5. **Do NOT retry** `execute_demo_order` with `qty=0.01`. The observed
+   `retCode=10001 "The number of contracts exceeds minimum limit
+   allowed"` will repeat. Use the discovery layer first.
+
+---
+
 > TASK-014BM_FIX_demo_only_tiny_order_execution_signature_and_status_mapping
 > is a **Stage 1 corrective patch** on top of TASK-014BM. It fixes the
 > Bybit V5 HMAC signing path (the previously sent execution attempt was

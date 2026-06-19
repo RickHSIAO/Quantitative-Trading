@@ -14,10 +14,84 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_FIX, 2026-06-19）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_MIN_QTY_FIX, 2026-06-19）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_FIX 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014BM_MIN_QTY_FIX 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_MIN_QTY_FIX**（2026-06-19）在 TASK-014BM / TASK-014BM_FIX 之上新增
+> **demo-only、唯讀的 SOLUSDT instrument rules discovery 層**，用來解決 FIX 之後
+> 觀察到的 `retCode=10001 "The number of contracts exceeds minimum limit allowed"`
+> 阻塞：當前 Bybit Demo 對 SOLUSDT linear 的 `minOrderQty` 已大於先前 hardcode 的
+> `qty=0.01`，繼續送 0.01 一律會被退。本任務 Stage 1 only — **不重試 real order
+> 執行、不呼叫 /v5/order/create、不接 live endpoint、不讀任何 live/demo secret、不
+> 動 protected positions**。具體變更：
+> (1) 新增 [`src/demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py`](src/demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py)，
+> 單一聚合入口 `run_instrument_rules_discovery(mode, mark_price, category, symbol,
+> sender, pre_parsed_response)`；常數鎖死 `ALLOWED_DEMO_HOST="api-demo.bybit.com"` /
+> `ALLOWED_READONLY_URL="https://api-demo.bybit.com/v5/market/instruments-info"` /
+> `ALLOWED_CATEGORY="linear"` / `ALLOWED_SYMBOL="SOLUSDT"`；任何其他 category / symbol /
+> endpoint URL 都會在進入網路之前被 `_assert_locked_inputs` 阻擋；`build_readonly_request_url`
+> 拒絕一切 live host、`/v5/order/create`、`wss://` token；公共 GET sender
+> `_real_public_get_via_urllib` hard-assert URL prefix 必須為 `ALLOWED_READONLY_URL + "?"`，
+> 否則直接 raise（即使是 demo host 上的 `/v5/order/create` 也會被退）；mode 預設
+> `offline`（無 network、no rules loaded），`discover` mode 才會打單次 bounded GET，
+> 無 retry、無 scheduler、無 signing、無 API key、無 recv-window。
+> (2) 新增解析器 `parse_instrument_rules(parsed)`：嚴格從 V5 `result.list` 找 SOLUSDT entry，
+> 必要欄位 `lotSizeFilter.{minOrderQty, qtyStep, minNotionalValue}` 缺一即 raise；額外暴露
+> `lotSizeFilter.maxMktOrderQty`（若存在）與 `priceFilter.tickSize`（若存在）。
+> (3) 新增 `compute_candidate_tiny_qty(rules, mark_price, tiny_qty_cap_sol, tiny_size_cap_usdt)`：
+> 以 `max(minOrderQty, qty_step)` 開始向上對齊 `qty_step`；若 `mark_price * candidate <
+> minNotionalValue`，再向上補到滿足 `minNotionalValue` 的最小 `qty_step` 倍數；最後跟
+> BH 的 `TINY_QTY_CAP_SOL=0.05` / `TINY_SIZE_CAP_USDT=5` 比對，**任一 cap 被超過即 fail
+> closed** → status `TINY_CAP_TOO_LOW_FOR_EXCHANGE_MIN`、`is_executable_under_tiny_caps=False`、
+> 絕不偷偷把 tiny cap 拉高、絕不送單。額外回報 `confirms_qty_0_01_invalid`（當
+> `0.01 < minOrderQty`）。
+> (4) 在 BM `ExecutionReport` 上新增 9 個 *defaulted* 欄位
+> `instrument_rules_loaded` / `instrument_rules_discovery_status` /
+> `instrument_rules_min_order_qty` / `instrument_rules_qty_step` /
+> `instrument_rules_min_notional_value` / `computed_candidate_qty` /
+> `computed_candidate_notional` / `candidate_is_executable_under_tiny_caps` /
+> `qty_0_01_confirmed_invalid`；新增 optional `instrument_rules` 參數於
+> `run_explicit_tiny_order_execution()`，未傳時欄位皆為安全預設值，**現有 88 條 BM /
+> BM_FIX 測試與既有呼叫端皆完全不變**。execute_demo_order 行為（包括 hardcoded
+> body qty 來源 = BL packet）**未被本任務改動** — 改動 qty 需要另一個明確授權任務。
+> (5) 新增 preview CLI [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py`](scripts/preview_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py)
+> （`--mode {offline,discover}` 預設 offline；`--mark-price`；`--write-report` /
+> `--output-dir`；exit code 0 = OK / OFFLINE / 預期 fail-closed 報告，1 = 其他終態）。
+> (6) 新增 [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py)
+> 52 條 Stage 1 focused-core，覆蓋 identity / chain-break、endpoint+category+symbol
+> 鎖死、live URL 與 `/v5/order/create` token 阻擋、parser 對 V5 `lotSizeFilter` 的
+> 嚴格解析、parser 拒絕缺 lotSizeFilter、parser 拒絕非 SOLUSDT entry、candidate
+> 對齊 qty_step、candidate 補到 minNotionalValue、tiny-cap fail-closed、`qty=0.01`
+> 確認 invalid、injected sender 永不收到 order-create URL、network error 路徑、
+> 非零 retCode 路徑、AST static-source 拒絕 third-party HTTP client import 與
+> `BybitExecutor` / `main` / `src.risk` 引用、docstring-排除的 secret env name 出現
+> 檢查、JSON + Markdown 報告 round-trip、BM ExecutionReport 預設不暴露 instrument
+> rules 欄位、BM ExecutionReport 傳入 ir report 後正確surface 三組欄位。
+>
+> 安全面：**本任務沒有送出任何真實 demo 單**、**沒有重試 execute_demo_order**、
+> **沒有呼叫 /v5/order/create**、**沒接 live endpoint**、**沒讀任何 live/demo secret
+> env**、**沒動 protected positions（ENA / TIA / AIXBT / POLYX / EDU）**、**沒動
+> `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`**、**沒新增
+> stop endpoint / TP / SL / retry / scheduler**。
+>
+> 本次驗證：`py_compile` 4 個 changed/added Python 檔 PASS；
+> `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py`
+> → **52/52 PASS**；BH→BM 鏈 8 個 adapter 測試檔合計 **368/368 PASS** (316 既有 +
+> 52 新增)；offline 預覽 smoke (`--mode offline --mark-price 100`) → exit 0、
+> `discovery_status=DISCOVERY_OFFLINE_NO_NETWORK`、`network_attempted=False`、
+> `order_endpoint_called=False`、`order_sent=False`；BM readiness preview
+> (`--mode readiness`) 仍 exit 0、`final_status=READINESS_OK_NO_NETWORK`、`network_attempted=False`、
+> 與 FIX 後一致。
+>
+> 後續 next-step：Rick 可在 VPS 上於 `--mode discover` 跑一次唯讀 instruments-info
+> 抓真實 SOLUSDT 當前 `minOrderQty` / `qtyStep` / `minNotionalValue`，然後依
+> `candidate_is_executable_under_tiny_caps` 決定是否需要另外一個明確授權任務來
+> 同步調整 BL packet 的 hardcoded qty，或先把 tiny cap 上限重新評估 — 本任務
+> 不替 Rick 做這個決定。
+
+> 上一個 FIX banner 保留於下方。
 
 > **TASK-014BM_FIX**（2026-06-19）在 TASK-014BM 上的 **corrective patch**：
 > 修復 Bybit V5 HMAC 簽名路徑（先前一次真實 demo 嘗試被 Bybit 回 `retCode=10004

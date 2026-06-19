@@ -324,6 +324,19 @@ class ExecutionReport:
     generated_at_utc: str
     plan: ExecutionPlan | None = None
     outcome: SendOutcome | None = None
+    # TASK-014BM_MIN_QTY_FIX: optional instrument rules surface.
+    # Populated only when the caller passes an
+    # ``InstrumentRulesReport`` to ``run_explicit_tiny_order_execution``;
+    # otherwise stays at the safe defaults below.
+    instrument_rules_loaded: bool = False
+    instrument_rules_discovery_status: str = ""
+    instrument_rules_min_order_qty: str = ""
+    instrument_rules_qty_step: str = ""
+    instrument_rules_min_notional_value: str = ""
+    computed_candidate_qty: str = ""
+    computed_candidate_notional: str = ""
+    candidate_is_executable_under_tiny_caps: bool = False
+    qty_0_01_confirmed_invalid: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -365,6 +378,23 @@ class ExecutionReport:
             "outcome": (
                 self.outcome.to_dict() if self.outcome is not None else None
             ),
+            "instrument_rules_loaded": self.instrument_rules_loaded,
+            "instrument_rules_discovery_status": (
+                self.instrument_rules_discovery_status
+            ),
+            "instrument_rules_min_order_qty": (
+                self.instrument_rules_min_order_qty
+            ),
+            "instrument_rules_qty_step": self.instrument_rules_qty_step,
+            "instrument_rules_min_notional_value": (
+                self.instrument_rules_min_notional_value
+            ),
+            "computed_candidate_qty": self.computed_candidate_qty,
+            "computed_candidate_notional": self.computed_candidate_notional,
+            "candidate_is_executable_under_tiny_caps": (
+                self.candidate_is_executable_under_tiny_caps
+            ),
+            "qty_0_01_confirmed_invalid": self.qty_0_01_confirmed_invalid,
         }
 
 
@@ -930,6 +960,7 @@ def run_explicit_tiny_order_execution(
     credentials: DemoCredentials | None = None,
     env: Mapping[str, str] | None = None,
     sender: Sender | None = None,
+    instrument_rules: Any | None = None,
 ) -> ExecutionReport:
     """Run the BM explicit one-shot tiny order execution path.
 
@@ -1047,6 +1078,40 @@ def run_explicit_tiny_order_execution(
                 # NEVER report EXECUTED_DEMO_ONLY in this branch.
                 final_status = STATUS_BYBIT_REJECTED_NO_ORDER_SENT
 
+    ir_loaded = False
+    ir_status = ""
+    ir_min_order_qty = ""
+    ir_qty_step = ""
+    ir_min_notional_value = ""
+    cc_qty = ""
+    cc_notional = ""
+    cc_executable = False
+    cc_qty_0_01_invalid = False
+    if instrument_rules is not None:
+        ir_loaded = bool(getattr(instrument_rules, "instrument_rules_loaded", False))
+        ir_status = str(
+            getattr(instrument_rules, "discovery_status", "") or ""
+        )
+        rules_obj = getattr(instrument_rules, "rules", None)
+        if rules_obj is not None:
+            ir_min_order_qty = str(getattr(rules_obj, "min_order_qty", "") or "")
+            ir_qty_step = str(getattr(rules_obj, "qty_step", "") or "")
+            ir_min_notional_value = str(
+                getattr(rules_obj, "min_notional_value", "") or ""
+            )
+        candidate_obj = getattr(instrument_rules, "candidate", None)
+        if candidate_obj is not None:
+            cc_qty = str(getattr(candidate_obj, "candidate_qty", "") or "")
+            cc_notional = str(
+                getattr(candidate_obj, "candidate_notional", "") or ""
+            )
+            cc_executable = bool(
+                getattr(candidate_obj, "is_executable_under_tiny_caps", False)
+            )
+            cc_qty_0_01_invalid = bool(
+                getattr(candidate_obj, "confirms_qty_0_01_invalid", False)
+            )
+
     return ExecutionReport(
         task_id=TASK_ID,
         identity=IDENTITY,
@@ -1088,6 +1153,15 @@ def run_explicit_tiny_order_execution(
         generated_at_utc=_dt.datetime.now(_dt.timezone.utc).isoformat(),
         plan=plan,
         outcome=outcome,
+        instrument_rules_loaded=ir_loaded,
+        instrument_rules_discovery_status=ir_status,
+        instrument_rules_min_order_qty=ir_min_order_qty,
+        instrument_rules_qty_step=ir_qty_step,
+        instrument_rules_min_notional_value=ir_min_notional_value,
+        computed_candidate_qty=cc_qty,
+        computed_candidate_notional=cc_notional,
+        candidate_is_executable_under_tiny_caps=cc_executable,
+        qty_0_01_confirmed_invalid=cc_qty_0_01_invalid,
     )
 
 
@@ -1198,6 +1272,38 @@ def _render_markdown(report: ExecutionReport) -> str:
     lines.append(f"- bybit_ret_code: `{report.bybit_ret_code}`")
     bybit_msg = report.bybit_ret_msg.replace("|", "\\|") if report.bybit_ret_msg else ""
     lines.append(f"- bybit_ret_msg: `{bybit_msg}`")
+    lines.append("")
+    lines.append("## Instrument rules (TASK-014BM_MIN_QTY_FIX)")
+    lines.append("")
+    lines.append(
+        f"- instrument_rules_loaded: `{report.instrument_rules_loaded}`"
+    )
+    lines.append(
+        f"- instrument_rules_discovery_status: "
+        f"`{report.instrument_rules_discovery_status}`"
+    )
+    lines.append(
+        f"- minOrderQty: `{report.instrument_rules_min_order_qty}`"
+    )
+    lines.append(f"- qtyStep: `{report.instrument_rules_qty_step}`")
+    lines.append(
+        f"- minNotionalValue: `{report.instrument_rules_min_notional_value}`"
+    )
+    lines.append(
+        f"- computed_candidate_qty: `{report.computed_candidate_qty}`"
+    )
+    lines.append(
+        f"- computed_candidate_notional: "
+        f"`{report.computed_candidate_notional}`"
+    )
+    lines.append(
+        f"- candidate_is_executable_under_tiny_caps: "
+        f"`{report.candidate_is_executable_under_tiny_caps}`"
+    )
+    lines.append(
+        f"- qty_0_01_confirmed_invalid: "
+        f"`{report.qty_0_01_confirmed_invalid}`"
+    )
     lines.append("")
     lines.append(
         "_demo-only one-shot execution path -- no live endpoint, no live "
