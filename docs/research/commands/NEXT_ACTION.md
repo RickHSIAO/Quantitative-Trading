@@ -1,5 +1,132 @@
 # Next Action
 
+> README shared status updated by TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR (2026-06-19).
+> TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR is a
+> **Stage 1, offline-validated, demo-only** orchestration layer
+> that wires the full authorized execution chain
+> (`BM_MIN_QTY_FIX` instrument rules → `BM_CAP_ESCALATION_GATE` →
+> `BM_WIRE_AUTHORIZED_CANDIDATE_QTY` →
+> `BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH`) into a single
+> entry point so the BM execution module receives a real
+> `ESCALATION_AUTHORIZED` `AuthorizedExecutionQtyWiringReport`
+> and therefore plans and (optionally) signs a request body with
+> `qty="0.1"` instead of the invalid BL packet `qty="0.01"`.
+>
+> Stage 1 is locked down so it cannot send any real order:
+> the public surface supports only two modes
+> (`readiness`, `execute_with_fake_sender`); the second mode
+> *requires* both `bm.DemoCredentials` and a caller-supplied
+> callable fake sender — a real `MODE_EXECUTE_DEMO_ORDER` against
+> the network is unreachable from the orchestrator. The CLI
+> defaults to `readiness` and refuses `execute_with_fake_sender`
+> unless an explicit `--stage1-allow-fake-sender-execute-mode`
+> opt-in *and* a `--fake-sender-import-path` *and* fake
+> credentials are all supplied. Calling
+> `ir_mode="discover"` without an injected `ir_sender` raises
+> `OneShotAuthorizedExecutionOrchestratorError` unless the caller
+> also passes `allow_real_ir_get=True` (Stage 1 callers never do).
+>
+> New module
+> [`src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](../../../src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)
+> exposes the entry point
+> `run_one_shot_authorized_execution_orchestration(...)`, a frozen
+> `OrchestrationReport` dataclass surfacing the 12 mandatory
+> chain fields (`instrument_rules_loaded`, `candidate_qty`,
+> `candidate_notional`, `cap_gate_status`, `wiring_status`,
+> `original_packet_qty`, `actual_request_body_qty`,
+> `actual_request_body_qty_source`,
+> `body_qty_authorized_override`, `network_attempted`,
+> `order_endpoint_called`, `order_sent`) plus nested raw reports
+> for full traceability, and a `write_report()` helper emitting 4
+> files (`latest_*.json`, `latest_*.md`, timestamped pair) under
+> `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator/`.
+> Identity markers:
+> `TASK_ID = "TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR"`,
+> `IDENTITY = "DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-ONE-SHOT-AUTHORIZED-EXECUTION-ORCHESTRATOR"`,
+> `IMPLEMENTATION_PATH_PHASE = "tiny_order_one_shot_authorized_execution_orchestrator"`,
+> `IS_REVIEW_CHAIN_SUFFIX=False`,
+> `UPSTREAM_TASKS=(BH, BM, BM_FIX, BM_MIN_QTY_FIX, BM_CAP_ESCALATION_GATE, BM_WIRE_AUTHORIZED_CANDIDATE_QTY, BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH)`,
+> `NEXT_REQUIRED_TASK = "TASK-014BN_demo_only_tiny_execution_postfill_audit"`.
+>
+> New CLI
+> [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](../../../scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)
+> default mode is `readiness`; surfaces every one of the 12
+> mandatory orchestration fields on stdout, exits `0` on
+> `ORCHESTRATION_OK_*`, `2` on missing credentials / fake sender,
+> `1` on any other rejected chain status.
+>
+> New test file
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)
+> (34 tests) covers: identity / chain markers; immutable locks;
+> readiness happy path returns `actual_request_body_qty="0.1"`
+> with no network; fake-sender execute path returns body
+> `qty="0.1"` AND the exact UTF-8 bytes posted to the sender equal
+> the HMAC-SHA256 prehash body string (sign-type=2) AND the sender
+> is called exactly once; unsupported orchestration mode rejected
+> no-network; rules not loaded / wrong symbol / wrong status /
+> wrong min_order_qty all rejected pre-network; cap-gate
+> unauthorized when flag missing / marker missing / marker wrong;
+> missing credentials / missing fake sender both rejected; real
+> IR discover without injected sender raises
+> `OneShotAuthorizedExecutionOrchestratorError`; injected
+> `ir_sender` path runs; Bybit fake `retCode=10004` surfaces
+> `STATUS_REJECTED_BM_BYBIT_NOT_EXECUTED`; fake network error
+> surfaces `STATUS_REJECTED_BM_NETWORK_ERROR`; module never
+> references `main.py` / `src.risk` / `BybitExecutor` /
+> `BYBIT_LIVE_*` env vars / live URL host outside docstrings;
+> `write_report()` emits 4 files and JSON round-trips;
+> `OrchestrationReport` is frozen; `to_dict()` exposes all 12
+> required surfaces; no rejection branch ever surfaces
+> `actual_request_body_qty="0.01"`; tiny caps + protected-symbols
+> snapshot is unchanged.
+>
+> No safety-critical surface was modified: no live endpoint, no
+> live or demo secret loading code, no `main.py` /
+> `src/risk.py` / `src/executors/bybit.py` change, no
+> `BybitExecutor` live behavior change, no protected-position
+> code touched, no retry, no scheduler, no stop endpoint, no
+> TP/SL, no `/v5/order/create` real call, no new real Bybit
+> Demo order sent, no BL packet `DEFAULT_QTY="0.01"` change,
+> no `TINY_QTY_CAP_SOL=0.05` / `TINY_SIZE_CAP_USDT=5` change,
+> no `MAX_ORDER_COUNT=1` change, no `PROTECTED_SYMBOLS` change,
+> no double-flag gate loosening, no LIVE-named secret env access.
+> The instrument-rules layer, cap-escalation gate, wiring
+> layer, and BM execution layer source files are all unmodified
+> in this commit.
+>
+> Validation (this commit):
+> py_compile of all changed Python files PASS;
+> `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py
+> --basetemp=.pytest_tmp/bt` → **34/34 PASS**;
+> BH→BM-family chain regression
+> (`-k tiny_execution_adapter`) → **505/505 PASS**
+> (471 prior BH→BM + 34 new Stage 1 orchestrator);
+> readiness preview surfaces
+> `actual_request_body_qty='0.1' actual_request_body_qty_source='CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY'
+> body_qty_authorized_override=True network_attempted=False
+> order_endpoint_called=False order_sent=False`;
+> fake-sender preview surfaces
+> `actual_request_body_qty='0.1' order_sent=True sender_call_count=1`
+> with the posted body bytes equal to the HMAC prehash body and
+> `X-BAPI-SIGN-TYPE=2`.
+>
+> No new real Bybit Demo order was sent during this Stage 1 task.
+>
+> Previous BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH Stage 2
+> banner archived below.
+
+## TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR Status (2026-06-19)
+
+- Stage: 1
+- Status: COMPLETE (local commit pending)
+- Identity: `DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-ONE-SHOT-AUTHORIZED-EXECUTION-ORCHESTRATOR`
+- Module: `src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- CLI: `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- Tests: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` (34/34 PASS)
+- Regression: BH→BM family (`-k tiny_execution_adapter`) 505/505 PASS
+- Network: NO real `/v5/order/create` call. NO real Bybit Demo order sent. Fake-sender path only.
+- Next required task: `TASK-014BN_demo_only_tiny_execution_postfill_audit`
+
 > README shared status updated by TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH (2026-06-19).
 > TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH is a
 > **Stage 2, offline-validated, demo-only** extension on top of

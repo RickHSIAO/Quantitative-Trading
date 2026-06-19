@@ -14,10 +14,97 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH, 2026-06-19）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR, 2026-06-19）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR**（2026-06-19，Stage 1）
+> 在 TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH（Stage 2）之上，新增一個
+> **narrow、decision-+-validation-only、demo-only 的 one-shot orchestration 層**，
+> 把完整授權執行鏈（`BM_MIN_QTY_FIX` 取得 SOLUSDT instrument rules →
+> `BM_CAP_ESCALATION_GATE` 雙重授權通過 → `BM_WIRE_AUTHORIZED_CANDIDATE_QTY`
+> 解析為 `execution_qty="0.1"` → `BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH`
+> 把 actual request body qty 從 `"0.01"` 切換到 `"0.1"`）封裝為單一進入點，
+> 讓 BM 真正規劃並（在 fake-sender 模式下）簽署的 HTTPS request body
+> 帶上 `qty="0.1"`，而不是 BL packet 的無效 `"0.01"`。
+> **Stage 1 仍不送任何 real demo 單**：公開介面只支援
+> `readiness` 與 `execute_with_fake_sender` 兩種模式；後者**強制**
+> 同時需要 `bm.DemoCredentials` 與一個 caller 注入的可呼叫 fake sender，
+> 真正的 `MODE_EXECUTE_DEMO_ORDER` 對網路發送透過 orchestrator 介面
+> 完全不可達。CLI 預設 `readiness`；`execute_with_fake_sender` 必須同時
+> 帶上 `--stage1-allow-fake-sender-execute-mode` 與
+> `--fake-sender-import-path` 與 fake credential 三件套才會啟用。
+> 在 `ir_mode="discover"` 但未注入 `ir_sender` 的情況下，orchestrator 會
+> 主動 raise `OneShotAuthorizedExecutionOrchestratorError`（除非 caller
+> 明確帶上 `allow_real_ir_get=True`，而 Stage 1 callers 從不帶它）。
+> 具體變更：
+> (1) 新增 [`src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：
+> 唯一進入點 `run_one_shot_authorized_execution_orchestration(...)`、frozen
+> `OrchestrationReport` 浮出 12 個必填欄位
+> (`instrument_rules_loaded`, `candidate_qty`, `candidate_notional`,
+> `cap_gate_status`, `wiring_status`, `original_packet_qty`,
+> `actual_request_body_qty`, `actual_request_body_qty_source`,
+> `body_qty_authorized_override`, `network_attempted`,
+> `order_endpoint_called`, `order_sent`) 加 nested raw reports，以及
+> `write_report()` helper 一次寫 4 個檔
+> (`latest_*.json`, `latest_*.md`, 時間戳對) 到
+> `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator/`。
+> Identity：`TASK_ID="TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR"`,
+> `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-ONE-SHOT-AUTHORIZED-EXECUTION-ORCHESTRATOR"`,
+> `IMPLEMENTATION_PATH_PHASE="tiny_order_one_shot_authorized_execution_orchestrator"`,
+> `IS_REVIEW_CHAIN_SUFFIX=False`,
+> `UPSTREAM_TASKS=(BH, BM, BM_FIX, BM_MIN_QTY_FIX, BM_CAP_ESCALATION_GATE, BM_WIRE_AUTHORIZED_CANDIDATE_QTY, BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH)`,
+> `NEXT_REQUIRED_TASK="TASK-014BN_demo_only_tiny_execution_postfill_audit"`。
+> (2) 新增 CLI
+> [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：
+> 預設 `readiness`、不送網路；`execute_with_fake_sender` 預設關閉，需顯式
+> 加 `--stage1-allow-fake-sender-execute-mode` 與 `--fake-sender-import-path`
+> 與 `--fake-api-key`/`--fake-api-secret` 才會啟用；浮出 12 個必填欄位；
+> 退出碼 0/1/2 分別對應 OK / 鏈拒絕 / 缺憑證或 fake sender。
+> (3) 新增測試檔
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)
+> （34 條 focused-core 測試）覆蓋：identity / 鎖死常數；readiness happy
+> path 浮出 `actual_request_body_qty="0.1"` 且 no network；fake-sender
+> happy path 浮出 body `qty="0.1"`，且 caller 收到的 UTF-8 body bytes 等於
+> 簽章 prehash 字串中的 body 部分，且 `X-BAPI-SIGN-TYPE=2`，且 sender
+> 只被呼叫一次；unsupported mode 拒絕；rules not loaded / wrong symbol /
+> wrong status / wrong min_order_qty 全部 pre-network fail-closed；cap-gate
+> 在 flag 缺 / marker 缺 / marker 錯時均拒絕；missing credentials /
+> missing fake sender 均拒絕；`ir_mode="discover"` 無 sender 注入時
+> raise `OneShotAuthorizedExecutionOrchestratorError`；注入 ir_sender
+> 走過 discover 分支；fake-sender `retCode=10004` 映射到
+> `STATUS_REJECTED_BM_BYBIT_NOT_EXECUTED`；fake-sender network error
+> 映射到 `STATUS_REJECTED_BM_NETWORK_ERROR`；模組 executable code 從未
+> 提到 `main.py` / `src.risk` / `BybitExecutor` / `BYBIT_LIVE_*` env / live
+> URL host（docstring 提及允許）；`write_report()` 寫 4 檔且 JSON
+> round-trip；`OrchestrationReport` 是 frozen；`to_dict()` 浮出 12 個必填
+> 欄位；任何 rejection 路徑均不會浮出 `actual_request_body_qty="0.01"`；
+> tiny caps + protected-symbols snapshot 不變。
+>
+> 驗證：`python -m py_compile <all 3 new files>` PASS；
+> `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py
+> --basetemp=.pytest_tmp/bt` → **34/34 PASS**；
+> BH→BM family regression `-k tiny_execution_adapter` →
+> **505/505 PASS**（471 prior BH→BM + 34 new Stage 1）；
+> readiness preview smoke：
+> `actual_request_body_qty='0.1' actual_request_body_qty_source='CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY'
+> body_qty_authorized_override=True network_attempted=False
+> order_endpoint_called=False order_sent=False`；
+> fake-sender preview smoke：posted body bytes decoded JSON 帶
+> `"qty":"0.1"`、`X-BAPI-SIGN-TYPE=2`、HMAC-SHA256(`secret`,
+> `timestamp+apikey+recv_window+body_str`) 等於 `X-BAPI-SIGN`、
+> `sender_call_count=1`。
+>
+> 本任務 **未送出任何新的 real Bybit Demo 單**、未呼叫
+> `/v5/order/create`、未讀任何 live secret、未動 `main.py` /
+> `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`、未動
+> protected positions、未解除 `MAX_ORDER_COUNT=1` 或雙重授權旗標、未全域
+> 抬升 `TINY_QTY_CAP_SOL=0.05` / `TINY_SIZE_CAP_USDT=5`、未改 BL packet
+> `DEFAULT_QTY="0.01"`、未動 BM/BM_FIX/BM_MIN_QTY_FIX/BM_CAP_ESCALATION_GATE/
+> BM_WIRE_AUTHORIZED_CANDIDATE_QTY/BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH
+> 任一現有 src。Local commit only — 未 push。
+>
 
 > **TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH**（2026-06-19，Stage 2）
 > 在 TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY 之上，把 BM 真正送出的
