@@ -337,6 +337,16 @@ class ExecutionReport:
     computed_candidate_notional: str = ""
     candidate_is_executable_under_tiny_caps: bool = False
     qty_0_01_confirmed_invalid: bool = False
+    # TASK-014BM_CAP_ESCALATION_GATE: optional cap-escalation surface.
+    # Populated only when the caller passes a
+    # ``CapEscalationGateReport`` to ``run_explicit_tiny_order_execution``;
+    # otherwise stays at the safe defaults below.
+    original_tiny_cap_passed: bool = False
+    exchange_min_qty_cap_escalation_required: bool = False
+    explicit_demo_min_qty_cap_authorized: bool = False
+    cap_escalated_demo_only: bool = False
+    cap_escalation_status: str = ""
+    max_demo_min_qty_notional_cap_usdt: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -395,6 +405,18 @@ class ExecutionReport:
                 self.candidate_is_executable_under_tiny_caps
             ),
             "qty_0_01_confirmed_invalid": self.qty_0_01_confirmed_invalid,
+            "original_tiny_cap_passed": self.original_tiny_cap_passed,
+            "exchange_min_qty_cap_escalation_required": (
+                self.exchange_min_qty_cap_escalation_required
+            ),
+            "explicit_demo_min_qty_cap_authorized": (
+                self.explicit_demo_min_qty_cap_authorized
+            ),
+            "cap_escalated_demo_only": self.cap_escalated_demo_only,
+            "cap_escalation_status": self.cap_escalation_status,
+            "max_demo_min_qty_notional_cap_usdt": (
+                self.max_demo_min_qty_notional_cap_usdt
+            ),
         }
 
 
@@ -961,6 +983,7 @@ def run_explicit_tiny_order_execution(
     env: Mapping[str, str] | None = None,
     sender: Sender | None = None,
     instrument_rules: Any | None = None,
+    cap_escalation: Any | None = None,
 ) -> ExecutionReport:
     """Run the BM explicit one-shot tiny order execution path.
 
@@ -1112,6 +1135,54 @@ def run_explicit_tiny_order_execution(
                 getattr(candidate_obj, "confirms_qty_0_01_invalid", False)
             )
 
+    ce_original_pass = False
+    ce_escalation_required = False
+    ce_explicit_authorized = False
+    ce_escalated_demo_only = False
+    ce_status = ""
+    ce_notional_cap = ""
+    if cap_escalation is not None:
+        ce_decision = getattr(cap_escalation, "decision", None)
+        if ce_decision is not None:
+            ce_status = str(getattr(ce_decision, "status", "") or "")
+            ce_original_pass = bool(
+                getattr(ce_decision, "original_tiny_cap_passed", False)
+            )
+            ce_escalation_required = bool(
+                getattr(
+                    ce_decision,
+                    "exchange_min_qty_cap_escalation_required",
+                    False,
+                )
+            )
+            ce_explicit_authorized = bool(
+                getattr(
+                    ce_decision,
+                    "explicit_demo_min_qty_cap_authorized",
+                    False,
+                )
+            )
+            ce_escalated_demo_only = bool(
+                getattr(ce_decision, "cap_escalated_demo_only", False)
+            )
+            ce_notional_cap = str(
+                getattr(
+                    ce_decision,
+                    "max_demo_min_qty_notional_cap_usdt",
+                    "",
+                )
+                or ""
+            )
+        if not ce_notional_cap:
+            ce_notional_cap = str(
+                getattr(
+                    cap_escalation,
+                    "max_demo_min_qty_notional_cap_usdt",
+                    "",
+                )
+                or ""
+            )
+
     return ExecutionReport(
         task_id=TASK_ID,
         identity=IDENTITY,
@@ -1162,6 +1233,12 @@ def run_explicit_tiny_order_execution(
         computed_candidate_notional=cc_notional,
         candidate_is_executable_under_tiny_caps=cc_executable,
         qty_0_01_confirmed_invalid=cc_qty_0_01_invalid,
+        original_tiny_cap_passed=ce_original_pass,
+        exchange_min_qty_cap_escalation_required=ce_escalation_required,
+        explicit_demo_min_qty_cap_authorized=ce_explicit_authorized,
+        cap_escalated_demo_only=ce_escalated_demo_only,
+        cap_escalation_status=ce_status,
+        max_demo_min_qty_notional_cap_usdt=ce_notional_cap,
     )
 
 
@@ -1303,6 +1380,30 @@ def _render_markdown(report: ExecutionReport) -> str:
     lines.append(
         f"- qty_0_01_confirmed_invalid: "
         f"`{report.qty_0_01_confirmed_invalid}`"
+    )
+    lines.append("")
+    lines.append("## Cap escalation (TASK-014BM_CAP_ESCALATION_GATE)")
+    lines.append("")
+    lines.append(
+        f"- original_tiny_cap_passed: `{report.original_tiny_cap_passed}`"
+    )
+    lines.append(
+        f"- exchange_min_qty_cap_escalation_required: "
+        f"`{report.exchange_min_qty_cap_escalation_required}`"
+    )
+    lines.append(
+        f"- explicit_demo_min_qty_cap_authorized: "
+        f"`{report.explicit_demo_min_qty_cap_authorized}`"
+    )
+    lines.append(
+        f"- cap_escalated_demo_only: `{report.cap_escalated_demo_only}`"
+    )
+    lines.append(
+        f"- cap_escalation_status: `{report.cap_escalation_status}`"
+    )
+    lines.append(
+        f"- max_demo_min_qty_notional_cap_usdt: "
+        f"`{report.max_demo_min_qty_notional_cap_usdt}`"
     )
     lines.append("")
     lines.append(

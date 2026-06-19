@@ -14,12 +14,100 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_MIN_QTY_FIX, 2026-06-19）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_CAP_ESCALATION_GATE, 2026-06-19）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_MIN_QTY_FIX 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014BM_CAP_ESCALATION_GATE 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
 
-> **TASK-014BM_MIN_QTY_FIX**（2026-06-19）在 TASK-014BM / TASK-014BM_FIX 之上新增
+> **TASK-014BM_CAP_ESCALATION_GATE**（2026-06-19）在
+> TASK-014BM / TASK-014BM_FIX / TASK-014BM_MIN_QTY_FIX 之上新增一個
+> **narrow、decision-only、demo-only 的 SOLUSDT cap escalation 授權閘**，用來在
+> Rick 明確簽署授權的前提下、針對「Bybit Demo 當前對 SOLUSDT linear 的
+> `minOrderQty` 已超過原本 `TINY_QTY_CAP_SOL=0.05` / `TINY_SIZE_CAP_USDT=5`」
+> 這條單一路徑進行授權記錄。本任務 Stage 1 only — **不送單、不呼叫
+> `/v5/order/create`、不重試 `execute_demo_order`、不接 live endpoint、不讀
+> 任何 live/demo secret、不動 protected positions、不上 retry、不上 scheduler、
+> 不掛 stop / TP / SL**。具體變更：
+> (1) 新增 [`src/demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py`](src/demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py)：
+> 單一決策入口 `run_cap_escalation_gate(instrument_rules_report, request,
+> max_demo_min_qty_notional_cap_usdt)`；常數鎖死 `ALLOWED_ENVIRONMENT="bybit_demo"` /
+> `ALLOWED_SYMBOL="SOLUSDT"` / `ALLOWED_SIDE="Buy"` / `ALLOWED_ORDER_TYPE="Market"` /
+> `ALLOWED_TIME_IN_FORCE="IOC"` / `ALLOWED_MAX_ORDER_COUNT=1`；新增
+> `MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT=Decimal("20")`（**只作用在這條 SOLUSDT demo
+> 路徑**，BH 的 `TINY_QTY_CAP_SOL` / `TINY_SIZE_CAP_USDT` 全域常數**完全不動**）；
+> 新增明確授權旗標 `EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_FLAG_NAME =
+> "--i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap"` 與
+> 授權標記 `EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER =
+> "DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1"`，**兩者
+> 必須同時存在才會授權**；任一缺一即 `ESCALATION_NOT_AUTHORIZED` fail-closed。
+> (2) 閘輸入嚴格鎖：non-`bybit_demo` 環境、non-`SOLUSDT` symbol、`PROTECTED_SYMBOLS`
+> （ENA / TIA / AIXBT / POLYX / EDU）、Sell side、Limit / 非 Market、非 IOC、
+> `reduce_only=True` / `close_on_trigger=True`、非空 `stop_loss` / `take_profit`、
+> `max_order_count != 1`、`proposed_qty != candidate_qty`、`endpoint_url_hint`
+> 含 `api.bybit.com` / `api.bytick.com` / `wss://stream.*` / `/v5/order/create` /
+> `/v5/order/cancel` / `/v5/position/set-trading-stop` 任一 token — **全部 fail
+> closed，回傳 `ESCALATION_REJECTED_*` 對應狀態，永不授權**。
+> (3) 即便授權旗標 + marker 齊備，仍要求 `candidate_notional <=
+> max_demo_min_qty_notional_cap_usdt`（預設 20 USDT）— 例如 mark_price=250 使
+> candidate qty=0.1 推出 notional=25 > 20 cap，會回 `ESCALATION_REJECTED_NOTIONAL_OVER_CAP`
+> 並標 `explicit_demo_min_qty_cap_authorized=True` / `cap_escalated_demo_only=False`。
+> (4) 在 BM `ExecutionReport` 上新增 6 個 *defaulted* 欄位
+> `original_tiny_cap_passed` / `exchange_min_qty_cap_escalation_required` /
+> `explicit_demo_min_qty_cap_authorized` / `cap_escalated_demo_only` /
+> `cap_escalation_status` / `max_demo_min_qty_notional_cap_usdt`，並新增 optional
+> `cap_escalation` kwarg 於 `run_explicit_tiny_order_execution()`，未傳時欄位全
+> 為安全預設值（False / ""）；既有 BM / BM_FIX / BM_MIN_QTY_FIX 共 368 條
+> 測試完全不變。BM `execute_demo_order` 行為（包括 hardcoded body qty 來源 =
+> BL packet `DEFAULT_QTY="0.01"`）**未被本任務改動** — 真正把 candidate qty=0.1
+> 接到 BM 執行路徑需要另一個 Stage 2 授權任務。
+> (5) 新增 preview CLI
+> [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py`](scripts/preview_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py)
+> （`--mark-price`；`--proposed-qty`；`--max-demo-min-qty-notional-cap-usdt`
+> 預設 20；授權旗標 `--i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap` +
+> `--authorization-marker`；`--write-report` / `--output-dir`；exit 0 = 任一
+> 預期決策狀態，1 = 其他終態）。
+> (6) 新增 [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py)
+> 49 條 Stage 1 focused-core，覆蓋 identity / chain-break / upstream / immutable
+> locks / 授權旗標 + marker 兩者必須齊備 / `candidate_notional <= 20` 強制執行 /
+> 自訂 cap 仍能拒絕、不合法 cap 回退預設 / `ESCALATION_NOT_REQUIRED`
+> 當原 tiny cap 已通過 / 非 SOLUSDT / 非 bybit_demo / 非 Buy / 非 Market / 非
+> IOC / `max_order_count != 1` / qty mismatch / 空 qty / `PROTECTED_SYMBOLS`
+> 五個 symbol parametrize 拒絕 / `endpoint_url_hint` 含 live host / `/v5/order/create` /
+> `wss://` 四種 parametrize 拒絕 / reduce_only / close_on_trigger / stop_loss /
+> take_profit 拒絕 / 報告永遠 `order_endpoint_called=False`、`order_sent=False`、
+> `network_attempted=False` / 全域 tiny caps 不被閘改動 / `PROTECTED_SYMBOLS`
+> 內容未變 / AST static-source 拒絕 third-party HTTP client import 與
+> `BybitExecutor` / `main` / `src.risk` 引用 / docstring-排除的 secret env name
+> 出現檢查 / source 中 live host token 至多出現一次（denylist 行內）/ JSON +
+> Markdown 報告 round-trip / BM ExecutionReport 預設不暴露 cap-escalation 欄位 /
+> BM ExecutionReport 傳入 ce report 後正確 surface 授權與未授權兩種情境。
+>
+> 安全面：**本任務沒有送出任何真實 demo 單**、**沒有重試 execute_demo_order**、
+> **沒有呼叫 /v5/order/create**、**沒接 live endpoint**、**沒讀任何 live/demo
+> secret env**、**沒動 protected positions**、**沒動 `main.py` / `src/risk.py` /
+> `src/executors/bybit.py` / `BybitExecutor` 任何行為**、**沒解除 max_order_count=1
+> 或 double-confirmation 旗標**、**沒全域抬升 `TINY_QTY_CAP_SOL` / `TINY_SIZE_CAP_USDT`**、
+> **沒新增 stop endpoint / TP / SL / retry / scheduler**。原 5 USDT / 0.05 SOL
+> tiny cap 仍是全域預設；本閘只在 Rick 明確雙重授權（flag + marker）的單一
+> SOLUSDT demo 路徑上、且 candidate_notional <= 20 USDT 的前提下，把這條單獨
+> 升級為 `cap_escalated_demo_only=True`。
+>
+> 本次驗證：`py_compile` 4 個 changed/added Python 檔 PASS；
+> `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py`
+> → **49/49 PASS**；BH→BM 鏈 9 個 adapter 測試檔合計 **417/417 PASS** (368 既有 +
+> 49 新增)；offline 預覽 smoke (`--mark-price 100 --proposed-qty 0.1`，未授權路徑)
+> → exit 0、`status=ESCALATION_NOT_AUTHORIZED`、`authorized=False`、`network_attempted=False`、
+> `order_endpoint_called=False`、`order_sent=False`；BM readiness preview 與
+> BM_MIN_QTY_FIX preview 皆仍 exit 0、`network_attempted=False`、`order_sent=False`。
+>
+> 後續 next-step：Rick 可在 VPS 上跑 cap-escalation preview 觀察「未授權 →
+> 授權但超 cap → 授權且在 cap 內」三種決策狀態，然後再決定是否要在另一個
+> 明確 Stage 2 授權任務中把 candidate qty=0.1 接到 BM 執行路徑（會涉及 BL
+> packet 內 hardcoded qty 來源切換，需要更謹慎的 chain-break 設計）。
+>
+> 上一個 BM_MIN_QTY_FIX banner 保留於下方。
+
+> **TASK-014BM_MIN_QTY_FIX**（2026-06-19, 已歸檔）在 TASK-014BM / TASK-014BM_FIX 之上新增
 > **demo-only、唯讀的 SOLUSDT instrument rules discovery 層**，用來解決 FIX 之後
 > 觀察到的 `retCode=10001 "The number of contracts exceeds minimum limit allowed"`
 > 阻塞：當前 Bybit Demo 對 SOLUSDT linear 的 `minOrderQty` 已大於先前 hardcode 的

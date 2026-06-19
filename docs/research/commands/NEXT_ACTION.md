@@ -1,6 +1,202 @@
 # Next Action
 
-> README shared status updated by TASK-014BM_MIN_QTY_FIX (2026-06-19).
+> README shared status updated by TASK-014BM_CAP_ESCALATION_GATE (2026-06-19).
+> TASK-014BM_CAP_ESCALATION_GATE_demo_only_SOLUSDT_min_qty_authorization is a
+> **Stage 1, decision-only, demo-only** extension on top of
+> TASK-014BM / TASK-014BM_FIX / TASK-014BM_MIN_QTY_FIX. It adds a
+> narrow **authorization gate** that records whether Rick has
+> explicitly opted in to placing **one** Bybit Demo SOLUSDT tiny
+> order at the exchange-minimum quantity surfaced by
+> TASK-014BM_MIN_QTY_FIX (`InstrumentRulesReport`) when that
+> minimum is above the original tiny safety caps (TINY_QTY_CAP_SOL=0.05,
+> TINY_SIZE_CAP_USDT=5). The gate is decision-only — it **never**
+> sends an order, **never** calls `/v5/order/create`, **never**
+> retries `execute_demo_order`, **never** touches a live endpoint,
+> **never** reads any LIVE or DEMO secret env, **never** touches
+> protected positions, **never** loosens MAX_ORDER_COUNT=1 or the
+> double-confirmation flags, and **never** globally raises
+> `TINY_QTY_CAP_SOL` / `TINY_SIZE_CAP_USDT` in BH.
+>
+> New module
+> [`src/demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py`](../../../src/demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py):
+> single decision entry point `run_cap_escalation_gate(instrument_rules_report,
+> request, max_demo_min_qty_notional_cap_usdt)`; immutable constants
+> `ALLOWED_ENVIRONMENT="bybit_demo"`, `ALLOWED_SYMBOL="SOLUSDT"`,
+> `ALLOWED_SIDE="Buy"`, `ALLOWED_ORDER_TYPE="Market"`,
+> `ALLOWED_TIME_IN_FORCE="IOC"`, `ALLOWED_MAX_ORDER_COUNT=1`;
+> `MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT=Decimal("20")` (this single
+> SOLUSDT demo path only); explicit two-piece authorization
+> requirement: `EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_FLAG_NAME =
+> "--i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap"` +
+> `EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER =
+> "DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1"`.
+> Frozen dataclasses `EscalationAuthorizationRequest`,
+> `EscalationAuthorizationDecision`, `CapEscalationGateReport`.
+> Discovery statuses include `ESCALATION_NOT_REQUIRED` (original
+> tiny cap passes), `ESCALATION_AUTHORIZED` (both flag + marker present
+> and notional <= 20 USDT), `ESCALATION_NOT_AUTHORIZED` (escalation
+> required but authorization missing), `ESCALATION_REJECTED_NOTIONAL_OVER_CAP`
+> (notional > cap even with authorization), plus
+> `ESCALATION_REJECTED_WRONG_SYMBOL` / `_WRONG_ENVIRONMENT` /
+> `_WRONG_SIDE` / `_DISALLOWED_ORDER_TYPE` / `_DISALLOWED_TIF` /
+> `_MAX_ORDER_COUNT` / `_REDUCE_ONLY` / `_TPSL` /
+> `_PROTECTED_SYMBOL` / `_LIVE_ENDPOINT` / `_QTY_MISMATCH` /
+> `_INVALID_RULES` / `_RULES_NOT_LOADED`.
+>
+> BM `ExecutionReport` is extended with 6 *defaulted* fields
+> (`original_tiny_cap_passed`, `exchange_min_qty_cap_escalation_required`,
+> `explicit_demo_min_qty_cap_authorized`, `cap_escalated_demo_only`,
+> `cap_escalation_status`, `max_demo_min_qty_notional_cap_usdt`) and
+> `run_explicit_tiny_order_execution()` grows one optional keyword
+> `cap_escalation` so callers can inject a `CapEscalationGateReport`.
+> When the kwarg is omitted every existing BM / BM_FIX / BM_MIN_QTY_FIX
+> call site behaves identically; the 368 existing chain tests still
+> pass unchanged. BM's `execute_demo_order` path and BL packet
+> `DEFAULT_QTY="0.01"` are NOT modified by this task — wiring the
+> candidate qty into the BM execution path requires another
+> explicit Stage 2 authorized task.
+>
+> New preview CLI
+> [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py`](../../../scripts/preview_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py)
+> (`--mark-price`; `--proposed-qty`;
+> `--max-demo-min-qty-notional-cap-usdt` default 20;
+> `--i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap`;
+> `--authorization-marker`; `--write-report` / `--output-dir`).
+>
+> New test file
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py`](../../../tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py)
+> (49 tests) covers: identity / chain-break / upstream / immutable
+> locks; authorization flag alone or marker alone is rejected; both
+> together authorize when notional <= 20; custom cap rejects even
+> when authorized; invalid cap falls back to default; original tiny
+> cap pass → `ESCALATION_NOT_REQUIRED`; rejects non-SOLUSDT, non-demo
+> environment, non-Buy side, non-Market order_type, non-IOC TIF,
+> `max_order_count != 1`, qty mismatch, empty qty; rejects each of
+> the 5 protected symbols (parametrized); rejects each of 4 live /
+> order-create endpoint hints (parametrized); rejects reduce_only /
+> close_on_trigger / stop_loss / take_profit; report writer never
+> attempts network, never calls order endpoint, never sends an
+> order; global `TINY_QTY_CAP_SOL` / `TINY_SIZE_CAP_USDT` /
+> `PROTECTED_SYMBOLS` invariants are not mutated by the gate; AST
+> static-source rules (no `requests` / `pybit` / `aiohttp` / `httpx` /
+> `websocket` / `websockets` import, no `main` / `src.risk` /
+> `src.executors.bybit` import, no `BybitExecutor` name, no
+> `os.environ` / `os.getenv` access, no non-docstring string
+> literal references a LIVE or DEMO secret env name, no live host
+> token appears more than once in source); report writer emits 4
+> files + JSON round-trip + Markdown contains
+> `TASK-014BM_CAP_ESCALATION_GATE` / `cap_escalated_demo_only`; BM
+> `ExecutionReport` defaults leave the 6 new fields safe; BM
+> `ExecutionReport` with injected `cap_escalation` correctly
+> surfaces both authorized and unauthorized decision paths.
+>
+> No safety-critical surface was modified: no live endpoint, no live
+> secret loading, no `main.py` / `src/risk.py` /
+> `src/executors/bybit.py` change, no `BybitExecutor` live behavior
+> change, no protected-position code touched, no retry, no scheduler,
+> no stop endpoint, no TP/SL, no `/v5/order/create` call, no new
+> real Bybit Demo order sent.
+>
+> Validation (this commit):
+> py_compile of all 4 changed Python files PASS;
+> `pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py
+> -q --basetemp=.pytest_basetemp` → **49/49 PASS**;
+> BH→BM chain regression (BH + BI + BJ + BK + BL + BM + BM_FIX +
+> BM_MIN_QTY_FIX + BM_CAP_ESCALATION_GATE, 9 demo_trading adapter
+> test files) → **417/417 PASS**;
+> preview offline smoke `--mark-price 100 --proposed-qty 0.1` (no
+> authorization) → exit 0,
+> `status=ESCALATION_NOT_AUTHORIZED`, `authorized=False`,
+> `network_attempted=False`, `order_endpoint_called=False`,
+> `order_sent=False`; BM readiness preview and BM_MIN_QTY_FIX
+> preview unchanged → both exit 0, no order sent.
+>
+> No new real Bybit Demo order was sent during this Stage 1 task.
+>
+> Previous BM_MIN_QTY_FIX banner archived below.
+
+## TASK-014BM_CAP_ESCALATION_GATE Status (2026-06-19)
+
+| item | status |
+|---|---|
+| new src `src/demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py` (decision-only entry point `run_cap_escalation_gate()`; locked environment/symbol/side/order_type/TIF/max_order_count; 20-USDT notional ceiling; two-piece authorization (flag + marker); report writer) | DONE |
+| new scripts `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py` (`--mark-price`; `--proposed-qty`; `--max-demo-min-qty-notional-cap-usdt`; explicit auth flag; authorization marker; `--write-report` / `--output-dir`) | DONE |
+| new tests `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py` (Stage 1 focused-core 49 tests) | DONE |
+| BM `ExecutionReport` extended with 6 defaulted cap-escalation fields; `run_explicit_tiny_order_execution()` grows optional `cap_escalation` kwarg; existing 368 BH→BM_MIN_QTY_FIX tests unchanged and still PASS | DONE |
+| chain-break markers: `TASK_ID="TASK-014BM_CAP_ESCALATION_GATE"`, `IDENTITY="DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-CAP-ESCALATION-GATE"`, `IMPLEMENTATION_PATH_PHASE="tiny_order_cap_escalation_gate"`, `IS_REVIEW_CHAIN_SUFFIX=False`, `UPSTREAM_TASKS=("TASK-014BH","TASK-014BM","TASK-014BM_FIX","TASK-014BM_MIN_QTY_FIX")` | DONE |
+| `NEXT_REQUIRED_TASK = "TASK-014BN_demo_only_tiny_execution_postfill_audit"` (passes `bh.assert_next_task_is_not_review_chain_suffix`) | DONE |
+| default gate behaviour is **fail-closed** (no authorization, no escalation); both `--i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap` AND `EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER` are required to authorize | CONFIRMED |
+| `MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT = Decimal("20")` is enforced AFTER explicit authorization; candidate_notional > cap returns `ESCALATION_REJECTED_NOTIONAL_OVER_CAP` even when authorization flag + marker are both present | CONFIRMED |
+| environment / symbol / side / order_type / TIF / max_order_count / reduce_only / close_on_trigger / stop_loss / take_profit / protected symbols / endpoint hint all have dedicated fail-closed paths with distinct `ESCALATION_REJECTED_*` statuses | CONFIRMED |
+| `proposed_qty` must exactly equal `candidate_qty` derived by TASK-014BM_MIN_QTY_FIX; mismatch returns `ESCALATION_REJECTED_QTY_MISMATCH` | CONFIRMED |
+| global `TINY_QTY_CAP_SOL=0.05` / `TINY_SIZE_CAP_USDT=5` constants in BH are NOT modified; the escalation is scoped to this single SOLUSDT demo path only | CONFIRMED |
+| protected symbols denylist `{ENA, TIA, AIXBT, POLYX, EDU}USDT` is NOT modified | CONFIRMED |
+| AST static-source safety invariants (no third-party HTTP client import; no `main` / `src.risk` / `src.executors.bybit` import; no `BybitExecutor` `Name`/`Attribute` reference; no non-docstring secret env name; no `os.environ` / `os.getenv`; no live host token used more than once in source) | CONFIRMED |
+| report writer emits `latest_*.json` / `latest_*.md` / `*_<UTC_TS>.json` / `*_<UTC_TS>.md` to `outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate/` | DONE |
+| py_compile (src + scripts + tests) | PASS |
+| pytest BM_CAP_ESCALATION_GATE Stage 1 focused-core | **49/49 PASS** |
+| pytest BH + BI + BJ + BK + BL + BM + BM_FIX + BM_MIN_QTY_FIX + BM_CAP_ESCALATION_GATE safety-chain regression | **417/417 PASS** (368 prior chain + 49 new) |
+| BM_CAP_ESCALATION_GATE preview offline smoke `--mark-price 100 --proposed-qty 0.1` (no authorization) | exit 0; `status=ESCALATION_NOT_AUTHORIZED`; `authorized=False`; `network_attempted=False`; `order_endpoint_called=False`; `order_sent=False` |
+| BM readiness preview (post-change regression) | exit 0; `final_status=READINESS_OK_NO_NETWORK`; no network, no order sent |
+| BM_MIN_QTY_FIX preview (post-change regression) | exit 0; `discovery_status=DISCOVERY_OFFLINE_NO_NETWORK`; no network, no order sent |
+| safety invariants (no live endpoint call / no live secret read / no demo secret read / no stop endpoint / no TP-SL attachment / no retry / no scheduler / no G20 lift / no position modification / no protected position interaction / no `/v5/order/create` call / no new real demo order / no global tiny cap lift) | CONFIRMED |
+| main.py / src/risk.py / src/executors/bybit.py / BybitExecutor | UNTOUCHED |
+| local commit | pending: `TASK-014BM_CAP_ESCALATION_GATE: add demo-only SOLUSDT cap escalation authorization gate (decision-only; locked bybit_demo+SOLUSDT+Buy+Market+IOC; 20 USDT notional cap; double-confirmation flag+marker required; BM ExecutionReport gains 6 defaulted cap-escalation fields; 49 new tests; existing 368 BH→BM_MIN_QTY_FIX tests unchanged)` (local only — NOT pushed) |
+
+## Next Rick Action (set by 2026-06-19 TASK-014BM_CAP_ESCALATION_GATE)
+
+1. VPS git pull and re-validate the new module offline first:
+
+       git pull --ff-only
+       source .venv/bin/activate
+       python3 -m py_compile \
+           src/demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py \
+           src/demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           scripts/preview_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py
+       python3 -m pytest \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py \
+           -q --basetemp=.pytest_basetemp
+       # expect 49/49 PASS
+       python3 -m pytest \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_payload_dry_run.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_endpoint_guard_integration.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_final_pre_execution_checklist.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_preparation.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_fix.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_instrument_rules.py \
+           tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py \
+           -q --basetemp=.pytest_basetemp
+       # expect 417/417 PASS
+
+2. Run the offline preview in three decision modes (still no network, no
+   order) to see the gate transitions:
+
+       # Unauthorized -> ESCALATION_NOT_AUTHORIZED (exit 0).
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py \
+           --mark-price 100 --proposed-qty 0.1
+
+       # Authorized but over 20 USDT cap -> ESCALATION_REJECTED_NOTIONAL_OVER_CAP (exit 0).
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py \
+           --mark-price 250 --proposed-qty 0.1 \
+           --i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap \
+           --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+
+       # Authorized AND within 20 USDT cap -> ESCALATION_AUTHORIZED (exit 0).
+       python3 scripts/preview_demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate.py \
+           --mark-price 100 --proposed-qty 0.1 \
+           --i-understand-demo-solusdt-exchange-min-qty-exceeds-old-tiny-cap \
+           --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+
+3. Do NOT retry `execute_demo_order` -- BM still uses BL packet
+   `DEFAULT_QTY="0.01"` and would be rejected by Bybit's
+   `minOrderQty=0.1`. Wiring the candidate qty into the BM execution
+   path is **not** part of this Stage 1 task and requires another
+   explicit Stage 2 authorized task.
+
+> Previous BM_MIN_QTY_FIX banner archived below.
 > TASK-014BM_MIN_QTY_FIX_demo_only_tiny_order_instrument_rules
 > is a **Stage 1, read-only, demo-only** extension on top of
 > TASK-014BM / TASK-014BM_FIX. It adds a new narrow instrument-rules
