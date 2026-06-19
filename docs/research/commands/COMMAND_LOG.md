@@ -21,6 +21,30 @@ Notes:
 
 ---
 
+### 2026-06-19（TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH — Stage 2: switch BM's actual HTTPS request body `qty` from BL packet `"0.01"` to authorized cap-escalation candidate `"0.1"` only when a fully authorized wiring report is threaded through; fail-closed otherwise with new `WIRING_REQUIRED_NO_NETWORK` pre-network rejection; NEVER falls back to `0.01` on rejected paths）
+
+Agent: Claude (Opus 4.7)
+Command source: Rick explicit chat authorization for TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH (decision-only, offline-validated, demo-only Stage 2; local commit only — no push).
+Task: Switch BM's actual request body `qty` source from the BL packet value (`"0.01"`, confirmed invalid against Bybit SOLUSDT minimums by BM_MIN_QTY_FIX) to the authorized cap-escalation candidate `qty` (`"0.1"`, surfaced by BM_WIRE_AUTHORIZED_CANDIDATE_QTY) only when ALL of the following hold: wiring `status=WIRING_AUTHORIZED_CANDIDATE_QTY`, wiring `execution_qty_source=CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY`, wiring `execution_qty>0`, wiring `execution_notional_estimate>0` and ≤ 20 USDT, environment=`bybit_demo`, symbol=`SOLUSDT`, side=`Buy`, orderType=`Market`, TIF=`IOC`, max_order_count=1, both BM confirmation flags, demo credentials present. On any rejected path BM must fail closed pre-network with new status `WIRING_REQUIRED_NO_NETWORK` and must NEVER silently fall back to `qty=0.01`.
+Status before: TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY Stage 1 CLOSED at commit `c7ef6d2`; BM `ExecutionReport` surfaced the authorized resolved qty (`"0.1"`) in its readiness/planning surface only — the *actual* HTTPS request body still used the BL packet qty (`"0.01"`), so a real demo send would still attempt the invalid qty. Stage 2 had a documented contract from Stage 1 but no implementation.
+Status after: BM execution module gains 5 new constants (`STATUS_WIRING_REQUIRED_NO_NETWORK`, `EXECUTE_BODY_QTY_SOURCE_BL_PACKET`, `EXECUTE_BODY_QTY_SOURCE_AUTHORIZED_CANDIDATE`, `EXECUTE_BODY_QTY_SOURCE_NONE`, `EXECUTE_BODY_QTY_SOURCE_REJECTED_NO_FALLBACK`), 1 mirrored cap (`MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT=Decimal("20")`), 1 helper (`_derive_body_qty_from_wiring()`), 3 defaulted `ExecutionPlan` fields, 4 defaulted `ExecutionReport` fields, and a new pre-network rejection branch that fires when `body_qty_authorized_override=False` in execute mode. The 20 USDT notional cap is re-validated at the BM layer for defense-in-depth. All 88 existing BM tests + 18 BM_FIX tests were threaded through a real ESCALATION_AUTHORIZED wiring report via a new `_authorized_wiring()` helper that drives the real BM_MIN_QTY_FIX → BM_CAP_ESCALATION_GATE → BM_WIRE_AUTHORIZED_CANDIDATE_QTY upstream chain. The BM happy-path assertion `body_dict["qty"] == "0.01"` was updated to `"0.1"` to match the Stage 2 contract. Preview script surfaces 4 Stage 2 fields. **No new real Bybit Demo order was sent. No `/v5/order/create` call. No live endpoint touched. No live or demo secret read in offline validation. No `main.py` / `src/risk.py` / `src/executors/bybit.py` change. No `BybitExecutor` change. No global tiny cap mutation. No BL packet `DEFAULT_QTY="0.01"` change. No `MAX_ORDER_COUNT=1` loosening. No `PROTECTED_SYMBOLS` change. No double-flag gate loosening.**
+Files changed:
+- `src/demo_only_tiny_execution_adapter_tiny_order_execution.py` (Stage 2 surface, helper, branches)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_body_authorized_qty_source_switch.py` (NEW; 20 focused-core tests)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution.py` (4 execute-mode tests threaded; happy-path qty assertion updated)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_fix.py` (8 execute-mode tests threaded)
+- `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_execution.py` (4 Stage 2 fields surfaced)
+- `docs/research/commands/NEXT_ACTION.md` (Stage 2 banner + status table prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation:
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_body_authorized_qty_source_switch.py --basetemp=.pytest_tmp/bt` → **20/20 PASS**
+- `python -m pytest tests/demo_trading -k demo_only_tiny_execution_adapter --basetemp=.pytest_tmp/bt` → **471/471 PASS** (450 prior + 20 Stage 2 + 1 misc)
+- preview default readiness smoke → exit 0; final_status=READINESS_OK_NO_NETWORK; `actual_request_body_qty='0.01' actual_request_body_qty_source='BL_PACKET_QTY' body_qty_authorized_override=False body_qty_rejection_reason='no authorized_execution_qty_wiring report supplied'`; no network, no order sent.
+Outputs: source / tests / preview updates only; no live artifacts; no new real Bybit Demo orders sent; no `outputs/` artifact mutated by this task.
+Notes: Stage 2 keeps Stage 1 chain-break markers (TASK_ID="TASK-014BM", identity / phase / upstreams / NEXT_REQUIRED_TASK) unchanged — it is an internal refinement of BM's actual send body. Local commit only; not pushed to GitHub.
+
+---
+
 ### 2026-06-19（TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY — add demo-only SOLUSDT authorized execution qty wiring layer (decision-only); locked to `bybit_demo` + `SOLUSDT` + `Buy` + `Market` + `IOC` + `MAX_ORDER_COUNT=1`; consumes BM_MIN_QTY_FIX + BM_CAP_ESCALATION_GATE reports; BM `ExecutionReport` gains 6 defaulted wiring fields with optional `authorized_execution_qty_wiring` kwarg; rejected paths **never** fall back to BL packet `qty=0.01`; no order create, no live endpoint, no live/demo secret, no BL packet default-qty change, no BM `execute_demo_order` body qty source change, no new real demo order）
 
 Agent: Claude (Opus 4.7; model guidance per workorder: Opus)

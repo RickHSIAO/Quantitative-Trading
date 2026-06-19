@@ -150,6 +150,16 @@ def main(argv: list[str] | None = None) -> int:
         f"bybit_ret_code={report.bybit_ret_code} "
         f"bybit_ret_msg={report.bybit_ret_msg!r}"
     )
+    # TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH surfaces:
+    print(
+        f"actual_request_body_qty={report.actual_request_body_qty!r} "
+        f"actual_request_body_qty_source={report.actual_request_body_qty_source!r} "
+        f"body_qty_authorized_override={report.body_qty_authorized_override}"
+    )
+    if report.body_qty_rejection_reason:
+        print(
+            f"body_qty_rejection_reason={report.body_qty_rejection_reason!r}"
+        )
 
     if args.write_report:
         paths = bm.write_report(report, output_dir=args.output_dir)

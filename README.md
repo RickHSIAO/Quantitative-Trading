@@ -14,10 +14,60 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY, 2026-06-19）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH, 2026-06-19）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY 同步更新；不改任何 execution logic、不解除 G20、不開啟 real trading。
+TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH**（2026-06-19，Stage 2）
+> 在 TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY 之上，把 BM 真正送出的
+> HTTPS request body 的 `qty` 從 BL packet 的 `"0.01"`（已被
+> BM_MIN_QTY_FIX 證實對 Bybit SOLUSDT 最小單量無效）切換到 cap-escalation
+> 授權後的 candidate `qty="0.1"` — **但只有當 ALL of**：wiring
+> `status=WIRING_AUTHORIZED_CANDIDATE_QTY`、wiring
+> `execution_qty_source=CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY`、
+> `execution_qty>0`、`execution_notional_estimate>0 且 ≤ 20 USDT`、
+> `environment=bybit_demo`、`symbol=SOLUSDT`、`side=Buy`、
+> `orderType=Market`、`TIF=IOC`、`max_order_count=1`、雙重 confirmation
+> flag 同時 present、demo credentials present **同時成立才會切換**。任何
+> rejected 路徑（missing wiring / unauthorized wiring / over-cap wiring /
+> blank execution_qty / 任一 gate 失敗）都會在 *網路之前* 以新狀態
+> `WIRING_REQUIRED_NO_NETWORK` fail-closed，**絕不**靜默退回
+> `qty=0.01`。本任務 **仍不送任何新的 real demo 單**（所有驗證透過
+> fake `sender` 完成）、不呼叫 `/v5/order/create`、不讀 live secret、不動
+> `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`、
+> 不動 protected positions、不解除 `MAX_ORDER_COUNT=1` 或雙重授權旗標、
+> 不全域抬升 `TINY_QTY_CAP_SOL=0.05` / `TINY_SIZE_CAP_USDT=5`、不改 BL
+> packet `DEFAULT_QTY="0.01"`。具體變更：
+> (1) [`src/demo_only_tiny_execution_adapter_tiny_order_execution.py`](src/demo_only_tiny_execution_adapter_tiny_order_execution.py)
+> 新增 `STATUS_WIRING_REQUIRED_NO_NETWORK` 與 4 個
+> `EXECUTE_BODY_QTY_SOURCE_{BL_PACKET,AUTHORIZED_CANDIDATE,NONE,REJECTED_NO_FALLBACK}`
+> 常數、`MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT=Decimal("20")` 鏡像、
+> `_derive_body_qty_from_wiring()` helper、`ExecutionPlan` +3 / `ExecutionReport`
+> +4 defaulted 欄位 (`actual_request_body_qty` /
+> `actual_request_body_qty_source` / `body_qty_authorized_override` /
+> `body_qty_rejection_reason`)、以及新的 pre-network rejection 分支。
+> (2) 新增測試檔
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_body_authorized_qty_source_switch.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_body_authorized_qty_source_switch.py)
+> （20 條 focused-core 測試，涵蓋常數、happy-path body.qty=0.1、HMAC body
+> equality、missing/unauthorized/over-cap 全部 fail-closed、retCode 映射、
+> 單一 sender call、helper boundary、`to_dict()` Stage 2 欄位）。
+> (3) 既有 88 條 BM + 18 條 BM_FIX execute-mode 測試透過新的 `_authorized_wiring()`
+> helper 串接真實 BM_MIN_QTY_FIX → BM_CAP_ESCALATION_GATE →
+> BM_WIRE_AUTHORIZED_CANDIDATE_QTY upstream，仍 PASS；BM happy-path
+> body qty assertion 從 `"0.01"` 更新為 `"0.1"`。
+> (4) preview script 額外列印 4 個 Stage 2 欄位。
+>
+> 驗證：`pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_execution_body_authorized_qty_source_switch.py
+> --basetemp=.pytest_tmp/bt` → **20/20 PASS**；BH→BM full chain
+> regression `-k demo_only_tiny_execution_adapter` → **471/471 PASS**；
+> preview readiness smoke exit 0，`actual_request_body_qty='0.01'
+> actual_request_body_qty_source='BL_PACKET_QTY'
+> body_qty_authorized_override=False
+> body_qty_rejection_reason='no authorized_execution_qty_wiring report supplied'`。
+>
+> 本任務 **未送出任何新的 real Bybit Demo 單**。Local commit only — 未 push。
+>
 
 > **TASK-014BM_WIRE_AUTHORIZED_CANDIDATE_QTY**（2026-06-19）在
 > TASK-014BM / TASK-014BM_FIX / TASK-014BM_MIN_QTY_FIX /

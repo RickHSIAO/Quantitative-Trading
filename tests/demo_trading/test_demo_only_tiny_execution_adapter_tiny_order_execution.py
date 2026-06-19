@@ -52,6 +52,63 @@ from src import (
 from src import demo_only_tiny_execution_adapter_payload_dry_run as bi
 from src import demo_only_tiny_execution_adapter_tiny_order_preparation as bl
 from src import demo_only_tiny_execution_adapter_tiny_order_execution as bm
+from src import (
+    demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring as bm_wire,
+)
+from src import (
+    demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate as bm_ce,
+)
+from src import (
+    demo_only_tiny_execution_adapter_tiny_order_instrument_rules as bm_ir,
+)
+
+
+def _authorized_wiring(candidate_qty: str = "0.1", mark_price: str = "100"):
+    """Stage 2 helper: build a real ESCALATION_AUTHORIZED wiring report.
+
+    TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH makes the
+    actual request body switch to the authorized candidate qty (0.1)
+    only when a fully authorized wiring report is threaded through.
+    Without it BM fails closed pre-network. This helper drives the real
+    BM_MIN_QTY_FIX + BM_CAP_ESCALATION_GATE upstreams so the body qty
+    switches from the invalid BL packet qty (0.01) to 0.1.
+    """
+
+    ir_response = {
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "list": [
+                {
+                    "symbol": "SOLUSDT",
+                    "status": "Trading",
+                    "lotSizeFilter": {
+                        "minOrderQty": candidate_qty,
+                        "qtyStep": candidate_qty,
+                        "minNotionalValue": "5",
+                        "maxMktOrderQty": "12000",
+                    },
+                    "priceFilter": {"tickSize": "0.010"},
+                }
+            ]
+        },
+    }
+    ir = bm_ir.run_instrument_rules_discovery(
+        mark_price=mark_price, pre_parsed_response=ir_response
+    )
+    request = bm_ce.EscalationAuthorizationRequest(
+        proposed_qty=candidate_qty,
+        explicit_demo_min_qty_cap_authorization_flag=True,
+        explicit_demo_min_qty_cap_authorization_marker=(
+            bm_ce.EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER
+        ),
+    )
+    gate = bm_ce.run_cap_escalation_gate(
+        instrument_rules_report=ir, request=request
+    )
+    return bm_wire.run_authorized_execution_qty_wiring(
+        instrument_rules_report=ir, cap_escalation_report=gate
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +306,7 @@ def test_execute_mode_with_flags_and_creds_sends_via_injected_sender(
         confirm_flag=True,
         credentials=creds,
         sender=fake_sender,
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     assert report.final_status == bm.STATUS_EXECUTED_DEMO_ONLY
     assert report.network_attempted is True
@@ -269,7 +327,7 @@ def test_execute_mode_with_flags_and_creds_sends_via_injected_sender(
     assert body_dict["category"] == "linear"
     assert body_dict["symbol"] == "SOLUSDT"
     assert body_dict["side"] == "Buy"
-    assert body_dict["qty"] == "0.01"
+    assert body_dict["qty"] == "0.1"
     assert body_dict["orderType"] == "Market"
     assert body_dict["timeInForce"] == "IOC"
     assert body_dict["reduceOnly"] is False
@@ -296,6 +354,7 @@ def test_execute_mode_with_flags_and_creds_handles_network_error(monkeypatch):
         confirm_flag=True,
         credentials=creds,
         sender=fake_sender,
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     assert report.final_status == bm.STATUS_NETWORK_ERROR_DEMO_ONLY
     assert report.order_sent is False
@@ -321,6 +380,7 @@ def test_execute_mode_only_one_call_to_sender(monkeypatch):
         confirm_flag=True,
         credentials=creds,
         sender=fake_sender,
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     assert counter["n"] == 1
 
@@ -1101,6 +1161,7 @@ def test_signed_request_headers_include_bybit_v5_envelope(monkeypatch):
         confirm_flag=True,
         credentials=creds,
         sender=fake_sender,
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     headers = captured["headers"]
     assert headers["X-BAPI-API-KEY"] == "kkk"

@@ -33,6 +33,15 @@ import re
 import pytest
 
 from src import demo_only_tiny_execution_adapter_tiny_order_execution as bm
+from src import (
+    demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring as bm_wire,
+)
+from src import (
+    demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate as bm_ce,
+)
+from src import (
+    demo_only_tiny_execution_adapter_tiny_order_instrument_rules as bm_ir,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +58,53 @@ def _no_env(monkeypatch) -> None:
         "BYBIT_API_SECRET",
     ):
         monkeypatch.delenv(name, raising=False)
+
+
+def _authorized_wiring(candidate_qty: str = "0.1", mark_price: str = "100"):
+    """Build a real ESCALATION_AUTHORIZED wiring report for execute mode.
+
+    Stage 2 (TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH)
+    requires execute-mode callers to thread an authorized wiring report
+    through; without it BM fails closed pre-network. This helper builds
+    one from the real BM_MIN_QTY_FIX + BM_CAP_ESCALATION_GATE upstreams
+    so the body qty switches from the invalid 0.01 to the candidate 0.1.
+    """
+
+    ir_response = {
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "list": [
+                {
+                    "symbol": "SOLUSDT",
+                    "status": "Trading",
+                    "lotSizeFilter": {
+                        "minOrderQty": candidate_qty,
+                        "qtyStep": candidate_qty,
+                        "minNotionalValue": "5",
+                        "maxMktOrderQty": "12000",
+                    },
+                    "priceFilter": {"tickSize": "0.010"},
+                }
+            ]
+        },
+    }
+    ir = bm_ir.run_instrument_rules_discovery(
+        mark_price=mark_price, pre_parsed_response=ir_response
+    )
+    request = bm_ce.EscalationAuthorizationRequest(
+        proposed_qty=candidate_qty,
+        explicit_demo_min_qty_cap_authorization_flag=True,
+        explicit_demo_min_qty_cap_authorization_marker=(
+            bm_ce.EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER
+        ),
+    )
+    gate = bm_ce.run_cap_escalation_gate(
+        instrument_rules_report=ir, request=request
+    )
+    return bm_wire.run_authorized_execution_qty_wiring(
+        instrument_rules_report=ir, cap_escalation_report=gate
+    )
 
 
 def _ok_sender_capture(captured: dict):
@@ -106,6 +162,7 @@ def test_bybit_retcode_10004_maps_to_rejected_no_order_sent(monkeypatch):
         confirm_flag=True,
         credentials=creds,
         sender=fake_sender,
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     assert report.network_attempted is True
     assert report.order_endpoint_called is True
@@ -137,6 +194,7 @@ def test_any_nonzero_retcode_never_executed_demo_only(monkeypatch, retcode):
         confirm_flag=True,
         credentials=creds,
         sender=fake_sender,
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     assert report.final_status != bm.STATUS_EXECUTED_DEMO_ONLY
     assert report.final_status == bm.STATUS_BYBIT_REJECTED_NO_ORDER_SENT
@@ -164,6 +222,7 @@ def test_retcode_zero_but_empty_order_id_never_executed_demo_only(monkeypatch):
         confirm_flag=True,
         credentials=creds,
         sender=fake_sender,
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     assert report.final_status != bm.STATUS_EXECUTED_DEMO_ONLY
     assert report.final_status == bm.STATUS_BYBIT_REJECTED_NO_ORDER_SENT
@@ -182,6 +241,7 @@ def test_executed_demo_only_requires_all_five_conditions(monkeypatch):
         confirm_flag=True,
         credentials=bm.DemoCredentials(api_key="k", api_secret="s"),
         sender=_ok_sender_capture({}),
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     assert report.final_status == bm.STATUS_EXECUTED_DEMO_ONLY
     assert report.network_attempted is True
@@ -211,6 +271,7 @@ def test_signed_body_string_equals_posted_body_bytes(monkeypatch):
         confirm_flag=True,
         credentials=creds,
         sender=_ok_sender_capture(captured),
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
 
     posted_body_bytes = captured["body"]
@@ -282,6 +343,7 @@ def test_x_bapi_sign_type_header_is_two(monkeypatch):
         confirm_flag=True,
         credentials=bm.DemoCredentials(api_key="k", api_secret="s"),
         sender=_ok_sender_capture(captured),
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     headers = captured["headers"]
     assert bm.BAPI_SIGN_TYPE_HEADER == "X-BAPI-SIGN-TYPE"
@@ -298,6 +360,7 @@ def test_x_bapi_sign_is_lowercase_hex_sha256(monkeypatch):
         confirm_flag=True,
         credentials=bm.DemoCredentials(api_key="k", api_secret="s"),
         sender=_ok_sender_capture(captured),
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     sig = captured["headers"]["X-BAPI-SIGN"]
     assert len(sig) == 64
@@ -339,6 +402,7 @@ def test_v5_envelope_headers_complete(monkeypatch):
             api_key="k", api_secret="s", recv_window="5000"
         ),
         sender=_ok_sender_capture(captured),
+        authorized_execution_qty_wiring=_authorized_wiring(),
     )
     headers = captured["headers"]
     for required in (

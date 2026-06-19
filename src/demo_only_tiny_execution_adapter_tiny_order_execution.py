@@ -141,6 +141,34 @@ STATUS_NETWORK_ERROR_DEMO_ONLY = "NETWORK_ERROR_DEMO_ONLY"
 # 10004 "Error sign"), so no order was actually placed. order_sent
 # stays False; final_status is NEVER EXECUTED_DEMO_ONLY in this case.
 STATUS_BYBIT_REJECTED_NO_ORDER_SENT = "BYBIT_REJECTED_NO_ORDER_SENT"
+# TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH: execute mode
+# requires an authorized execution-qty wiring report (Stage 1) before
+# the actual request body may use the candidate qty (0.1). Missing,
+# rejected, or otherwise non-authorized wiring fails closed BEFORE any
+# network call -- BM never silently falls back to the BL packet qty
+# (0.01) which the instrument-rules layer has confirmed invalid.
+STATUS_WIRING_REQUIRED_NO_NETWORK = "WIRING_REQUIRED_NO_NETWORK"
+
+# TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH: source of the
+# qty placed in the actual request body. Surfaced on the BM
+# ``ExecutionReport`` for visibility and auditability.
+EXECUTE_BODY_QTY_SOURCE_BL_PACKET = "BL_PACKET_QTY"
+EXECUTE_BODY_QTY_SOURCE_AUTHORIZED_CANDIDATE = (
+    "CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY"
+)
+EXECUTE_BODY_QTY_SOURCE_NONE = "NONE"
+EXECUTE_BODY_QTY_SOURCE_REJECTED_NO_FALLBACK = "REJECTED_NO_FALLBACK_TO_0_01"
+
+# Mirror the cap-escalation gate's narrow demo-only notional ceiling
+# at the BM layer for defense-in-depth re-validation. The authoritative
+# constant lives in the cap-escalation gate module; BM re-checks the
+# wiring report's notional against this mirror so a tampered wiring
+# report can never push BM past the agreed cap.
+MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT = Decimal("20")
+
+# Expected wiring-report values BM must observe to honor the override.
+_WIRING_STATUS_AUTHORIZED = "WIRING_AUTHORIZED_CANDIDATE_QTY"
+_WIRING_QTY_SOURCE_AUTHORIZED = "CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY"
 
 # Bybit V5 sign-type header. For HMAC-SHA256 the documented value is "2".
 BAPI_SIGN_TYPE_HEADER = "X-BAPI-SIGN-TYPE"
@@ -231,6 +259,10 @@ class ExecutionPlan:
     packet_is_not_execution_authorization: bool
     body_preview: Mapping[str, Any]
     execution_contract_version: str
+    # TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH.
+    actual_request_body_qty: str = ""
+    actual_request_body_qty_source: str = EXECUTE_BODY_QTY_SOURCE_BL_PACKET
+    body_qty_authorized_override: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -257,6 +289,13 @@ class ExecutionPlan:
             ),
             "body_preview": dict(self.body_preview),
             "execution_contract_version": self.execution_contract_version,
+            "actual_request_body_qty": self.actual_request_body_qty,
+            "actual_request_body_qty_source": (
+                self.actual_request_body_qty_source
+            ),
+            "body_qty_authorized_override": (
+                self.body_qty_authorized_override
+            ),
         }
 
 
@@ -361,6 +400,19 @@ class ExecutionReport:
     execution_qty_source: str = ""
     execution_qty_resolved: str = ""
     execution_notional_estimate_resolved: str = ""
+    # TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH: the actual
+    # qty BM placed in (or would have placed in) the HTTP request body,
+    # together with its source label and the boolean indicating whether
+    # the body qty came from the authorized cap-escalation candidate
+    # (True) rather than the original BL packet qty (False). When the
+    # wiring is missing or rejected, ``actual_request_body_qty`` is the
+    # empty string in execute mode (BM fails closed) and equals the BL
+    # packet qty in dry-run / readiness mode (visibility only -- no
+    # request is sent).
+    actual_request_body_qty: str = ""
+    actual_request_body_qty_source: str = EXECUTE_BODY_QTY_SOURCE_BL_PACKET
+    body_qty_authorized_override: bool = False
+    body_qty_rejection_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -439,6 +491,14 @@ class ExecutionReport:
             "execution_notional_estimate_resolved": (
                 self.execution_notional_estimate_resolved
             ),
+            "actual_request_body_qty": self.actual_request_body_qty,
+            "actual_request_body_qty_source": (
+                self.actual_request_body_qty_source
+            ),
+            "body_qty_authorized_override": (
+                self.body_qty_authorized_override
+            ),
+            "body_qty_rejection_reason": self.body_qty_rejection_reason,
         }
 
 
@@ -481,13 +541,15 @@ def _packet_audit_status_from_bh(packet: bl.PreparationPacket) -> str:
     return str(audit.get("_demo_only_audit_response_status", "") or "")
 
 
-def _build_body_preview(packet: bl.PreparationPacket) -> dict[str, Any]:
+def _build_body_preview(
+    packet: bl.PreparationPacket, *, qty_override: str | None = None
+) -> dict[str, Any]:
     return {
         "category": ALLOWED_DEMO_CATEGORY,
         "symbol": packet.symbol,
         "side": packet.side,
         "orderType": packet.order_type,
-        "qty": packet.qty,
+        "qty": qty_override if qty_override is not None else packet.qty,
         "timeInForce": packet.time_in_force,
         "reduceOnly": packet.reduce_only,
         "closeOnTrigger": False,
@@ -495,16 +557,147 @@ def _build_body_preview(packet: bl.PreparationPacket) -> dict[str, Any]:
     }
 
 
+def _decimal_or_none(value: Any) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return None
+
+
+def _derive_body_qty_from_wiring(
+    wiring_report: Any | None,
+    *,
+    packet_qty: str,
+) -> tuple[str, str, bool, str]:
+    """Decide the actual request body qty from the optional wiring report.
+
+    Returns ``(body_qty, source_label, authorized_override, reason)``.
+
+    * No wiring report supplied -> falls back to the BL packet qty for
+      visibility, source label ``BL_PACKET_QTY``, override=False. The
+      caller decides whether this is acceptable: BM execute mode will
+      reject pre-network in this case (no silent fallback to qty=0.01),
+      but readiness/dry-run modes simply surface the packet qty.
+    * Wiring rejected / not authorized / invalid -> body qty empty,
+      source ``REJECTED_NO_FALLBACK_TO_0_01``, override=False.
+    * Wiring authorized AND notional <= MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT
+      AND qty is a positive Decimal -> body qty = wiring execution_qty,
+      source ``CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY``, override=True.
+    """
+
+    if wiring_report is None:
+        return (
+            packet_qty,
+            EXECUTE_BODY_QTY_SOURCE_BL_PACKET,
+            False,
+            "no authorized_execution_qty_wiring report supplied",
+        )
+
+    resolution = getattr(wiring_report, "resolution", None)
+    if resolution is None:
+        return (
+            "",
+            EXECUTE_BODY_QTY_SOURCE_REJECTED_NO_FALLBACK,
+            False,
+            "wiring report missing resolution",
+        )
+
+    status = str(getattr(resolution, "status", "") or "")
+    source = str(getattr(resolution, "execution_qty_source", "") or "")
+    qty_str = str(getattr(resolution, "execution_qty", "") or "")
+    notional_str = str(
+        getattr(resolution, "execution_notional_estimate", "") or ""
+    )
+
+    if status != _WIRING_STATUS_AUTHORIZED:
+        return (
+            "",
+            EXECUTE_BODY_QTY_SOURCE_REJECTED_NO_FALLBACK,
+            False,
+            (
+                f"wiring status {status!r} != "
+                f"{_WIRING_STATUS_AUTHORIZED!r}"
+            ),
+        )
+    if source != _WIRING_QTY_SOURCE_AUTHORIZED:
+        return (
+            "",
+            EXECUTE_BODY_QTY_SOURCE_REJECTED_NO_FALLBACK,
+            False,
+            (
+                f"execution_qty_source {source!r} != "
+                f"{_WIRING_QTY_SOURCE_AUTHORIZED!r}"
+            ),
+        )
+
+    qty_dec = _decimal_or_none(qty_str)
+    if qty_dec is None or qty_dec <= 0:
+        return (
+            "",
+            EXECUTE_BODY_QTY_SOURCE_REJECTED_NO_FALLBACK,
+            False,
+            f"wiring execution_qty {qty_str!r} not a positive Decimal",
+        )
+
+    notional_dec = _decimal_or_none(notional_str)
+    if notional_dec is None or notional_dec <= 0:
+        return (
+            "",
+            EXECUTE_BODY_QTY_SOURCE_REJECTED_NO_FALLBACK,
+            False,
+            (
+                f"wiring execution_notional_estimate {notional_str!r} "
+                "not a positive Decimal"
+            ),
+        )
+
+    if notional_dec > MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT:
+        return (
+            "",
+            EXECUTE_BODY_QTY_SOURCE_REJECTED_NO_FALLBACK,
+            False,
+            (
+                f"wiring candidate notional {format(notional_dec, 'f')} > "
+                f"{format(MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT, 'f')} (BM mirror)"
+            ),
+        )
+
+    return (
+        qty_str,
+        EXECUTE_BODY_QTY_SOURCE_AUTHORIZED_CANDIDATE,
+        True,
+        "",
+    )
+
+
 def build_execution_plan(
     packet: bl.PreparationPacket,
     *,
     endpoint_target: str = ALLOWED_DEMO_ENDPOINT_URL,
+    actual_body_qty: str | None = None,
+    actual_body_qty_source: str = EXECUTE_BODY_QTY_SOURCE_BL_PACKET,
+    body_qty_authorized_override: bool = False,
 ) -> ExecutionPlan:
     """Convert a BL ``PreparationPacket`` into the BM ``ExecutionPlan``.
 
     This function does not call the network and does not evaluate gates;
     gate evaluation is the responsibility of ``_evaluate_gates``.
+
+    When ``actual_body_qty`` is supplied (non-empty and truthy), the body
+    qty placed into ``body_preview`` and ``plan.qty`` is overridden with
+    that value -- this is the path used by Stage 2 to honor the
+    authorized cap-escalation candidate qty (0.1). Callers that do not
+    pass an override get the historical behavior: body qty equals the
+    BL packet qty.
     """
+
+    effective_qty = (
+        actual_body_qty if (actual_body_qty is not None and actual_body_qty != "")
+        else packet.qty
+    )
+    body = _build_body_preview(packet, qty_override=effective_qty)
 
     return ExecutionPlan(
         task_id=TASK_ID,
@@ -514,7 +707,7 @@ def build_execution_plan(
         category=ALLOWED_DEMO_CATEGORY,
         symbol=packet.symbol,
         side=packet.side,
-        qty=packet.qty,
+        qty=effective_qty,
         mark_price=packet.mark_price,
         notional_estimate=packet.notional_estimate,
         order_type=packet.order_type,
@@ -528,8 +721,11 @@ def build_execution_plan(
         packet_is_not_execution_authorization=(
             packet.packet_is_not_execution_authorization
         ),
-        body_preview=_build_body_preview(packet),
+        body_preview=body,
         execution_contract_version=EXECUTION_CONTRACT_VERSION,
+        actual_request_body_qty=effective_qty,
+        actual_request_body_qty_source=actual_body_qty_source,
+        body_qty_authorized_override=body_qty_authorized_override,
     )
 
 
@@ -1057,9 +1253,27 @@ def run_explicit_tiny_order_execution(
     all_pre = all(g.passed for g in pre_network_gates)
     all_exec = all(g.passed for g in execute_gates)
 
-    plan = build_execution_plan(packet, endpoint_target=endpoint_target) if (
-        packet is not None and all_pre
-    ) else None
+    # TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH: derive the
+    # actual request body qty from the optional wiring report exactly
+    # once, so the same value is surfaced on plan + report + sender body.
+    packet_qty_for_body = packet.qty if packet is not None else ""
+    (
+        actual_body_qty,
+        actual_body_qty_source,
+        body_qty_authorized_override,
+        body_qty_rejection_reason,
+    ) = _derive_body_qty_from_wiring(
+        authorized_execution_qty_wiring,
+        packet_qty=packet_qty_for_body,
+    )
+
+    plan = build_execution_plan(
+        packet,
+        endpoint_target=endpoint_target,
+        actual_body_qty=actual_body_qty if actual_body_qty != "" else None,
+        actual_body_qty_source=actual_body_qty_source,
+        body_qty_authorized_override=body_qty_authorized_override,
+    ) if (packet is not None and all_pre) else None
 
     protected_overlap = sorted(
         set(existing_positions) & bh.PROTECTED_SYMBOLS
@@ -1100,6 +1314,14 @@ def run_explicit_tiny_order_execution(
             final_status = STATUS_MISSING_DEMO_CREDENTIALS
         elif plan is None:
             final_status = STATUS_GATE_REJECTED_NO_NETWORK
+        elif not body_qty_authorized_override:
+            # TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH:
+            # missing / rejected / non-authorized wiring report fails
+            # closed BEFORE any network call. BM NEVER silently falls
+            # back to the BL packet qty=0.01 -- the instrument-rules
+            # layer has confirmed that qty invalid against Bybit
+            # SOLUSDT minimums.
+            final_status = STATUS_WIRING_REQUIRED_NO_NETWORK
         else:
             outcome = _send_one_demo_order(
                 plan=plan, credentials=creds, sender=sender
@@ -1310,6 +1532,12 @@ def run_explicit_tiny_order_execution(
         execution_notional_estimate_resolved=(
             execution_notional_estimate_resolved_str
         ),
+        actual_request_body_qty=(
+            actual_body_qty if actual_body_qty else ""
+        ),
+        actual_request_body_qty_source=actual_body_qty_source,
+        body_qty_authorized_override=body_qty_authorized_override,
+        body_qty_rejection_reason=body_qty_rejection_reason,
     )
 
 
@@ -1498,6 +1726,29 @@ def _render_markdown(report: ExecutionReport) -> str:
     )
     lines.append("")
     lines.append(
+        "## Actual request body qty source "
+        "(TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH)"
+    )
+    lines.append("")
+    lines.append(
+        f"- actual_request_body_qty: `{report.actual_request_body_qty}`"
+    )
+    lines.append(
+        f"- actual_request_body_qty_source: "
+        f"`{report.actual_request_body_qty_source}`"
+    )
+    lines.append(
+        f"- body_qty_authorized_override: "
+        f"`{report.body_qty_authorized_override}`"
+    )
+    rejection = (
+        report.body_qty_rejection_reason.replace("|", "\\|")
+        if report.body_qty_rejection_reason
+        else ""
+    )
+    lines.append(f"- body_qty_rejection_reason: `{rejection}`")
+    lines.append("")
+    lines.append(
         "_demo-only one-shot execution path -- no live endpoint, no live "
         "credentials, no stop attach, no take-profit, no retry, no scheduler, "
         "no main.py / src.risk / BybitExecutor changes._"
@@ -1552,6 +1803,10 @@ __all__ = [
     "DEMO_RECV_WINDOW_ENV",
     "DEMO_SCOPED_ENV_NAMES",
     "DemoCredentials",
+    "EXECUTE_BODY_QTY_SOURCE_AUTHORIZED_CANDIDATE",
+    "EXECUTE_BODY_QTY_SOURCE_BL_PACKET",
+    "EXECUTE_BODY_QTY_SOURCE_NONE",
+    "EXECUTE_BODY_QTY_SOURCE_REJECTED_NO_FALLBACK",
     "EXECUTE_FLAG_NAME",
     "EXECUTE_GATE_NAMES",
     "EXECUTION_CONTRACT_VERSION",
@@ -1563,6 +1818,7 @@ __all__ = [
     "IDENTITY",
     "IMPLEMENTATION_PATH_PHASE",
     "IS_REVIEW_CHAIN_SUFFIX",
+    "MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT",
     "MAX_ORDER_COUNT",
     "MODE_DRY_RUN",
     "MODE_EXECUTE_DEMO_ORDER",
@@ -1577,6 +1833,7 @@ __all__ = [
     "STATUS_MISSING_DEMO_CREDENTIALS",
     "STATUS_NETWORK_ERROR_DEMO_ONLY",
     "STATUS_READINESS_OK_NO_NETWORK",
+    "STATUS_WIRING_REQUIRED_NO_NETWORK",
     "SUPPORTED_MODES",
     "SendOutcome",
     "Sender",
