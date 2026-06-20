@@ -89,12 +89,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--mode",
         default="readiness",
-        choices=["readiness", "execute_with_fake_sender"],
+        choices=[
+            "readiness",
+            "execute_with_fake_sender",
+            "execute_real_demo_order",
+        ],
         help=(
             "orchestration mode (default: readiness, no network, no order). "
             "execute_with_fake_sender requires "
             "--stage1-allow-fake-sender-execute-mode AND a "
-            "--fake-sender-import-path, AND a fake credential triple."
+            "--fake-sender-import-path, AND a fake credential triple. "
+            "execute_real_demo_order is the isolated real-demo-order "
+            "surface; Stage 1 hard-refuses any real sender and only "
+            "supports offline validation via fake-sender opt-in."
+        ),
+    )
+    parser.add_argument(
+        "--explicit-real-demo-order-flag",
+        action="store_true",
+        help=(
+            "set the explicit real-demo-order authorization flag "
+            "(required by execute_real_demo_order mode)"
+        ),
+    )
+    parser.add_argument(
+        "--real-demo-authorization-marker",
+        default="",
+        help=(
+            "exact real-demo-order authorization marker string; pass "
+            "DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1 "
+            "to authorize execute_real_demo_order mode"
         ),
     )
     parser.add_argument(
@@ -233,23 +257,99 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
 
+    # CLI-level Stage 1 safety: execute_real_demo_order can NEVER reach a
+    # real /v5/order/create call. The CLI hard-refuses any real-sender
+    # configuration. For offline validation only, the caller must opt in
+    # via --stage1-allow-fake-sender-execute-mode AND pass a fake sender
+    # AND a fake credential triple AND the explicit real-demo flag AND
+    # the exact real-demo marker. A separate human-authorization task is
+    # required before the real send path can ever be unlocked.
+    if args.mode == "execute_real_demo_order":
+        if not args.explicit_real_demo_order_flag:
+            print(
+                "REJECTED: execute_real_demo_order mode requires "
+                "--explicit-real-demo-order-flag"
+            )
+            return 1
+        if not args.real_demo_authorization_marker:
+            print(
+                "REJECTED: execute_real_demo_order mode requires "
+                "--real-demo-authorization-marker "
+                "DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1"
+            )
+            return 1
+        # TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1_DISCOVERY_GATE_FIX:
+        # The CLI hard-refuses any cached / pre-parsed instrument-rules input
+        # for execute_real_demo_order. The mode MUST use fresh public read-only
+        # discovery so the live demo instrument contract cannot diverge from
+        # the validated chain. The explicit public-read opt-in is required.
+        if args.ir_pre_parsed_response_json:
+            print(
+                "REJECTED: execute_real_demo_order forbids "
+                "--ir-pre-parsed-response-json. The mode requires a fresh "
+                "public read-only instrument-rules discovery; cached or "
+                "pre-parsed rules are not accepted."
+            )
+            return 1
+        if args.ir_mode != "discover":
+            print(
+                "REJECTED: execute_real_demo_order requires "
+                "--ir-mode discover. Cached / offline IR is forbidden for "
+                "the real-demo execute surface."
+            )
+            return 1
+        if not args.allow_real_ir_get:
+            print(
+                "REJECTED: execute_real_demo_order requires the explicit "
+                "public read-only discovery opt-in flag "
+                "--i-understand-this-performs-one-public-read-only-"
+                "instrument-rules-get. Without it the CLI refuses to run "
+                "any IR or order sender."
+            )
+            return 1
+        if not args.stage1_allow_fake_sender_execute_mode:
+            print(
+                "REJECTED: Stage 1 forbids any real /v5/order/create call. "
+                "Real-demo-order can only be validated offline with a fake "
+                "sender. Pass --stage1-allow-fake-sender-execute-mode to "
+                "opt in. A separate human-authorization task is required "
+                "before Stage 2 can dispatch a real Bybit Demo order."
+            )
+            return 2
+        if not args.fake_sender_import_path:
+            print(
+                "REJECTED: Stage 1 execute_real_demo_order requires a "
+                "--fake-sender-import-path for offline validation. Real "
+                "senders are unavailable until the Stage 2 authorization "
+                "task is approved."
+            )
+            return 2
+        if not args.fake_api_key or not args.fake_api_secret:
+            print(
+                "REJECTED: --fake-api-key and --fake-api-secret are "
+                "required for Stage 1 execute_real_demo_order offline "
+                "validation"
+            )
+            return 2
+
     ir_pre_parsed = _load_pre_parsed_response(args.ir_pre_parsed_response_json)
     ir_mode = bm_ir.MODE_OFFLINE if args.ir_mode == "offline" else bm_ir.MODE_DISCOVER
 
     bm_fake_sender = _resolve_callable(args.fake_sender_import_path)
     bm_credentials = None
-    if args.mode == "execute_with_fake_sender":
+    if args.mode in ("execute_with_fake_sender", "execute_real_demo_order"):
         bm_credentials = bm.DemoCredentials(
             api_key=args.fake_api_key,
             api_secret=args.fake_api_secret,
             recv_window=args.fake_recv_window,
         )
 
-    orch_mode = (
-        orc.ORCH_MODE_READINESS
-        if args.mode == "readiness"
-        else orc.ORCH_MODE_EXECUTE_WITH_FAKE_SENDER
-    )
+    if args.mode == "readiness":
+        orch_mode = orc.ORCH_MODE_READINESS
+    elif args.mode == "execute_real_demo_order":
+        orch_mode = orc.ORCH_MODE_EXECUTE_REAL_DEMO_ORDER
+    else:
+        orch_mode = orc.ORCH_MODE_EXECUTE_WITH_FAKE_SENDER
 
     report = orc.run_one_shot_authorized_execution_orchestration(
         mark_price=args.mark_price,
@@ -265,6 +365,12 @@ def main(argv: list[str] | None = None) -> int:
         bm_credentials=bm_credentials,
         bm_fake_sender=bm_fake_sender,
         allow_real_ir_get=bool(args.allow_real_ir_get),
+        explicit_real_demo_execute_flag=bool(
+            args.explicit_real_demo_order_flag
+        ),
+        explicit_real_demo_execute_authorization_marker=(
+            args.real_demo_authorization_marker
+        ),
     )
 
     # ------------- 12 required surfaces -----------------------------------
@@ -326,6 +432,22 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"body_qty_rejection_reason={report.body_qty_rejection_reason!r}"
         )
+    print(
+        f"real_demo_execute_requested={report.real_demo_execute_requested} "
+        f"real_demo_execute_authorized={report.real_demo_execute_authorized} "
+        f"real_demo_authorization_marker_match="
+        f"{report.real_demo_authorization_marker_match}"
+    )
+    print(
+        f"credentials_source={report.credentials_source!r} "
+        f"resolved_execution_qty={report.resolved_execution_qty!r} "
+        f"resolved_execution_qty_source={report.resolved_execution_qty_source!r} "
+        f"resolved_notional={report.resolved_notional!r}"
+    )
+    print(
+        f"bybit_ret_msg={report.bybit_ret_msg!r} "
+        f"final_status={report.final_status!r}"
+    )
 
     if args.write_report:
         paths = orc.write_report(report, output_dir=args.output_dir)
@@ -343,6 +465,7 @@ def main(argv: list[str] | None = None) -> int:
     if status in (
         orc.STATUS_REJECTED_MISSING_CREDENTIALS,
         orc.STATUS_REJECTED_MISSING_FAKE_SENDER,
+        orc.STATUS_REJECTED_REAL_EXECUTE_FORBIDDEN_STAGE1,
     ):
         return 2
     return 1

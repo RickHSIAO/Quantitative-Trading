@@ -203,6 +203,17 @@ def test_cli_discover_with_opt_in_passes_allow_real_ir_get_true(monkeypatch):
             bybit_ret_code=None,
             bybit_order_id="",
             body_qty_rejection_reason="",
+            real_demo_execute_requested=False,
+            real_demo_execute_authorized=False,
+            real_demo_authorization_marker_match=False,
+            credentials_source=orc.CREDENTIALS_SOURCE_NONE,
+            resolved_execution_qty="0.1",
+            resolved_execution_qty_source=(
+                bm_wire.EXECUTION_QTY_SOURCE_CAP_ESCALATION_AUTHORIZED
+            ),
+            resolved_notional="10",
+            bybit_ret_msg="",
+            final_status=orc.STATUS_OK_READINESS_READ_ONLY_NETWORK,
         )
 
     monkeypatch.setattr(

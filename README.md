@@ -14,10 +14,120 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX, 2026-06-20）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1, 2026-06-20）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1**（2026-06-20, Stage 1 only）
+> 新增一個**隔離的** real-demo-order 一次性執行入口
+> `ORCH_MODE_EXECUTE_REAL_DEMO_ORDER` 與專屬 marker
+> `EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER = "DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1"`。
+> 此入口 reuse 既有完整鏈：public read-only IR discovery → exchange min candidate
+> derivation → cap escalation auth gate → authorized execution qty wiring → BM
+> exact-body signing。final request body qty 只能來自
+> `CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY`；never fall back to BL packet `qty=0.01`。
+>
+> **Stage 1 hard contract（強制驗證 by 新測試 + 既有測試）：**
+> - **Stage 1 從未真的呼叫 `/v5/order/create`。** 即使 flag、marker、credentials 三者齊備，
+>   orchestrator 的 `_invoke_bm` 仍 hard-refuse 真實 send path；只在注入 `bm_fake_sender`
+>   的情境下做 offline validation。
+> - real demo 真實送單之前**另有一個獨立的 human authorization task** 要核可。
+> - default CLI 呼叫不可能到達 order endpoint。
+> - CLI 對 real-demo mode 缺少 flag → exit 1；缺少 marker → exit 1；
+>   未開啟 `--stage1-allow-fake-sender-execute-mode` → exit 2（並印出 "Stage 1 forbids…"）。
+>
+> **新增 audit / report 欄位（全部有 safe default）：**
+> `real_demo_execute_requested`, `real_demo_execute_authorized`,
+> `real_demo_authorization_marker_match`, `credentials_source`,
+> `resolved_execution_qty`, `resolved_execution_qty_source`,
+> `resolved_notional`, `bybit_ret_msg`, `final_status`。
+>
+> **新增狀態：**
+> - `STATUS_REJECTED_REAL_EXECUTE_NOT_AUTHORIZED`（缺 flag）
+> - `STATUS_REJECTED_REAL_EXECUTE_MARKER_MISMATCH`（marker 不符）
+> - `STATUS_REJECTED_REAL_EXECUTE_FORBIDDEN_STAGE1`（給 creds 但沒 fake sender → Stage 1 拒絕真實送單）
+>
+> **變更檔案：**
+> - [`src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：新增 mode + marker + 2 statuses + 9 audit 欄位 + 對應 pre-flight gate；`__all__` 更新
+> - [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：新增 `execute_real_demo_order` mode、`--explicit-real-demo-order-flag`、`--real-demo-authorization-marker`；CLI 對真實 sender 一律 refuse；新增 audit 欄位 stdout 行
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py)：43/43 PASS
+> - [`tests/demo_trading/fixtures_orchestrator_fake_senders.py`](tests/demo_trading/fixtures_orchestrator_fake_senders.py)：CLI 測試所需 importable fake sender
+> - 既有 orchestrator/taxonomy/audit/opt-in 測試 93/93 仍 PASS（只調整 1 條 supported-modes 斷言 + 1 條 SimpleNamespace fake）
+>
+> **安全不變項：** 0 real Bybit Demo order sent；0 `/v5/order/create` real call；
+> 無 live endpoint、無 live/demo secret 讀取程式變更；
+> 不動 `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`；
+> 不動 global tiny caps、`MAX_ORDER_COUNT=1`、protected symbols、BL packet `DEFAULT_QTY=0.01`、
+> cap escalation 既有 gate、20 USDT notional cap。
+>
+> 驗證（local）：py_compile PASS；43/43 新 Stage 1 測試 PASS；
+> 既有 orchestrator + taxonomy + audit + opt-in family 共 93/93 PASS；
+> 607/607 tiny_execution_adapter scoped regression PASS（command:
+> `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full`；
+> result: 607 passed, 7701 deselected — 先前 README 寫的「7921/7921 PASS」為**錯誤標示**，
+> 已在 TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1_DISCOVERY_GATE_FIX 更正）。
+> **未送出任何 real Bybit Demo 單。未呼叫 `/v5/order/create`。** Local commit only — 未 push。
+>
+> **下一步 VPS 驗證指令（real send 仍未開放，需要下一個 authorization task）：**
+> ```
+> python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --mode execute_real_demo_order --explicit-real-demo-order-flag --real-demo-authorization-marker DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1
+> ```
+> 期望輸出：印出 "REJECTED: Stage 1 forbids any real /v5/order/create call."；exit code 2；
+> `order_endpoint_called=False`；`order_sent=False`。
+>
+> **TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1_DISCOVERY_GATE_FIX**（2026-06-20, Stage 1 correction，已 amend 進 efe9d74）
+> 修正先前 Stage 1 surface 的兩個缺口：
+> (1) `execute_real_demo_order` mode 沒有強制要求 fresh public read-only IR discovery，
+>     允許 cached/pre-parsed IR 進入 chain，可能造成 stale rules 做真實送單前置驗證；
+> (2) README/NEXT_ACTION/COMMAND_LOG 錯誤標示 7921/7921 PASS，實際是
+>     `-k "tiny_execution_adapter"` 的 scoped 607/607 PASS（7701 deselected）。
+>
+> **新增的 pre-flight discovery gate（execute_real_demo_order 專用，readiness 不受影響）：**
+> - 必須 `ir_mode == MODE_DISCOVER` 且 `ir_pre_parsed_response is None`；
+>   否則 → `STATUS_REJECTED_REAL_DEMO_DISCOVERY_REQUIRED`，無任何 IR / order sender 被呼叫
+> - 必須 `allow_real_ir_get=True`；否則 → `STATUS_REJECTED_REAL_DEMO_READ_ONLY_OPT_IN_REQUIRED`
+> - CLI 對 `execute_real_demo_order` 額外拒絕：
+>   `--ir-pre-parsed-response-json` → exit 1；
+>   `--ir-mode != discover` → exit 1；
+>   缺 `--i-understand-this-performs-one-public-read-only-instrument-rules-get` → exit 1
+> - readiness mode 仍可用 offline/pre-parsed IR；非 real-demo 的 `execute_with_fake_sender` 完全相容
+>
+> **新增狀態（safe default、加入 `__all__`）：**
+> - `STATUS_REJECTED_REAL_DEMO_DISCOVERY_REQUIRED = "ORCHESTRATION_REJECTED_REAL_DEMO_DISCOVERY_REQUIRED"`
+> - `STATUS_REJECTED_REAL_DEMO_READ_ONLY_OPT_IN_REQUIRED = "ORCHESTRATION_REJECTED_REAL_DEMO_READ_ONLY_OPT_IN_REQUIRED"`
+>
+> **變更檔案：**
+> - [`src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：新增 2 狀態 + discovery gate（fire 於 marker 檢查後、chain 之前）；`__all__` 更新
+> - [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：CLI 對 real-demo mode 額外 3 條 rejection（pre-parsed / non-discover / 缺 opt-in）
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py)：43 條既有測試改走 discover + injected `ir_sender`（沒削弱原 contract，所有 reject 路徑仍斷言相同 status / 0 sender call）；新增 `_ir_sender_factory()` helper
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1_discovery_gate_fix.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1_discovery_gate_fix.py)：新增 23 條 focused tests
+>
+> **安全不變項：** 0 real Bybit Demo order sent；0 `/v5/order/create` real call；
+> 無 live endpoint、無 live/demo secret 讀取程式變更；
+> 不動 `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`；
+> 不動 global tiny caps、`MAX_ORDER_COUNT=1`、protected symbols、BL packet `DEFAULT_QTY=0.01`、
+> cap escalation 既有 gate、20 USDT notional cap、readiness mode 行為。
+>
+> 驗證（local）：py_compile PASS（src + scripts + 兩個 Stage 1 測試檔）；
+> 23/23 新 discovery-gate-fix 測試 PASS；
+> 43/43 既有 Stage 1 測試（已改走 discover + injected sender 後）PASS；
+> 共 66/66 Stage 1 PASS；
+> 159/159 orchestrator-family PASS；
+> scoped 結果：`python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full`
+> → **630 passed, 7701 deselected**
+> （先前記錄的「611 passed + 19 errors」係因 `.pytest_local` 父目錄不存在導致 test-environment setup error，
+> 非 application / strategy 失敗；建立目錄後全部通過）。
+> **未送出任何 real Bybit Demo 單。未呼叫 `/v5/order/create`。** Local commit only — 已 `git commit --amend --no-edit` 進 c5f1a89，未 push。
+>
+> **下一步 VPS 驗證指令（real send 仍未開放）：**
+> ```
+> python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --mode execute_real_demo_order --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1 --explicit-real-demo-order-flag --real-demo-authorization-marker DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1
+> ```
+> 期望輸出：印出 "REJECTED: Stage 1 forbids any real /v5/order/create call."；exit code 2；
+> `order_endpoint_called=False`；`order_sent=False`。
+>
+
 
 > **TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX**（2026-06-20）
 > 修正 orchestrator top-level status 語意：真實 public read-only instrument-rules GET

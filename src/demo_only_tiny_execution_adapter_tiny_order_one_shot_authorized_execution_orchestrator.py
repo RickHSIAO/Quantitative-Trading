@@ -155,10 +155,28 @@ MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT = Decimal("20")
 
 ORCH_MODE_READINESS = "readiness"
 ORCH_MODE_EXECUTE_WITH_FAKE_SENDER = "execute_with_fake_sender"
+# TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1: isolated
+# real-demo-execute mode. Stage 1 implements the surface but never
+# reaches a real /v5/order/create call: even when every flag, marker,
+# and credential is supplied, the orchestrator refuses to invoke BM
+# unless a callable ``bm_fake_sender`` is also supplied (testing only).
+ORCH_MODE_EXECUTE_REAL_DEMO_ORDER = "execute_real_demo_order"
 ORCH_SUPPORTED_MODES: tuple[str, ...] = (
     ORCH_MODE_READINESS,
     ORCH_MODE_EXECUTE_WITH_FAKE_SENDER,
+    ORCH_MODE_EXECUTE_REAL_DEMO_ORDER,
 )
+
+# TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1: exact
+# authorization marker required by the new real-demo execute mode.
+# Distinct from the existing cap-escalation marker; both must match.
+EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER = (
+    "DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1"
+)
+
+# Credentials source labels (audit field).
+CREDENTIALS_SOURCE_INJECTED = "injected_demo_credentials"
+CREDENTIALS_SOURCE_NONE = "none"
 
 STATUS_OK_READINESS_NO_NETWORK = "ORCHESTRATION_OK_READINESS_NO_NETWORK"
 STATUS_OK_READINESS_READ_ONLY_NETWORK = (
@@ -200,6 +218,25 @@ STATUS_REJECTED_MISSING_CREDENTIALS = (
 )
 STATUS_REJECTED_BODY_QTY_NOT_AUTHORIZED = (
     "ORCHESTRATION_REJECTED_BODY_QTY_NOT_AUTHORIZED"
+)
+# TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1: new
+# rejection statuses for the isolated real-demo execute surface.
+STATUS_REJECTED_REAL_EXECUTE_NOT_AUTHORIZED = (
+    "ORCHESTRATION_REJECTED_REAL_EXECUTE_NOT_AUTHORIZED"
+)
+STATUS_REJECTED_REAL_EXECUTE_MARKER_MISMATCH = (
+    "ORCHESTRATION_REJECTED_REAL_EXECUTE_MARKER_MISMATCH"
+)
+# TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1_DISCOVERY_GATE_FIX:
+# the real-demo execute surface must require a fresh public read-only
+# instrument-rules discovery path. Cached / pre-parsed rules are forbidden,
+# and the explicit public-read opt-in must be set before any IR or order
+# sender can run.
+STATUS_REJECTED_REAL_DEMO_DISCOVERY_REQUIRED = (
+    "ORCHESTRATION_REJECTED_REAL_DEMO_DISCOVERY_REQUIRED"
+)
+STATUS_REJECTED_REAL_DEMO_READ_ONLY_OPT_IN_REQUIRED = (
+    "ORCHESTRATION_REJECTED_REAL_DEMO_READ_ONLY_OPT_IN_REQUIRED"
 )
 
 
@@ -299,6 +336,19 @@ class OrchestrationReport:
 
     generated_at_utc: str
 
+    # TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1: new
+    # immutable audit fields for the isolated real-demo execute surface.
+    # All have safe defaults so existing callers/tests remain green.
+    real_demo_execute_requested: bool = False
+    real_demo_execute_authorized: bool = False
+    real_demo_authorization_marker_match: bool = False
+    credentials_source: str = CREDENTIALS_SOURCE_NONE
+    resolved_execution_qty: str = ""
+    resolved_execution_qty_source: str = ""
+    resolved_notional: str = ""
+    bybit_ret_msg: str = ""
+    final_status: str = ""
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
@@ -375,6 +425,19 @@ class OrchestrationReport:
             "wiring_report": self.wiring_report,
             "bm_report": self.bm_report,
             "generated_at_utc": self.generated_at_utc,
+            "real_demo_execute_requested": self.real_demo_execute_requested,
+            "real_demo_execute_authorized": self.real_demo_execute_authorized,
+            "real_demo_authorization_marker_match": (
+                self.real_demo_authorization_marker_match
+            ),
+            "credentials_source": self.credentials_source,
+            "resolved_execution_qty": self.resolved_execution_qty,
+            "resolved_execution_qty_source": (
+                self.resolved_execution_qty_source
+            ),
+            "resolved_notional": self.resolved_notional,
+            "bybit_ret_msg": self.bybit_ret_msg,
+            "final_status": self.final_status,
         }
 
 
@@ -531,6 +594,8 @@ def run_one_shot_authorized_execution_orchestration(
     bm_credentials: bm.DemoCredentials | None = None,
     bm_fake_sender: Any | None = None,
     allow_real_ir_get: bool = False,
+    explicit_real_demo_execute_flag: bool = False,
+    explicit_real_demo_execute_authorization_marker: str = "",
 ) -> OrchestrationReport:
     """Run the full Stage 1 demo-only one-shot orchestration.
 
@@ -547,6 +612,29 @@ def run_one_shot_authorized_execution_orchestration(
     without the explicit opt-in, or supplying a non-callable sender).
     """
 
+    real_demo_requested = (mode == ORCH_MODE_EXECUTE_REAL_DEMO_ORDER)
+    real_demo_marker_match = (
+        explicit_real_demo_execute_authorization_marker
+        == EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER
+    )
+    real_demo_authorized = bool(
+        real_demo_requested
+        and explicit_real_demo_execute_flag
+        and real_demo_marker_match
+    )
+    credentials_source = (
+        CREDENTIALS_SOURCE_INJECTED
+        if bm_credentials is not None
+        else CREDENTIALS_SOURCE_NONE
+    )
+
+    real_demo_audit = {
+        "real_demo_execute_requested": real_demo_requested,
+        "real_demo_execute_authorized": real_demo_authorized,
+        "real_demo_authorization_marker_match": real_demo_marker_match,
+        "credentials_source": credentials_source,
+    }
+
     if mode not in ORCH_SUPPORTED_MODES:
         return _build_rejection_report(
             mode=mode,
@@ -556,7 +644,75 @@ def run_one_shot_authorized_execution_orchestration(
             ),
             fake_sender_used=False,
             sender_call_count=0,
+            **real_demo_audit,
         )
+
+    # TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1:
+    # gate the new real-demo execute mode on the explicit flag + exact
+    # marker BEFORE running any chain step. Reject pre-network.
+    if real_demo_requested:
+        if not explicit_real_demo_execute_flag:
+            return _build_rejection_report(
+                mode=mode,
+                status=STATUS_REJECTED_REAL_EXECUTE_NOT_AUTHORIZED,
+                reason=(
+                    "execute_real_demo_order mode requires "
+                    "explicit_real_demo_execute_flag=True"
+                ),
+                fake_sender_used=False,
+                sender_call_count=0,
+                **real_demo_audit,
+            )
+        if not real_demo_marker_match:
+            return _build_rejection_report(
+                mode=mode,
+                status=STATUS_REJECTED_REAL_EXECUTE_MARKER_MISMATCH,
+                reason=(
+                    "explicit_real_demo_execute_authorization_marker does "
+                    "not match the exact required marker"
+                ),
+                fake_sender_used=False,
+                sender_call_count=0,
+                **real_demo_audit,
+            )
+        # TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1_DISCOVERY_GATE_FIX:
+        # the real-demo execute surface MUST require a fresh public read-only
+        # instrument-rules discovery path. Cached / pre-parsed rules are
+        # forbidden so that the live demo instrument contract cannot diverge
+        # from the validated chain. This gate runs BEFORE any IR or order
+        # sender invocation.
+        if (
+            ir_mode != bm_ir.MODE_DISCOVER
+            or ir_pre_parsed_response is not None
+        ):
+            return _build_rejection_report(
+                mode=mode,
+                status=STATUS_REJECTED_REAL_DEMO_DISCOVERY_REQUIRED,
+                reason=(
+                    "execute_real_demo_order requires ir_mode=discover with "
+                    "no cached/pre-parsed instrument rules. Got "
+                    f"ir_mode={ir_mode!r}, ir_pre_parsed_response_set="
+                    f"{ir_pre_parsed_response is not None}."
+                ),
+                fake_sender_used=False,
+                sender_call_count=0,
+                **real_demo_audit,
+            )
+        if not allow_real_ir_get:
+            return _build_rejection_report(
+                mode=mode,
+                status=STATUS_REJECTED_REAL_DEMO_READ_ONLY_OPT_IN_REQUIRED,
+                reason=(
+                    "execute_real_demo_order requires the explicit public "
+                    "read-only discovery opt-in (allow_real_ir_get=True / "
+                    "CLI --i-understand-this-performs-one-public-read-only-"
+                    "instrument-rules-get) before any IR or order sender "
+                    "can run."
+                ),
+                fake_sender_used=False,
+                sender_call_count=0,
+                **real_demo_audit,
+            )
 
     # Stage 1 hard block: any real IR network access requires explicit
     # opt-in. Stage 1 callers never set it.
@@ -601,6 +757,7 @@ def run_one_shot_authorized_execution_orchestration(
             fake_sender_used=False,
             sender_call_count=0,
             ir_network_attempted=ir_network_attempted,
+            **real_demo_audit,
         )
 
     candidate = getattr(ir_report, "candidate")
@@ -650,6 +807,7 @@ def run_one_shot_authorized_execution_orchestration(
             fake_sender_used=False,
             sender_call_count=0,
             ir_network_attempted=ir_network_attempted,
+            **real_demo_audit,
         )
 
     # ----- 3. Authorized execution qty wiring ---------------------------
@@ -687,6 +845,7 @@ def run_one_shot_authorized_execution_orchestration(
             fake_sender_used=False,
             sender_call_count=0,
             ir_network_attempted=ir_network_attempted,
+            **real_demo_audit,
         )
 
     # ----- 4. Hand the authorized wiring to BM --------------------------
@@ -700,9 +859,29 @@ def run_one_shot_authorized_execution_orchestration(
     )
 
     if bm_report is None:
-        # _invoke_bm refused to run (e.g. missing fake sender). Surface
-        # that as a rejected report.
-        if mode == ORCH_MODE_EXECUTE_WITH_FAKE_SENDER:
+        # _invoke_bm refused to run. Disambiguate by mode:
+        #   * ORCH_MODE_EXECUTE_REAL_DEMO_ORDER: Stage 1 forbids the real
+        #     send path. If no demo credentials -> MISSING_CREDENTIALS;
+        #     otherwise REAL_EXECUTE_FORBIDDEN_STAGE1 (no fake sender for
+        #     offline validation).
+        #   * ORCH_MODE_EXECUTE_WITH_FAKE_SENDER: usual missing creds /
+        #     missing fake sender.
+        if mode == ORCH_MODE_EXECUTE_REAL_DEMO_ORDER:
+            if bm_credentials is None:
+                reject_status = STATUS_REJECTED_MISSING_CREDENTIALS
+                reason = (
+                    "execute_real_demo_order mode requires Bybit Demo "
+                    "credentials (none supplied)"
+                )
+            else:
+                reject_status = STATUS_REJECTED_REAL_EXECUTE_FORBIDDEN_STAGE1
+                reason = (
+                    "Stage 1 forbids real /v5/order/create. A separate human-"
+                    "authorization task is required before Stage 2 can dispatch "
+                    "a real Bybit Demo order. For Stage 1 offline validation, "
+                    "supply a callable bm_fake_sender."
+                )
+        elif mode == ORCH_MODE_EXECUTE_WITH_FAKE_SENDER:
             reject_status = (
                 STATUS_REJECTED_MISSING_CREDENTIALS
                 if bm_credentials is None
@@ -731,6 +910,9 @@ def run_one_shot_authorized_execution_orchestration(
             fake_sender_used=False,
             sender_call_count=0,
             ir_network_attempted=ir_network_attempted,
+            resolved_execution_qty=wiring_qty,
+            resolved_execution_qty_source=wiring_source,
+            **real_demo_audit,
         )
 
     bm_final_status = str(getattr(bm_report, "final_status", "") or "")
@@ -752,6 +934,7 @@ def run_one_shot_authorized_execution_orchestration(
         fake_sender_used=fake_sender_used,
         sender_call_count=sender_call_count,
         ir_network_attempted=ir_network_attempted,
+        **real_demo_audit,
     )
 
 
@@ -784,8 +967,11 @@ def _invoke_bm(
         )
         return (bm.MODE_READINESS, False, 0, report)
 
-    # ORCH_MODE_EXECUTE_WITH_FAKE_SENDER -- Stage 1 hard-requires both
-    # demo credentials and a callable fake sender.
+    # ORCH_MODE_EXECUTE_WITH_FAKE_SENDER and
+    # ORCH_MODE_EXECUTE_REAL_DEMO_ORDER (Stage 1) -- both hard-require
+    # both demo credentials and a callable fake sender. The Stage 1
+    # real-mode path is implemented as fake-sender-only validation; the
+    # real /v5/order/create dispatch is unavailable until Stage 2.
     if bm_credentials is None or bm_fake_sender is None or not callable(
         bm_fake_sender
     ):
@@ -835,6 +1021,14 @@ def _build_rejection_report(
     fake_sender_used: bool = False,
     sender_call_count: int = 0,
     ir_network_attempted: bool = False,
+    real_demo_execute_requested: bool = False,
+    real_demo_execute_authorized: bool = False,
+    real_demo_authorization_marker_match: bool = False,
+    credentials_source: str = CREDENTIALS_SOURCE_NONE,
+    resolved_execution_qty: str = "",
+    resolved_execution_qty_source: str = "",
+    resolved_notional: str = "",
+    bybit_ret_msg: str = "",
 ) -> OrchestrationReport:
     ir_dict = instrument_rules_report or {}
     rules = (ir_dict.get("rules") or {}) if isinstance(ir_dict, dict) else {}
@@ -918,6 +1112,15 @@ def _build_rejection_report(
         wiring_report=wiring_report or {},
         bm_report=bm_report or {},
         generated_at_utc=_utc_timestamp(),
+        real_demo_execute_requested=real_demo_execute_requested,
+        real_demo_execute_authorized=real_demo_execute_authorized,
+        real_demo_authorization_marker_match=real_demo_authorization_marker_match,
+        credentials_source=credentials_source,
+        resolved_execution_qty=resolved_execution_qty,
+        resolved_execution_qty_source=resolved_execution_qty_source,
+        resolved_notional=resolved_notional,
+        bybit_ret_msg=bybit_ret_msg,
+        final_status=status,
     )
 
 
@@ -934,6 +1137,10 @@ def _build_full_report(
     fake_sender_used: bool,
     sender_call_count: int,
     ir_network_attempted: bool = False,
+    real_demo_execute_requested: bool = False,
+    real_demo_execute_authorized: bool = False,
+    real_demo_authorization_marker_match: bool = False,
+    credentials_source: str = CREDENTIALS_SOURCE_NONE,
 ) -> OrchestrationReport:
     rules = getattr(ir_report, "rules", None)
     candidate = getattr(ir_report, "candidate", None)
@@ -1038,6 +1245,21 @@ def _build_full_report(
         wiring_report=_safe_to_dict(wiring_report),
         bm_report=_safe_to_dict(bm_report),
         generated_at_utc=_utc_timestamp(),
+        real_demo_execute_requested=real_demo_execute_requested,
+        real_demo_execute_authorized=real_demo_execute_authorized,
+        real_demo_authorization_marker_match=real_demo_authorization_marker_match,
+        credentials_source=credentials_source,
+        resolved_execution_qty=str(
+            getattr(getattr(wiring_report, "resolution", None), "execution_qty", "") or ""
+        ),
+        resolved_execution_qty_source=str(
+            getattr(getattr(wiring_report, "resolution", None), "execution_qty_source", "") or ""
+        ),
+        resolved_notional=str(
+            getattr(getattr(wiring_report, "resolution", None), "execution_notional_estimate", "") or ""
+        ),
+        bybit_ret_msg=str(getattr(bm_report, "bybit_ret_msg", "") or ""),
+        final_status=status,
     )
 
 
@@ -1127,6 +1349,23 @@ def _render_markdown(report: OrchestrationReport) -> str:
         f"{report.max_demo_min_qty_notional_cap_usdt}` "
         f"protected_symbols_untouched={report.protected_symbols_untouched}"
     )
+    lines.append("")
+    lines.append("## Real-demo execute surface (Stage 1)")
+    lines.append(
+        f"- real_demo_execute_requested={report.real_demo_execute_requested} "
+        f"real_demo_execute_authorized={report.real_demo_execute_authorized} "
+        f"marker_match={report.real_demo_authorization_marker_match}"
+    )
+    lines.append(
+        f"- credentials_source=`{report.credentials_source}` "
+        f"resolved_execution_qty=`{report.resolved_execution_qty}` "
+        f"resolved_execution_qty_source=`{report.resolved_execution_qty_source}` "
+        f"resolved_notional=`{report.resolved_notional}`"
+    )
+    lines.append(
+        f"- bybit_ret_msg=`{report.bybit_ret_msg}` "
+        f"final_status=`{report.final_status}`"
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -1164,17 +1403,21 @@ __all__ = [
     "ALLOWED_SIDE",
     "ALLOWED_SYMBOL",
     "ALLOWED_TIME_IN_FORCE",
+    "CREDENTIALS_SOURCE_INJECTED",
+    "CREDENTIALS_SOURCE_NONE",
     "DEFAULT_OUTPUT_DIR",
     "EXPECTED_CANDIDATE_QTY",
     "EXPECTED_INSTRUMENT_STATUS",
     "EXPECTED_MIN_ORDER_QTY",
     "EXPECTED_QTY_STEP",
+    "EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER",
     "IDENTITY",
     "IMPLEMENTATION_PATH_PHASE",
     "IS_REVIEW_CHAIN_SUFFIX",
     "MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT",
     "NEXT_REQUIRED_TASK",
     "ORCHESTRATION_CONTRACT_VERSION",
+    "ORCH_MODE_EXECUTE_REAL_DEMO_ORDER",
     "ORCH_MODE_EXECUTE_WITH_FAKE_SENDER",
     "ORCH_MODE_READINESS",
     "ORCH_SUPPORTED_MODES",
@@ -1192,7 +1435,11 @@ __all__ = [
     "STATUS_REJECTED_CAP_GATE_NOT_AUTHORIZED",
     "STATUS_REJECTED_MISSING_CREDENTIALS",
     "STATUS_REJECTED_MISSING_FAKE_SENDER",
+    "STATUS_REJECTED_REAL_DEMO_DISCOVERY_REQUIRED",
+    "STATUS_REJECTED_REAL_DEMO_READ_ONLY_OPT_IN_REQUIRED",
     "STATUS_REJECTED_REAL_EXECUTE_FORBIDDEN_STAGE1",
+    "STATUS_REJECTED_REAL_EXECUTE_MARKER_MISMATCH",
+    "STATUS_REJECTED_REAL_EXECUTE_NOT_AUTHORIZED",
     "STATUS_REJECTED_RULES_INVALID",
     "STATUS_REJECTED_RULES_NOT_LOADED",
     "STATUS_REJECTED_UNSUPPORTED_MODE",

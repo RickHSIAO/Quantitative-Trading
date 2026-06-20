@@ -1,5 +1,102 @@
 # Next Action
 
+> README shared status updated by TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1 (2026-06-20).
+> TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1 adds an
+> **isolated** one-shot real-demo-order execution surface
+> (`ORCH_MODE_EXECUTE_REAL_DEMO_ORDER`) gated by a separate explicit
+> flag + exact marker
+> `EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER = "DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1"`.
+>
+> Stage 1 hard contract: the new mode reuses the existing chain
+> (public read-only IR discovery → exchange min candidate derivation →
+> cap escalation auth gate → authorized execution qty wiring → BM
+> exact-body signing) so the final request body qty is only ever
+> `0.1` from `CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY` and never the
+> BL packet `0.01` fallback. The orchestrator's `_invoke_bm` and the
+> CLI both refuse the real `/v5/order/create` send path — even when
+> every flag, marker, and demo credential is supplied — and require
+> an injected fake `bm_fake_sender` to validate offline. Sender call
+> count is ≤ 1. The exact-body signature contract is preserved:
+> `X-BAPI-SIGN-TYPE=2`, HMAC-SHA256 over `timestamp + api_key +
+> recv_window + transmitted body`.
+>
+> New audit/report fields (all defaulted; existing 12 mandatory fields
+> unchanged): `real_demo_execute_requested`,
+> `real_demo_execute_authorized`,
+> `real_demo_authorization_marker_match`, `credentials_source`,
+> `resolved_execution_qty`, `resolved_execution_qty_source`,
+> `resolved_notional`, `bybit_ret_msg`, `final_status`.
+>
+> New statuses: `STATUS_REJECTED_REAL_EXECUTE_NOT_AUTHORIZED`,
+> `STATUS_REJECTED_REAL_EXECUTE_MARKER_MISMATCH`. The existing
+> `STATUS_REJECTED_REAL_EXECUTE_FORBIDDEN_STAGE1` is now reached when
+> the caller supplies demo credentials but no fake sender, so Stage 1
+> cannot dispatch a real send.
+>
+> Safety status: 0 real orders sent, 0 `/v5/order/create` real calls,
+> no live endpoint, no live/demo secret reads added, no
+> `main.py` / `src/risk.py` / `src/executors/bybit.py` /
+> `BybitExecutor` change, no global tiny-cap change,
+> `MAX_ORDER_COUNT=1` unchanged, BL packet `DEFAULT_QTY=0.01`
+> unchanged, all existing Stage 1 fake-sender-only restrictions
+> preserved. **A separate human authorization task is required before
+> Stage 2 can dispatch a real Bybit Demo order.**
+
+## TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1 Status (2026-06-20)
+
+- Status: COMPLETE (local commit `efe9d74`, amended by TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1_DISCOVERY_GATE_FIX; not pushed)
+- Orchestrator: `src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- CLI: `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- New tests: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py` (43/43 PASS)
+- New CLI fixture: `tests/demo_trading/fixtures_orchestrator_fake_senders.py`
+- Existing orchestrator + taxonomy + audit + opt-in family: 93/93 PASS
+- Tiny execution adapter scoped regression (corrected — previously falsely labeled `7921/7921 PASS`):
+  - Command: `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full`
+  - Result: **607 passed, 7701 deselected** (the 7921-figure conflated the unfiltered run, which contained 250 pre-existing Windows tmp_path errors + 2 pre-existing test-pollution failures and therefore must not be labeled PASS)
+- Py compile: PASS
+- Files intentionally not modified: `main.py`, `src/risk.py`, `src/executors/bybit.py`, BL packet `DEFAULT_QTY`, `TINY_QTY_CAP_SOL`, `TINY_SIZE_CAP_USDT`, `MAX_ORDER_COUNT=1`, `PROTECTED_SYMBOLS`, `MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT=20`, cap escalation gate source, BM execution source
+- Real order endpoint called: False
+- Real orders sent: False
+
+## Next VPS Validation Command (TASK-014BM real-demo execute surface Stage 1, post-discovery-gate-fix)
+
+```powershell
+python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --mode execute_real_demo_order --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1 --explicit-real-demo-order-flag --real-demo-authorization-marker DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1
+```
+
+Expected output must confirm:
+- stdout contains `REJECTED: Stage 1 forbids any real /v5/order/create call.`
+- CLI exit code `2`
+- No real Bybit Demo order sent
+- No call to `/v5/order/create`
+
+## TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1_DISCOVERY_GATE_FIX Status (2026-06-20)
+
+- Status: COMPLETE (amended into local commit `efe9d74` with `git commit --amend --no-edit`; not pushed)
+- Purpose: close two gaps in the Stage 1 surface — (a) `execute_real_demo_order` was not requiring fresh public read-only IR discovery; (b) the Stage 1 entries falsely claimed `7921/7921 PASS` for the tiny-execution-adapter regression.
+- New pre-flight discovery gate for `execute_real_demo_order` (readiness mode unaffected):
+  - Requires `ir_mode == MODE_DISCOVER` and `ir_pre_parsed_response is None` → else `STATUS_REJECTED_REAL_DEMO_DISCOVERY_REQUIRED`
+  - Requires `allow_real_ir_get=True` → else `STATUS_REJECTED_REAL_DEMO_READ_ONLY_OPT_IN_REQUIRED`
+  - CLI additionally rejects `--ir-pre-parsed-response-json`, `--ir-mode` other than `discover`, and a missing `--i-understand-this-performs-one-public-read-only-instrument-rules-get` opt-in (all exit 1)
+  - Gate fires before any IR or order sender callable is invoked (verified by `ir_counter == 0` assertions)
+- New statuses (added to `__all__`, safe-defaulted): `STATUS_REJECTED_REAL_DEMO_DISCOVERY_REQUIRED`, `STATUS_REJECTED_REAL_DEMO_READ_ONLY_OPT_IN_REQUIRED`
+- Changed files:
+  - `src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` (statuses + gate + `__all__`)
+  - `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` (3 new CLI rejection blocks for real-demo mode)
+  - `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py` (43 tests rewired through discover + injected `ir_sender`; rejection contracts unchanged)
+- New test module:
+  - `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1_discovery_gate_fix.py` (23/23 PASS)
+- Validation (local):
+  - Py compile: PASS (src + scripts + both Stage 1 test files)
+  - 23/23 new discovery-gate-fix tests PASS
+  - 43/43 existing Stage 1 tests PASS after rewiring
+  - 66/66 combined Stage 1 PASS
+  - 159/159 orchestrator-family PASS
+  - Scoped tiny-execution-adapter regression: `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full` → **630 passed, 7701 deselected**
+    - (Earlier intermediate result of `611 passed + 19 errors` was caused only by a missing `.pytest_local` parent directory — test-environment setup errors, not application or strategy failures; resolved by creating the directory first.)
+- Safety invariants: 0 real Bybit Demo orders sent, 0 real `/v5/order/create` calls, no live endpoint, no live/demo secret read changes, no `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor` change, `MAX_ORDER_COUNT=1` unchanged, BL packet `DEFAULT_QTY=0.01` unchanged, global tiny caps unchanged, 20 USDT notional cap unchanged, readiness-mode behavior unchanged, `execute_real_demo_order` requires fresh public IR discovery (cached/pre-parsed rules rejected), IR sender call count ≤ 1, fake BM sender call count ≤ 1, Stage 1 real sender remains unreachable, a separate human-authorized Stage 2 task is still required.
+
+
 > README shared status updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX (2026-06-20).
 > TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX corrects the orchestrator
 > top-level status so a real public read-only instrument-rules GET reports

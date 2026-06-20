@@ -180,10 +180,14 @@ def test_locks_match_solusdt_demo_market_buy_ioc():
     assert orc.MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT == Decimal("20")
 
 
-def test_supported_modes_only_two():
+def test_supported_modes_only_three():
+    # TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1 added
+    # the isolated execute_real_demo_order mode. Stage 1 still hard-
+    # refuses any real /v5/order/create call from that mode.
     assert orc.ORCH_SUPPORTED_MODES == (
         orc.ORCH_MODE_READINESS,
         orc.ORCH_MODE_EXECUTE_WITH_FAKE_SENDER,
+        orc.ORCH_MODE_EXECUTE_REAL_DEMO_ORDER,
     )
 
 
