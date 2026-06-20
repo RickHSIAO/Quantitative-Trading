@@ -79,6 +79,34 @@ Notes: Rebuilt as a clean local commit from the validated Stage 1 changes using 
 
 ---
 
+### 2026-06-20 (TASK-014BM_STAGE1_VPS_VALIDATION_CLOSEOUT -- record successful fake-sender-only VPS validation for commit d732273)
+
+Agent: Claude Sonnet 4.6
+Command source: Rick explicit chat authorization for TASK-014BM_STAGE1_VPS_VALIDATION_CLOSEOUT (documentation-only closeout; new local commit; do not push until Rick reviews).
+Task: Record the completed VPS Stage 1 validation results for commit d732273. Documentation-only -- no source files, tests, execution behavior, or safety gates were modified by this task.
+VPS environment: Ubuntu 24.04.4 LTS, Python 3.12.3, pytest 9.1.1. Validated commit: d732273 (TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1). Branch status at validation: main == origin/main.
+Status before: VPS validation results existed but were not yet recorded in documentation.
+Status after: VPS validation results recorded in README.md, NEXT_ACTION.md, and COMMAND_LOG.md. Stage 1 VPS validation marked COMPLETE/PASS.
+Files changed:
+- `README.md` (new VPS closeout banner block added after the discovery-gate-fix banner)
+- `docs/research/commands/NEXT_ACTION.md` (new VPS closeout status section + next-recommended-task block)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (VPS, commit d732273):
+- py_compile: PASS (src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py, scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py, tests/demo_trading/fixtures_orchestrator_fake_senders.py, tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py, tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1_discovery_gate_fix.py)
+- 23/23 focused discovery-gate-fix tests PASS
+- 66/66 combined Stage 1 PASS
+- 159/159 one-shot orchestrator-family PASS
+- `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full`: 630 passed, 7701 deselected
+- Real-sender refusal: `execute_real_demo_order` without `--stage1-allow-fake-sender-execute-mode` -> stdout: `REJECTED: Stage 1 forbids any real /v5/order/create call. Real-demo-order can only be validated offline with a fake sender.`; exit code 2
+- Injected fake-sender path: status=ORCHESTRATION_OK_FAKE_SENDER_EXECUTED_DEMO_ONLY; instrument_rules_loaded=True; candidate_qty='0.1'; candidate_notional='10.0'; cap_gate_status='ESCALATION_AUTHORIZED'; wiring_status='WIRING_AUTHORIZED_CANDIDATE_QTY'; original_packet_qty='0.01'; actual_request_body_qty='0.1'; actual_request_body_qty_source='CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY'; body_qty_authorized_override=True; read_only_network_attempted=True; order_network_attempted=True; network_attempted=True; order_endpoint_called=True; order_sent=True; fake_sender_used=True; sender_call_count=1; real_execute_disabled_stage1=True; bybit_order_id='fake-cli-1'; credentials_source='injected_demo_credentials'; resolved_notional='10.0'
+- Audit clarification: order_network_attempted=True, order_endpoint_called=True, and order_sent=True describe the simulated BM execution through the injected fake sender, NOT a real Bybit network request. Simulated endpoint-shaped fake-sender calls: 1. Real Bybit Demo /v5/order/create network calls: 0. Real Bybit Demo orders sent: 0. Stage 1 real sender remains unreachable. A separate explicit human authorization task is still required before any Stage 2 real Demo dispatch.
+- Real /v5/order/create network calls: 0
+- Real Bybit Demo orders sent: 0
+Outputs: No orchestrator JSON/MD reports written. No live credentials used. No VPS files modified by this closeout task.
+Notes: Source files and tests not modified. Documentation-only closeout. New local commit -- not pushed pending Rick review.
+
+---
+
 ### 2026-06-20 (TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX -- correct orchestrator top-level readiness status: STATUS_OK_READINESS_READ_ONLY_NETWORK for discover paths)
 
 Agent: Claude Sonnet 4.6

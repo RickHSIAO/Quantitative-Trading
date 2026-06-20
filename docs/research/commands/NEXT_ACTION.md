@@ -96,6 +96,50 @@ Expected output must confirm:
     - (Earlier intermediate result of `611 passed + 19 errors` was caused only by a missing `.pytest_local` parent directory — test-environment setup errors, not application or strategy failures; resolved by creating the directory first.)
 - Safety invariants: 0 real Bybit Demo orders sent, 0 real `/v5/order/create` calls, no live endpoint, no live/demo secret read changes, no `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor` change, `MAX_ORDER_COUNT=1` unchanged, BL packet `DEFAULT_QTY=0.01` unchanged, global tiny caps unchanged, 20 USDT notional cap unchanged, readiness-mode behavior unchanged, `execute_real_demo_order` requires fresh public IR discovery (cached/pre-parsed rules rejected), IR sender call count ≤ 1, fake BM sender call count ≤ 1, Stage 1 real sender remains unreachable, a separate human-authorized Stage 2 task is still required.
 
+## TASK-014BM_STAGE1_VPS_VALIDATION_CLOSEOUT Status (2026-06-20)
+
+- Status: COMPLETE — VPS Stage 1 validation PASS
+- Validated commit: `d732273` (TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1)
+- VPS environment: Ubuntu 24.04.4 LTS, Python 3.12.3, pytest 9.1.1
+- Branch status at validation: `main == origin/main`
+- Py compile: PASS (5 files: orchestrator src, CLI scripts, fixtures, Stage 1 test, discovery-gate-fix test)
+- 23/23 focused discovery-gate-fix tests PASS
+- 66/66 combined Stage 1 PASS
+- 159/159 one-shot orchestrator-family PASS
+- Scoped tiny-execution-adapter regression: `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full` → **630 passed, 7701 deselected**
+- Real-sender refusal confirmed on VPS:
+  - Command: `execute_real_demo_order` without `--stage1-allow-fake-sender-execute-mode`
+  - Output: `REJECTED: Stage 1 forbids any real /v5/order/create call. Real-demo-order can only be validated offline with a fake sender.`
+  - Exit code: 2
+- Injected fake-sender path confirmed on VPS (simulated, offline):
+  - `status=ORCHESTRATION_OK_FAKE_SENDER_EXECUTED_DEMO_ONLY`
+  - `instrument_rules_loaded=True`, `candidate_qty='0.1'`, `candidate_notional='10.0'`
+  - `cap_gate_status='ESCALATION_AUTHORIZED'`, `wiring_status='WIRING_AUTHORIZED_CANDIDATE_QTY'`
+  - `original_packet_qty='0.01'`, `actual_request_body_qty='0.1'`, `actual_request_body_qty_source='CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY'`
+  - `body_qty_authorized_override=True`
+  - `read_only_network_attempted=True`, `order_network_attempted=True`, `network_attempted=True`
+  - `order_endpoint_called=True`, `order_sent=True`, `fake_sender_used=True`, `sender_call_count=1`
+  - `real_execute_disabled_stage1=True`, `bybit_order_id='fake-cli-1'`
+  - `credentials_source='injected_demo_credentials'`, `resolved_notional='10.0'`
+  - **Audit clarification**: `order_network_attempted`, `order_endpoint_called`, and `order_sent` all describe the **simulated** BM execution through the injected fake sender — NOT a real Bybit network request.
+    - Simulated endpoint-shaped fake-sender calls: 1
+    - Real Bybit Demo `/v5/order/create` network calls: 0
+    - Real Bybit Demo orders sent: 0
+    - Stage 1 real sender: unreachable
+- Real order endpoint called (actual network): False
+- Real orders sent: False
+- Documentation change only: source files and tests were not modified by this closeout task.
+
+## Next Recommended Engineering Task (fail-closed — real Demo execution NOT yet authorized)
+
+The Stage 1 validation is complete. Real Bybit Demo order dispatch remains **explicitly unauthorized**.
+
+Recommended next engineering task (choose one):
+1. **Audit-field clarity**: add explicit `is_real_order=False` / `real_send_attempted=False` fields to `OrchestrationReport` so consumers cannot confuse `order_sent=True` (fake) with a real network dispatch.
+2. **Offline/fake-only postfill-audit scaffold**: add a postfill audit step that runs after the fake-sender path, records the simulated request body for offline inspection, and flags any field mismatch vs. the pre-validated cap-escalation contract.
+
+**Do NOT** proceed to a real Demo order dispatch without a separate, explicit human authorization task that names the exact commit, qty, symbol, side, and timestamp window.
+
 
 > README shared status updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX (2026-06-20).
 > TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX corrects the orchestrator
