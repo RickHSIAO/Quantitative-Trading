@@ -21,6 +21,35 @@ Notes:
 
 ---
 
+### 2026-06-20 (TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX -- narrow CLI opt-in for one public read-only Bybit Demo SOLUSDT instrument-rules GET)
+
+Agent: Codex GPT-5.5
+Command source: Rick explicit chat authorization for TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX (local commit only; no push).
+Task: Add a narrow explicit CLI opt-in for the existing public read-only Bybit Demo instrument-rules discovery GET. Required flag: `--i-understand-this-performs-one-public-read-only-instrument-rules-get`. Default `--ir-mode discover` must remain fail-closed before network. With the flag, the preview CLI must pass `allow_real_ir_get=True` to `run_one_shot_authorized_execution_orchestration()`. The only allowed real request is `GET https://api-demo.bybit.com/v5/market/instruments-info?category=linear&symbol=SOLUSDT`. Do not expose real BM execute mode; do not weaken fake-sender-only execution restrictions; do not read credentials for the public GET; do not modify `main.py`, `src/risk.py`, `src/executors/bybit.py`, BybitExecutor/live behavior, global tiny caps, protected symbols, or `MAX_ORDER_COUNT=1`.
+Status before: Current commit `c64429b` had the orchestrator kwarg `allow_real_ir_get=False` but the preview CLI did not provide a command-line opt-in that passed `True`; VPS readiness discovery failed closed before network with `OneShotAuthorizedExecutionOrchestratorError`.
+Status after: Preview CLI exposes the exact opt-in flag, rejects `--ir-mode discover` without it before network, prints the updated error/help text, and passes `allow_real_ir_get=True` only when the flag is present. Focused tests prove the CLI handoff, exact URL, single public GET behavior, no order endpoint call, no order sent, no credentials required, and readiness resolution with `instrument_rules_loaded=True`, `candidate_qty=0.1`, `cap_gate_status=ESCALATION_AUTHORIZED`, `wiring_status=WIRING_AUTHORIZED_CANDIDATE_QTY`, and `actual_request_body_qty=0.1`.
+Files changed:
+- `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py`
+- `README.md`
+- `docs/research/commands/NEXT_ACTION.md`
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- `python -m py_compile scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py` with bytecode cache under `%TEMP%` -> PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py --basetemp=<temp>/quant-pytest-codex-optin -p no:cacheprovider` -> 12/12 PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --basetemp=<temp>/quant-pytest-codex-orchestrator -p no:cacheprovider` -> 34/34 PASS
+- `python -m pytest tests/demo_trading -k tiny_execution_adapter --basetemp=<temp>/quant-pytest-codex-tiny -p no:cacheprovider` -> 517/517 PASS (prior 505 + 12 opt-in fix tests)
+Outputs: No reports or demo output artifacts committed. No real order network call. No real order sent. No credentials read for the public GET.
+Notes: On this Windows workstation, local validation used system Python 3.10 with `PYTHONPATH=.venv\Lib\site-packages;F:\RickHSIAO\Python\dragon-pet-ai\.venv-funasr\Lib\site-packages` because the repo `.venv` launcher is broken by the non-ASCII path in `pyvenv.cfg`. VPS should use its normal Python/venv.
+
+Next VPS validation command:
+
+```powershell
+python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+```
+
+---
+
 ### 2026-06-19（TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR — Stage 1: narrow demo-only one-shot orchestration CLI/module wiring the full authorized execution chain BM_MIN_QTY_FIX → BM_CAP_ESCALATION_GATE → BM_WIRE_AUTHORIZED_CANDIDATE_QTY → BM so BM plans/signs a request body with `qty="0.1"` instead of the invalid BL packet `"0.01"`; real execute disabled; readiness + fake-sender modes only）
 
 Agent: Claude (Opus 4.7)

@@ -2216,3 +2216,29 @@ risk_amount = capital * min(kelly_frac, MAX_RISK_PCT) * leverage
 - 即時交易前請務必先以 `BYBIT_DEMO = True` 充分測試
 - 回測績效不代表未來實際報酬
 - API 金鑰存放於 `.env`，已列入 `.gitignore`，請勿手動提交至版本控制
+# TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX (2026-06-20)
+
+Narrow preview-CLI fix for the Stage 1 one-shot authorized execution orchestrator. The CLI now exposes the explicit read-only opt-in flag:
+
+`--i-understand-this-performs-one-public-read-only-instrument-rules-get`
+
+Default remains fail-closed: `--ir-mode discover` without that flag rejects before network and prints the required flag. With the flag, the CLI passes `allow_real_ir_get=True` into `run_one_shot_authorized_execution_orchestration()`.
+
+The only allowed real request for this task is one public read-only GET:
+
+`GET https://api-demo.bybit.com/v5/market/instruments-info?category=linear&symbol=SOLUSDT`
+
+This task does not expose real BM execute mode, does not weaken fake-sender-only execution restrictions, does not read credentials for the public GET, and does not modify `main.py`, `src/risk.py`, `src/executors/bybit.py`, global tiny caps, protected symbols, or `MAX_ORDER_COUNT=1`. Readiness remains `order_endpoint_called=False` and `order_sent=False`.
+
+Validation:
+
+- `python -m py_compile scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py` with bytecode cache under `%TEMP%` -> PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py --basetemp=<temp>/quant-pytest-codex-optin -p no:cacheprovider` -> 12/12 PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --basetemp=<temp>/quant-pytest-codex-orchestrator -p no:cacheprovider` -> 34/34 PASS
+- `python -m pytest tests/demo_trading -k tiny_execution_adapter --basetemp=<temp>/quant-pytest-codex-tiny -p no:cacheprovider` -> 517/517 PASS
+
+Next VPS validation command:
+
+```powershell
+python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+```

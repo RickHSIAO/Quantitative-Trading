@@ -9,9 +9,23 @@ flag ``--stage1-allow-fake-sender-execute-mode`` AND a callable
 order/network is sent because the fake sender is supplied by the
 caller.
 
+Instrument-rules discovery mode (``--ir-mode discover``) is disabled
+by default. To enable the single bounded public GET to
+``https://api-demo.bybit.com/v5/market/instruments-info`` pass:
+
+    --i-understand-this-performs-one-public-read-only-instrument-rules-get
+
+This flag only authorises the read-only instruments-info endpoint.
+It never authorises ``/v5/order/create``, ``/v5/order/cancel``,
+``/v5/position/set-trading-stop``, any live Bybit host, or any
+WebSocket endpoint. No credentials are required or read for this
+public GET. The CLI remains ``order_endpoint_called=False`` and
+``order_sent=False`` in all cases.
+
 Exit codes:
     0 -- ORCHESTRATION_OK_*
-    1 -- any ORCHESTRATION_REJECTED_* (chain failed-closed)
+    1 -- any ORCHESTRATION_REJECTED_* (chain failed-closed) or
+         --ir-mode discover used without the opt-in flag
     2 -- ORCHESTRATION_REJECTED_MISSING_CREDENTIALS or
          ORCHESTRATION_REJECTED_MISSING_FAKE_SENDER
 """
@@ -112,6 +126,20 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--i-understand-this-performs-one-public-read-only-instrument-rules-get",
+        dest="allow_real_ir_get",
+        action="store_true",
+        help=(
+            "explicit opt-in for --ir-mode discover. Authorises one bounded "
+            "public GET to "
+            "https://api-demo.bybit.com/v5/market/instruments-info"
+            "?category=linear&symbol=SOLUSDT. "
+            "Never authorises /v5/order/create or any live host. "
+            "No credentials required. order_endpoint_called and order_sent "
+            "remain False in all cases."
+        ),
+    )
+    parser.add_argument(
         "--stage1-allow-fake-sender-execute-mode",
         action="store_true",
         help=(
@@ -163,6 +191,21 @@ def main(argv: list[str] | None = None) -> int:
     from src import (
         demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator as orc,
     )
+
+    # CLI-level guard: --ir-mode discover is fail-closed by default.
+    # Require the explicit opt-in flag or reject before any network call.
+    if args.ir_mode == "discover" and not args.allow_real_ir_get:
+        print(
+            "REJECTED: --ir-mode discover requires the explicit opt-in flag\n"
+            "  --i-understand-this-performs-one-public-read-only-instrument-rules-get\n"
+            "Without it the CLI refuses to perform any public GET. "
+            "Pass the flag to authorise one bounded GET to\n"
+            "  https://api-demo.bybit.com/v5/market/instruments-info"
+            "?category=linear&symbol=SOLUSDT\n"
+            "No credentials are required. order_endpoint_called and "
+            "order_sent remain False."
+        )
+        return 1
 
     # CLI-level Stage 1 safety: execute_with_fake_sender requires the
     # explicit testing flag AND a fake sender import path AND a fake
@@ -221,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         ir_pre_parsed_response=ir_pre_parsed,
         bm_credentials=bm_credentials,
         bm_fake_sender=bm_fake_sender,
+        allow_real_ir_get=bool(args.allow_real_ir_get),
     )
 
     # ------------- 12 required surfaces -----------------------------------

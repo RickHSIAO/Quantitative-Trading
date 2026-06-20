@@ -1,5 +1,36 @@
 # Next Action
 
+> README shared status updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX (2026-06-20).
+> TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX is a narrow preview-CLI opt-in fix for the existing public read-only Bybit Demo instrument-rules discovery path.
+>
+> New CLI flag:
+> `--i-understand-this-performs-one-public-read-only-instrument-rules-get`
+>
+> Default remains fail-closed: `--ir-mode discover` without the new flag rejects at the CLI before network and prints the required opt-in flag. With `--ir-mode discover` plus the flag, the CLI passes `allow_real_ir_get=True` into `run_one_shot_authorized_execution_orchestration()`.
+>
+> Exact allowed read-only endpoint:
+> `GET https://api-demo.bybit.com/v5/market/instruments-info?category=linear&symbol=SOLUSDT`
+>
+> Safety status: no `/v5/order/create`, no `/v5/order/cancel`, no `/v5/position/set-trading-stop`, no live Bybit hosts, no websocket endpoints, no credentials required or read for the public GET, real BM execute mode still not exposed, fake-sender-only execution restrictions unchanged, readiness remains `order_endpoint_called=False` and `order_sent=False`.
+
+## TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX Status (2026-06-20)
+
+- Status: COMPLETE (local commit pending)
+- CLI: `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- Tests: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py` (12/12 PASS)
+- Existing orchestrator regression: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` (34/34 PASS)
+- Tiny execution adapter regression: `tests/demo_trading -k tiny_execution_adapter` (517/517 PASS; includes prior 505 + 12 opt-in fix tests)
+- Py compile: PASS
+- Files intentionally not modified: `main.py`, `src/risk.py`, `src/executors/bybit.py`, live Bybit behavior, global tiny caps, protected symbols, `MAX_ORDER_COUNT=1`
+- Order endpoint called: False
+- Order sent: False
+
+## Next VPS Validation Command (TASK-014BM read-only discovery opt-in)
+
+```powershell
+python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+```
+
 > README shared status updated by TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR (2026-06-19).
 > TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR is a
 > **Stage 1, offline-validated, demo-only** orchestration layer
