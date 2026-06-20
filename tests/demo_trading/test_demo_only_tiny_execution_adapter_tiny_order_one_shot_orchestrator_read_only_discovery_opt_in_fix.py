@@ -214,6 +214,13 @@ def test_cli_discover_with_opt_in_passes_allow_real_ir_get_true(monkeypatch):
             resolved_notional="10",
             bybit_ret_msg="",
             final_status=orc.STATUS_OK_READINESS_READ_ONLY_NETWORK,
+            simulated_order_network_attempted=False,
+            simulated_order_endpoint_called=False,
+            simulated_order_sent=False,
+            real_order_network_attempted=False,
+            real_order_endpoint_called=False,
+            real_order_sent=False,
+            order_transport_kind=orc.ORDER_TRANSPORT_KIND_NONE,
         )
 
     monkeypatch.setattr(

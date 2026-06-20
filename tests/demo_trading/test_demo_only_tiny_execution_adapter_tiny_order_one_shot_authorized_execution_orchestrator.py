@@ -502,7 +502,17 @@ def test_fake_sender_bybit_reject_surfaces_bm_bybit_not_executed():
     assert r.status == orc.STATUS_REJECTED_BM_BYBIT_NOT_EXECUTED
     assert r.bm_final_status == bm.STATUS_BYBIT_REJECTED_NO_ORDER_SENT
     assert r.order_endpoint_called is True
+    # A nonzero Bybit retCode is still a normal simulated transport
+    # return -- the body reached the fake endpoint and Bybit replied.
+    # ``simulated_order_sent`` records the transport; the business
+    # outcome is checked via ``bybit_ret_code`` / ``bm_final_status``.
+    # Per the CORRECTION pass, legacy ``order_sent`` preserves prior
+    # accepted-order business-outcome semantics, so a nonzero retCode
+    # keeps it False while ``simulated_order_sent`` is True.
+    assert r.simulated_order_sent is True
+    assert r.real_order_sent is False
     assert r.order_sent is False
+    assert r.bybit_order_id == ""
     assert r.sender_call_count == 1
 
 

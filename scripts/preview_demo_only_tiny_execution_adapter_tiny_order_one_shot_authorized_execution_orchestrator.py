@@ -448,6 +448,23 @@ def main(argv: list[str] | None = None) -> int:
         f"bybit_ret_msg={report.bybit_ret_msg!r} "
         f"final_status={report.final_status!r}"
     )
+    # TASK-014BM_STAGE1_REAL_VS_SIMULATED_ORDER_AUDIT_SEMANTICS_SPLIT:
+    # explicit simulated-vs-real split. Stage 1 must never emit
+    # order_transport_kind='REAL_DEMO_SENDER'.
+    print(f"order_transport_kind={report.order_transport_kind!r}")
+    print(
+        f"simulated_order_network_attempted="
+        f"{report.simulated_order_network_attempted} "
+        f"simulated_order_endpoint_called="
+        f"{report.simulated_order_endpoint_called} "
+        f"simulated_order_sent={report.simulated_order_sent}"
+    )
+    print(
+        f"real_order_network_attempted="
+        f"{report.real_order_network_attempted} "
+        f"real_order_endpoint_called={report.real_order_endpoint_called} "
+        f"real_order_sent={report.real_order_sent}"
+    )
 
     if args.write_report:
         paths = orc.write_report(report, output_dir=args.output_dir)

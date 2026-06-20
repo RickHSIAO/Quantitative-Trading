@@ -515,9 +515,21 @@ def test_real_demo_fake_sender_bybit_reject_fails_closed():
         bm_fake_sender=_fake_sender_bybit_reject_factory(captured),
     )
     assert r.status == orc.STATUS_REJECTED_BM_BYBIT_NOT_EXECUTED
-    assert r.order_sent is False
+    # Bybit business rejection -- no orderId was issued.
     assert r.bybit_ret_code == 10004
     assert r.bybit_ret_msg == "auth failed (fake)"
+    assert r.bybit_order_id == ""
+    # Per the audit-semantics-split, a nonzero retCode is still a normal
+    # simulated transport return: the body reached the fake endpoint and
+    # Bybit replied. The simulated facet records the transport, not the
+    # business outcome. Per the CORRECTION pass, legacy ``order_sent``
+    # preserves the prior accepted-order business-outcome semantics, so
+    # a nonzero retCode keeps legacy ``order_sent=False`` even while
+    # ``simulated_order_sent=True``.
+    assert r.order_transport_kind == orc.ORDER_TRANSPORT_KIND_FAKE_SENDER
+    assert r.simulated_order_sent is True
+    assert r.real_order_sent is False
+    assert r.order_sent is False
 
 
 def test_real_demo_fake_sender_network_error_fails_closed():
@@ -526,6 +538,11 @@ def test_real_demo_fake_sender_network_error_fails_closed():
         bm_fake_sender=_fake_sender_network_error_factory(captured),
     )
     assert r.status == orc.STATUS_REJECTED_BM_NETWORK_ERROR
+    # A simulated network error means the body was not successfully sent.
+    assert r.order_transport_kind == orc.ORDER_TRANSPORT_KIND_FAKE_SENDER
+    assert r.simulated_order_endpoint_called is True
+    assert r.simulated_order_sent is False
+    assert r.real_order_sent is False
     assert r.order_sent is False
 
 

@@ -1,5 +1,184 @@
 # Next Action
 
+> README shared status updated by TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION (2026-06-21).
+> TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION amends the previous
+> AUDIT_SEMANTICS_SPLIT commit `d189382` in place (no push) to close three
+> semantic + safety gaps without weakening any Stage 1 safety boundary:
+>
+> 1. **Legacy `order_sent` restored to business-outcome semantics.** Previously
+>    rewritten as `order_sent = simulated_order_sent OR real_order_sent`, which
+>    broke backward compatibility (a fake sender that returned normally with a
+>    nonzero Bybit `retCode` produced legacy `order_sent=True`). Legacy
+>    `order_sent` is now sourced directly from BM's `SendOutcome.order_sent`
+>    (= `retCode == 0 AND non-empty orderId`). `simulated_order_sent=True`
+>    alone is NOT proof Bybit accepted the order. Consumers must use
+>    `bybit_ret_code` + `bybit_order_id` + `bm_final_status` + legacy
+>    `order_sent` for the accepted-order outcome, and `real_order_sent` to
+>    prove a real Bybit Demo order (Stage 1 guarantees `False`).
+> 2. **Raised fake-sender exceptions stay safe.** `_invoke_bm` wraps the
+>    counting-sender in `try/except` and reshapes any raised exception into
+>    the same `{"_network_error": True, "_error_repr": ...}` sentinel BM
+>    already understands, so no exception leaks out of the public
+>    orchestration surface. Final status remains
+>    `STATUS_REJECTED_BM_NETWORK_ERROR`, `simulated_order_sent=False`,
+>    sender call count = 1, real network calls = 0.
+> 3. **Forbidden transport-kinds fail closed.** New
+>    `_validate_stage1_order_transport_kind` helper validates against the
+>    exact allowlist; `_build_rejection_report` / `_build_full_report` no
+>    longer silently rewrite `REAL_DEMO_SENDER` to `NONE` / `FAKE_SENDER`.
+>    Forbidden or unknown values raise
+>    `OneShotAuthorizedExecutionOrchestratorError`. Real sender stays
+>    unreachable; no real network request occurs before this invariant check.
+>
+> Legacy aggregate formulas (CORRECTION-final):
+> - `order_network_attempted = simulated_order_network_attempted OR real_order_network_attempted`
+> - `order_endpoint_called  = simulated_order_endpoint_called  OR real_order_endpoint_called`
+> - `network_attempted      = read_only_network_attempted      OR order_network_attempted`
+> - `order_sent` = BM `SendOutcome.order_sent` (business outcome; NOT an OR aggregate of the split fields)
+>
+> Safety status: 0 real Bybit Demo orders sent, 0 real `/v5/order/create` calls,
+> no live endpoint, no live/demo secret read changes, no `main.py` /
+> `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor` change, no global
+> tiny-cap change, `MAX_ORDER_COUNT=1` unchanged, BL packet `DEFAULT_QTY=0.01`
+> unchanged, cap escalation authorization gate unchanged, 20 USDT notional
+> cap unchanged, all Stage 1 fake-sender-only restrictions preserved, the
+> orchestrator `_invoke_bm` real sender remains unreachable, a separate
+> human authorization task is still required before Stage 2 can dispatch a
+> real Bybit Demo order.
+
+## TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION Status (2026-06-21)
+
+- Status: COMPLETE (local commit `d189382` amended in place; not pushed)
+- Parent commit (before amend): `31b0bf8` (TASK-014BM_STAGE1_VPS_VALIDATION_CLOSEOUT)
+- Orchestrator: `src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+  - New helper `_validate_stage1_order_transport_kind(kind)` (exported in `__all__`) raising `OneShotAuthorizedExecutionOrchestratorError` for `REAL_DEMO_SENDER` and unknown values
+  - `_build_rejection_report` calls the validator (replaces silent `REAL_DEMO_SENDER` → `NONE` rewrite); legacy `order_sent` set explicitly to `False` (no business outcome on rejection paths)
+  - `_build_full_report` calls the validator (replaces silent `REAL_DEMO_SENDER` → `FAKE_SENDER` rewrite); legacy `order_sent` sourced from `bm_report.order_sent` (= `retCode == 0 AND non-empty orderId`)
+  - `_invoke_bm` counting-sender wraps `bm_fake_sender` in `try/except`; raised exceptions become `{"_network_error": True, "_error_repr": "<type>: <msg>"}`
+- Focused tests: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py` extended to 27/27 PASS (prior 20 + 7 new):
+  - `_assert_legacy_aggregates` split into `_assert_legacy_transport_aggregates` (OR for `order_network_attempted` / `order_endpoint_called` / `network_attempted`) and `_assert_legacy_order_sent_is_business_outcome` (`retCode == 0 AND non-empty orderId`)
+  - Success path: now also asserts legacy `order_sent=True`
+  - Nonzero retCode: legacy `order_sent=False` (reverted from `True`)
+  - New: retCode==0 + empty orderId (`simulated_order_sent=True`, legacy `order_sent=False`)
+  - New: real raised exception via `RuntimeError` (no leaked exception; `simulated_order_endpoint_called=True`, `simulated_order_sent=False`, sender call count 1)
+  - New: 4 validator tests (reject `REAL_DEMO_SENDER` / unknown; accept `NONE` / `FAKE_SENDER`; `_build_rejection_report` fail-closed on forbidden / unknown)
+- Cross-impact tests reverted to business-outcome expectation:
+  - `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py::test_real_demo_fake_sender_bybit_reject_fails_closed` → `order_sent=False`
+  - `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py::test_fake_sender_bybit_reject_surfaces_bm_bybit_not_executed` → `order_sent=False`
+- Validation (local, on amended commit):
+  - Py compile: PASS (6 files — orchestrator src, CLI preview script, the focused split test, and the 3 updated/touched test modules)
+  - 27/27 focused split tests PASS
+  - 66/66 combined Stage 1 (real-demo + discovery-gate-fix) PASS
+  - 186/186 one-shot orchestrator-family PASS (179 prior + 7 new)
+  - Scoped tiny-execution-adapter regression: `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full` → **657 passed, 7701 deselected** (650 prior + 7 new)
+- Files intentionally not modified: `main.py`, `src/risk.py`, `src/executors/bybit.py`, `BybitExecutor`, BM signing implementation, endpoint implementation, BL packet `DEFAULT_QTY=0.01`, `TINY_QTY_CAP_SOL`, `TINY_SIZE_CAP_USDT`, `MAX_ORDER_COUNT=1`, `PROTECTED_SYMBOLS`, `MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT=20`, cap escalation gate source, scheduler / cron, credential loading
+- Real order endpoint called: False
+- Real orders sent: False
+
+> README shared status updated by TASK-014BM_STAGE1_REAL_VS_SIMULATED_ORDER_AUDIT_SEMANTICS_SPLIT (2026-06-21).
+> TASK-014BM_STAGE1_REAL_VS_SIMULATED_ORDER_AUDIT_SEMANTICS_SPLIT removes the
+> ambiguity between injected fake-sender execution and an actual Bybit Demo
+> network order on the `OrchestrationReport`. Seven explicit audit fields are
+> added (all safe-defaulted; existing 12 mandatory fields unchanged):
+> `simulated_order_network_attempted`, `simulated_order_endpoint_called`,
+> `simulated_order_sent`, `real_order_network_attempted`,
+> `real_order_endpoint_called`, `real_order_sent`, and `order_transport_kind`
+> (allowlist: `NONE` / `FAKE_SENDER` / `REAL_DEMO_SENDER`).
+>
+> Stage 1 hard invariant: `order_transport_kind` is **never** emitted as
+> `REAL_DEMO_SENDER`, and the three `real_order_*` booleans are **always**
+> `False`. The new public constant `STAGE1_FORBIDDEN_ORDER_TRANSPORT_KINDS`
+> lists the forbidden value so consumers can assert externally.
+>
+> Semantics:
+> - **No dispatch** (readiness, every rejection path, Stage 1 real-send refusal):
+>   all six split booleans `False`, `order_transport_kind="NONE"`.
+> - **Fake sender normal return** (including non-zero Bybit `retCode`): all three
+>   `simulated_*` `True`, all three `real_*` `False`, `order_transport_kind="FAKE_SENDER"`.
+>   Bybit business rejections are surfaced via `bybit_ret_code` / `bm_final_status`
+>   and no longer rewrite the transport facet.
+> - **Fake sender exception** (network error): `simulated_order_network_attempted=True`,
+>   `simulated_order_endpoint_called=True`, `simulated_order_sent=False`,
+>   `order_transport_kind="FAKE_SENDER"`.
+>
+> Legacy fields kept for backward compatibility (CORRECTION-final semantics):
+> - `order_network_attempted = simulated_order_network_attempted OR real_order_network_attempted`
+> - `order_endpoint_called  = simulated_order_endpoint_called  OR real_order_endpoint_called`
+> - `network_attempted      = read_only_network_attempted      OR order_network_attempted`
+> - **`order_sent`** retains its prior accepted-order business-outcome
+>   meaning (`retCode == 0 AND non-empty orderId`); it is **not**
+>   `simulated_order_sent OR real_order_sent`. See
+>   TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION (2026-06-21) above
+>   for the rationale and final mapping.
+>
+> Safety status: 0 real Bybit Demo orders sent, 0 real `/v5/order/create` calls,
+> no live endpoint, no live/demo secret read changes, no `main.py` / `src/risk.py` /
+> `src/executors/bybit.py` / `BybitExecutor` change, no global tiny-cap change,
+> `MAX_ORDER_COUNT=1` unchanged, BL packet `DEFAULT_QTY=0.01` unchanged,
+> cap escalation authorization gate unchanged, 20 USDT notional cap unchanged,
+> all Stage 1 fake-sender-only restrictions preserved, the orchestrator
+> `_invoke_bm` real sender remains unreachable, a separate human authorization
+> task is still required before Stage 2 can dispatch a real Bybit Demo order.
+
+## TASK-014BM_STAGE1_REAL_VS_SIMULATED_ORDER_AUDIT_SEMANTICS_SPLIT Status (2026-06-21)
+
+- Status: COMPLETE (local commit pending; not pushed)
+- Parent commit: `31b0bf8` (TASK-014BM_STAGE1_VPS_VALIDATION_CLOSEOUT) — NOT amended; this is a new commit
+- Orchestrator: `src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+  - Added 7 audit fields to `OrchestrationReport` (safe defaults; `to_dict()` extended)
+  - Added constants `ORDER_TRANSPORT_KIND_NONE`, `ORDER_TRANSPORT_KIND_FAKE_SENDER`, `ORDER_TRANSPORT_KIND_REAL_DEMO_SENDER`, plus `ORDER_TRANSPORT_KINDS` and `STAGE1_FORBIDDEN_ORDER_TRANSPORT_KINDS`
+  - `_build_rejection_report` accepts the new fields; Stage 1 guard normalizes any leaked `REAL_DEMO_SENDER` → `NONE`; legacy `order_*` / `network_attempted` fields recomputed as OR aggregates
+  - `_build_full_report` classifies fake-sender activity: `simulated_order_sent` is derived from `bm_endpoint_called AND bm_final_status != STATUS_NETWORK_ERROR_DEMO_ONLY` so transport facet is independent of Bybit business outcome; Stage 1 guard normalizes any `REAL_DEMO_SENDER` → `FAKE_SENDER`
+  - `_render_markdown` appends a new "Order activity audit (simulated vs real)" section
+  - `__all__` extended with the new constants
+- CLI: `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+  - stdout now prints `order_transport_kind`, the 3 `simulated_*` booleans, and the 3 `real_*` booleans before the optional report-write block
+- New tests: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py` (20/20 PASS)
+  - Constants & exports (3 tests)
+  - All no-dispatch paths: readiness, every rejection, Stage 1 real-send refusal (9 tests)
+  - Fake-sender dispatch: OK, Bybit `retCode != 0`, network error (3 tests)
+  - Invariants: Stage 1 never emits `REAL_DEMO_SENDER`; legacy OR aggregates (2 tests)
+  - Serialization: `to_dict()`, markdown render, CLI stdout (3 tests)
+- Updated existing tests aligned to new semantics:
+  - `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py` — Bybit reject case now asserts `simulated_order_sent=True` (transport succeeded) + `bybit_order_id==""` + `order_transport_kind=FAKE_SENDER`; network error case asserts `simulated_order_endpoint_called=True`, `simulated_order_sent=False`
+  - `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` — `test_fake_sender_bybit_reject_surfaces_bm_bybit_not_executed` aligned to new split semantics
+  - `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py` — `SimpleNamespace` orchestration-report mock extended with the 7 new fields
+- Validation (local):
+  - Py compile: PASS (6 files — orchestrator src, CLI preview script, the new split test, and the 3 updated test modules)
+  - 20/20 focused split tests PASS
+  - 66/66 combined Stage 1 (real-demo + discovery-gate-fix) PASS
+  - 179/179 one-shot orchestrator-family PASS (159 prior + 20 new)
+  - Scoped tiny-execution-adapter regression: `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full` → **650 passed, 7701 deselected** (630 prior + 20 new)
+- Files intentionally not modified: `main.py`, `src/risk.py`, `src/executors/bybit.py`, `BybitExecutor`, BL packet `DEFAULT_QTY=0.01`, `TINY_QTY_CAP_SOL`, `TINY_SIZE_CAP_USDT`, `MAX_ORDER_COUNT=1`, `PROTECTED_SYMBOLS`, `MAX_DEMO_MIN_QTY_NOTIONAL_CAP_USDT=20`, cap escalation gate source, BM execution source
+- Real order endpoint called: False
+- Real orders sent: False
+
+## Next VPS Validation Command (TASK-014BM Stage 1 audit semantics split)
+
+```powershell
+python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --mode execute_real_demo_order --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1 --explicit-real-demo-order-flag --real-demo-authorization-marker DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1
+```
+
+Expected output must confirm:
+- stdout contains `REJECTED: Stage 1 forbids any real /v5/order/create call.`
+- CLI exit code `2`
+- stdout contains `order_transport_kind='NONE'`
+- stdout contains `simulated_order_network_attempted=False simulated_order_endpoint_called=False simulated_order_sent=False`
+- stdout contains `real_order_network_attempted=False real_order_endpoint_called=False real_order_sent=False`
+- No real Bybit Demo order sent
+- No call to `/v5/order/create`
+
+## Next Recommended Engineering Task (after this audit clarification)
+
+The Stage 1 audit-field clarification is complete. Real Bybit Demo order dispatch remains **explicitly unauthorized**.
+
+Recommended next engineering tasks (choose one):
+1. **Offline/fake-only postfill-audit scaffold**: add a postfill audit step that runs after the fake-sender path, records the simulated request body for offline inspection, and flags any field mismatch vs. the pre-validated cap-escalation contract.
+2. **Stage 2 real-demo authorization scaffolding (decision-only)**: design the gating data structure (separate explicit human authorization marker, single-use, time-windowed) that would have to be supplied before `order_transport_kind` may become `REAL_DEMO_SENDER`. No real send wiring at this stage.
+
+**Do NOT** proceed to a real Demo order dispatch without a separate, explicit human authorization task that names the exact commit, qty, symbol, side, and timestamp window.
+
+
 > README shared status updated by TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1 (2026-06-20).
 > TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1 adds an
 > **isolated** one-shot real-demo-order execution surface

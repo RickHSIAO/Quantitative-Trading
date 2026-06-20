@@ -178,6 +178,24 @@ EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER = (
 CREDENTIALS_SOURCE_INJECTED = "injected_demo_credentials"
 CREDENTIALS_SOURCE_NONE = "none"
 
+# TASK-014BM_STAGE1_REAL_VS_SIMULATED_ORDER_AUDIT_SEMANTICS_SPLIT:
+# explicit transport-kind taxonomy distinguishing the injected fake
+# sender (Stage 1 offline validation) from a real Bybit Demo
+# ``/v5/order/create`` dispatch. Stage 1 must never emit
+# ``REAL_DEMO_SENDER`` -- the constant exists only so consumers can
+# match against the closed allowlist without importing string literals.
+ORDER_TRANSPORT_KIND_NONE = "NONE"
+ORDER_TRANSPORT_KIND_FAKE_SENDER = "FAKE_SENDER"
+ORDER_TRANSPORT_KIND_REAL_DEMO_SENDER = "REAL_DEMO_SENDER"
+ORDER_TRANSPORT_KINDS: tuple[str, ...] = (
+    ORDER_TRANSPORT_KIND_NONE,
+    ORDER_TRANSPORT_KIND_FAKE_SENDER,
+    ORDER_TRANSPORT_KIND_REAL_DEMO_SENDER,
+)
+STAGE1_FORBIDDEN_ORDER_TRANSPORT_KINDS: tuple[str, ...] = (
+    ORDER_TRANSPORT_KIND_REAL_DEMO_SENDER,
+)
+
 STATUS_OK_READINESS_NO_NETWORK = "ORCHESTRATION_OK_READINESS_NO_NETWORK"
 STATUS_OK_READINESS_READ_ONLY_NETWORK = (
     "ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK"
@@ -349,6 +367,22 @@ class OrchestrationReport:
     bybit_ret_msg: str = ""
     final_status: str = ""
 
+    # TASK-014BM_STAGE1_REAL_VS_SIMULATED_ORDER_AUDIT_SEMANTICS_SPLIT:
+    # explicit split of the legacy ``order_*`` audit booleans into a
+    # simulated (injected fake sender) facet and a real-network facet.
+    # Stage 1 invariant: real_order_* is always False and
+    # order_transport_kind is never REAL_DEMO_SENDER. Legacy fields
+    # (order_network_attempted / order_endpoint_called / order_sent /
+    # network_attempted) remain as documented aggregate ORs of these
+    # split fields so existing consumers keep working unchanged.
+    simulated_order_network_attempted: bool = False
+    simulated_order_endpoint_called: bool = False
+    simulated_order_sent: bool = False
+    real_order_network_attempted: bool = False
+    real_order_endpoint_called: bool = False
+    real_order_sent: bool = False
+    order_transport_kind: str = ORDER_TRANSPORT_KIND_NONE
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
@@ -438,6 +472,21 @@ class OrchestrationReport:
             "resolved_notional": self.resolved_notional,
             "bybit_ret_msg": self.bybit_ret_msg,
             "final_status": self.final_status,
+            "simulated_order_network_attempted": (
+                self.simulated_order_network_attempted
+            ),
+            "simulated_order_endpoint_called": (
+                self.simulated_order_endpoint_called
+            ),
+            "simulated_order_sent": self.simulated_order_sent,
+            "real_order_network_attempted": (
+                self.real_order_network_attempted
+            ),
+            "real_order_endpoint_called": (
+                self.real_order_endpoint_called
+            ),
+            "real_order_sent": self.real_order_sent,
+            "order_transport_kind": self.order_transport_kind,
         }
 
 
@@ -980,8 +1029,22 @@ def _invoke_bm(
     counter = {"n": 0}
 
     def counting_sender(url: str, headers: Mapping[str, str], body: bytes):
+        # TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION (Correction 2):
+        # a fake sender that genuinely raises must not leak an uncaught
+        # exception out of the public orchestration surface. Re-shape the
+        # exception into the same network-error sentinel BM already
+        # understands so the final status / audit fields stay safe and
+        # consistent with the sentinel-based test, and so the simulated
+        # transport facet correctly records
+        # simulated_order_endpoint_called=True / simulated_order_sent=False.
         counter["n"] += 1
-        return bm_fake_sender(url, headers, body)
+        try:
+            return bm_fake_sender(url, headers, body)
+        except Exception as exc:  # pragma: no cover - exercised by tests
+            return {
+                "_network_error": True,
+                "_error_repr": f"{type(exc).__name__}: {exc}",
+            }
 
     report = bm.run_explicit_tiny_order_execution(
         mode=bm.MODE_EXECUTE_DEMO_ORDER,
@@ -1001,6 +1064,37 @@ def _invoke_bm(
 
 def _empty_dict() -> dict[str, Any]:
     return {}
+
+
+def _validate_stage1_order_transport_kind(kind: str) -> None:
+    """Fail-closed allowlist check for ``order_transport_kind``.
+
+    TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION (Correction 3):
+    Stage 1 must *never* silently rewrite a forbidden or unknown
+    transport-kind into ``NONE`` or ``FAKE_SENDER``. A forbidden /
+    unknown value indicates an invariant violation and the orchestrator
+    must surface it explicitly.
+
+    Raises:
+        OneShotAuthorizedExecutionOrchestratorError: when ``kind`` is
+        ``REAL_DEMO_SENDER`` (Stage 1 forbidden) or not a member of the
+        documented ``ORDER_TRANSPORT_KINDS`` allowlist.
+    """
+
+    if kind in STAGE1_FORBIDDEN_ORDER_TRANSPORT_KINDS:
+        raise OneShotAuthorizedExecutionOrchestratorError(
+            f"Stage 1 invariant violation: order_transport_kind="
+            f"{kind!r} is forbidden in Stage 1 "
+            f"(allowlist={ORDER_TRANSPORT_KINDS!r}, "
+            f"forbidden={STAGE1_FORBIDDEN_ORDER_TRANSPORT_KINDS!r}). "
+            "The orchestrator never silently normalizes this value -- "
+            "any caller path that derives REAL_DEMO_SENDER must be fixed."
+        )
+    if kind not in ORDER_TRANSPORT_KINDS:
+        raise OneShotAuthorizedExecutionOrchestratorError(
+            f"unknown order_transport_kind={kind!r}; expected one of "
+            f"{ORDER_TRANSPORT_KINDS!r}"
+        )
 
 
 def _build_rejection_report(
@@ -1029,6 +1123,13 @@ def _build_rejection_report(
     resolved_execution_qty_source: str = "",
     resolved_notional: str = "",
     bybit_ret_msg: str = "",
+    simulated_order_network_attempted: bool = False,
+    simulated_order_endpoint_called: bool = False,
+    simulated_order_sent: bool = False,
+    real_order_network_attempted: bool = False,
+    real_order_endpoint_called: bool = False,
+    real_order_sent: bool = False,
+    order_transport_kind: str = ORDER_TRANSPORT_KIND_NONE,
 ) -> OrchestrationReport:
     ir_dict = instrument_rules_report or {}
     rules = (ir_dict.get("rules") or {}) if isinstance(ir_dict, dict) else {}
@@ -1037,6 +1138,26 @@ def _build_rejection_report(
         if isinstance(cand, dict):
             candidate_qty = str(cand.get("candidate_qty", "") or "")
             candidate_notional = str(cand.get("candidate_notional", "") or "")
+    # TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION (Correction 3):
+    # fail closed on a forbidden or unknown transport-kind. No silent
+    # normalization. Rejection paths must never emit a misleading NONE
+    # for a REAL_DEMO_SENDER input.
+    _validate_stage1_order_transport_kind(order_transport_kind)
+    # Aggregate OR legacy fields for the transport-attempt facets only.
+    # ``order_sent`` is NOT an OR aggregate -- it preserves its prior
+    # business-outcome meaning (the exchange-shaped response accepted the
+    # order). Rejection paths never produced a business outcome, so the
+    # legacy field is False.
+    agg_order_network_attempted = bool(
+        simulated_order_network_attempted or real_order_network_attempted
+    )
+    agg_order_endpoint_called = bool(
+        simulated_order_endpoint_called or real_order_endpoint_called
+    )
+    agg_order_sent = False
+    agg_network_attempted = bool(
+        ir_network_attempted or agg_order_network_attempted
+    )
     return OrchestrationReport(
         task_id=TASK_ID,
         identity=IDENTITY,
@@ -1086,10 +1207,10 @@ def _build_rejection_report(
         body_qty_authorized_override=False,
         body_qty_rejection_reason="",
         read_only_network_attempted=ir_network_attempted,
-        order_network_attempted=False,
-        network_attempted=ir_network_attempted,
-        order_endpoint_called=False,
-        order_sent=False,
+        order_network_attempted=agg_order_network_attempted,
+        network_attempted=agg_network_attempted,
+        order_endpoint_called=agg_order_endpoint_called,
+        order_sent=agg_order_sent,
         bybit_ret_code=None,
         bybit_order_id="",
         real_execute_disabled_stage1=True,
@@ -1121,6 +1242,17 @@ def _build_rejection_report(
         resolved_notional=resolved_notional,
         bybit_ret_msg=bybit_ret_msg,
         final_status=status,
+        simulated_order_network_attempted=bool(
+            simulated_order_network_attempted
+        ),
+        simulated_order_endpoint_called=bool(
+            simulated_order_endpoint_called
+        ),
+        simulated_order_sent=bool(simulated_order_sent),
+        real_order_network_attempted=bool(real_order_network_attempted),
+        real_order_endpoint_called=bool(real_order_endpoint_called),
+        real_order_sent=bool(real_order_sent),
+        order_transport_kind=order_transport_kind,
     )
 
 
@@ -1146,6 +1278,70 @@ def _build_full_report(
     candidate = getattr(ir_report, "candidate", None)
     resolution = getattr(wiring_report, "resolution", None)
     cap_decision = getattr(ce_report, "decision", None)
+    # TASK-014BM_STAGE1_REAL_VS_SIMULATED_ORDER_AUDIT_SEMANTICS_SPLIT:
+    # Stage 1 always classifies any BM execute traffic as the simulated
+    # (injected fake sender) facet. The real-network facet is hard
+    # forbidden -- the real /v5/order/create dispatch is unreachable
+    # from this orchestrator's _invoke_bm. ``fake_sender_used`` is the
+    # authoritative signal that BM ran through the injected counting
+    # wrapper. When it is False (e.g. readiness mode) the order
+    # transport is NONE and all split fields are False.
+    bm_network_attempted = bool(
+        getattr(bm_report, "network_attempted", False)
+    )
+    bm_endpoint_called = bool(
+        getattr(bm_report, "order_endpoint_called", False)
+    )
+    bm_final_status_value = str(
+        getattr(bm_report, "final_status", "") or ""
+    )
+    # The simulated order body is considered "sent" whenever the fake
+    # transport completed a normal call to the endpoint, regardless of
+    # the Bybit business retCode (a non-zero retCode is still a normal
+    # response: the body was transported and Bybit replied). Only a
+    # sender exception (surfaced as STATUS_NETWORK_ERROR_DEMO_ONLY)
+    # leaves the body un-sent.
+    bm_simulated_body_sent = bool(
+        bm_endpoint_called
+        and bm_final_status_value != bm.STATUS_NETWORK_ERROR_DEMO_ONLY
+    )
+    if fake_sender_used:
+        sim_network_attempted = bm_network_attempted
+        sim_endpoint_called = bm_endpoint_called
+        sim_order_sent = bm_simulated_body_sent
+        transport_kind = ORDER_TRANSPORT_KIND_FAKE_SENDER
+    else:
+        sim_network_attempted = False
+        sim_endpoint_called = False
+        sim_order_sent = False
+        transport_kind = ORDER_TRANSPORT_KIND_NONE
+    real_network_attempted = False
+    real_endpoint_called = False
+    real_order_sent = False
+    # TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION (Correction 3):
+    # fail closed on a forbidden or unknown transport-kind. No silent
+    # rewrite from REAL_DEMO_SENDER to FAKE_SENDER -- a derivation that
+    # produces REAL_DEMO_SENDER here is an invariant violation.
+    _validate_stage1_order_transport_kind(transport_kind)
+    # TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION (Correction 1):
+    # ``order_network_attempted`` / ``order_endpoint_called`` remain the
+    # aggregate transport-attempt compatibility fields. ``order_sent``
+    # preserves the prior business-outcome meaning -- the exchange-shaped
+    # response accepted the order and returned a non-empty order id.
+    # Source it directly from BM's ``SendOutcome.order_sent`` (BM already
+    # computes ``(ret_code == 0) and bool(order_id)``). A simulated fake
+    # sender that returns a nonzero ``retCode`` therefore correctly
+    # produces ``simulated_order_sent=True`` AND legacy ``order_sent=False``.
+    agg_order_network_attempted = bool(
+        sim_network_attempted or real_network_attempted
+    )
+    agg_order_endpoint_called = bool(
+        sim_endpoint_called or real_endpoint_called
+    )
+    agg_order_sent = bool(getattr(bm_report, "order_sent", False))
+    agg_network_attempted = bool(
+        ir_network_attempted or agg_order_network_attempted
+    )
     return OrchestrationReport(
         task_id=TASK_ID,
         identity=IDENTITY,
@@ -1213,16 +1409,10 @@ def _build_full_report(
             getattr(bm_report, "body_qty_rejection_reason", "") or ""
         ),
         read_only_network_attempted=ir_network_attempted,
-        order_network_attempted=bool(
-            getattr(bm_report, "network_attempted", False)
-        ),
-        network_attempted=ir_network_attempted or bool(
-            getattr(bm_report, "network_attempted", False)
-        ),
-        order_endpoint_called=bool(
-            getattr(bm_report, "order_endpoint_called", False)
-        ),
-        order_sent=bool(getattr(bm_report, "order_sent", False)),
+        order_network_attempted=agg_order_network_attempted,
+        network_attempted=agg_network_attempted,
+        order_endpoint_called=agg_order_endpoint_called,
+        order_sent=agg_order_sent,
         bybit_ret_code=getattr(bm_report, "bybit_ret_code", None),
         bybit_order_id=str(getattr(bm_report, "bybit_order_id", "") or ""),
         real_execute_disabled_stage1=True,
@@ -1260,6 +1450,13 @@ def _build_full_report(
         ),
         bybit_ret_msg=str(getattr(bm_report, "bybit_ret_msg", "") or ""),
         final_status=status,
+        simulated_order_network_attempted=sim_network_attempted,
+        simulated_order_endpoint_called=sim_endpoint_called,
+        simulated_order_sent=sim_order_sent,
+        real_order_network_attempted=real_network_attempted,
+        real_order_endpoint_called=real_endpoint_called,
+        real_order_sent=real_order_sent,
+        order_transport_kind=transport_kind,
     )
 
 
@@ -1366,6 +1563,24 @@ def _render_markdown(report: OrchestrationReport) -> str:
         f"- bybit_ret_msg=`{report.bybit_ret_msg}` "
         f"final_status=`{report.final_status}`"
     )
+    lines.append("")
+    lines.append("## Order activity audit (simulated vs real)")
+    lines.append(
+        f"- order_transport_kind=`{report.order_transport_kind}`"
+    )
+    lines.append(
+        f"- simulated_order_network_attempted="
+        f"{report.simulated_order_network_attempted} "
+        f"simulated_order_endpoint_called="
+        f"{report.simulated_order_endpoint_called} "
+        f"simulated_order_sent={report.simulated_order_sent}"
+    )
+    lines.append(
+        f"- real_order_network_attempted="
+        f"{report.real_order_network_attempted} "
+        f"real_order_endpoint_called={report.real_order_endpoint_called} "
+        f"real_order_sent={report.real_order_sent}"
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -1421,10 +1636,15 @@ __all__ = [
     "ORCH_MODE_EXECUTE_WITH_FAKE_SENDER",
     "ORCH_MODE_READINESS",
     "ORCH_SUPPORTED_MODES",
+    "ORDER_TRANSPORT_KIND_FAKE_SENDER",
+    "ORDER_TRANSPORT_KIND_NONE",
+    "ORDER_TRANSPORT_KIND_REAL_DEMO_SENDER",
+    "ORDER_TRANSPORT_KINDS",
     "ORIGINAL_PACKET_QTY",
     "OneShotAuthorizedExecutionOrchestratorError",
     "OrchestrationReport",
     "REPORT_NAME",
+    "STAGE1_FORBIDDEN_ORDER_TRANSPORT_KINDS",
     "STATUS_OK_FAKE_SENDER_EXECUTED",
     "STATUS_OK_READINESS_NO_NETWORK",
     "STATUS_OK_READINESS_READ_ONLY_NETWORK",
@@ -1446,6 +1666,7 @@ __all__ = [
     "STATUS_REJECTED_WIRING_NOT_AUTHORIZED",
     "TASK_ID",
     "UPSTREAM_TASKS",
+    "_validate_stage1_order_transport_kind",
     "run_one_shot_authorized_execution_orchestration",
     "write_report",
 ]

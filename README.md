@@ -14,10 +14,111 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1, 2026-06-20）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION**（2026-06-21, semantic + safety correction）
+> 在不削弱任何 Stage 1 安全邊界的前提下，修正前次 AUDIT_SEMANTICS_SPLIT 留下的 3 個語意/安全缺口：
+>
+> 1. **Legacy `order_sent` 還原 business-outcome 語意。** 先前被改寫成
+>    `order_sent = simulated_order_sent OR real_order_sent`，導致 fake sender 正常返回但 Bybit
+>    `retCode` 非 0 時 legacy `order_sent` 也變 `True`，破壞向後相容。修正後 legacy `order_sent`
+>    直接取自 BM 既有的 `SendOutcome.order_sent`（亦即 `retCode == 0 AND non-empty orderId`）。
+>    Consumers 想驗證 transport 用 `simulated_order_sent`；想驗證 accepted-order/business outcome
+>    用 `bybit_ret_code` + `bybit_order_id` + `bm_final_status` + legacy `order_sent`；想驗證
+>    real Bybit Demo 單用 `real_order_sent`（Stage 1 永遠 `False`）。
+> 2. **真實丟出例外的 fake sender 也安全。** 新增 `counting_sender` wrapper 的 `try/except`：
+>    任何被注入的 fake sender 真的 raise 時，會被重塑為 BM 既有理解的
+>    `{"_network_error": True, "_error_repr": ...}` sentinel，
+>    final status 變 `STATUS_REJECTED_BM_NETWORK_ERROR`，`simulated_order_sent=False`，
+>    sender call count 仍為 1，real network call 仍為 0；公開 orchestration surface 不漏例外。
+> 3. **不再 silently normalize 禁止 transport-kind。** 新增 `_validate_stage1_order_transport_kind`
+>    helper，在 `_build_rejection_report` / `_build_full_report` 建構時 fail-closed 驗證
+>    `order_transport_kind`，輸入 `REAL_DEMO_SENDER` 或任何未知值直接 raise
+>    `OneShotAuthorizedExecutionOrchestratorError`，不再 rewrite 成 `NONE` / `FAKE_SENDER`，
+>    避免 Stage 1 對禁止值輸出 misleading 報告。real sender 仍 unreachable。
+>
+> **變更檔案：**
+> - [`src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：`_validate_stage1_order_transport_kind` helper + `__all__` 同步；`_build_rejection_report` / `_build_full_report` 改用 fail-closed validator；`_build_full_report` legacy `order_sent` 改取 `bm_report.order_sent`；`_invoke_bm` 的 `counting_sender` wrap `try/except` 轉成 network-error sentinel。
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py)：split helper 拆成 `_assert_legacy_transport_aggregates` + `_assert_legacy_order_sent_is_business_outcome`；新增 retCode==0+orderId 的 legacy `order_sent=True` 斷言；新增 retCode==0+empty orderId 案例；新增真實 raise 的 fake sender 案例；新增 4 個 validator 直接測試（reject `REAL_DEMO_SENDER` / unknown，accept `NONE` / `FAKE_SENDER`，rejection-report builder 在禁止/未知值 fail-closed）。
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py)：`test_real_demo_fake_sender_bybit_reject_fails_closed` 回復為 legacy `order_sent=False`。
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：`test_fake_sender_bybit_reject_surfaces_bm_bybit_not_executed` 回復為 legacy `order_sent=False`。
+>
+> **驗證（local，於 d189382 之上 amend）：**
+> - py_compile PASS（6 files）
+> - focused split 測試：**27/27 PASS**（原 20 + 新增 7：1 業務結果 + 1 empty orderId + 1 raised exception + 4 validator）
+> - 66/66 combined Stage 1（real-demo + discovery-gate-fix）PASS
+> - 186/186 one-shot orchestrator-family PASS（原 179 + 7 新）
+> - scoped 迴歸：`python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full` → **657 passed, 7701 deselected**（650 prior + 7 new）
+>
+> **安全不變式：** 0 real Bybit Demo order sent；0 `/v5/order/create` real call；
+> 無 live endpoint、無 live/demo secret 讀取方式新增；
+> 不動 `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`；
+> 不動 BM signing 實作、endpoint 實作、global tiny caps、`MAX_ORDER_COUNT=1`、protected symbols、
+> BL packet `DEFAULT_QTY=0.01`、cap escalation 授權 gate、20 USDT notional cap；
+> orchestrator `_invoke_bm` 真實 sender 仍 unreachable；real sender 解鎖仍須另一個獨立 human authorization task。
+>
+> **未送出任何 real Bybit Demo 單。未呼叫 `/v5/order/create`。** Local amend 之 commit only，未 push。
+
+
+> **TASK-014BM_STAGE1_REAL_VS_SIMULATED_ORDER_AUDIT_SEMANTICS_SPLIT**（2026-06-21, Stage 1 audit clarification）
+> 移除 `OrchestrationReport` 中 fake-sender simulated execution 與真實 Bybit Demo
+> network order 之間的曖昧性。新增 7 個 explicit audit 欄位：
+>
+> - `simulated_order_network_attempted`
+> - `simulated_order_endpoint_called`
+> - `simulated_order_sent`
+> - `real_order_network_attempted`
+> - `real_order_endpoint_called`
+> - `real_order_sent`
+> - `order_transport_kind`（allowlist：`NONE` / `FAKE_SENDER` / `REAL_DEMO_SENDER`）
+>
+> **Stage 1 hard invariant：`order_transport_kind` 絕對不會輸出 `REAL_DEMO_SENDER`；**
+> **`real_order_*` 三個欄位永遠是 `False`。** 公開 `STAGE1_FORBIDDEN_ORDER_TRANSPORT_KINDS`
+> 常數列出該禁止值，便於 consumer 在外層斷言。
+>
+> **語意：**
+> - **No dispatch（readiness、所有 rejection、Stage 1 真實送單 refusal）：** 6 個 boolean 全部 `False`，`order_transport_kind="NONE"`。
+> - **Fake sender 正常返回（包括 Bybit `retCode` 非 0）：** 3 個 `simulated_*` 全部 `True`，3 個 `real_*` 全部 `False`，`order_transport_kind="FAKE_SENDER"`。Bybit business 拒絕透過 `bybit_ret_code` / `bm_final_status` 揭露，不再改寫 transport facet。
+> - **Fake sender 引發例外（network error）：** `simulated_order_network_attempted=True`、`simulated_order_endpoint_called=True`、`simulated_order_sent=False`，`order_transport_kind="FAKE_SENDER"`。
+>
+> **Legacy 欄位語意（CORRECTION 後）：**
+> - `order_network_attempted = simulated_order_network_attempted OR real_order_network_attempted`（transport-attempt OR aggregate）
+> - `order_endpoint_called = simulated_order_endpoint_called OR real_order_endpoint_called`（endpoint-call OR aggregate）
+> - `network_attempted = read_only_network_attempted OR order_network_attempted`（網路 OR aggregate）
+> - **`order_sent` 保留先前 accepted-order / business-outcome 語意**（`retCode==0 AND non-empty orderId`），**不是 `simulated_order_sent OR real_order_sent`**。`simulated_order_sent=True` 只代表 simulated transport 完成一次正常 call，不代表 Bybit 接單；想驗證 accepted-order 用 `bybit_ret_code` + `bybit_order_id` + `bm_final_status` + legacy `order_sent`；想驗證 real Bybit Demo 單用 `real_order_sent`（Stage 1 保證 `False`）。
+>
+> **變更檔案：**
+> - [`src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：新增 7 個 audit 欄位（safe default）、`ORDER_TRANSPORT_KIND_*` 常數 + `ORDER_TRANSPORT_KINDS` + `STAGE1_FORBIDDEN_ORDER_TRANSPORT_KINDS`、legacy aggregate OR、markdown render section、`__all__` 同步
+> - [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：stdout 新增 `order_transport_kind` + 6 個 split boolean
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py)：20/20 PASS（常數 / 所有 no-dispatch 路徑 / fake-sender 成功 / Bybit retCode 非 0 / network error / aggregate OR / CLI stdout / markdown）
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py)：兩個既有 fake-sender 測試對齊新語意（Bybit retCode 非 0 → `simulated_order_sent=True`；network error → `simulated_order_sent=False`）
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：`test_fake_sender_bybit_reject_surfaces_bm_bybit_not_executed` 對齊新語意
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py)：SimpleNamespace mock 新增 7 個欄位
+>
+> **安全不變式：** 0 real Bybit Demo order sent；0 `/v5/order/create` real call；
+> 無 live endpoint、無 live/demo secret 讀取方式新增；
+> 不動 `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`；
+> 不動 global tiny caps、`MAX_ORDER_COUNT=1`、protected symbols、BL packet `DEFAULT_QTY=0.01`、
+> cap escalation 授權 gate、20 USDT notional cap；
+> orchestrator `_invoke_bm` 真實 sender 仍 unreachable；real sender 解鎖仍須另一個獨立 human authorization task。
+>
+> **驗證（local，commit 31b0bf8 之後新 commit）：**
+> - py_compile PASS（6 files：orchestrator src、CLI preview script、fixtures、3 個測試模組）
+> - 20/20 focused split 測試 PASS
+> - 66/66 combined Stage 1（real-demo + discovery-gate-fix）PASS
+> - 179/179 one-shot orchestrator-family PASS（含 20 個新增）
+> - scoped 迴歸：`python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full` → **650 passed, 7701 deselected**（630 prior + 20 new）
+>
+> **未送出任何 real Bybit Demo 單。未呼叫 `/v5/order/create`。** Local commit only，未 push。
+>
+> **下次 VPS 驗證指令（real send 仍未開放，仍需另一個 authorization task）：**
+> ```
+> python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --mode execute_real_demo_order --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1 --explicit-real-demo-order-flag --real-demo-authorization-marker DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1
+> ```
+> 期望輸出：印出 `REJECTED: Stage 1 forbids any real /v5/order/create call.`；exit code `2`；stdout 包含 `order_transport_kind='NONE'`、`simulated_order_*=False`、`real_order_*=False`。
 
 > **TASK-014BM_ONE_SHOT_REAL_DEMO_ORDER_EXECUTION_SURFACE_STAGE1**（2026-06-20, Stage 1 only）
 > 新增一個**隔離的** real-demo-order 一次性執行入口
