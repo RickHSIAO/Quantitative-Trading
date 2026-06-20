@@ -21,6 +21,42 @@ Notes:
 
 ---
 
+### 2026-06-20 (TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX -- correct orchestrator top-level readiness status: STATUS_OK_READINESS_READ_ONLY_NETWORK for discover paths)
+
+Agent: Claude Sonnet 4.6
+Command source: Rick explicit chat authorization for TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX (local commit only; no push).
+Task: Correct the orchestrator top-level status so that when a real public read-only instrument-rules GET is performed via `--ir-mode discover`, the status is `ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK` rather than `ORCHESTRATION_OK_READINESS_NO_NETWORK`. Add new constant `STATUS_OK_READINESS_READ_ONLY_NETWORK`. Keep offline/pre-parsed paths at `STATUS_OK_READINESS_NO_NETWORK`. BM inner `bm_final_status` remains `READINESS_OK_NO_NETWORK` for both paths. Add `STATUS_OK_READINESS_READ_ONLY_NETWORK` to CLI exit-code-0 set and `__all__`. Write 24 new focused tests. Preserve all safety locks and Stage 1 restrictions.
+Status before: Even when `network_attempted=True` (real IR GET done), the top-level status was `ORCHESTRATION_OK_READINESS_NO_NETWORK` — inconsistent with the three-field audit semantics added in the previous task.
+Status after: Discover path returns `ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK`; offline/pre-parsed path returns `ORCHESTRATION_OK_READINESS_NO_NETWORK`. BM inner `bm_final_status=READINESS_OK_NO_NETWORK` unchanged. CLI exits 0 for both.
+Files changed:
+- `src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` (1 test updated)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py` (4 tests updated)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_readiness_status_taxonomy_fix.py` (new, 24 tests)
+- `README.md`
+- `docs/research/commands/NEXT_ACTION.md`
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- `python -m py_compile` on all changed files -> PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_readiness_status_taxonomy_fix.py` -> 24/24 PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_network_audit_semantics_fix.py` -> 23/23 PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py` -> 12/12 PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` -> 33/34 PASS (1 error = pre-existing Windows tmp_path permission, unrelated)
+- `python -m pytest tests/demo_trading/` (full regression) -> 7921 PASS (250 errors = pre-existing Windows tmp_path; 1 failure = pre-existing `test_demo_emergency_close_sender::test_dry_run_cli_writes_report`, unrelated)
+Outputs: No reports or demo output artifacts committed. No real order network call. No real order sent. No credentials read.
+Notes: The 250 Windows tmp_path errors and 1 pre-existing failure are unrelated to this task and were present before these changes. The logic path (non-tmp_path) for the orchestrator is fully green.
+
+Next VPS validation command:
+
+```powershell
+python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+```
+
+Confirm: `status=ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK`, `read_only_network_attempted=True`, `order_network_attempted=False`, `network_attempted=True`, `order_endpoint_called=False`, `order_sent=False`, `bm_final_status='READINESS_OK_NO_NETWORK'`.
+
+---
+
 ### 2026-06-20 (TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX -- correct orchestrator network audit semantics: read_only_network_attempted / order_network_attempted / network_attempted)
 
 Agent: Claude Sonnet 4.6

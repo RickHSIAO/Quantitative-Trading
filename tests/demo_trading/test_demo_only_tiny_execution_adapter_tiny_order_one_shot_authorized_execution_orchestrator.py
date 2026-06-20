@@ -455,7 +455,7 @@ def test_real_ir_discover_with_explicit_optin_uses_injected_sender():
         ir_mode=bm_ir.MODE_DISCOVER,
         ir_sender=ir_sender,
     )
-    assert r.status == orc.STATUS_OK_READINESS_NO_NETWORK
+    assert r.status == orc.STATUS_OK_READINESS_READ_ONLY_NETWORK
     assert r.actual_request_body_qty == "0.1"
 
 

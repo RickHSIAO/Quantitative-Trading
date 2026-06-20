@@ -14,10 +14,52 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX, 2026-06-20）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX, 2026-06-20）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX**（2026-06-20）
+> 修正 orchestrator top-level status 語意：真實 public read-only instrument-rules GET
+> 之後，top-level status 現在正確回報 `ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK`
+> 而非原本的 `ORCHESTRATION_OK_READINESS_NO_NETWORK`，與 `network_attempted=True` 一致。
+> BM inner status（`bm_final_status`）維持 `READINESS_OK_NO_NETWORK` 不變（BM 從未嘗試 order call）。
+>
+> **新增常數：**
+> - `STATUS_OK_READINESS_NO_NETWORK = "ORCHESTRATION_OK_READINESS_NO_NETWORK"` — offline/pre-parsed readiness
+> - `STATUS_OK_READINESS_READ_ONLY_NETWORK = "ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK"` — discover readiness（injected sender 或 stdlib）
+>
+> **狀態路徑對照：**
+> - offline readiness（`ir_mode=offline` + pre-parsed）：`STATUS_OK_READINESS_NO_NETWORK`，
+>   `read_only=False`, `order=False`, `aggregate=False`
+> - real/injected discover readiness（`ir_mode=discover`）：`STATUS_OK_READINESS_READ_ONLY_NETWORK`，
+>   `read_only=True`, `order=False`, `aggregate=True`，`order_endpoint_called=False`, `order_sent=False`
+>
+> **CLI exit code：** 兩者皆為 0；`STATUS_OK_READINESS_READ_ONLY_NETWORK` 已加入 exit-0 set。
+>
+> **變更檔案：**
+> - [`src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：新增常數；`_bm_terminal_status_to_orchestration_status()` ir_network_attempted branch 改回傳新狀態；`__all__` 更新
+> - [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：exit-0 set 加入 `STATUS_OK_READINESS_READ_ONLY_NETWORK`
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：1 條 injected sender 路徑測試改為斷言新狀態
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py)：4 條 discover 路徑斷言改為新狀態
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_readiness_status_taxonomy_fix.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_readiness_status_taxonomy_fix.py)：24 條新 focused tests（全 PASS）
+>
+> **安全不變項：** 無 real order network call；無 real order sent；無 live endpoint；
+> 無 live secret；不動 `main.py` / `src/risk.py` / `BybitExecutor`；
+> 不改 global tiny caps / `MAX_ORDER_COUNT=1`；cap escalation opt-in / fake-sender-only Stage 1 全部不變。
+>
+> 驗證（local）：py_compile PASS；24/24 taxonomy 測試 PASS；23/23 audit semantics 測試 PASS；
+> 12/12 opt-in 測試 PASS；33/34 orchestrator 邏輯測試 PASS（1 error = pre-existing Windows tmp_path 問題）；
+> 7921/7921 tiny_execution_adapter regression PASS（250 errors = 同一 Windows tmp_path 問題，1 failure = pre-existing `test_demo_emergency_close_sender::test_dry_run_cli_writes_report`，與本 task 無關）。
+> **未送出任何 real Bybit Demo 單。未呼叫 `/v5/order/create`。** Local commit only — 未 push。
+>
+> 下一步 VPS 驗證指令：
+> ```
+> python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+> ```
+> 確認 `status=ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK`、`read_only_network_attempted=True`、
+> `order_network_attempted=False`、`network_attempted=True`、`order_endpoint_called=False`、`order_sent=False`。
+>
 
 > **TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX**（2026-06-20）
 > 修正 orchestrator audit/report 語意：真實 public read-only instrument-rules GET

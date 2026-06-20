@@ -157,7 +157,7 @@ def test_cli_discover_with_opt_in_exits_0_with_fake_stdlib_sender(monkeypatch):
         ]
     )
     assert rc == 0
-    assert "ORCHESTRATION_OK_READINESS_NO_NETWORK" in output
+    assert "ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK" in output
     assert "order_endpoint_called=False" in output
     assert "order_sent=False" in output
     assert "actual_request_body_qty='0.1'" in output
@@ -173,7 +173,7 @@ def test_cli_discover_with_opt_in_passes_allow_real_ir_get_true(monkeypatch):
             identity=orc.IDENTITY,
             phase=orc.IMPLEMENTATION_PATH_PHASE,
             mode=orc.ORCH_MODE_READINESS,
-            status=orc.STATUS_OK_READINESS_NO_NETWORK,
+            status=orc.STATUS_OK_READINESS_READ_ONLY_NETWORK,
             reason="mocked ok",
             upstream_tasks=orc.UPSTREAM_TASKS,
             next_required_task=orc.NEXT_REQUIRED_TASK,
@@ -223,7 +223,7 @@ def test_cli_discover_with_opt_in_passes_allow_real_ir_get_true(monkeypatch):
     )
 
     assert rc == 0
-    assert "ORCHESTRATION_OK_READINESS_NO_NETWORK" in output
+    assert "ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK" in output
     assert len(calls) == 1
     assert calls[0]["ir_mode"] == bm_ir.MODE_DISCOVER
     assert calls[0]["allow_real_ir_get"] is True
@@ -319,7 +319,7 @@ def test_allow_real_ir_get_true_resolves_full_chain_no_credentials(monkeypatch):
         bm_credentials=None,  # explicitly no credentials for this GET
     )
 
-    assert r.status == orc.STATUS_OK_READINESS_NO_NETWORK
+    assert r.status == orc.STATUS_OK_READINESS_READ_ONLY_NETWORK
     assert r.instrument_rules_loaded is True
     assert r.candidate_qty == "0.1"
     assert r.cap_gate_status == bm_ce.STATUS_ESCALATION_AUTHORIZED

@@ -161,6 +161,9 @@ ORCH_SUPPORTED_MODES: tuple[str, ...] = (
 )
 
 STATUS_OK_READINESS_NO_NETWORK = "ORCHESTRATION_OK_READINESS_NO_NETWORK"
+STATUS_OK_READINESS_READ_ONLY_NETWORK = (
+    "ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK"
+)
 STATUS_OK_FAKE_SENDER_EXECUTED = (
     "ORCHESTRATION_OK_FAKE_SENDER_EXECUTED_DEMO_ONLY"
 )
@@ -484,7 +487,7 @@ def _bm_terminal_status_to_orchestration_status(
     if bm_status == bm.STATUS_READINESS_OK_NO_NETWORK:
         if ir_network_attempted:
             return (
-                STATUS_OK_READINESS_NO_NETWORK,
+                STATUS_OK_READINESS_READ_ONLY_NETWORK,
                 "BM readiness ok; one authorized public read-only "
                 "instrument-rules GET completed; no order network call "
                 "attempted.",
@@ -496,7 +499,7 @@ def _bm_terminal_status_to_orchestration_status(
     if bm_status == bm.STATUS_DRY_RUN_OK_NO_NETWORK:
         if ir_network_attempted:
             return (
-                STATUS_OK_READINESS_NO_NETWORK,
+                STATUS_OK_READINESS_READ_ONLY_NETWORK,
                 "BM dry-run ok; one authorized public read-only "
                 "instrument-rules GET completed; no order network call "
                 "attempted.",
@@ -1181,6 +1184,7 @@ __all__ = [
     "REPORT_NAME",
     "STATUS_OK_FAKE_SENDER_EXECUTED",
     "STATUS_OK_READINESS_NO_NETWORK",
+    "STATUS_OK_READINESS_READ_ONLY_NETWORK",
     "STATUS_REJECTED_BM_BYBIT_NOT_EXECUTED",
     "STATUS_REJECTED_BM_FAILED_CLOSED",
     "STATUS_REJECTED_BM_NETWORK_ERROR",

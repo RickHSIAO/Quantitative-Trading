@@ -336,6 +336,7 @@ def main(argv: list[str] | None = None) -> int:
     status = report.status
     if status in (
         orc.STATUS_OK_READINESS_NO_NETWORK,
+        orc.STATUS_OK_READINESS_READ_ONLY_NETWORK,
         orc.STATUS_OK_FAKE_SENDER_EXECUTED,
     ):
         return 0

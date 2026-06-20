@@ -1,40 +1,41 @@
 # Next Action
 
-> README shared status updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX (2026-06-20).
-> TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX corrects the orchestrator
-> audit/report semantics so a real public read-only instrument-rules GET is recorded as a
-> network attempt without implying that an order endpoint was called.
+> README shared status updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX (2026-06-20).
+> TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX corrects the orchestrator
+> top-level status so a real public read-only instrument-rules GET reports
+> `ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK` instead of
+> `ORCHESTRATION_OK_READINESS_NO_NETWORK`, consistent with `network_attempted=True`.
 >
-> New immutable report fields:
-> - `read_only_network_attempted` — True only when the real public IR GET was attempted
-> - `order_network_attempted` — True only when BM attempts an order network call
-> - `network_attempted` — aggregate OR of the two fields above (semantics corrected)
+> New constant: `STATUS_OK_READINESS_READ_ONLY_NETWORK = "ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK"`
+> BM inner `bm_final_status` remains `READINESS_OK_NO_NETWORK` for both paths.
 >
 > Safety status: no real order sent, no live endpoint, no live secrets, no retry,
 > no scheduler, no main.py/src/risk.py/BybitExecutor change, no global tiny-cap change,
 > MAX_ORDER_COUNT=1 unchanged, all Stage 1 fake-sender-only restrictions preserved.
 
-## TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX Status (2026-06-20)
+## TASK-014BM_ONE_SHOT_ORCHESTRATOR_READINESS_STATUS_TAXONOMY_FIX Status (2026-06-20)
 
 - Status: COMPLETE (local commit pending)
 - Orchestrator: `src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
 - CLI: `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
-- New tests: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_network_audit_semantics_fix.py` (23/23 PASS)
+- New tests: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_readiness_status_taxonomy_fix.py` (24/24 PASS)
+- Updated orchestrator test: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` (33/34 logic PASS; 1 error = pre-existing Windows tmp_path permission)
 - Updated opt-in tests: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py` (12/12 PASS)
-- Existing orchestrator regression: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` (33/34 logic PASS; 1 error = pre-existing Windows tmp_path permission, unrelated to changes)
-- Tiny execution adapter regression: `tests/demo_trading -k tiny_execution_adapter` (521/540 PASS; 19 errors = pre-existing Windows tmp_path permission; includes prior 517 + 23 new)
+- Network audit tests: `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_network_audit_semantics_fix.py` (23/23 PASS)
+- Tiny execution adapter regression: 7921 PASS (250 errors = pre-existing Windows tmp_path; 1 failure = pre-existing `test_demo_emergency_close_sender::test_dry_run_cli_writes_report`, unrelated)
 - Py compile: PASS
 - Files intentionally not modified: `main.py`, `src/risk.py`, `src/executors/bybit.py`, live Bybit behavior, global tiny caps, protected symbols, `MAX_ORDER_COUNT=1`
 - Real order endpoint called: False
 - Real order sent: False
 
-## Next VPS Validation Command (TASK-014BM network audit semantics fix)
+## Next VPS Validation Command (TASK-014BM readiness status taxonomy fix)
 
 ```powershell
 python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
 ```
 
 Expected output must confirm:
+- `status=ORCHESTRATION_OK_READINESS_READ_ONLY_NETWORK`
 - `read_only_network_attempted=True`
 - `order_network_attempted=False`
 - `network_attempted=True`
@@ -45,6 +46,7 @@ Expected output must confirm:
 - `actual_request_body_qty='0.1'`
 - reason contains "one authorized public read-only instrument-rules GET completed"
 - reason contains "no order network call attempted"
+- `bm_final_status='READINESS_OK_NO_NETWORK'`
 
 > README shared status updated by TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR (2026-06-19).
 > TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR is a
