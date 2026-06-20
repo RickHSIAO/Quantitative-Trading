@@ -302,6 +302,10 @@ def main(argv: list[str] | None = None) -> int:
     # 9
     print(f"body_qty_authorized_override={report.body_qty_authorized_override}")
     # 10
+    print(
+        f"read_only_network_attempted={report.read_only_network_attempted}"
+    )
+    print(f"order_network_attempted={report.order_network_attempted}")
     print(f"network_attempted={report.network_attempted}")
     # 11
     print(f"order_endpoint_called={report.order_endpoint_called}")

@@ -21,6 +21,40 @@ Notes:
 
 ---
 
+### 2026-06-20 (TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX -- correct orchestrator network audit semantics: read_only_network_attempted / order_network_attempted / network_attempted)
+
+Agent: Claude Sonnet 4.6
+Command source: Rick explicit chat authorization for TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX (local commit only; no push).
+Task: Correct the orchestrator audit/report semantics so a real public read-only instrument-rules GET is recorded as a network attempt without implying that an order endpoint was called. Add three explicit immutable report fields: `read_only_network_attempted` (True only when IR GET attempted), `order_network_attempted` (True only when BM order network call attempted), `network_attempted` (aggregate OR). Update reason string for real read-only readiness. Update CLI terminal output to display all five network/order fields. Write 23 new focused tests. Preserve all safety locks and Stage 1 restrictions.
+Status before: `network_attempted=False` and reason "no network attempted" even when a real public read-only IR GET had been executed via `--ir-mode discover` with the opt-in flag.
+Status after: `read_only_network_attempted=True`, `order_network_attempted=False`, `network_attempted=True` when the IR GET path is used. Reason updated to "BM readiness ok; one authorized public read-only instrument-rules GET completed; no order network call attempted." Offline readiness retains `all three=False`. Fake-sender execute path correctly shows `order_network_attempted=True`. Aggregate is always the boolean OR.
+Files changed:
+- `src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py` (2 tests updated)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_network_audit_semantics_fix.py` (new, 23 tests)
+- `README.md`
+- `docs/research/commands/NEXT_ACTION.md`
+- `docs/research/commands/COMMAND_LOG.md`
+Validation:
+- `python -m py_compile` on all changed files -> PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_network_audit_semantics_fix.py` -> 23/23 PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py` -> 12/12 PASS
+- `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py` -> 33/34 logic PASS (1 error = pre-existing Windows tmp_path permission, unrelated to changes)
+- `python -m pytest tests/demo_trading -k tiny_execution_adapter` -> 521 PASS (19 errors = same pre-existing Windows tmp_path; 517 existing + 23 new = 540 total)
+Outputs: No reports or demo output artifacts committed. No real order network call. No real order sent. No credentials read.
+Notes: The 19 Windows tmp_path errors are pre-existing (system permission issue on this workstation, not on VPS). All logic tests pass cleanly. No existing test assertions were broken except 2 opt-in tests that had incorrect `network_attempted=False` assertions for the discover path (updated to correct semantics).
+
+Next VPS validation command:
+
+```powershell
+python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+```
+
+Confirm: `read_only_network_attempted=True`, `order_network_attempted=False`, `network_attempted=True`, `order_endpoint_called=False`, `order_sent=False`.
+
+---
+
 ### 2026-06-20 (TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX -- narrow CLI opt-in for one public read-only Bybit Demo SOLUSDT instrument-rules GET)
 
 Agent: Codex GPT-5.5

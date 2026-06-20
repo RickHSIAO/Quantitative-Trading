@@ -263,6 +263,8 @@ class OrchestrationReport:
     actual_request_body_qty_source: str
     body_qty_authorized_override: bool
     body_qty_rejection_reason: str
+    read_only_network_attempted: bool
+    order_network_attempted: bool
     network_attempted: bool
     order_endpoint_called: bool
     order_sent: bool
@@ -343,6 +345,8 @@ class OrchestrationReport:
             ),
             "body_qty_authorized_override": self.body_qty_authorized_override,
             "body_qty_rejection_reason": self.body_qty_rejection_reason,
+            "read_only_network_attempted": self.read_only_network_attempted,
+            "order_network_attempted": self.order_network_attempted,
             "network_attempted": self.network_attempted,
             "order_endpoint_called": self.order_endpoint_called,
             "order_sent": self.order_sent,
@@ -443,6 +447,7 @@ def _bm_terminal_status_to_orchestration_status(
     bm_status: str,
     *,
     fake_sender_was_called: bool,
+    ir_network_attempted: bool = False,
 ) -> tuple[str, str]:
     """Map a BM ``final_status`` to an orchestration status."""
 
@@ -477,11 +482,25 @@ def _bm_terminal_status_to_orchestration_status(
             "Bybit (fake) replied non-zero retCode or empty orderId",
         )
     if bm_status == bm.STATUS_READINESS_OK_NO_NETWORK:
+        if ir_network_attempted:
+            return (
+                STATUS_OK_READINESS_NO_NETWORK,
+                "BM readiness ok; one authorized public read-only "
+                "instrument-rules GET completed; no order network call "
+                "attempted.",
+            )
         return (
             STATUS_OK_READINESS_NO_NETWORK,
             "BM readiness ok; no network attempted",
         )
     if bm_status == bm.STATUS_DRY_RUN_OK_NO_NETWORK:
+        if ir_network_attempted:
+            return (
+                STATUS_OK_READINESS_NO_NETWORK,
+                "BM dry-run ok; one authorized public read-only "
+                "instrument-rules GET completed; no order network call "
+                "attempted.",
+            )
         return (
             STATUS_OK_READINESS_NO_NETWORK,
             "BM dry-run ok; no network attempted",
@@ -559,6 +578,9 @@ def run_one_shot_authorized_execution_orchestration(
         sender=ir_sender,
         pre_parsed_response=ir_pre_parsed_response,
     )
+    # Track whether a real public read-only GET was attempted.
+    # Any MODE_DISCOVER run (injected sender or stdlib) constitutes one.
+    ir_network_attempted = (ir_mode == bm_ir.MODE_DISCOVER)
 
     ir_ok, ir_reason = _ir_validate(ir_report)
     if not ir_ok:
@@ -575,6 +597,7 @@ def run_one_shot_authorized_execution_orchestration(
             instrument_rules_report=_safe_to_dict(ir_report),
             fake_sender_used=False,
             sender_call_count=0,
+            ir_network_attempted=ir_network_attempted,
         )
 
     candidate = getattr(ir_report, "candidate")
@@ -623,6 +646,7 @@ def run_one_shot_authorized_execution_orchestration(
             cap_gate_status=cap_gate_status,
             fake_sender_used=False,
             sender_call_count=0,
+            ir_network_attempted=ir_network_attempted,
         )
 
     # ----- 3. Authorized execution qty wiring ---------------------------
@@ -659,6 +683,7 @@ def run_one_shot_authorized_execution_orchestration(
             wiring_execution_qty=wiring_qty,
             fake_sender_used=False,
             sender_call_count=0,
+            ir_network_attempted=ir_network_attempted,
         )
 
     # ----- 4. Hand the authorized wiring to BM --------------------------
@@ -702,11 +727,14 @@ def run_one_shot_authorized_execution_orchestration(
             candidate_notional=candidate_notional,
             fake_sender_used=False,
             sender_call_count=0,
+            ir_network_attempted=ir_network_attempted,
         )
 
     bm_final_status = str(getattr(bm_report, "final_status", "") or "")
     orch_status, orch_reason = _bm_terminal_status_to_orchestration_status(
-        bm_final_status, fake_sender_was_called=fake_sender_used
+        bm_final_status,
+        fake_sender_was_called=fake_sender_used,
+        ir_network_attempted=ir_network_attempted,
     )
 
     return _build_full_report(
@@ -720,6 +748,7 @@ def run_one_shot_authorized_execution_orchestration(
         bm_report=bm_report,
         fake_sender_used=fake_sender_used,
         sender_call_count=sender_call_count,
+        ir_network_attempted=ir_network_attempted,
     )
 
 
@@ -802,6 +831,7 @@ def _build_rejection_report(
     candidate_notional: str = "",
     fake_sender_used: bool = False,
     sender_call_count: int = 0,
+    ir_network_attempted: bool = False,
 ) -> OrchestrationReport:
     ir_dict = instrument_rules_report or {}
     rules = (ir_dict.get("rules") or {}) if isinstance(ir_dict, dict) else {}
@@ -858,7 +888,9 @@ def _build_rejection_report(
         actual_request_body_qty_source="",
         body_qty_authorized_override=False,
         body_qty_rejection_reason="",
-        network_attempted=False,
+        read_only_network_attempted=ir_network_attempted,
+        order_network_attempted=False,
+        network_attempted=ir_network_attempted,
         order_endpoint_called=False,
         order_sent=False,
         bybit_ret_code=None,
@@ -898,6 +930,7 @@ def _build_full_report(
     bm_report: Any,
     fake_sender_used: bool,
     sender_call_count: int,
+    ir_network_attempted: bool = False,
 ) -> OrchestrationReport:
     rules = getattr(ir_report, "rules", None)
     candidate = getattr(ir_report, "candidate", None)
@@ -969,7 +1002,13 @@ def _build_full_report(
         body_qty_rejection_reason=str(
             getattr(bm_report, "body_qty_rejection_reason", "") or ""
         ),
-        network_attempted=bool(getattr(bm_report, "network_attempted", False)),
+        read_only_network_attempted=ir_network_attempted,
+        order_network_attempted=bool(
+            getattr(bm_report, "network_attempted", False)
+        ),
+        network_attempted=ir_network_attempted or bool(
+            getattr(bm_report, "network_attempted", False)
+        ),
         order_endpoint_called=bool(
             getattr(bm_report, "order_endpoint_called", False)
         ),
@@ -1060,8 +1099,13 @@ def _render_markdown(report: OrchestrationReport) -> str:
         f"override={report.body_qty_authorized_override}"
     )
     lines.append(
-        f"- network_attempted={report.network_attempted} "
-        f"order_endpoint_called={report.order_endpoint_called} "
+        f"- read_only_network_attempted="
+        f"{report.read_only_network_attempted} "
+        f"order_network_attempted={report.order_network_attempted} "
+        f"network_attempted={report.network_attempted}"
+    )
+    lines.append(
+        f"- order_endpoint_called={report.order_endpoint_called} "
         f"order_sent={report.order_sent} "
         f"bybit_ret_code={report.bybit_ret_code} "
         f"bybit_order_id=`{report.bybit_order_id}`"

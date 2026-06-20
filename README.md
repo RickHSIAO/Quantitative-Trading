@@ -14,10 +14,53 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX, 2026-06-20）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX, 2026-06-20）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_ONE_SHOT_ORCHESTRATOR_NETWORK_AUDIT_SEMANTICS_FIX**（2026-06-20）
+> 修正 orchestrator audit/report 語意：真實 public read-only instrument-rules GET
+> 現在被正確記錄為一次 network attempt，但不暗示任何 order endpoint 被呼叫。
+>
+> **新增三個不可變 report 欄位：**
+> - `read_only_network_attempted=True` — 僅在真實 public IR GET 被 attempted 時為 True
+> - `order_network_attempted=True` — 僅在 BM 透過 fake sender 嘗試 order network call 時為 True
+> - `network_attempted` — 以上兩者的 aggregate OR（現修正為正確語意）
+>
+> **語意對照：**
+> - real read-only readiness discovery：`read_only=True`, `order=False`, `aggregate=True`,
+>   `order_endpoint_called=False`, `order_sent=False`
+> - offline/pre-parsed readiness：`read_only=False`, `order=False`, `aggregate=False`
+> - fake BM sender execute：`read_only=False` (offline IR), `order=True`, `aggregate=True`
+>
+> **reason 字串修正：** 真實 read-only readiness 不再說 "no network attempted"，
+> 改為 "BM readiness ok; one authorized public read-only instrument-rules GET
+> completed; no order network call attempted."
+>
+> **變更檔案：**
+> - [`src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：OrchestrationReport 新增兩欄位；to_dict() / markdown 更新；report builders 修正；ir_network_attempted 追蹤
+> - [`scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`](scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py)：CLI terminal 輸出新增三個 network 欄位
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py)：更新 2 條測試以反映正確 semantics
+> - [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_network_audit_semantics_fix.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_network_audit_semantics_fix.py)：23 條新 focused tests（全 PASS）
+>
+> **安全不變項：** 無 real order network call；無 real order sent；無 live endpoint；
+> 無 live secret；無 retry；無 scheduler；不動 `main.py` / `src/risk.py` /
+> `BybitExecutor`；不改 global tiny caps / protected symbols / `MAX_ORDER_COUNT=1`；
+> cap escalation opt-in / fake-sender-only Stage 1 execute 限制全部不變。
+>
+> 驗證（local）：py_compile PASS；23/23 audit semantics 測試 PASS；12/12 opt-in 測試 PASS；
+> 33/34 orchestrator 邏輯測試 PASS（1 errors = pre-existing Windows tmp_path 權限問題）；
+> 521/540 tiny_execution_adapter regression PASS（19 errors = 同一 Windows tmp_path 問題）。
+> VPS 驗證見下方指令。**未送出任何 real Bybit Demo 單。** Local commit only — 未 push。
+>
+> 下一步 VPS 驗證指令：
+> ```
+> python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+> ```
+> 確認 `read_only_network_attempted=True`、`order_network_attempted=False`、
+> `network_attempted=True`、`order_endpoint_called=False`、`order_sent=False`。
+>
 
 > **TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX**（2026-06-20）
 > 在 TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR（Stage 1）之上，為 preview CLI

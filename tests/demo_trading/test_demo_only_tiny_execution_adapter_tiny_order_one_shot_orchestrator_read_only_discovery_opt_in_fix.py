@@ -189,7 +189,9 @@ def test_cli_discover_with_opt_in_passes_allow_real_ir_get_true(monkeypatch):
                 bm_wire.EXECUTION_QTY_SOURCE_CAP_ESCALATION_AUTHORIZED
             ),
             body_qty_authorized_override=True,
-            network_attempted=False,
+            read_only_network_attempted=True,
+            order_network_attempted=False,
+            network_attempted=True,
             order_endpoint_called=False,
             order_sent=False,
             fake_sender_used=False,
@@ -327,7 +329,9 @@ def test_allow_real_ir_get_true_resolves_full_chain_no_credentials(monkeypatch):
         bm_wire.EXECUTION_QTY_SOURCE_CAP_ESCALATION_AUTHORIZED
     )
     assert r.body_qty_authorized_override is True
-    assert r.network_attempted is False  # BM never reached network in readiness
+    assert r.read_only_network_attempted is True   # IR discover GET was done
+    assert r.order_network_attempted is False       # BM readiness: no order attempt
+    assert r.network_attempted is True              # aggregate: True (from IR GET)
     assert r.order_endpoint_called is False
     assert r.order_sent is False
 
