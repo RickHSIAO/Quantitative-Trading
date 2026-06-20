@@ -14,10 +14,55 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR, 2026-06-19）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX, 2026-06-20）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_ONE_SHOT_ORCHESTRATOR_READ_ONLY_DISCOVERY_OPT_IN_FIX**（2026-06-20）
+> 在 TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR（Stage 1）之上，為 preview CLI
+> 新增一個 **narrow explicit opt-in flag**，讓 `--ir-mode discover` 能正確傳遞
+> `allow_real_ir_get=True` 給 orchestrator，而不是讓 orchestrator raise
+> `OneShotAuthorizedExecutionOrchestratorError`（VPS 上驗到的問題）。
+>
+> **新增 CLI flag：**
+> `--i-understand-this-performs-one-public-read-only-instrument-rules-get`
+>
+> **Default 仍然 fail-closed：** `--ir-mode discover` 沒有帶新旗標時，CLI 在 *網路之前*
+> 輸出 REJECTED 訊息並退出 code 1，不呼叫 orchestrator，不觸及網路。
+>
+> **唯一允許的真實 network 請求：**
+> `GET https://api-demo.bybit.com/v5/market/instruments-info?category=linear&symbol=SOLUSDT`
+> （只讀；不需要憑證；不授權 `/v5/order/create`、`/v5/order/cancel`、
+> `/v5/position/set-trading-stop`、任何 live Bybit host、或 WebSocket endpoint。）
+>
+> **安全不變項：** real BM execute mode 仍未開放；fake-sender-only execution 限制不變；
+> `order_endpoint_called=False`；`order_sent=False`；不動 `main.py` /
+> `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`；
+> 不改 global tiny caps / protected symbols / `MAX_ORDER_COUNT=1`。
+>
+> 新增測試檔
+> [`tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py`](tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py)
+> （12 條 focused tests）覆蓋：CLI discover 無 opt-in → exit 1 no network；
+> CLI discover 帶 opt-in + monkeypatched stdlib → exit 0，no order；
+> CLI 正確傳 `allow_real_ir_get=True`；orchestrator `allow_real_ir_get=True` +
+> monkeypatched stdlib → 單一 GET、正確 URL、無 order；injected ir_sender 收到
+> 正確 URL、只被呼叫一次；full chain resolves `instrument_rules_loaded=True`,
+> `candidate_qty='0.1'`, `cap_gate_status=ESCALATION_AUTHORIZED`,
+> `wiring_status=WIRING_AUTHORIZED_CANDIDATE_QTY`,
+> `actual_request_body_qty='0.1'`，`order_endpoint_called=False`,
+> `order_sent=False`；既有 34 條 orchestrator 測試 + 517/517 regression 全部 PASS。
+>
+> 驗證：py_compile PASS；12/12 opt-in 測試 PASS；34/34 orchestrator 回歸 PASS；
+> 517/517 tiny_execution_adapter 回歸 PASS（先前 505 + 12 新 opt-in）。
+> **未送出任何新 real Bybit Demo 單。未呼叫 `/v5/order/create`。未讀任何 secret。**
+> Local commit only — 未 push。
+>
+> 下一步 VPS 驗證指令：
+> ```
+> python scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py --ir-mode discover --i-understand-this-performs-one-public-read-only-instrument-rules-get --explicit-demo-min-qty-cap-authorization-flag --authorization-marker DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1
+> ```
+>
 
 > **TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR**（2026-06-19，Stage 1）
 > 在 TASK-014BM_EXECUTION_BODY_AUTHORIZED_QTY_SOURCE_SWITCH（Stage 2）之上，新增一個
