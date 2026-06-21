@@ -39,14 +39,45 @@ DISCORD_WEBHOOK_ENV = "MONITOR_DISCORD_WEBHOOK_URL"
 NOTION_API_BASE = "https://api.notion.com/v1"
 NOTION_API_VERSION = "2022-06-28"
 
-# Pilot properties that MUST exist in a Notion database for it to be compatible.
+NOTION_DUPLICATE_IDENTITY_CONFLICT = "NOTION_DUPLICATE_IDENTITY_CONFLICT"
+
+# Minimal presence set used only when a caller queries without supplying the
+# finalized payload. The authoritative check validates EVERY property the actual
+# Pilot payload will send (derived dynamically in _validate_payload_schema).
 REQUIRED_PILOT_SCHEMA_PROPS = (
     "Date", "Pilot ID", "Excel Export Status", "Notion Sync Status", "Discord Notify Status",
 )
 
+# Optional identity property; when a database provides it, it is preferred for
+# lookup and written on create/update. It is never required for compatibility.
+IDEMPOTENCY_KEY_PROPERTY = "Idempotency Key"
+
+# Approved property-name aliases (canonical -> acceptable database names).
+PROPERTY_ALIASES: dict[str, tuple[str, ...]] = {}
+
+_TITLE_TEXT = ("title", "rich_text")
+_NUMBERY = ("number", "rich_text", "title")
+_TEXTY = ("rich_text", "title", "select")
+
+
+def _acceptable_types(name: str) -> tuple[str, ...]:
+    """Return the Notion property types compatible with a payload field."""
+    if name == "Date":
+        return ("date", "title", "rich_text")
+    if name == "Pilot Day" or name.endswith("Count"):
+        return _NUMBERY
+    if (name.endswith("USDT") or name.endswith("%") or "PnL" in name
+            or "Return" in name or "Drawdown" in name):
+        return _NUMBERY
+    return _TEXTY
+
 
 class NotionSchemaIncompatible(Exception):
-    """The selected Notion database schema cannot host the Pilot row."""
+    """The selected Notion database schema cannot host the full Pilot payload."""
+
+
+class NotionDuplicateIdentityConflict(Exception):
+    """More than one Notion page matched the Pilot/date identity."""
 
 
 def _redact(text: str, secrets: list[str]) -> str:
@@ -103,60 +134,119 @@ class RealNotionTransport:
             self._schema = dict(db.get("properties", {}) or {})
         return self._schema
 
-    def _assert_compatible(self) -> None:
-        schema = self._ensure_schema()
-        missing = [p for p in REQUIRED_PILOT_SCHEMA_PROPS if p not in schema]
-        if missing:
-            raise NotionSchemaIncompatible(NOTION_DATABASE_SCHEMA_INCOMPATIBLE)
+    def _resolve(self, name: str, schema: Mapping[str, Any]) -> str | None:
+        if name in schema:
+            return name
+        for alt in PROPERTY_ALIASES.get(name, ()):  # approved name mapping
+            if alt in schema:
+                return alt
+        return None
 
-    def _build_props(self, properties: Mapping[str, Any]) -> dict[str, Any]:
+    def _validate_payload_schema(self, properties: Mapping[str, Any] | None) -> None:
+        """Validate EVERY property the finalized payload will send (or the
+        minimal presence set when no payload is supplied). Fails closed BEFORE
+        any query/create/update; the detail lists missing/incompatible names and
+        types but never exposes the token or database id."""
+        schema = self._ensure_schema()
+        names = list(properties.keys()) if properties else list(REQUIRED_PILOT_SCHEMA_PROPS)
+        missing: list[str] = []
+        incompatible: list[str] = []
+        for name in names:
+            actual = self._resolve(name, schema)
+            if actual is None:
+                missing.append(name)
+                continue
+            ptype = (schema.get(actual, {}) or {}).get("type")
+            if ptype not in _acceptable_types(name):
+                incompatible.append(f"{name}:{ptype}->expected{list(_acceptable_types(name))}")
+        if missing or incompatible:
+            raise NotionSchemaIncompatible(
+                f"{NOTION_DATABASE_SCHEMA_INCOMPATIBLE} missing={sorted(missing)} "
+                f"incompatible={sorted(incompatible)}")
+
+    def _filter_for(self, name: str, value: str, schema: Mapping[str, Any]) -> dict[str, Any]:
+        actual = self._resolve(name, schema)
+        ptype = (schema.get(actual, {}) or {}).get("type")
+        if ptype == "date":
+            return {"property": actual, "date": {"equals": value}}
+        if ptype == "title":
+            return {"property": actual, "title": {"equals": value}}
+        return {"property": actual, "rich_text": {"equals": value}}
+
+    def _build_props(self, properties: Mapping[str, Any], *, pilot_id: str, date: str) -> dict[str, Any]:
         schema = self._ensure_schema()
         out: dict[str, Any] = {}
         for name, value in properties.items():
-            spec = schema.get(name)
-            if not isinstance(spec, Mapping):
-                continue  # never write a property absent from the schema
-            ptype = spec.get("type")
+            actual = self._resolve(name, schema)
+            if actual is None:
+                continue  # validated earlier; defensive
+            ptype = (schema.get(actual, {}) or {}).get("type")
             if ptype == "title":
-                out[name] = {"title": [{"text": {"content": str(value)}}]}
+                out[actual] = {"title": [{"text": {"content": str(value)}}]}
             elif ptype == "rich_text":
-                out[name] = {"rich_text": [{"text": {"content": str(value)}}]}
+                out[actual] = {"rich_text": [{"text": {"content": str(value)}}]}
             elif ptype == "number":
                 try:
-                    out[name] = {"number": float(value)}
+                    out[actual] = {"number": float(value)}
                 except (TypeError, ValueError):
-                    pass
+                    out[actual] = {"number": None}
             elif ptype == "date":
-                out[name] = {"date": {"start": str(value)}}
+                out[actual] = {"date": {"start": str(value)}}
             elif ptype == "select":
-                out[name] = {"select": {"name": str(value)}}
+                out[actual] = {"select": {"name": str(value)}}
             elif ptype == "checkbox":
-                out[name] = {"checkbox": bool(value)}
-            # other property types are intentionally skipped (no partial write risk)
+                out[actual] = {"checkbox": bool(value)}
+        # Write the explicit idempotency key only when the database provides it.
+        key_actual = self._resolve(IDEMPOTENCY_KEY_PROPERTY, schema)
+        if key_actual:
+            ktype = (schema.get(key_actual, {}) or {}).get("type")
+            keyval = f"{pilot_id}:{date}"
+            if ktype == "title":
+                out[key_actual] = {"title": [{"text": {"content": keyval}}]}
+            else:
+                out[key_actual] = {"rich_text": [{"text": {"content": keyval}}]}
         return out
 
-    def query(self, *, database_id: str, idempotency_key: str, headers: Mapping[str, str] | None = None) -> dict[str, Any]:
-        self._assert_compatible()
-        date = idempotency_key.split(":", 1)[1] if ":" in idempotency_key else idempotency_key
+    @staticmethod
+    def _split_key(idempotency_key: str) -> tuple[str, str]:
+        if ":" in idempotency_key:
+            pilot_id, date = idempotency_key.split(":", 1)
+            return pilot_id, date
+        return "", idempotency_key
+
+    def query(self, *, database_id: str, idempotency_key: str,
+              headers: Mapping[str, str] | None = None,
+              properties: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        # Full schema validation BEFORE any lookup.
+        self._validate_payload_schema(properties)
         schema = self._ensure_schema()
-        date_type = (schema.get("Date", {}) or {}).get("type", "date")
-        if date_type == "title":
-            flt = {"property": "Date", "title": {"equals": date}}
+        pilot_id, date = self._split_key(idempotency_key)
+        # Prefer an explicit Idempotency Key property; otherwise AND(Pilot ID, Date).
+        key_actual = self._resolve(IDEMPOTENCY_KEY_PROPERTY, schema)
+        if key_actual:
+            flt = self._filter_for(IDEMPOTENCY_KEY_PROPERTY, f"{pilot_id}:{date}", schema)
         else:
-            flt = {"property": "Date", "date": {"equals": date}}
+            flt = {"and": [self._filter_for("Pilot ID", pilot_id, schema),
+                           self._filter_for("Date", date, schema)]}
         try:
             res = self._http.request("POST", f"/databases/{self._db}/query", self._token, {"filter": flt})
         except urllib.error.URLError as exc:
             raise RuntimeError(_redact(f"notion query failed: {exc}", self._secrets())) from exc
         items = res.get("results", []) if isinstance(res, Mapping) else []
+        if len(items) > 1:
+            raise NotionDuplicateIdentityConflict(
+                f"{NOTION_DUPLICATE_IDENTITY_CONFLICT}: {len(items)} pages for {pilot_id}:{date}")
         if items:
             return {"page_id": items[0].get("id")}
         return {}
 
     def upsert(self, *, database_id: str, page_id: str | None, properties: Mapping[str, Any],
                headers: Mapping[str, str] | None = None) -> dict[str, Any]:
-        self._assert_compatible()
-        props = self._build_props(properties)
+        # Re-validate the full payload schema BEFORE any create/update.
+        self._validate_payload_schema(properties)
+        pilot_id = str(properties.get("Pilot ID", ""))
+        date = str(properties.get("Date", ""))
+        props = self._build_props(properties, pilot_id=pilot_id, date=date)
         try:
             if page_id:
                 return self._http.request("PATCH", f"/pages/{page_id}", self._token, {"properties": props})
@@ -247,8 +337,11 @@ __all__ = [
     "DELIVERY_PASS",
     "DISCORD_WEBHOOK_ENV",
     "HTTP_DELIVERY_FAILED",
+    "IDEMPOTENCY_KEY_PROPERTY",
     "NETWORK_NOT_ALLOWED",
     "NOTION_DATABASE_SCHEMA_INCOMPATIBLE",
+    "NOTION_DUPLICATE_IDENTITY_CONFLICT",
+    "NotionDuplicateIdentityConflict",
     "NOTION_FORWARD_DATABASE_ID_ENV",
     "NOTION_PILOT_DATABASE_ID_ENV",
     "NOTION_TOKEN_ENV",

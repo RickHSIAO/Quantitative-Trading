@@ -1,5 +1,55 @@
 # Next Action
 
+> README shared status updated by TASK-014BU_FIX (2026-06-22). Fixes two review
+> blockers in the Notion delivery transport. Reporting/delivery only; no Bybit
+> operation; zero real HTTP during implementation/tests. New fix commit on top
+> of de99c5c (not amended).
+>
+> Blocker 1 (Notion identity was Date-only): existing-page lookup now uses the
+> Pilot identity <pilot_id>:<YYYY-MM-DD> -- it prefers an explicit "Idempotency
+> Key" property when the database provides it, otherwise an AND filter
+> (Pilot ID equals pilot_id AND Date equals date). More than one match fails
+> closed with NOTION_DUPLICATE_IDENTITY_CONFLICT (never silently picks the first
+> page; no write). Create preserves the exact Pilot ID and Date; update targets
+> only the uniquely matched page; idempotency key remains <pilot_id>:<YYYY-MM-DD>;
+> no automatic schema modification.
+>
+> Blocker 2 (fallback schema check was a weak 5-field subset): before any
+> query/create/update the transport derives the required property set
+> dynamically from the finalized Pilot payload, resolves each via the approved
+> name mapping, confirms it exists and that its Notion type is compatible with
+> the payload builder (numeric fields reject date, Date rejects checkbox, etc.),
+> never drops a property silently, and never partial-writes. Any missing/
+> incompatible property fails closed with NOTION_DATABASE_SCHEMA_INCOMPATIBLE
+> (sanitized detail lists names/expected types; never token/db id/headers/body).
+> Both the dedicated and fallback databases run the same full validation.
+>
+> Database selection: prefer NOTION_PILOT_DATABASE_ID, else fall back to
+> NOTION_FORWARD_VALIDATION_DATABASE_ID. The current VPS database's compatibility
+> is NOT yet proven: until a real schema-read smoke confirms it, treat fallback
+> incompatibility as possible/expected, not proven.
+>
+> Validation (offline; fake HTTP): py_compile PASS; focused delivery +
+> daily_runner + output_status + reporting 197 passed; -k "pilot_delivery or
+> pilot_output_status or pilot_forward_source or pilot_daily_runner or
+> pilot_reporting or tiny_execution_adapter or reduce_only_close" 1233 passed,
+> 7701 deselected. Bybit network 0; order POSTs 0; orders sent 0; real Notion
+> HTTP 0; real Discord HTTP 0.
+
+## TASK-014BU_FIX Status (2026-06-22)
+
+- Status: COMPLETE / PASS (Notion Pilot-date identity + full payload schema validation; no orders; zero real HTTP; new commit on de99c5c)
+- py_compile: PASS; focused delivery + daily_runner + output_status + reporting: 197 passed
+- Combined regression: 1233 passed, 7701 deselected
+- Bybit network calls: 0; order POSTs: 0; orders sent: 0; real Notion HTTP: 0; real Discord HTTP: 0
+- Next action: real delivery reconcile from the existing failed Smoke state
+  (explicit network opt-in); a real schema-read confirms whether the fallback DB
+  is compatible or a dedicated Pilot DB is required. Automatic Bybit Demo
+  execution remains unauthorized. The TASK-014BU VPS reconcile-only follow-up
+  commands below still apply.
+
+---
+
 > README shared status updated by TASK-014BU_DELIVERY_TRANSPORT (2026-06-22).
 > Wires explicitly gated real Notion/Discord delivery transports into the Pilot
 > adapters and makes reconcile_outputs regenerate all local reporting outputs
@@ -46,8 +96,9 @@
 > otherwise fail closed with NOTION_DATABASE_SCHEMA_INCOMPATIBLE before any
 > write (db id / token never exposed). No automatic schema modification; no
 > partial/malformed row. The observed VPS has only the Forward Validation
-> database, so a real Notion write currently fails closed -- a dedicated Pilot
-> database is required to write Notion.
+> database; its Pilot-schema compatibility is NOT yet proven (no real
+> schema-read smoke has run), so a dedicated Pilot database is possibly/expected
+> to be required -- not confirmed -- until the VPS schema-read result exists.
 >
 > Idempotency key <pilot_id>:<YYYY-MM-DD> unchanged (update or find the same
 > record, never duplicate). Discord: a successful delivery advances the ledger to

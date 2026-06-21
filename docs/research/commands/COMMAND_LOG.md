@@ -21,6 +21,34 @@ Notes:
 
 ---
 
+### 2026-06-22 (TASK-014BU_FIX -- enforce Pilot-date Notion identity and full schema validation)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BU_FIX_NOTION_IDEMPOTENCY_AND_FULL_SCHEMA_COMPATIBILITY (fix two review blockers; reporting/delivery only; no Bybit operation; zero real HTTP; new fix commit on de99c5c; do not push).
+Task: (1) Replace the Date-only Notion existing-page lookup with the Pilot identity <pilot_id>:<YYYY-MM-DD>; (2) validate the full finalized Pilot payload against the database schema before any query/create/update (not a weak five-field subset). No Bybit operation; order_execution_authorized stays false.
+Status before: RealNotionTransport.query filtered by Date only (could overwrite a different Pilot on the same date), and schema compatibility checked only Date/Pilot ID/Excel/Notion/Discord status.
+Status after: existing-page lookup prefers an explicit "Idempotency Key" property when present, otherwise an AND filter (Pilot ID equals pilot_id AND Date equals date); more than one match fails closed with NOTION_DUPLICATE_IDENTITY_CONFLICT and performs no write; create preserves exact Pilot ID and Date; update targets only the uniquely matched page; idempotency key remains <pilot_id>:<YYYY-MM-DD>. Schema validation now derives the required property set dynamically from the finalized payload, resolves each via the approved name mapping, confirms existence and Notion-type compatibility (numeric fields reject date, Date rejects checkbox, etc.), drops nothing silently, performs no partial write, and fails closed with NOTION_DATABASE_SCHEMA_INCOMPATIBLE (sanitized names/expected types; no token/db id/headers/body). Both dedicated and fallback databases run the same full validation. No automatic schema modification.
+Files changed:
+- `src/demo_strategy_pilot_delivery_transport.py` (Pilot-date identity query + Idempotency Key preference + NotionDuplicateIdentityConflict; full payload schema validation before query/write; per-field type compatibility; sanitized errors)
+- `src/demo_strategy_pilot_notion_sync.py` (pass properties to query; map NotionDuplicateIdentityConflict -> NOTION_DUPLICATE_IDENTITY_CONFLICT detail)
+- `tests/demo_trading/test_demo_strategy_pilot_delivery_transport.py` (full payload COMPAT_SCHEMA; +19 identity/schema tests)
+- `tests/demo_trading/test_demo_strategy_pilot_daily_runner.py` / `test_demo_strategy_pilot_output_status.py` (fake transport query() accepts properties kwarg)
+- `README.md` (TASK-014BU_FIX banner; softened "proven incompatible" wording)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BU_FIX banner + status; softened wording)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13; all offline; fake HTTP + temp roots):
+- py_compile: PASS (delivery transport, notion_sync, delivery test, daily_runner test, output_status test)
+- Focused delivery + daily_runner + output_status + reporting: 197 passed
+    python -m pytest tests/demo_trading/test_demo_strategy_pilot_delivery_transport.py tests/demo_trading/test_demo_strategy_pilot_daily_runner.py tests/demo_trading/test_demo_strategy_pilot_output_status.py tests/demo_trading/test_demo_strategy_pilot_reporting.py -q --basetemp=.pytest_bu
+- Combined -k "pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close": 1233 passed, 7701 deselected
+- Bybit network calls: 0; order /v5/order/create POST calls: 0; real orders sent: 0
+- Real Notion HTTP calls during implementation/tests: 0; real Discord HTTP calls: 0
+- No real credential / token / webhook / database id read, printed, or committed. No secret serialized.
+Outputs: runtime pilot data / workbook / previews are written only under outputs/demo_trading/pilot/<pilot_id>/ (outside Git) and were NOT committed.
+Notes: existing-page lookup never uses Date alone; two Pilots on the same date stay distinct (filter includes Pilot ID). Idempotency Key property is optional -- used for lookup and written on create/update only when the database provides it; it is never required for compatibility. The schema-failure detail is sanitized (token / db id / headers / HTTP body never exposed). The observed VPS Forward Validation database's Pilot-schema compatibility is NOT yet proven -- documentation now says incompatibility is possible/expected until a real schema-read smoke confirms it. Does not modify TASK-014BO/BP, main.py, src/risk.py, the live executor, strategy parameters, or the protected-symbol list. New fix commit on de99c5c -- not amended; not pushed. Next action: real delivery reconcile from the existing failed Smoke state (explicit network opt-in); a real schema-read determines whether the fallback DB is usable or a dedicated Pilot DB is required. Automatic Bybit Demo execution remains unauthorized.
+
+---
+
 ### 2026-06-22 (TASK-014BU_DELIVERY_TRANSPORT -- wire explicit Notion Discord transports and finalize reconcile previews)
 
 Agent: Claude Opus 4.8

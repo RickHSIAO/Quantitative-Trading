@@ -33,7 +33,10 @@ cli = importlib.import_module("scripts.run_demo_strategy_pilot_daily")
 
 DATE = "2026-06-21"
 PILOT = "P1"
-COMPAT_SCHEMA = {p: {"type": "rich_text"} for p in dt.REQUIRED_PILOT_SCHEMA_PROPS}
+# Full compatible schema covering EVERY property the finalized Pilot payload
+# sends (TASK-014BU blocker 2 requires validating the complete payload).
+_FULL_PAYLOAD_PROPS = list(ns.build_notion_payload(PILOT, {"date": DATE})["properties"].keys())
+COMPAT_SCHEMA = {p: {"type": "rich_text"} for p in _FULL_PAYLOAD_PROPS}
 COMPAT_SCHEMA["Date"] = {"type": "date"}
 
 
@@ -43,26 +46,36 @@ COMPAT_SCHEMA["Date"] = {"type": "date"}
 
 
 class FakeNotionHttp:
-    def __init__(self, *, schema=None, existing_page=None, fail_on=None):
+    def __init__(self, *, schema=None, existing_page=None, results=None, fail_on=None):
         self.schema = schema if schema is not None else dict(COMPAT_SCHEMA)
         self.existing_page = existing_page
+        self.results = results  # explicit list of {"id":...} for multi-match tests
         self.fail_on = fail_on
-        self.calls = []
+        self.calls = []          # (method, path)
+        self.bodies = []         # (method, path, body)
+        self.query_filter = None
 
     def request(self, method, path, token, body=None):
         self.calls.append((method, path))
+        self.bodies.append((method, path, body))
         if self.fail_on and self.fail_on in path:
             import urllib.error
             raise urllib.error.URLError("boom")
         if method == "GET" and path.startswith("/databases/"):
             return {"properties": self.schema}
         if method == "POST" and path.endswith("/query"):
+            self.query_filter = (body or {}).get("filter")
+            if self.results is not None:
+                return {"results": list(self.results)}
             return {"results": ([{"id": self.existing_page}] if self.existing_page else [])}
         if method == "POST" and path == "/pages":
             return {"id": "new-page"}
         if method == "PATCH" and path.startswith("/pages/"):
             return {"id": path.split("/")[-1]}
         return {}
+
+    def wrote_page(self):
+        return any((m == "POST" and p == "/pages") or m == "PATCH" for m, p in self.calls)
 
 
 class FakeHttpResult:
@@ -515,3 +528,186 @@ def test_delivery_status_tokens_defined():
 def test_order_execution_remains_unauthorized():
     assert rr.ORDER_EXECUTION_AUTHORIZED is False
     assert rr.REASON_NOT_AUTHORIZED == "TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY"
+
+
+# ---------------------------------------------------------------------------
+# TASK-014BU_FIX -- Pilot/date identity + full payload schema validation
+# ---------------------------------------------------------------------------
+
+
+def _payload():
+    return ns.build_notion_payload(PILOT, {"date": DATE})["properties"]
+
+
+def _transport(http):
+    return dt.RealNotionTransport(token="tok", database_id="db", http=http)
+
+
+def test_existing_page_lookup_matches_pilot_and_date():
+    http = FakeNotionHttp()  # no Idempotency Key prop -> AND(Pilot ID, Date)
+    _transport(http).query(database_id="db", idempotency_key=f"{PILOT}:{DATE}", properties=_payload())
+    flt = http.query_filter
+    assert "and" in flt
+    props = {c["property"]: c for c in flt["and"]}
+    assert set(props) == {"Pilot ID", "Date"}
+    assert props["Pilot ID"]["rich_text"]["equals"] == PILOT
+    assert props["Date"]["date"]["equals"] == DATE
+
+
+def test_date_only_matching_is_impossible():
+    http = FakeNotionHttp()
+    _transport(http).query(database_id="db", idempotency_key=f"{PILOT}:{DATE}", properties=_payload())
+    flt = http.query_filter
+    # The filter is never a bare Date-only equality.
+    assert not (set(flt.keys()) == {"property"} and flt.get("property") == "Date")
+    assert "and" in flt  # both Pilot ID and Date are required
+
+
+def test_two_pilots_same_date_remain_distinct():
+    http = FakeNotionHttp()
+    _transport(http).query(database_id="db", idempotency_key=f"PILOT_A:{DATE}", properties=_payload())
+    fa = {c["property"]: c["rich_text"]["equals"] for c in http.query_filter["and"] if "rich_text" in c}
+    http2 = FakeNotionHttp()
+    _transport(http2).query(database_id="db", idempotency_key=f"PILOT_B:{DATE}", properties=_payload())
+    fb = {c["property"]: c["rich_text"]["equals"] for c in http2.query_filter["and"] if "rich_text" in c}
+    assert fa["Pilot ID"] == "PILOT_A" and fb["Pilot ID"] == "PILOT_B"
+
+
+def test_exact_idempotency_key_preserved():
+    assert ns.build_notion_payload(PILOT, {"date": DATE})["idempotency_key"] == f"{PILOT}:{DATE}"
+
+
+def test_idempotency_key_property_lookup_when_available():
+    schema = dict(COMPAT_SCHEMA)
+    schema[dt.IDEMPOTENCY_KEY_PROPERTY] = {"type": "rich_text"}
+    http = FakeNotionHttp(schema=schema)
+    _transport(http).query(database_id="db", idempotency_key=f"{PILOT}:{DATE}", properties=_payload())
+    flt = http.query_filter
+    assert flt["property"] == dt.IDEMPOTENCY_KEY_PROPERTY
+    assert flt["rich_text"]["equals"] == f"{PILOT}:{DATE}"
+
+
+def test_pilot_id_date_fallback_lookup_without_key_property():
+    http = FakeNotionHttp()  # COMPAT_SCHEMA has no Idempotency Key property
+    _transport(http).query(database_id="db", idempotency_key=f"{PILOT}:{DATE}", properties=_payload())
+    assert "and" in http.query_filter
+
+
+def test_zero_matches_creates_one_page():
+    http = FakeNotionHttp(results=[])
+    sync = notion_adapter(http)
+    res = sync.upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert res.status == ns.SYNC_PASS and res.page_action == "created"
+    assert sum(1 for m, p in http.calls if m == "POST" and p == "/pages") == 1
+
+
+def test_one_match_updates_exactly_that_page():
+    http = FakeNotionHttp(results=[{"id": "PAGE-1"}])
+    sync = notion_adapter(http)
+    res = sync.upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert res.status == ns.SYNC_PASS and res.page_action == "updated"
+    assert any(m == "PATCH" and p == "/pages/PAGE-1" for m, p in http.calls)
+    assert not any(m == "POST" and p == "/pages" for m, p in http.calls)
+
+
+def test_multiple_matches_fail_closed():
+    http = FakeNotionHttp(results=[{"id": "A"}, {"id": "B"}])
+    sync = notion_adapter(http)
+    res = sync.upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert res.status == ns.SYNC_FAIL and res.detail == "NOTION_DUPLICATE_IDENTITY_CONFLICT"
+
+
+def test_duplicate_conflict_performs_no_write():
+    http = FakeNotionHttp(results=[{"id": "A"}, {"id": "B"}])
+    notion_adapter(http).upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert not http.wrote_page()
+
+
+def test_full_finalized_payload_property_set_validated():
+    # Schema that has only the old weak five-field subset -> now incompatible.
+    weak = {p: {"type": "rich_text"} for p in dt.REQUIRED_PILOT_SCHEMA_PROPS}
+    weak["Date"] = {"type": "date"}
+    http = FakeNotionHttp(schema=weak)
+    res = notion_adapter(http).upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert res.status == ns.SYNC_FAIL and res.detail == "NOTION_DATABASE_SCHEMA_INCOMPATIBLE"
+    assert not http.wrote_page()
+
+
+def test_missing_pnl_property_fails_before_query_or_write():
+    schema = dict(COMPAT_SCHEMA)
+    del schema["Realized PnL USDT"]
+    http = FakeNotionHttp(schema=schema)
+    res = notion_adapter(http).upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert res.status == ns.SYNC_FAIL and res.detail == "NOTION_DATABASE_SCHEMA_INCOMPATIBLE"
+    assert not any(p.endswith("/query") for m, p in http.calls)
+    assert not http.wrote_page()
+
+
+def test_missing_fingerprint_property_fails():
+    schema = dict(COMPAT_SCHEMA)
+    del schema["Plan Fingerprint"]
+    http = FakeNotionHttp(schema=schema)
+    res = notion_adapter(http).upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert res.status == ns.SYNC_FAIL and res.detail == "NOTION_DATABASE_SCHEMA_INCOMPATIBLE"
+
+
+def test_incompatible_numeric_property_type_fails():
+    schema = dict(COMPAT_SCHEMA)
+    schema["Realized PnL USDT"] = {"type": "date"}  # numeric field cannot be a date
+    http = FakeNotionHttp(schema=schema)
+    res = notion_adapter(http).upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert res.status == ns.SYNC_FAIL and res.detail == "NOTION_DATABASE_SCHEMA_INCOMPATIBLE"
+
+
+def test_incompatible_date_title_richtext_property_type_fails():
+    schema = dict(COMPAT_SCHEMA)
+    schema["Date"] = {"type": "checkbox"}  # Date cannot be a checkbox
+    http = FakeNotionHttp(schema=schema)
+    res = notion_adapter(http).upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert res.status == ns.SYNC_FAIL and res.detail == "NOTION_DATABASE_SCHEMA_INCOMPATIBLE"
+
+
+def test_no_property_silently_discarded():
+    # Every payload property maps to a schema property (no silent drop): the
+    # number of built properties equals the number of payload properties.
+    http = FakeNotionHttp(results=[])
+    payload = _payload()
+    _transport(http).upsert(database_id="db", page_id=None, properties=payload)
+    create_body = [b for (m, p, b) in http.bodies if m == "POST" and p == "/pages"][0]
+    assert len(create_body["properties"]) == len(payload)
+
+
+def test_no_partial_write_on_schema_fail():
+    schema = dict(COMPAT_SCHEMA)
+    del schema["Notes"]
+    http = FakeNotionHttp(schema=schema)
+    notion_adapter(http).upsert(ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert not http.wrote_page()
+
+
+def test_dedicated_and_fallback_db_both_full_validation():
+    # Dedicated DB selected.
+    db, source = dt.select_notion_database({"NOTION_PILOT_DATABASE_ID": "pilot"})
+    assert source == "pilot"
+    # Both paths run the same _validate_payload_schema before any write.
+    weak = {p: {"type": "rich_text"} for p in dt.REQUIRED_PILOT_SCHEMA_PROPS}
+    weak["Date"] = {"type": "date"}
+    for source_name in ("pilot", "forward_validation_fallback"):
+        http = FakeNotionHttp(schema=weak)
+        t = dt.RealNotionTransport(token="tok", database_id="db", http=http, prefer_source=source_name)
+        with pytest.raises(dt.NotionSchemaIncompatible):
+            t.upsert(database_id="db", page_id=None, properties=_payload())
+        assert not http.wrote_page()
+
+
+def test_schema_failure_detail_sanitized():
+    schema = dict(COMPAT_SCHEMA)
+    del schema["Realized PnL USDT"]
+    http = FakeNotionHttp(schema=schema)
+    sync = dt.build_notion_transport(allow_network=True, http=http,
+                                     env={"NOTION_TOKEN": "SECRET_TOKEN", "NOTION_PILOT_DATABASE_ID": "SECRET_DB"})[0]
+    res = ns.NotionDailySync(allow_network=True, transport=sync,
+                             env={"NOTION_TOKEN": "SECRET_TOKEN", "NOTION_PILOT_DATABASE_ID": "SECRET_DB"}).upsert(
+        ns.build_notion_payload(PILOT, {"date": DATE}))
+    assert res.status == ns.SYNC_FAIL
+    assert "SECRET_TOKEN" not in res.detail and "SECRET_DB" not in res.detail

@@ -136,16 +136,21 @@ class NotionDailySync:
         headers = {"Notion-Version": NOTION_API_VERSION, "Content-Type": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
+        props = dict(payload.get("properties", {}))
         try:
-            existing = self._transport.query(database_id=db_id, idempotency_key=key, headers=headers)
+            existing = self._transport.query(database_id=db_id, idempotency_key=key,
+                                             headers=headers, properties=props)
             page_id = existing.get("page_id") if isinstance(existing, Mapping) else None
             self._transport.upsert(database_id=db_id, page_id=page_id,
-                                   properties=dict(payload.get("properties", {})), headers=headers)
+                                   properties=props, headers=headers)
             action = "updated" if page_id else "created"
             return NotionSyncResult(SYNC_PASS, "upsert", key, action, "ok", True)
         except Exception as exc:  # noqa: BLE001
             detail = _sanitize(str(exc), token)
-            if type(exc).__name__ == "NotionSchemaIncompatible" or "NOTION_DATABASE_SCHEMA_INCOMPATIBLE" in detail:
+            name = type(exc).__name__
+            if name == "NotionDuplicateIdentityConflict" or "NOTION_DUPLICATE_IDENTITY_CONFLICT" in detail:
+                detail = "NOTION_DUPLICATE_IDENTITY_CONFLICT"
+            elif name == "NotionSchemaIncompatible" or "NOTION_DATABASE_SCHEMA_INCOMPATIBLE" in detail:
                 detail = "NOTION_DATABASE_SCHEMA_INCOMPATIBLE"
             elif "HTTP_DELIVERY_FAILED" not in detail:
                 detail = f"HTTP_DELIVERY_FAILED: {detail}"

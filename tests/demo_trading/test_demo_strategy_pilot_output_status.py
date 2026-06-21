@@ -51,7 +51,7 @@ class FakeNotionTransport:
         self.raise_on = raise_on
         self.upsert_calls = 0
 
-    def query(self, *, database_id, idempotency_key, headers):
+    def query(self, *, database_id, idempotency_key, headers, properties=None):
         if self.raise_on == "query":
             raise RuntimeError("notion query failed")
         return {}

@@ -47,7 +47,7 @@ class FakeNotionTransport:
         self.upsert_calls = 0
         self.seen_headers = []
 
-    def query(self, *, database_id, idempotency_key, headers):
+    def query(self, *, database_id, idempotency_key, headers, properties=None):
         self.query_calls += 1
         self.seen_headers.append(headers)
         if self.raise_on == "query":

@@ -14,10 +14,40 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BU_DELIVERY_TRANSPORT, 2026-06-22）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BU_FIX, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BU_DELIVERY_TRANSPORT 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BU_FIX 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BU_FIX_NOTION_IDEMPOTENCY_AND_FULL_SCHEMA_COMPATIBILITY**（2026-06-22, Opus 4.8 / reporting/delivery only / 未送任何 order、實作與測試期間零真實 HTTP）
+> 修正 review 指出的兩個阻斷點。仍為 reporting/delivery，未授權任何 Bybit 操作；`order_execution_authorized=false`。
+>
+> **阻斷點 1 — Notion 查找原本只用 Date：** 改為以 Pilot 身份 `<pilot_id>:<YYYY-MM-DD>` 查找。
+> 若相容 DB 提供 `Idempotency Key` 屬性則優先用它；否則用 AND filter（`Pilot ID` 等於 pilot_id 且 `Date` 等於 date）。
+> 多於一筆相符 → fail-closed `NOTION_DUPLICATE_IDENTITY_CONFLICT`（絕不沉默選第一筆、不寫入）；建立頁面保留精確 Pilot ID 與 Date；
+> 更新只命中唯一相符頁面；idempotency key 仍為 `<pilot_id>:<YYYY-MM-DD>`。不自動修改 schema。
+>
+> **阻斷點 2 — fallback schema 驗證原本只查 5 欄：** 改為在任何 query/create/update 之前，
+> 依「最終 Pilot payload」動態推導必要屬性集合，逐一以核准的屬性名稱對映解析、確認存在且 Notion 型別與 payload builder 相容
+> （數值欄拒絕 date 等衝突型別；Date 拒絕 checkbox 等），不沉默丟棄屬性、不做部分寫入；任一缺失/不相容即
+> fail-closed `NOTION_DATABASE_SCHEMA_INCOMPATIBLE`（脫敏結果可列出缺失/不相容屬性名與期望型別，但絕不外洩 token/db id/headers/HTTP body）。
+> 專用 DB 與 fallback DB 都套用同一套完整 payload-schema 驗證。
+>
+> **資料庫選擇：** 優先 `NOTION_PILOT_DATABASE_ID`，否則才考慮 `NOTION_FORWARD_VALIDATION_DATABASE_ID` 作為 fallback。
+> **目前 VPS 的相容性「尚未由真實 schema-read 證實」**：在 VPS 真實 schema-read smoke 出爐前，僅能說 fallback DB「可能/預期」需要專用 Pilot DB，**不宣稱已證實不相容**。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13；全程 offline / fake HTTP / temp roots）：**
+> - py_compile（所有改動 source + tests）→ PASS
+> - Focused delivery + daily_runner + output_status + reporting: **197 passed**
+> - `-k "pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close"`: **1233 passed, 7701 deselected**
+>
+> **安全不變項：** Bybit 網路: **0**；order POST: **0**；real orders sent: **0**；實作/測試期間真實 Notion HTTP: **0**；真實 Discord HTTP: **0**；
+> token/webhook/db id 不出現在 stdout/stderr/JSON/journal/workbook/preview/錯誤訊息；runtime outputs 皆留版控外、未 commit。
+> **下一步：** 以既有失敗 Smoke 狀態做真實遞送 reconcile（明確啟用網路），由真實 schema-read 確認 fallback DB 是否相容（或建立專用 Pilot DB）。**自動 Bybit Demo 執行仍未授權。**
+
+---
+
+> **TASK-014BU_REAL_DELIVERY_TRANSPORT_WIRING_AND_RECONCILE_PREVIEW_FINALIZATION**（2026-06-22, Opus 4.8 / reporting/delivery only / 未送任何 order、實作與測試期間零真實 HTTP）
 
 > **TASK-014BU_REAL_DELIVERY_TRANSPORT_WIRING_AND_RECONCILE_PREVIEW_FINALIZATION**（2026-06-22, Opus 4.8 / reporting/delivery only / 未送任何 order、實作與測試期間零真實 HTTP）
 > 為 Pilot 的 Notion/Discord adapter 接上「明確 gated」的真實遞送 transport，並讓 reconcile 以最終有效狀態 ledger 重生所有本地 reporting 輸出。仍為 reporting/delivery，未授權任何 Bybit 操作或下單。
@@ -50,7 +80,7 @@ TASK-014BU_DELIVERY_TRANSPORT 同步更新；不解除 G20、不開啟自動 rea
 > **Notion database 選擇與 schema 安全：** 優先 `NOTION_PILOT_DATABASE_ID`；若僅有 `NOTION_FORWARD_VALIDATION_DATABASE_ID`，
 > 經 schema 讀取確認必要 Pilot 欄位（Date / Pilot ID / Excel Export Status / Notion Sync Status / Discord Notify Status）皆存在才允許 fallback，
 > 否則於寫入前 fail-closed 回 `NOTION_DATABASE_SCHEMA_INCOMPATIBLE`（不外洩 db id/token）。**不自動建立/變更任何 Notion 屬性、不寫部分或畸形列。**
-> 觀察到的 VPS 僅有 Forward Validation DB → 真實 reconcile 會在寫入前 fail-closed（需建立專用 Pilot database 才能寫）。
+> 觀察到的 VPS 僅有 Forward Validation DB；其與 Pilot schema 的相容性尚未由真實 schema-read 證實，僅能說「可能/預期」需建立專用 Pilot database（見 TASK-014BU_FIX；不宣稱已證實不相容）。
 >
 > **遞送語意（皆脫敏）：** `NETWORK_NOT_ALLOWED` / `CREDENTIAL_MISSING` / `TRANSPORT_CONSTRUCTION_FAILED` /
 > `NOTION_DATABASE_SCHEMA_INCOMPATIBLE` / `HTTP_DELIVERY_FAILED` / `PASS`。Notion idempotency key `<pilot_id>:<date>` 不變（更新或找到同一列，絕不建立重複列）。
