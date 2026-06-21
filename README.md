@@ -14,10 +14,43 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BU_FIX, 2026-06-22）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BV_NOTION_SCHEMA, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BU_FIX 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BV_NOTION_SCHEMA 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BV_ONE_SHOT_NOTION_PILOT_SCHEMA_PROVISIONER**（2026-06-22, Opus 4.8 / 一次性 schema 工具 / 不送任何 order、不寫任何 Notion 頁面、不呼叫 Discord）
+> 新增獨立、需明確授權的「一次性」Notion Pilot schema 佈建腳本，讓 Forward Validation/專用資料庫具備 Pilot 寫入所需欄位。
+> 正常 daily runner **不會**自動建立/變更 schema；本工具僅在同時帶 `--apply --i-understand-this-modifies-notion-schema` 時做唯一一次 PATCH。
+>
+> **新增檔案：** `scripts/provision_demo_strategy_pilot_notion_schema.py`（+共用驗證 `validate_payload_schema` 移至
+> `src/demo_strategy_pilot_delivery_transport.py`，provisioner 與 delivery transport 共用同一套完整 payload schema 驗證）。
+>
+> **行為：** Notion API `2025-09-03`（資料庫含 child *data source*，欄位在 data source 上）。讀取 `NOTION_TOKEN`、
+> `NOTION_PILOT_DATABASE_ID`；取得資料庫並發現其唯一 child data source；無 data source / 多個 data source 且未指定
+> `--data-source-id` / 缺憑證 / 資料庫不可存取 → fail-closed。將既有 title 屬性 `名稱` 或 `Name` 改名為 `Pilot ID`（**絕不**建立第二個 title）；
+> 新增缺少的 Pilot 欄位（Date→date；Pilot Day/各 Count/各 PnL/各 Return%/Max Drawdown%→number；
+> Idempotency Key/Runner Status/Current Position/各 Status/各 Fingerprint/Alerts Triggered/Notes→rich_text）。
+>
+> **冪等與安全：** 已正確 schema → `NO_CHANGES_REQUIRED`；重跑 apply 不重複欄位、不刪除無關欄位、不靜默覆寫不相容欄位；
+> 既有 canonical 欄位型別不相容 → fail-closed 並只回報脫敏的「欄位名:型別衝突」。只做一次 PATCH（僅含改名/新增）。
+> apply 後重新讀取 data source 並跑與 delivery transport 相同的完整 Pilot payload 相容性驗證。
+> **不建立/更新任何 Notion 頁面、不呼叫 Discord、不 import/呼叫 Bybit/order/executor、零自動 retry。**
+> token/database id/data-source id/authorization header **絕不**印出或序列化。`--plan`（預設）唯讀；`--json-only` 輸出仍為合法 JSON。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13；全程 offline / fake HTTP）：**
+> - py_compile（provisioner + 共用驗證 + 測試）→ PASS
+> - Focused provisioner: **24 passed**
+> - `-k "pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close"`: **1233 passed, 7701 deselected**（delivery 重構後不變）
+>
+> **安全不變項：** Bybit 網路: **0**；order POST: **0**；real orders sent: **0**；Notion 頁面寫入: **0**；Discord 呼叫: **0**；
+> 實作/測試期間真實 HTTP: **0**；無 order endpoint 字串、未 import live executor。
+> **下一步（VPS，需 Rick 明確授權）：** 先 `--plan` 預覽 → 確認後 `--apply --i-understand-this-modifies-notion-schema` →
+> 驗證 → 再以既有失敗 Smoke 狀態做 **Notion-only** reconcile（`--allow-notion-network`）。**自動 Bybit Demo 執行仍未授權。**
+
+---
+
+> **TASK-014BU_FIX_NOTION_IDEMPOTENCY_AND_FULL_SCHEMA_COMPATIBILITY**（2026-06-22, Opus 4.8 / reporting/delivery only / 未送任何 order、實作與測試期間零真實 HTTP）
 
 > **TASK-014BU_FIX_NOTION_IDEMPOTENCY_AND_FULL_SCHEMA_COMPATIBILITY**（2026-06-22, Opus 4.8 / reporting/delivery only / 未送任何 order、實作與測試期間零真實 HTTP）
 > 修正 review 指出的兩個阻斷點。仍為 reporting/delivery，未授權任何 Bybit 操作；`order_execution_authorized=false`。

@@ -72,6 +72,35 @@ def _acceptable_types(name: str) -> tuple[str, ...]:
     return _TEXTY
 
 
+def resolve_schema_name(name: str, schema: Mapping[str, Any]) -> str | None:
+    """Resolve a canonical property name to the actual database property name."""
+    if name in schema:
+        return name
+    for alt in PROPERTY_ALIASES.get(name, ()):
+        if alt in schema:
+            return alt
+    return None
+
+
+def validate_payload_schema(schema: Mapping[str, Any], names) -> tuple[list[str], list[str]]:
+    """Validate that ``names`` (the finalized payload property names) all exist in
+    ``schema`` with a compatible Notion type. Returns ``(missing, incompatible)``;
+    the incompatible entries are sanitized ``name:type->expected[...]`` strings.
+    This is the single shared validator used by both the delivery transport and
+    the one-shot schema provisioner."""
+    missing: list[str] = []
+    incompatible: list[str] = []
+    for name in names:
+        actual = resolve_schema_name(name, schema)
+        if actual is None:
+            missing.append(name)
+            continue
+        ptype = (schema.get(actual, {}) or {}).get("type")
+        if ptype not in _acceptable_types(name):
+            incompatible.append(f"{name}:{ptype}->expected{list(_acceptable_types(name))}")
+    return missing, incompatible
+
+
 class NotionSchemaIncompatible(Exception):
     """The selected Notion database schema cannot host the full Pilot payload."""
 
@@ -149,16 +178,7 @@ class RealNotionTransport:
         types but never exposes the token or database id."""
         schema = self._ensure_schema()
         names = list(properties.keys()) if properties else list(REQUIRED_PILOT_SCHEMA_PROPS)
-        missing: list[str] = []
-        incompatible: list[str] = []
-        for name in names:
-            actual = self._resolve(name, schema)
-            if actual is None:
-                missing.append(name)
-                continue
-            ptype = (schema.get(actual, {}) or {}).get("type")
-            if ptype not in _acceptable_types(name):
-                incompatible.append(f"{name}:{ptype}->expected{list(_acceptable_types(name))}")
+        missing, incompatible = validate_payload_schema(schema, names)
         if missing or incompatible:
             raise NotionSchemaIncompatible(
                 f"{NOTION_DATABASE_SCHEMA_INCOMPATIBLE} missing={sorted(missing)} "
@@ -352,5 +372,7 @@ __all__ = [
     "TRANSPORT_CONSTRUCTION_FAILED",
     "build_discord_transport",
     "build_notion_transport",
+    "resolve_schema_name",
     "select_notion_database",
+    "validate_payload_schema",
 ]

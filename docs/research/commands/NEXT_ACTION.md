@@ -1,5 +1,73 @@
 # Next Action
 
+> README shared status updated by TASK-014BV_NOTION_SCHEMA (2026-06-22). Adds a
+> separate, explicitly-authorized one-shot Notion Pilot schema provisioner. The
+> normal daily runner never auto-creates/auto-alters a schema. No order, no
+> Notion page write, no Discord, no Bybit; zero real HTTP during
+> implementation/tests. New commit on top of c313fd9 (not amended).
+>
+> New file: scripts/provision_demo_strategy_pilot_notion_schema.py (the shared
+> validate_payload_schema now lives in src/demo_strategy_pilot_delivery_transport.py
+> so the provisioner and the delivery transport use the same full payload
+> validation).
+>
+> Behavior: Notion API 2025-09-03 (databases expose a child data source whose
+> properties hold the schema). Reads NOTION_TOKEN + NOTION_PILOT_DATABASE_ID;
+> retrieves the database and discovers its single child data source; fails closed
+> on missing credentials, no data source, multiple data sources without
+> --data-source-id, or an inaccessible database. Renames the existing title
+> property (名稱 / Name) to "Pilot ID" (never a second title); adds the missing
+> canonical Pilot properties (Date->date; Pilot Day/Counts/PnL/Return%/Drawdown%
+> ->number; Idempotency Key/statuses/fingerprints/Alerts/Notes->rich_text).
+> Idempotent (already-correct -> NO_CHANGES_REQUIRED; rerun adds no duplicates;
+> unrelated properties retained; incompatible canonical type -> fail closed with
+> a sanitized name:type conflict). Exactly one PATCH (rename + additions). After
+> apply it re-reads the data source and runs the same full Pilot payload
+> compatibility validation as the delivery transport. Never creates/updates a
+> page; never calls Discord; never imports Bybit/order/executor; zero retries.
+> Token / database id / data-source id / authorization header are never printed
+> or serialized. --plan is read-only (default); --apply requires
+> --i-understand-this-modifies-notion-schema; --json-only stays valid JSON.
+>
+> Validation (offline; fake HTTP): py_compile PASS; focused provisioner 24
+> passed; -k "pilot_delivery or pilot_output_status or pilot_forward_source or
+> pilot_daily_runner or pilot_reporting or tiny_execution_adapter or
+> reduce_only_close" 1233 passed, 7701 deselected. Bybit network 0; order POSTs
+> 0; orders sent 0; Notion page writes 0; Discord calls 0; real HTTP 0.
+
+## TASK-014BV_NOTION_SCHEMA Status (2026-06-22)
+
+- Status: COMPLETE / PASS (one-shot schema provisioner; no orders; no page writes; no Discord; zero real HTTP; new commit on c313fd9)
+- py_compile: PASS; focused provisioner: 24 passed
+- Combined regression: 1233 passed, 7701 deselected
+- Bybit network calls: 0; order POSTs: 0; orders sent: 0; Notion page writes: 0; Discord calls: 0
+
+### TASK-014BV VPS commands (manual; require Rick's explicit authorization)
+
+```bash
+# 0) credential presence only (never display values)
+for v in NOTION_TOKEN NOTION_PILOT_DATABASE_ID; do
+  if [ -n "${!v}" ]; then echo "$v=PRESENT"; else echo "$v=MISSING"; fi
+done
+# 1) PLAN (read-only; zero schema writes)
+python scripts/provision_demo_strategy_pilot_notion_schema.py --plan --json-only
+# 2) APPLY (one explicitly-authorized PATCH) -- only after reviewing the plan
+python scripts/provision_demo_strategy_pilot_notion_schema.py \
+  --apply --i-understand-this-modifies-notion-schema --json-only
+# 3) VERIFY (re-plan should now report NO_CHANGES_REQUIRED)
+python scripts/provision_demo_strategy_pilot_notion_schema.py --plan --json-only
+# 4) Notion-only delivery reconcile of the existing failed Smoke state
+python scripts/run_demo_strategy_pilot_daily.py \
+  --mode reconcile_outputs \
+  --pilot-id BYBIT_DEMO_PILOT_BT_SMOKE_202606 \
+  --date 2026-06-21 \
+  --test-output-root /tmp/task014bt_smoke \
+  --allow-notion-network --json-only
+# (Do NOT run dry_run; do NOT load any Bybit credential; clean up /tmp only after Rick confirms.)
+```
+
+---
+
 > README shared status updated by TASK-014BU_FIX (2026-06-22). Fixes two review
 > blockers in the Notion delivery transport. Reporting/delivery only; no Bybit
 > operation; zero real HTTP during implementation/tests. New fix commit on top

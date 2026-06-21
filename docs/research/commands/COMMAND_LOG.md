@@ -21,6 +21,33 @@ Notes:
 
 ---
 
+### 2026-06-22 (TASK-014BV_NOTION_SCHEMA -- add explicit one-shot Pilot schema provisioner)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BV_ONE_SHOT_NOTION_PILOT_SCHEMA_PROVISIONER (add a separate, explicitly-authorized one-time Notion Pilot schema provisioning script; do not modify the daily runner to auto-create/alter schemas; new commit on c313fd9; do not push).
+Task: Provide a one-shot, manually-run Notion schema provisioner that prepares a Pilot database (rename the title to Pilot ID and add the canonical Pilot properties) so the delivery transport can write Notion rows. The normal daily runner never auto-provisions.
+Status before: the Pilot Notion delivery fails closed on a Forward-Validation-only database because the Pilot properties do not exist, and there was no authorized tool to provision them.
+Status after: new scripts/provision_demo_strategy_pilot_notion_schema.py implements plan/apply provisioning against Notion API 2025-09-03 data sources, idempotent and fail-closed, reusing the delivery transport's full payload schema validation for the post-apply check. The shared validator validate_payload_schema/resolve_schema_name were moved to src/demo_strategy_pilot_delivery_transport.py and the transport now delegates to it. No order, no Notion page write, no Discord, no Bybit; zero real HTTP in tests.
+Files changed:
+- `scripts/provision_demo_strategy_pilot_notion_schema.py` (new; plan/apply, data-source discovery, title rename, canonical additions, idempotency, fail-closed, post-apply validation, sanitized output)
+- `src/demo_strategy_pilot_delivery_transport.py` (extract reusable validate_payload_schema + resolve_schema_name; RealNotionTransport delegates; exports updated)
+- `tests/demo_trading/test_provision_demo_strategy_pilot_notion_schema.py` (new; 24 offline focused tests, fake Notion HTTP)
+- `README.md` (TASK-014BV banner)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BV banner + status + manual VPS plan/apply/verify/Notion-only reconcile commands)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13; all offline; fake HTTP):
+- py_compile: PASS (provisioner, delivery transport, provisioner test)
+- Focused provisioner: 24 passed
+    python -m pytest tests/demo_trading/test_provision_demo_strategy_pilot_notion_schema.py -q --basetemp=.pytest_bv
+- Combined -k "pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close": 1233 passed, 7701 deselected
+- Bybit network calls: 0; order /v5/order/create POST calls: 0; real orders sent: 0
+- Notion page create/update: 0; Discord calls: 0; real HTTP during implementation/tests: 0
+- No real credential / token / database id / data-source id read, printed, or committed. No secret serialized.
+Outputs: the provisioner writes nothing to disk; no runtime Pilot outputs were created or committed.
+Notes: Notion API version 2025-09-03 (databases expose a child data source whose properties hold the schema). Reads NOTION_TOKEN + NOTION_PILOT_DATABASE_ID; discovers the single child data source; fails closed on missing credentials, no data source, multiple data sources without --data-source-id, or an inaccessible database. Renames the existing title (名稱 / Name) to Pilot ID and never creates a second title; adds Date->date, Pilot Day/Counts/PnL/Return%/Drawdown%->number, Idempotency Key/Runner Status/Current Position/Excel|Notion|Discord status/Input|Plan Fingerprint/Alerts Triggered/Notes->rich_text. Idempotent (already-correct -> NO_CHANGES_REQUIRED; rerun adds no duplicate; unrelated properties retained; incompatible canonical type -> NOTION_DATABASE_SCHEMA_INCOMPATIBLE with sanitized name:type, no write). One PATCH only (rename + additions). After apply, re-reads the data source and runs the same full Pilot payload compatibility validation as the delivery transport. Never creates/updates a Notion page; never calls Discord; never imports/calls Bybit/order/executor; zero automatic retries. token / database id / data-source id / authorization header are never printed or serialized; --plan is read-only (default), --apply requires --i-understand-this-modifies-notion-schema, --json-only stays valid JSON. Does not modify TASK-014BO/BP, main.py, src/risk.py, the live executor, strategy parameters, or the protected-symbol list. New commit on c313fd9 -- not amended; not pushed. Next action (VPS, with Rick's explicit authorization): --plan, review, --apply, verify, then a Notion-only delivery reconcile of the existing failed Smoke state. Automatic Bybit Demo execution remains unauthorized.
+
+---
+
 ### 2026-06-22 (TASK-014BU_FIX -- enforce Pilot-date Notion identity and full schema validation)
 
 Agent: Claude Opus 4.8
