@@ -22,6 +22,7 @@ from typing import Any, Callable, Mapping, Sequence
 from src import demo_strategy_pilot_daily_journal as jr
 from src import demo_strategy_pilot_discord_notify as dn
 from src import demo_strategy_pilot_notion_sync as ns
+from src import demo_strategy_pilot_output_status as osm
 from src.demo_strategy_pilot_reporting import (
     PilotAuditEvent,
     PilotConfig,
@@ -489,65 +490,98 @@ def run_daily(
                                        reference_id=plan.plan_fingerprint[:16]))
     phases.append("APPEND_AUDIT_EVENTS")
 
-    # BUILD_EXCEL
-    excel_result: dict[str, Any]
+    # Immutable daily-core fingerprint (TASK-014BT): trading data is frozen here;
+    # only output-delivery statuses may advance afterwards.
+    core_fp = osm.compute_daily_core_fingerprint(
+        pilot_id=pilot_id, daily_record=daily_dict,
+        input_fingerprint=plan.input_fingerprint, plan_fingerprint=plan.plan_fingerprint)
+    status_store = osm.OutputStatusStore(pilot_id, output_root)
     builder = workbook_builder or _default_workbook_builder()
+
+    # BUILD_EXCEL (#1 attempt) -> record Excel OK/FAIL.
+    excel_result: dict[str, Any]
     try:
         paths = builder(pilot_id, output_root, snapshot_date=snapshot_date)
-        excel_result = {"status": "OK", **dict(paths)}
-        record = _with_status(record, excel="OK")
+        excel_result = {"status": osm.STATUS_OK, **dict(paths)}
         journal.transition(jr.EXCEL_BUILT, at_utc=now)
     except Exception as exc:  # noqa: BLE001  (Excel failure must NOT rerun the daily record)
-        excel_result = {"status": "FAIL", "detail": str(exc)}
-        record = _with_status(record, excel="FAIL")
+        excel_result = {"status": osm.STATUS_FAIL, "detail": str(exc)}
+    excel_status = excel_result.get("status")
+    excel_detail = str(excel_result.get("detail", "")) if excel_status == osm.STATUS_FAIL else ""
     phases.append("BUILD_EXCEL")
 
-    # BUILD_NOTION_PAYLOAD
-    notion_payload = ns.build_notion_payload(pilot_id, record.to_dict(),
-                                             plan_fingerprint=plan.plan_fingerprint,
-                                             input_fingerprint=plan.input_fingerprint)
-    journal.write_json(jr.NOTION_PAYLOAD_FILENAME, notion_payload)
-    journal.transition(jr.NOTION_PREVIEW_BUILT, at_utc=now)
-    phases.append("BUILD_NOTION_PAYLOAD")
-
-    # OPTIONAL_NOTION_SYNC
+    # OPTIONAL_NOTION_SYNC -> record PASS/FAIL/SKIPPED.
     notion_result: dict[str, Any]
+    interim_payload = ns.build_notion_payload(pilot_id, daily_dict,
+                                              plan_fingerprint=plan.plan_fingerprint,
+                                              input_fingerprint=plan.input_fingerprint)
     if config.notion_enabled and allow_notion_network:
         sync = notion_sync or ns.NotionDailySync(allow_network=True)
-        res = sync.upsert(notion_payload)
+        res = sync.upsert(interim_payload)
         notion_result = res.to_dict()
-        record = _with_status(record, notion=res.status)
         journal.transition(jr.NOTION_SYNC_PASS if res.status == ns.SYNC_PASS else jr.NOTION_SYNC_FAIL,
                            at_utc=now, extra={"notion_status": res.status})
     else:
         notion_result = {"status": ns.SYNC_SKIPPED, "network_attempted": False}
-        record = _with_status(record, notion=ns.SYNC_SKIPPED)
         journal.transition(jr.NOTION_SYNC_SKIPPED, at_utc=now, extra={"notion_status": ns.SYNC_SKIPPED})
+    notion_status = notion_result.get("status")
     phases.append("OPTIONAL_NOTION_SYNC")
 
-    # BUILD_DISCORD_SUMMARY
-    summary = dn.build_discord_summary(pilot_id, record.to_dict(),
-                                       data_status=plan.source_data_status,
-                                       proposed_action_count=len(plan.proposed_actions),
-                                       plan_fingerprint=plan.plan_fingerprint)
-    journal.write_text(jr.DISCORD_SUMMARY_FILENAME, summary)
-    journal.transition(jr.DISCORD_PREVIEW_BUILT, at_utc=now)
-    phases.append("BUILD_DISCORD_SUMMARY")
-
-    # OPTIONAL_DISCORD_NOTIFY
+    # OPTIONAL_DISCORD_NOTIFY -> record PASS/FAIL/SKIPPED.
     discord_result: dict[str, Any]
+    interim_summary = dn.build_discord_summary(pilot_id, daily_dict, data_status=plan.source_data_status,
+                                               proposed_action_count=len(plan.proposed_actions),
+                                               plan_fingerprint=plan.plan_fingerprint)
     if config.discord_enabled and allow_discord_network:
         notify = discord_notify or dn.DiscordDailyNotify(allow_network=True)
-        res = notify.notify(summary)
+        res = notify.notify(interim_summary)
         discord_result = res.to_dict()
-        record = _with_status(record, discord=res.status)
         journal.transition(jr.DISCORD_NOTIFY_PASS if res.status == dn.NOTIFY_PASS else jr.DISCORD_NOTIFY_FAIL,
                            at_utc=now, extra={"discord_status": res.status})
     else:
         discord_result = {"status": dn.NOTIFY_SKIPPED, "network_attempted": False}
-        record = _with_status(record, discord=dn.NOTIFY_SKIPPED)
         journal.transition(jr.DISCORD_NOTIFY_SKIPPED, at_utc=now, extra={"discord_status": dn.NOTIFY_SKIPPED})
+    discord_status = discord_result.get("status")
     phases.append("OPTIONAL_DISCORD_NOTIFY")
+
+    # PERSIST OUTPUT-STATUS LEDGER (effective statuses; immutable core unchanged).
+    status_record = osm.OutputStatusRecord(
+        pilot_id=pilot_id, date=date, excel_status=excel_status, notion_status=notion_status,
+        discord_status=discord_status, excel_detail=excel_detail,
+        notion_detail=str(notion_result.get("detail", "")), discord_detail=str(discord_result.get("detail", "")),
+        updated_at_utc=now, plan_fingerprint=plan.plan_fingerprint,
+        input_fingerprint=plan.input_fingerprint, daily_core_fingerprint=core_fp)
+    status_store.record_status(status_record)
+
+    # REGENERATE local previews with the FINAL effective statuses.
+    effective = {**daily_dict, "excel_export_status": excel_status,
+                 "notion_sync_status": notion_status, "discord_notify_status": discord_status}
+    final_payload = ns.build_notion_payload(pilot_id, effective,
+                                            plan_fingerprint=plan.plan_fingerprint,
+                                            input_fingerprint=plan.input_fingerprint)
+    journal.write_json(jr.NOTION_PAYLOAD_FILENAME, final_payload)
+    journal.transition(jr.NOTION_PREVIEW_BUILT, at_utc=now)
+    phases.append("BUILD_NOTION_PAYLOAD")
+    final_summary = dn.build_discord_summary(pilot_id, effective, data_status=plan.source_data_status,
+                                             proposed_action_count=len(plan.proposed_actions),
+                                             plan_fingerprint=plan.plan_fingerprint)
+    journal.write_text(jr.DISCORD_SUMMARY_FILENAME, final_summary)
+    journal.transition(jr.DISCORD_PREVIEW_BUILT, at_utc=now)
+    phases.append("BUILD_DISCORD_SUMMARY")
+
+    # REBUILD EXCEL (#2) so the Daily Performance row shows the final statuses.
+    if excel_status == osm.STATUS_OK:
+        try:
+            paths = builder(pilot_id, output_root, snapshot_date=snapshot_date)
+            excel_result = {"status": osm.STATUS_OK, **dict(paths)}
+        except Exception as exc:  # noqa: BLE001
+            excel_result = {"status": osm.STATUS_FAIL, "detail": f"finalization rebuild failed: {exc}"}
+            status_store.record_status(osm.OutputStatusRecord(
+                pilot_id=pilot_id, date=date, excel_status=osm.STATUS_FAIL, notion_status=notion_status,
+                discord_status=discord_status, excel_detail=str(excel_result.get("detail", "")),
+                notion_detail="", discord_detail="", updated_at_utc=now,
+                plan_fingerprint=plan.plan_fingerprint, input_fingerprint=plan.input_fingerprint,
+                daily_core_fingerprint=core_fp))
 
     # WRITE_LATEST_SUMMARY
     store.write_latest_summary({
@@ -556,25 +590,25 @@ def run_daily(
         "order_count": 0, "filled_count": 0, "closed_trade_count": 0,
         "cumulative_net_pnl_usdt": dec_str(record.cumulative_net_pnl_usdt),
         "excel_export_status": excel_result.get("status"),
-        "notion_sync_status": notion_result.get("status"),
-        "discord_notify_status": discord_result.get("status"),
+        "notion_sync_status": notion_status,
+        "discord_notify_status": discord_status,
         "plan_fingerprint": plan.plan_fingerprint,
         "order_execution_authorized": ORDER_EXECUTION_AUTHORIZED,
     })
     phases.append("WRITE_LATEST_SUMMARY")
 
     # FINALIZE_RUN
-    output_failed = (excel_result.get("status") == "FAIL"
-                     or notion_result.get("status") == ns.SYNC_FAIL
-                     or discord_result.get("status") == dn.NOTIFY_FAIL)
-    final_state = jr.RUN_COMPLETED
+    output_failed = (excel_result.get("status") == osm.STATUS_FAIL
+                     or notion_status == ns.SYNC_FAIL or discord_status == dn.NOTIFY_FAIL)
     status = STATUS_PARTIAL_OUTPUT_FAILURE if output_failed else STATUS_COMPLETED
     exit_code = EXIT_PARTIAL_OUTPUT if output_failed else EXIT_OK
-    journal.transition(final_state, at_utc=now)
+    journal.transition(jr.RUN_COMPLETED, at_utc=now, extra={"daily_core_fingerprint": core_fp})
     result = RunResult(TASK_ID, mode, pilot_id, date, status, exit_code, journal.state(), phases,
-                       plan.to_dict(), record.to_dict(), excel_result, notion_result, discord_result,
+                       plan.to_dict(), effective, excel_result, notion_result, discord_result,
                        "dry-run completed" if not output_failed else "committed; output sync partial failure")
-    journal.write_json(jr.RUN_RESULT_FILENAME, result.to_dict())
+    result_dict = result.to_dict()
+    result_dict["output_status"] = status_record.to_dict()
+    journal.write_json(jr.RUN_RESULT_FILENAME, result_dict)
     phases.append("FINALIZE_RUN")
     return result
 
@@ -609,47 +643,70 @@ def _reconcile_outputs(*, store, journal, pilot_id, date, config, notion_sync, d
         return RunResult(TASK_ID, MODE_RECONCILE, pilot_id, date, STATUS_INPUT_FAILURE, EXIT_INPUT_FAILURE,
                          data.get("state"), [], None, None, None, None, None, "no committed daily record")
 
-    # Rebuild Excel (idempotent; does not touch the daily record).
-    builder = workbook_builder or _default_workbook_builder()
+    input_fp = str(data.get("input_fingerprint", ""))
+    plan_fp = str(data.get("plan_fingerprint", ""))
+    core_fp = osm.compute_daily_core_fingerprint(
+        pilot_id=pilot_id, daily_record=daily, input_fingerprint=input_fp, plan_fingerprint=plan_fp)
+    status_store = osm.OutputStatusStore(pilot_id, _root_of(store))
     try:
-        paths = builder(pilot_id, _root_of(store), snapshot_date=snapshot_date)
-        excel_result = {"status": "OK", **dict(paths)}
-        journal.transition(jr.EXCEL_BUILT, at_utc=now, extra={"reconcile": True})
-    except Exception as exc:  # noqa: BLE001
-        excel_result = {"status": "FAIL", "detail": str(exc)}
+        status_store.assert_immutable_core_unchanged(date=date, expected_core_fp=core_fp)
+    except osm.ImmutableDailyCoreConflict as exc:
+        return RunResult(TASK_ID, MODE_RECONCILE, pilot_id, date, STATUS_DAILY_PLAN_CONFLICT, EXIT_CONFLICT,
+                         data.get("state"), ["RECONCILE_OUTPUTS"], None, daily, None, None, None, str(exc))
 
-    prior_notion = str(data.get("notion_status", ""))
-    prior_discord = str(data.get("discord_status", ""))
-    notion_result: dict[str, Any] = {"status": "UNCHANGED", "network_attempted": False}
-    discord_result: dict[str, Any] = {"status": "UNCHANGED", "network_attempted": False}
+    prior = status_store.latest_by_date().get(date, {})
+    prior_excel = str(prior.get("excel_status", osm.STATUS_PENDING))
+    prior_notion = str(prior.get("notion_status", ns.SYNC_SKIPPED))
+    prior_discord = str(prior.get("discord_status", dn.NOTIFY_SKIPPED))
 
-    payload_path = journal.dir / jr.NOTION_PAYLOAD_FILENAME
+    # Retry ONLY FAIL/SKIPPED deliveries (leave PASS untouched).
+    notion_result: dict[str, Any] = {"status": prior_notion, "network_attempted": False}
     if config.notion_enabled and allow_notion_network and prior_notion in (ns.SYNC_FAIL, ns.SYNC_SKIPPED):
-        import json as _json
-        payload = _json.loads(payload_path.read_text(encoding="utf-8")) if payload_path.exists() else \
-            ns.build_notion_payload(pilot_id, daily)
+        payload = ns.build_notion_payload(pilot_id, daily, plan_fingerprint=plan_fp, input_fingerprint=input_fp)
         sync = notion_sync or ns.NotionDailySync(allow_network=True)
         res = sync.upsert(payload)
         notion_result = res.to_dict()
         journal.transition(jr.NOTION_SYNC_PASS if res.status == ns.SYNC_PASS else jr.NOTION_SYNC_FAIL, at_utc=now,
                            extra={"reconcile": True, "notion_status": res.status})
+    new_notion = notion_result.get("status", prior_notion)
 
-    summary_path = journal.dir / jr.DISCORD_SUMMARY_FILENAME
+    discord_result: dict[str, Any] = {"status": prior_discord, "network_attempted": False}
     if config.discord_enabled and allow_discord_network and prior_discord in (dn.NOTIFY_FAIL, dn.NOTIFY_SKIPPED):
-        summary = summary_path.read_text(encoding="utf-8") if summary_path.exists() else \
-            dn.build_discord_summary(pilot_id, daily)
+        summary = dn.build_discord_summary(pilot_id, daily)
         notify = discord_notify or dn.DiscordDailyNotify(allow_network=True)
         res = notify.notify(summary)
         discord_result = res.to_dict()
         journal.transition(jr.DISCORD_NOTIFY_PASS if res.status == dn.NOTIFY_PASS else jr.DISCORD_NOTIFY_FAIL, at_utc=now,
                            extra={"reconcile": True, "discord_status": res.status})
+    new_discord = discord_result.get("status", prior_discord)
+
+    # Rebuild Excel with the latest statuses (does not touch the daily record).
+    builder = workbook_builder or _default_workbook_builder()
+    excel_status = prior_excel if prior_excel in (osm.STATUS_OK,) else osm.STATUS_OK
+    try:
+        # Persist statuses BEFORE rebuilding so the workbook row reflects them.
+        status_store.record_status(osm.OutputStatusRecord(
+            pilot_id=pilot_id, date=date, excel_status=osm.STATUS_OK, notion_status=new_notion,
+            discord_status=new_discord, excel_detail="", notion_detail=str(notion_result.get("detail", "")),
+            discord_detail=str(discord_result.get("detail", "")), updated_at_utc=now,
+            plan_fingerprint=plan_fp, input_fingerprint=input_fp, daily_core_fingerprint=core_fp))
+        paths = builder(pilot_id, _root_of(store), snapshot_date=snapshot_date)
+        excel_result = {"status": osm.STATUS_OK, **dict(paths)}
+        journal.transition(jr.EXCEL_BUILT, at_utc=now, extra={"reconcile": True})
+    except Exception as exc:  # noqa: BLE001
+        excel_result = {"status": osm.STATUS_FAIL, "detail": str(exc)}
+        status_store.record_status(osm.OutputStatusRecord(
+            pilot_id=pilot_id, date=date, excel_status=osm.STATUS_FAIL, notion_status=new_notion,
+            discord_status=new_discord, excel_detail=str(exc), notion_detail="", discord_detail="",
+            updated_at_utc=now, plan_fingerprint=plan_fp, input_fingerprint=input_fp,
+            daily_core_fingerprint=core_fp))
 
     store.append_audit(PilotAuditEvent(timestamp_utc=now, pilot_id=pilot_id, event_type="RECONCILE_OUTPUTS",
                                        component="daily_runner", status="OK",
                                        message="reconcile rebuilt excel / retried output delivery",
                                        reference_id=date))
-    failed = excel_result.get("status") == "FAIL" or notion_result.get("status") == ns.SYNC_FAIL \
-        or discord_result.get("status") == dn.NOTIFY_FAIL
+    failed = excel_result.get("status") == osm.STATUS_FAIL or new_notion == ns.SYNC_FAIL \
+        or new_discord == dn.NOTIFY_FAIL
     return RunResult(TASK_ID, MODE_RECONCILE, pilot_id, date,
                      STATUS_PARTIAL_OUTPUT_FAILURE if failed else STATUS_RECONCILED,
                      EXIT_PARTIAL_OUTPUT if failed else EXIT_OK, journal.state(), ["RECONCILE_OUTPUTS"],

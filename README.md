@@ -14,10 +14,52 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BS_FORWARD_SOURCE, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BT_PILOT_OUTPUT_STATUS, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BS_FORWARD_SOURCE 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BT_PILOT_OUTPUT_STATUS 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BT_PILOT_OUTPUT_STATUS_FINALIZATION**（2026-06-21, Opus 4.8 / reporting-only / 未送任何 order、未連任何網路）
+> 讓 reporting 輸出反映**最終有效的輸出遞送狀態**，且不變更/不重複任何權威交易資料。仍為 reporting-only，未授權任何 Bybit 下單。
+> `order_execution_authorized=false`、`reason_execution_not_authorized=TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY`。
+>
+> **TASK-014BS VPS smoke 已通過：** 真實 Forward Record dry-run status=COMPLETED / journal RUN_COMPLETED；
+> 載入 **50** 筆真實 Forward Record 訊號；order/fill/closed 計數皆 0；Excel latest workbook 與 dated snapshot 皆建立；
+> Notion/Discord 網路 SKIPPED；identical rerun=ALREADY_COMMITTED_IDEMPOTENT；每日紀錄維持 1 筆；無 trade record。
+> **觀察到的不一致：** 最終 Excel Daily Performance 列與 Notion preview 仍顯示 `Notion Sync=PENDING / Excel Export=PENDING /
+> Discord Notify=PENDING`，即使最終結果為 Excel=OK / Notion=SKIPPED / Discord=SKIPPED。TASK-014BT 修正此「輸出狀態真值」。
+>
+> **新增/修改檔案：**
+> - `src/demo_strategy_pilot_output_status.py`（新；frozen `OutputStatusRecord` + append-only `OutputStatusStore`
+>   `output_status_events.jsonl` + atomic `latest_output_status.json`；允許狀態 PENDING/OK/PASS/FAIL/SKIPPED；
+>   immutable daily-core fingerprint；identical 狀態冪等；malformed 失敗即拒）
+> - `scripts/build_demo_strategy_pilot_workbook.py`（合併不可變每日資料 + 同 pilot/date 之最新有效輸出狀態；僅覆寫三個狀態欄）
+> - `src/demo_strategy_pilot_daily_runner.py`（最終化流程：唯一一次 commit 每日紀錄 → 建 Excel → 記 Excel OK/FAIL →
+>   Notion → 記 → Discord → 記 → 持久化狀態 ledger → 以最終狀態重生 Notion/Discord 本地預覽 → 重建 Excel 使列顯示最終狀態 → finalize；
+>   reconcile 改用 ledger + immutable-core 驗證)
+> - `tests/demo_trading/test_demo_strategy_pilot_output_status.py`（新）
+>
+> **不可變每日核心 fingerprint：** 覆蓋 pilot_id/date/signal_count/order_count/filled_count/closed_trade_count/
+> 全部 PnL 欄/目前持倉欄/input fingerprint/plan fingerprint。輸出對帳若任一核心值變動即 fail-closed；只有輸出遞送狀態可前進。
+>
+> **Excel/Notion/Discord 最終狀態：** 無網路 dry-run → `Excel Export=OK / Notion Sync=SKIPPED / Discord Notify=SKIPPED`
+> （Excel 列、dated snapshot、Notion payload、Discord 摘要一致）；明確啟用網路的 fake-success → Notion/Discord=PASS。
+> 仍恰好一筆每日列、六個工作表不變、workbook 可重開、PnL/百分比仍為數值格、不含 BO/BP 手動驗證交易；
+> Discord 摘要仍含 `DRY-RUN／尚未授權自動下單` 並顯示 Excel/Notion 狀態；payload/summary/journal/error 不含 token/webhook。
+>
+> **reconcile_outputs：** 載入不可變每日紀錄並驗證 immutable fingerprint；只對 `FAIL`/`SKIPPED` 的 Notion/Discord 在明確啟用網路時重試；
+> 以最新狀態重建 Excel；不重算策略訊號、不新增每日/trade 紀錄、不送任何 order；`PASS` 不動。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13；全程 offline / fake transports / temp roots）：**
+> - py_compile（所有新/改 source、scripts、tests）→ PASS
+> - Focused output_status + daily_runner + reporting: **133 passed**
+> - `-k "pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close"`: **1169 passed, 7701 deselected**
+>
+> **安全不變項：** Bybit 網路: **0**；order POST: **0**；real orders sent: **0**；Notion HTTP: **0**；Discord HTTP: **0**；
+> 無 order endpoint 字串、未 import live executor / `main.py` / `src/risk.py`、未改策略參數；runtime outputs 皆留版控外、未 commit。
+> **下一步：** 真實 Notion/Discord 遞送 smoke（明確啟用網路）；**自動 Bybit Demo 執行仍未授權。**
+
+---
 
 > **TASK-014BS_FORWARD_RECORD_SIGNAL_SOURCE_WIRING**（2026-06-21, Opus 4.8 / 真實本地來源 dry-run wiring / 未送任何 order、未連任何網路）
 > 把既有 primary `prev3y_crypto` Forward Record 輸出接到 TASK-014BR Pilot Daily Runner，讓 `--fixture` 未提供時

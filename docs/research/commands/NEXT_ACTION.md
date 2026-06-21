@@ -1,5 +1,70 @@
 # Next Action
 
+> README shared status updated by TASK-014BT_PILOT_OUTPUT_STATUS (2026-06-21).
+> Makes the reporting outputs reflect the final effective output-delivery
+> statuses (Excel/Notion/Discord) without mutating or duplicating authoritative
+> trading data. Reporting-only; no Bybit order authorized or sent; no network.
+> New commit on top of 4403f83 (no prior commits amended).
+> order_execution_authorized=false;
+> reason_execution_not_authorized=TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY.
+>
+> TASK-014BS VPS smoke passed: real Forward Record dry-run status=COMPLETED,
+> journal RUN_COMPLETED, 50 real Forward Record signals loaded, order/fill/
+> closed counts 0, Excel latest workbook + dated snapshot created, Notion/Discord
+> network SKIPPED, identical rerun ALREADY_COMMITTED_IDEMPOTENT, daily record
+> stayed 1 line, no trade record. Observed inconsistency: the final Excel Daily
+> Performance row and Notion preview still showed Notion Sync / Excel Export /
+> Discord Notify = PENDING even though the run result was Excel OK / Notion
+> SKIPPED / Discord SKIPPED. TASK-014BT fixes this output-status truth.
+>
+> New/changed files: src/demo_strategy_pilot_output_status.py (frozen
+> OutputStatusRecord; append-only output_status_events.jsonl + atomic
+> latest_output_status.json; allowed statuses PENDING/OK/PASS/FAIL/SKIPPED;
+> immutable daily-core fingerprint; idempotent identical status; malformed
+> ledger fails closed); scripts/build_demo_strategy_pilot_workbook.py (merge
+> immutable daily data + latest effective status onto the three status columns
+> only); src/demo_strategy_pilot_daily_runner.py (finalization: commit the
+> PilotDailyRecord once -> build Excel -> record Excel OK/FAIL -> Notion ->
+> record -> Discord -> record -> persist status ledger -> regenerate Notion and
+> Discord local previews with final statuses -> rebuild Excel so the row shows
+> final statuses -> finalize; reconcile validates the immutable core and only
+> advances output statuses); tests/demo_trading/test_demo_strategy_pilot_output_status.py.
+>
+> Immutable daily-core fingerprint covers pilot_id/date/signal_count/order_count/
+> filled_count/closed_trade_count/all PnL fields/current position fields/input
+> fingerprint/plan fingerprint; output reconciliation refuses if any core value
+> changes (only output-delivery statuses may advance).
+>
+> No-network dry-run final statuses: Excel Export=OK, Notion Sync=SKIPPED,
+> Discord Notify=SKIPPED (Excel row, dated snapshot, Notion payload, Discord
+> summary all consistent). Explicit network-enabled fake-success: Notion/Discord
+> = PASS. Still exactly one daily row, six sheets unchanged, workbook reopens,
+> numeric PnL/percent cells, no BO/BP manual validation trade; Discord summary
+> keeps DRY-RUN／尚未授權自動下單 and shows Excel/Notion statuses; no token/webhook
+> in payload/summary/journal/result/errors. reconcile_outputs loads the
+> immutable committed record, validates the immutable fingerprint, retries only
+> FAIL/SKIPPED Notion/Discord when explicitly network-enabled, rebuilds Excel
+> with the latest statuses, and never recalculates strategy / appends a daily or
+> trade record / submits an order; PASS is left untouched.
+>
+> Validation (offline; fake transports): py_compile PASS; focused output_status +
+> daily_runner + reporting 133 passed; -k "pilot_output_status or
+> pilot_forward_source or pilot_daily_runner or pilot_reporting or
+> tiny_execution_adapter or reduce_only_close" 1169 passed, 7701 deselected.
+> Bybit network 0; order POSTs 0; orders sent 0; Notion HTTP 0; Discord HTTP 0.
+
+## TASK-014BT_PILOT_OUTPUT_STATUS Status (2026-06-21)
+
+- Status: COMPLETE / PASS (reporting-only; no orders; no network; new commit on 4403f83)
+- Fixes PENDING-status inconsistency: final Excel/Notion/Discord statuses now truthful
+- py_compile: PASS; focused output_status + daily_runner + reporting: 133 passed
+- Combined -k "pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close": 1169 passed, 7701 deselected
+- Bybit network calls: 0; order POSTs: 0; orders sent: 0; Notion HTTP: 0; Discord HTTP: 0
+- Next action: real Notion/Discord delivery smoke (explicit network opt-in).
+  Automatic Bybit Demo execution remains unauthorized.
+
+---
+
 > README shared status updated by TASK-014BS_FORWARD_SOURCE (2026-06-21).
 > Wires the existing primary prev3y_crypto Forward Record output into the
 > TASK-014BR Pilot daily runner so plan/dry_run can consume the real local

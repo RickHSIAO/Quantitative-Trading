@@ -31,6 +31,7 @@ from openpyxl.styles import Font  # noqa: E402
 from openpyxl.utils import get_column_letter  # noqa: E402
 
 from src.demo_strategy_pilot_store import PilotStore  # noqa: E402
+from src.demo_strategy_pilot_output_status import OutputStatusStore  # noqa: E402
 
 
 WORKBOOK_FILENAME = "demo_strategy_pilot_results.xlsx"
@@ -251,6 +252,24 @@ def build_workbook(
     daily = store.read_daily()
     trades = store.read_trades()
     audit = store.read_audit()
+
+    # Merge the latest effective output-delivery statuses (TASK-014BT) onto each
+    # daily row WITHOUT mutating the immutable trading data. Only the three
+    # status columns are overridden by the output-status ledger.
+    status_by_date = OutputStatusStore(pilot_id, output_root).latest_by_date()
+    if status_by_date:
+        merged = []
+        for row in daily:
+            st = status_by_date.get(str(row.get("date")))
+            if st:
+                row = {
+                    **row,
+                    "excel_export_status": st.get("excel_status", row.get("excel_export_status")),
+                    "notion_sync_status": st.get("notion_status", row.get("notion_sync_status")),
+                    "discord_notify_status": st.get("discord_status", row.get("discord_notify_status")),
+                }
+            merged.append(row)
+        daily = merged
 
     wb = Workbook()
     # Remove default sheet; create in deterministic order.

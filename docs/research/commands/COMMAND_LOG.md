@@ -21,6 +21,34 @@ Notes:
 
 ---
 
+### 2026-06-21 (TASK-014BT_PILOT_OUTPUT_STATUS -- finalize Excel Notion and Discord delivery states)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BT_PILOT_OUTPUT_STATUS_FINALIZATION (make reporting outputs reflect final effective output-delivery statuses without mutating/duplicating authoritative trading data; reporting-only; no Bybit order; new commit on 4403f83; do not push).
+Task: After the TASK-014BS VPS smoke succeeded (50 real Forward Record signals; Excel + snapshot; idempotent rerun) the final Excel Daily Performance row and Notion preview still showed PENDING for Notion Sync / Excel Export / Discord Notify even though the run result was Excel OK / Notion SKIPPED / Discord SKIPPED. TASK-014BT introduces an output-status ledger and end-of-run finalization so the reporting outputs show the truthful effective statuses, while the immutable daily trading core stays single and unchanged.
+Status before: the daily record was committed with PENDING statuses, Excel and the Notion/Discord previews were built before delivery statuses were known, and the workbook read the store record (PENDING), so finalized statuses never reached the outputs.
+Status after: new src/demo_strategy_pilot_output_status.py ledger (frozen OutputStatusRecord; append-only output_status_events.jsonl + atomic latest_output_status.json; allowed statuses PENDING/OK/PASS/FAIL/SKIPPED; immutable daily-core fingerprint). The workbook builder merges the latest effective status onto the three status columns only. The daily runner commits the PilotDailyRecord once, records Excel/Notion/Discord statuses, persists the ledger, regenerates the Notion/Discord local previews with final statuses, and rebuilds Excel so the row shows the final statuses. reconcile validates the immutable core and only advances output statuses. No second daily record, no trade record, no order.
+Files changed:
+- `src/demo_strategy_pilot_output_status.py` (new; output-status model + append-only ledger + immutable daily-core fingerprint + conflict guard)
+- `scripts/build_demo_strategy_pilot_workbook.py` (merge latest effective output status onto Daily Performance status columns; trading data untouched)
+- `src/demo_strategy_pilot_daily_runner.py` (finalization ordering: single commit -> Excel -> Notion -> Discord -> ledger -> regenerate previews -> rebuild Excel -> finalize; reconcile uses ledger + immutable-core validation)
+- `tests/demo_trading/test_demo_strategy_pilot_output_status.py` (new; 41 offline focused tests)
+- `README.md` (TASK-014BT banner)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BT banner + status section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13; all offline; fake transports + temp roots):
+- py_compile: PASS (output_status, daily_runner, workbook builder, output_status test, and re-checked daily_runner/reporting/forward_source tests)
+- Focused output_status + daily_runner + reporting: 133 passed
+    python -m pytest tests/demo_trading/test_demo_strategy_pilot_output_status.py tests/demo_trading/test_demo_strategy_pilot_daily_runner.py tests/demo_trading/test_demo_strategy_pilot_reporting.py -q --basetemp=.pytest_bt
+- Combined -k "pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close": 1169 passed, 7701 deselected
+- Bybit network calls: 0; order /v5/order/create POST calls: 0; real orders sent: 0
+- Notion HTTP calls: 0; Discord HTTP calls: 0
+- No real credential / token / webhook read, printed, or committed. No secret serialized.
+Outputs: ledger (output_status_events.jsonl, latest_output_status.json), daily records, workbook/snapshots, and previews are written only under outputs/demo_trading/pilot/<pilot_id>/ (outside Git) and were NOT committed.
+Notes: Output-status ledger is append-only with an atomic latest snapshot; identical effective status writes are idempotent; malformed ledger files fail closed. The immutable daily-core fingerprint covers date/signal_count/order_count/filled_count/closed_trade_count/all PnL fields/current position fields/input fingerprint/plan fingerprint; output reconciliation refuses if any core value changes. No-network dry-run final statuses: Excel Export=OK, Notion Sync=SKIPPED, Discord Notify=SKIPPED (Excel row, dated snapshot, Notion payload, Discord summary all consistent); explicit network-enabled fake-success advances Notion/Discord to PASS. Still exactly one daily row, six sheets unchanged, workbook reopens, numeric PnL/percent cells, no BO/BP manual validation trade. Discord summary keeps DRY-RUN／尚未授權自動下單 and shows Excel/Notion statuses; token/webhook never serialized into payload/summary/journal/result/errors. reconcile_outputs retries only FAIL/SKIPPED Notion/Discord (PASS untouched), rebuilds Excel, validates the immutable fingerprint, and never recalculates strategy / appends a daily or trade record / submits an order. Identical full dry-run remains idempotent; input/plan conflict still fails closed. Does not modify TASK-014BO/BP. New commit on 4403f83 -- no prior commits amended; not pushed. Next action: real Notion/Discord delivery smoke (explicit network opt-in); automatic Bybit Demo execution remains unauthorized.
+
+---
+
 ### 2026-06-21 (TASK-014BS_FORWARD_SOURCE -- wire primary Forward Record signals into Pilot dry-run)
 
 Agent: Claude Opus 4.8
