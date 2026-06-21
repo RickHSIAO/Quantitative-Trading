@@ -21,6 +21,38 @@ Notes:
 
 ---
 
+### 2026-06-21 (TASK-014BP_DEMO_REDUCE_ONLY_CLOSE -- add one-shot verified position-close gate)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BP_BYBIT_DEMO_ONE_SHOT_REDUCE_ONLY_CLOSE (implement/test/document/commit the reduce-only close path; do NOT send the close during implementation; new commit on a4879e4; do not push).
+Task: Implement a manually-triggered, fail-closed single Bybit Demo reduce-only Market close that closes the TASK-014BO verified-filled SOLUSDT 0.1 long (side=Sell, reduceOnly=true, qty="0.1", IOC; max 1 POST; no retry; no reversal). The implementation finishes by printing one authenticated read-only VPS preflight command and one final manual execute_once command template; it does NOT send the close.
+Rick close authorization (verbatim): 我授權關閉目前 TASK-014BO 建立的 Bybit Demo SOLUSDT 0.1 多單，只允許一筆 reduceOnly Market 平倉單，不得反向開倉、不得超過目前持倉、不得自動重試。
+Source position: TASK-014BO order id 77173918-71f6-4829-91c9-025bd8cd76fa, orderLinkId BO1-4696d511edf11b50, result DEMO_ORDER_FILLED_VERIFIED, expected position SOLUSDT Buy 0.1.
+Status before: only the TASK-014BO opening gate existed; no reduce-only close path existed.
+Status after: new separate close-only module + CLI + 66 focused tests added, implementing 32 fail-closed close preflight gates, a commit/date-independent permanent close orderLinkId (BC1-566b8509e96b2def), a non-overridable canonical close journal, current-position exact-match (Buy 0.1) verification, exchange realtime/history close-duplicate detection, an independent execute-once recheck before arming, read-only post-close verification, critical-short detection, and sanitized reports. NO ORDER WAS SENT during implementation. The TASK-014BO opening module and journal are untouched.
+Files changed:
+- `src/demo_only_single_reduce_only_close.py` (new: close gates, CloseOneShotJournal, verification, conclusions; reuses TASK-014BO transport/signing/host-lock/redirect/full-SHA/duplicate/sender-guard primitives by import)
+- `scripts/run_demo_only_single_reduce_only_close.py` (new: preflight + execute_once CLI; default preflight read-only and never sends)
+- `tests/demo_trading/test_demo_only_single_reduce_only_close.py` (new: 66 focused tests, all offline / fake transport + fake probe)
+- `README.md` (TASK-014BP banner)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BP banner + status section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13; all offline / fake transport + fake probe):
+- py_compile: PASS (3 files)
+- Focused reduce-only-close: 66 passed
+    python -m pytest tests/demo_trading/test_demo_only_single_reduce_only_close.py -q --basetemp=.pytest_bp
+- Combined -k "tiny_execution_adapter or reduce_only_close": 995 passed, 7701 deselected
+    python -m pytest tests/demo_trading -k "tiny_execution_adapter or reduce_only_close" -q --basetemp=.pytest_bp/scoped
+- Complete one-shot family: 186 passed, 8444 deselected
+- Postfill audit focused: 155 passed
+- Real close /v5/order/create POST calls during implementation: 0
+- Real Bybit Demo close orders sent during implementation: 0
+- No real or demo credential read, printed, or committed. No secret serialized.
+Outputs: No order sent. Close journal/reports are written only under outputs/demo_trading/task_014bp_single_reduce_only_close/ (outside Git) and only when execute_once is run manually with real network + credentials.
+Notes: Exact nine-field reduce-only body (category, symbol, side=Sell, orderType=Market, qty="0.1", timeInForce=IOC, reduceOnly=true, closeOnTrigger=false, orderLinkId); no positionIdx/price/TP/SL. One-way mode required (hedge fails closed). Permanent close orderLinkId BC1-566b8509e96b2def is independent of Git commit/date/time/PID/host and not caller-overridable; the full 40-char lowercase hex --expected-commit remains a separate runtime code-identity gate. Canonical close journal is non-overridable and never touches the TASK-014BO opening journal. execute_once independently rechecks source journal + position + realtime/history duplicates immediately before arming and the single POST. No automatic retry after timeout/connection reset/malformed/crash/nonzero retCode/unknown/partial fill; reduceOnly=true mandatory; any post-close short position is classified DEMO_REDUCE_ONLY_CLOSE_CRITICAL_SHORT_POSITION_DETECTED. A partial fill leaving a residual long requires a NEW explicit authorization; this module never submits a second close and never opens a short. Complete closure (DEMO_REDUCE_ONLY_CLOSE_FILLED_POSITION_ZERO_VERIFIED) requires verified Filled + cumExecQty exactly 0.1 + post-close SOLUSDT position exactly zero + no short. Does not import or use BybitExecutor / main.py / src/risk.py and does not change Stage 1 defaults. New commit on a4879e4 -- TASK-014BO not amended; not pushed. Next action: push -> VPS pull -> authenticated close preflight -> manual execute_once; the 7-day strategy pilot starts only after verified position-zero closure.
+
+---
+
 ### 2026-06-21 (TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION -- commit-independent orderLinkId + offline fail-closed dedup)
 
 Agent: Claude Opus 4.8

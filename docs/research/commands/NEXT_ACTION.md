@@ -1,5 +1,91 @@
 # Next Action
 
+> README shared status updated by TASK-014BP_DEMO_REDUCE_ONLY_CLOSE
+> (2026-06-21). Implements a manually-triggered, fail-closed single Bybit Demo
+> reduce-only Market close of the TASK-014BO verified-filled SOLUSDT 0.1 long.
+> NO ORDER WAS SENT during implementation; real close POST calls remain zero.
+> A new commit on top of a4879e4 (TASK-014BO not amended).
+>
+> Rick's exact close authorization (verbatim):
+> "我授權關閉目前 TASK-014BO 建立的 Bybit Demo SOLUSDT 0.1 多單，只允許一筆
+> reduceOnly Market 平倉單，不得反向開倉、不得超過目前持倉、不得自動重試。"
+> Scope: Bybit Demo only; api-demo.bybit.com; POST /v5/order/create; linear;
+> SOLUSDT; side=Sell; Market; qty="0.1"; IOC; reduceOnly=true;
+> closeOnTrigger=false; max 1 POST; max 1 close; no auto retry.
+> Source position: TASK-014BO order id 77173918-71f6-4829-91c9-025bd8cd76fa,
+> orderLinkId BO1-4696d511edf11b50, result DEMO_ORDER_FILLED_VERIFIED,
+> expected position SOLUSDT Buy 0.1. Not authorized: live/Testnet, other symbol,
+> qty != 0.1, opening a short, a second close, auto residual cleanup, auto
+> retry, TP/SL, stop, leverage/margin/position-mode change, cancelling
+> unrelated orders, scheduler/cron/loop/batch/strategy automation.
+>
+> New files (separate close-only module; reuses but does not modify the
+> TASK-014BO opening module):
+> - src/demo_only_single_reduce_only_close.py
+> - scripts/run_demo_only_single_reduce_only_close.py
+> - tests/demo_trading/test_demo_only_single_reduce_only_close.py
+>
+> Exact reduce-only close body (nine fields): category, symbol, side=Sell,
+> orderType=Market, qty="0.1", timeInForce=IOC, reduceOnly=true,
+> closeOnTrigger=false, orderLinkId. No positionIdx/price/TP/SL/etc. One-way
+> mode required; hedge positionIdx=1/2 fails closed without changing mode.
+>
+> Permanent close orderLinkId (commit/date/time independent): BC1- +
+> sha256(TASK_ID|CLOSE_AUTHORIZATION_MARKER|CLOSE_AUTHORIZATION_SCOPE_IDENTITY)
+> [:16] = BC1-566b8509e96b2def. Full 40-char SHA remains a separate gate.
+>
+> Canonical close journal (non-overridable, outside Git):
+> outputs/demo_trading/task_014bp_single_reduce_only_close/. The TASK-014BO
+> opening journal is never altered or deleted. Before POST: pass all gates ->
+> rerun current-position + exchange duplicate checks -> persist close body hash
+> + permanent orderLinkId -> atomically write ARMED_BEFORE_CLOSE_POST -> flush
+> -> then one POST. States: CLOSE_POST_RESPONSE_RECEIVED /
+> CLOSE_POST_TIMEOUT_AMBIGUOUS / CLOSE_POST_EXCEPTION_AMBIGUOUS /
+> CLOSE_POST_REJECTED_BEFORE_NETWORK / CLOSE_RESULT_VERIFIED /
+> CLOSE_RESULT_UNVERIFIED. Any possible-prior-POST state permanently blocks; no
+> force/reset/ignore/new-id/delete option.
+>
+> 32 fail-closed preflight gates verify, at minimum: full HEAD SHA, host,
+> BYBIT_DEMO_* creds, close marker, source TASK-014BO journal exists/state
+> POST_RESULT_VERIFIED/conclusion DEMO_ORDER_FILLED_VERIFIED/order id +
+> orderLinkId match, exactly one SOLUSDT long, side Buy, size exactly 0.1
+> (not zero/below/above), one-way mode, no short, no ambiguous rows, tradable,
+> qty step/min, nine-field body, side Sell, reduceOnly true, closeOnTrigger
+> false, no active BP close order, realtime+history both checked and free of
+> the close orderLinkId, no conflicting close journal, sender count zero, no
+> retry, no scheduler, body hash match, execute flag. Qty is never auto-adjusted;
+> if the position is not exactly Buy 0.1 it fails closed and reports the actual
+> position.
+>
+> Offline preflight fails closed (no HTTP, ready=false, authenticated position
+> and duplicate checks marked not performed, no journal, no order). execute_once
+> independently re-runs source-journal verification, /v5/position/list,
+> realtime + history duplicate checks, body-hash, and sender-count-zero
+> immediately before arming. No-retry / no-reversal: any timeout / connection
+> reset / malformed / crash / nonzero retCode / unknown / partial fill never
+> retries; reduceOnly=true mandatory; any post-close short is a critical safety
+> failure; residual long requires NEW explicit authorization. Complete closure
+> requires verified Filled + cumExecQty exactly 0.1 + post-close position zero +
+> no short.
+
+## TASK-014BP_DEMO_REDUCE_ONLY_CLOSE Status (2026-06-21)
+
+- Status: COMPLETE / PASS (implementation only; NO ORDER SENT; new commit on a4879e4)
+- Permanent close orderLinkId: BC1-566b8509e96b2def
+- py_compile: PASS (3 files)
+- Focused reduce-only-close: 66 passed
+- `-k "tiny_execution_adapter or reduce_only_close"`: 995 passed, 7701 deselected
+- Complete one-shot family: 186 passed
+- Postfill audit focused: 155 passed
+- Real close /v5/order/create POST calls during implementation: 0
+- Real close orders sent during implementation: 0
+- Next action: push -> VPS pull -> authenticated close preflight
+  (--allow-real-network) -> manual execute_once. The 7-day strategy pilot
+  starts only after verified position-zero closure. Any residual long or a
+  second close requires new explicit authorization.
+
+---
+
 > README shared status updated by
 > TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION
 > (2026-06-21). Corrects the final two blockers before the first real Bybit

@@ -14,10 +14,84 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BP_DEMO_REDUCE_ONLY_CLOSE, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BP_DEMO_REDUCE_ONLY_CLOSE 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BP_DEMO_REDUCE_ONLY_CLOSE**（2026-06-21, Opus 4.8 / 實作 single reduce-only close gate / 實作期間未送任何 order）
+> 實作一條「手動觸發、fail-closed」的單筆 Bybit Demo reduce-only Market 平倉路徑，用以關閉 TASK-014BO 已驗證成交的多單。
+> **本實作任務未送出任何真實 order。** 真實平倉僅能由 Rick 於 VPS 上以一條明確手動指令執行。
+>
+> **Rick 的唯一一筆平倉授權（immutable）：**
+> 「我授權關閉目前 TASK-014BO 建立的 Bybit Demo SOLUSDT 0.1 多單，只允許一筆 reduceOnly Market 平倉單，
+> 不得反向開倉、不得超過目前持倉、不得自動重試。」
+> scope：Bybit Demo only / `api-demo.bybit.com` / `POST /v5/order/create` / linear / SOLUSDT / **side=Sell** /
+> Market / qty=`"0.1"` / IOC / **reduceOnly=true** / closeOnTrigger=false / 最多 1 筆 POST / 最多 1 筆平倉 / 禁止自動 retry。
+> 來源持倉：TASK-014BO 開倉單 order id `77173918-71f6-4829-91c9-025bd8cd76fa`、orderLinkId `BO1-4696d511edf11b50`、
+> 結果 `DEMO_ORDER_FILLED_VERIFIED`、預期持倉 `SOLUSDT Buy 0.1`。
+> 不含：live/mainnet、Testnet、其他 symbol、qty≠0.1、開空、第二筆平倉、自動清殘倉、自動 retry、TP/SL、stop、
+> 槓桿/保證金/倉位模式變更、取消無關訂單、scheduler/cron/loop/batch/策略自動化。
+>
+> **新增檔案（獨立 close-only 模組，重用但不修改 TASK-014BO 開倉模組）：**
+> - `src/demo_only_single_reduce_only_close.py`
+> - `scripts/run_demo_only_single_reduce_only_close.py`
+> - `tests/demo_trading/test_demo_only_single_reduce_only_close.py`
+>
+> **精確平倉 body（恰好九欄位）：** `category, symbol, side=Sell, orderType=Market, qty="0.1", timeInForce=IOC,
+> reduceOnly=true, closeOnTrigger=false, orderLinkId`。不加 price/positionIdx/TP/SL/triggerPrice/trailingStop/
+> orderFilter/marketUnit。要求 one-way 倉位模式；若需 hedge positionIdx=1/2 則 fail-closed 不送、不改帳戶模式。
+>
+> **永久 close orderLinkId（與 commit/日期無關）：** `BC1-` + `sha256(TASK_ID|CLOSE_AUTHORIZATION_MARKER|
+> CLOSE_AUTHORIZATION_SCOPE_IDENTITY)[:16]`（本次 `BC1-566b8509e96b2def`，≤36 字元，呼叫者不可覆寫，跨未來 commit 不變）。
+> 完整 40 字元小寫 hex commit 仍是獨立 runtime code-identity gate。
+>
+> **Canonical close journal（不可覆寫，置於版控外）：** `outputs/demo_trading/task_014bp_single_reduce_only_close/`，
+> 不更動/不刪除既有 TASK-014BO 開倉 journal。送單前：通過全部 gate → 重查當前持倉與交易所重複 → 持久化 close body hash 與
+> 永久 orderLinkId → atomically 寫入 `ARMED_BEFORE_CLOSE_POST` → flush → 才允許唯一一次 POST。之後轉為
+> `CLOSE_POST_RESPONSE_RECEIVED` / `CLOSE_POST_TIMEOUT_AMBIGUOUS` / `CLOSE_POST_EXCEPTION_AMBIGUOUS` /
+> `CLOSE_POST_REJECTED_BEFORE_NETWORK` / `CLOSE_RESULT_VERIFIED` / `CLOSE_RESULT_UNVERIFIED`。
+> 任何「可能已送出」的狀態永久阻擋再次 POST；無 force/reset/ignore/new-id/delete 選項。
+>
+> **32 道 fail-closed preflight gates：** 完整 HEAD SHA、endpoint host、`BYBIT_DEMO_*` credentials、close marker、
+> 來源 TASK-014BO journal 存在 + 狀態 POST_RESULT_VERIFIED + 結論 DEMO_ORDER_FILLED_VERIFIED + order id 相符 +
+> orderLinkId 相符、恰好一筆 SOLUSDT 多單、side=Buy、size 精確=0.1（非 0/非 <0.1/非 >0.1）、one-way 模式、
+> 無空單、無持倉列模糊、instrument 可交易、qty step/min、九欄位 body、side=Sell、reduceOnly=true、closeOnTrigger=false、
+> 無既有 BP 平倉單、realtime/history 皆無永久 close orderLinkId 且兩來源確實檢查且結構合法、close journal 無前狀態、
+> sender count=0、無 retry、無 scheduler、body hash 相符、execute flag。任一缺失/失敗/過期/模糊即在 POST 前拒絕；qty 絕不自動調整。
+> 若當前持倉非精確 `Buy 0.1`，fail-closed 並回報實際持倉，**不送較小或較大平倉單**。
+>
+> **離線 preflight：** 預設/無網路 preflight 不做 HTTP、`ready=false`、把已驗證持倉與重複檢查標記為 not performed、
+> 不建立 journal、不送單、永不宣稱可平倉。唯有 `--allow-real-network` + 可用 Demo credential 才做已驗證 preflight。
+>
+> **execute_once 送單前獨立重查：** 重新驗證來源開倉 journal、`/v5/position/list`、`/v5/order/realtime`、
+> `/v5/order/history`（依永久 close orderLinkId）、body/body-hash、sender count=0；順序：完整 HEAD SHA →
+> 來源 journal → 確認當前多單精確 0.1 → realtime/history 無重複 → sender count=0 → atomically arm → flush → 至多一次 POST。
+> 若持倉已為 0 則不送；若任一 close orderLinkId 已存在於任何狀態則不送。
+>
+> **No-retry / no-reversal：** 逾時/連線重置/格式錯誤/SSH 中斷/崩潰/nonzero retCode/未知/驗證延遲/部分成交皆**不重送**。
+> `reduceOnly=true` 強制。任何疑似新開空單的結果分類為 critical safety failure。部分成交留殘倉須**新的明確授權**。
+>
+> **送出後唯讀驗證：** 以 `/v5/order/realtime`、`/v5/order/history`、`/v5/execution/list`、`/v5/position/list`
+> 記錄 close order id/orderLinkId、retCode/retMsg、最終狀態、累計成交量、均價、手續費、平倉前後持倉、是否歸零、
+> 驗證來源、verified/ambiguous、sender/POST count、no-retry。可能結論：`DEMO_REDUCE_ONLY_CLOSE_FILLED_POSITION_ZERO_VERIFIED` /
+> `_PARTIAL_RESIDUAL_LONG_VERIFIED` / `_CANCELLED_POSITION_REMAINS` / `_REJECTED` / `_ACCEPTED_STATUS_PENDING` /
+> `_POST_FAILED` / `_OUTCOME_AMBIGUOUS` / `_REFUSED_PREFLIGHT` / `_CRITICAL_SHORT_POSITION_DETECTED`。
+> **完整平倉**僅當 close order 經驗證 Filled、累計成交量恰為 0.1、平倉後 SOLUSDT 持倉恰為 0、且未產生空單。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13，全程 fake transport / fake probe，0 網路）：**
+> - py_compile（3 檔）→ PASS
+> - Focused reduce-only-close: **66 passed**
+> - `-k "tiny_execution_adapter or reduce_only_close"`: **995 passed, 7701 deselected**
+> - Complete one-shot family: **186 passed**
+> - Postfill audit focused: **155 passed**
+>
+> **安全不變項（實作期間）：** Real close `/v5/order/create` POST calls: **0**；Real close orders sent: **0**；
+> 未讀取/印出/commit 任何 credential；未 import/使用 `BybitExecutor` / `main.py` / `src/risk.py`；
+> 未更動 TASK-014BO 模組或其 journal。下一步：push → VPS pull → 已驗證 close preflight；
+> **7 天策略 pilot 僅在驗證持倉歸零平倉後才啟動。**
+
+---
 
 > **TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION**（2026-06-21, Opus 4.8 / fail-closed 修正 / 仍未送任何 order）
 > 在第一筆真實 Bybit Demo preflight 前修正最後兩個阻斷點（就地 amend 未推送的 commit `55e6121`）。**本修正送出 0 筆真實 order POST。**
