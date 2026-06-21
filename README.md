@@ -14,10 +14,181 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION**（2026-06-21, Opus 4.8 / fail-closed 修正 / 仍未送任何 order）
+> 在第一筆真實 Bybit Demo preflight 前修正最後兩個阻斷點（就地 amend 未推送的 commit `55e6121`）。**本修正送出 0 筆真實 order POST。**
+> 授權 scope 不變（Bybit Demo / SOLUSDT 0.1 Buy Market IOC / 最多一筆 / 無 retry / 無自動平倉 TP/SL）。
+>
+> **修正 1 — orderLinkId 與 commit SHA 脫鉤、跨未來 commit 永久不變：** 新增不可變常數
+> `AUTHORIZATION_SCOPE_IDENTITY`，orderLinkId 改為僅由
+> `sha256(TASK_ID|AUTHORIZATION_MARKER|AUTHORIZATION_SCOPE_IDENTITY)[:16]` → `BO1-<16 hex>` 推導，
+> **不含 commit SHA / 日期 / 時間 / UUID / 隨機 / PID / hostname**，呼叫者無法覆寫（≤36 字元）。
+> 因此未來的文件/結果/closeout commit、process 重啟、不同有效 Git commit 都**不會**產生新的去重身份——
+> 交易所端 orderLinkId 對此授權永久固定（本次為 `BO1-4696d511edf11b50`），即使本地 journal 遺失仍可用於查核。
+> 完整 40 字元小寫 hex `--expected-commit` 仍是**獨立**的 runtime code-identity gate（HEAD 須完全相符），
+> 但 commit 身份**不**影響 orderLinkId / 去重身份 / journal 檔名 / 授權身份。
+>
+> **修正 2 — 離線/無網路 preflight 一律 fail-closed：** 離線（未帶 `--allow-real-network`）或無 Demo credential 時，
+> 去重結果固定為 `clean=False, realtime_checked=False, history_checked=False, ambiguous=True,
+> detail="authenticated exchange duplicate checks not performed"`，且**絕不**呼叫網路。
+> gate `no_existing_exchange_order_for_fixed_order_link_id` 唯有在
+> 「real-network 明確開啟 + Demo credential 存在 + realtime 與 history 兩個請求都成功 + 兩者 retCode==0 +
+> 結構合法 + 皆無該固定 orderLinkId + 皆非 stale/malformed/timeout/unauthorized/rate-limited/ambiguous」時才通過。
+> **絕不**把「未嘗試網路」當成「無重複單」。預設離線 preflight：`ready=False`、去重 gate 失敗、不建立/不 arm journal、不送單；`--help` 無網路。
+>
+> **execute_once 送單前獨立重查：** 在 atomically 寫入 `ARMED_BEFORE_POST` 之前，execute_once 會以固定 orderLinkId
+> **重新**執行已驗證唯讀 `GET /v5/order/realtime` 與 `GET /v5/order/history`（不信任先前 preflight 結果）。
+> 順序：驗證完整 HEAD SHA → marker/flags/body hash/credentials/account+instrument gates → 檢查 canonical 本地 journal →
+> 新鮮已驗證 realtime/history 去重 → 確認 sender count=0 → atomically 寫入 `ARMED_BEFORE_POST` → flush → 至多一次 POST。
+> 任一去重查詢失敗或 ambiguous 即在 arm 與 POST 前拒絕。one-shot 保證可跨後續 commit / 文件 commit / process 重啟 /
+> cwd 變更 / 本地 journal 遺失 / operator 誤重跑 存活；無 force/reset/new-id/ignore 選項、無自動刪 journal、無第二次 POST。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13，全程 fake transport / fake probe，0 網路）：**
+> - py_compile（3 檔）→ PASS
+> - Focused single-real-demo-order: **117 passed**
+> - Scoped tiny-execution-adapter regression: **929 passed, 7701 deselected**
+> - Complete one-shot family: **186 passed, 8444 deselected**
+> - Postfill audit focused: **155 passed**
+>
+> **安全不變項（修正期間）：** Real `/v5/order/create` POST calls: **0**；Real Demo orders sent: **0**；
+> 未讀取/印出/commit 任何 credential。下一步：push → VPS pull → 設定 credential → 已驗證唯讀 preflight
+> （`--allow-real-network`）；`execute_once` 仍等待最終 preflight review 後由 Rick 手動執行。
+
+---
+
+> **TASK-014BO_REAL_DEMO_ONE_SHOT_DEDUPLICATION_AND_JOURNAL_HARDENING**（2026-06-21, Opus 4.8 / fail-closed 修正 / 仍未送任何 order）
+> 在第一筆真實 Bybit Demo order 被允許前，修正三個 fail-closed 缺口（就地 amend 未推送的 commit `b6f7498`）。**本修正仍未送出任何真實 order。**
+> 授權 scope 不變（Bybit Demo / SOLUSDT 0.1 Buy Market IOC / 最多一筆 / 無自動 retry / 無自動平倉 TP/SL）。
+>
+> **修正 1 — Journal 路徑不可覆寫：** 移除 CLI `--journal-dir`。`preflight` 與 `execute_once` 一律使用 source 內定義、
+> 錨定於 repo root（非 cwd）的 canonical 路徑 `CANONICAL_JOURNAL_DIR =
+> <repo>/outputs/demo_trading/task_014bo_single_real_demo_order`，無法經 CLI 參數 / 環境變數 / 設定檔 / cwd 改變；
+> `canonical_journal()` 會驗證解析後路徑未逸出 repo root（拒絕 symlink/traversal）。呼叫者無法藉由換目錄繞過既有 journal。
+>
+> **修正 2 — orderLinkId 永久穩定、與日期無關：** orderLinkId 改為僅由不可變授權身份決定：
+> `sha256(f"{TASK_ID}|{AUTHORIZATION_MARKER}|{full_commit_sha}")[:16]` → `BO1-<16 hex>`（≤36 字元、TASK-014BO 專屬 prefix）。
+> 不含 UTC 日期 / timestamp / 隨機 / UUID / hostname / PID；不同時鐘日期、process 重啟、preflight 與 execute_once 皆推導出相同值；
+> 呼叫者無法覆寫。即使本地 journal 遺失，固定 orderLinkId 仍可用於交易所端查核。
+>
+> **修正 3 — 交易所端重複偵測：** POST 前以已驗證唯讀呼叫，依固定 orderLinkId 查詢
+> `GET /v5/order/realtime` 與 `GET /v5/order/history`（category=linear, symbol=SOLUSDT, orderLinkId=<fixed>）。
+> 新增 gate `no_existing_exchange_order_for_fixed_order_link_id`：唯有兩個來源都成功檢查且皆無該 orderLinkId 才通過。
+> 任何 match（New/PartiallyFilled/Filled/Cancelled/Rejected/Deactivated/Pending/unknown/malformed-but-matching）即拒送；
+> 查詢 missing/failed/stale/malformed/unauthorized/rate-limited/timeout/ambiguous 一律 fail-closed（絕不視為「無單」）。
+>
+> **完整 SHA 強制：** `--expected-commit` 必須為精確 40 字元小寫 hex SHA；拒絕 7 字元短 hash、縮寫、大寫、`HEAD`/`main`、prefix、含空白；
+> runtime 取得 repo 實際 HEAD 完整 SHA 後須完全相等。本任務修正後產生的新 commit SHA 才是最終手動指令的 approved commit（非 `b6f7498`）。
+>
+> **去重合併邏輯：** 唯有 canonical journal 無任何 armed/attempted/ambiguous/completed 狀態、realtime 無 match、history 無 match、
+> in-process sender count=0、且其餘所有 gate 通過時才允許 POST。本地 journal 缺失但交易所有該 orderLinkId → 拒送；交易所乾淨但本地 journal 顯示可能已嘗試 → 拒送。
+> **無** `--force` / `--reset` / `--ignore-journal` / `--new-order-link-id` / 自動 journal 重置或刪除選項。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13，全程 fake transport / fake probe，0 網路）：**
+> - py_compile（3 檔）→ PASS
+> - Focused single-real-demo-order: **99 passed**
+> - Scoped tiny-execution-adapter regression: **911 passed, 7701 deselected**
+> - Complete one-shot family: **186 passed, 8426 deselected**
+> - Postfill audit focused: **155 passed**
+>
+> **安全不變項（修正期間）：** Real `/v5/order/create` POST calls: **0**；Real Demo orders sent: **0**；
+> 未讀取/印出/commit 任何 credential；未送任何 order。下一步：push → VPS pull → 設定 credential → 唯讀 preflight；
+> `execute_once` 仍等待最終 preflight review 後由 Rick 手動執行。
+
+---
+
+> **TASK-014BO_REAL_DEMO_ONE_SHOT**（2026-06-21, Opus 4.8 / 實作 single real Demo order gate / 實作期間未送任何 order）
+> 實作一條「手動觸發、fail-closed」的單筆 Bybit Demo order 執行路徑。**本實作任務未送出任何真實 order。**
+> 真實 Demo order 僅能由 Rick 在 code review、push、VPS pull、credential 設定、最終 preflight 通過後，
+> 於 VPS 上以一條明確的手動指令執行（見下方）。
+>
+> **Rick 的唯一一筆授權（immutable scope）：**
+> environment=Bybit Demo only / host=`https://api-demo.bybit.com` / endpoint=`POST /v5/order/create` /
+> category=`linear` / symbol=`SOLUSDT` / side=`Buy` / orderType=`Market` / qty=`"0.1"` /
+> timeInForce=`IOC` / reduceOnly=`false` / closeOnTrigger=`false` / 最多 order-create POST=1 /
+> 最多 submitted orders=1 / 自動 retry 禁止。
+> 授權原文："I authorize one Bybit Demo SOLUSDT 0.1 Buy Market IOC order test. Live endpoints are
+> forbidden. More than one order is forbidden. Automatic retries are forbidden."
+> 此授權不含：live/mainnet、Testnet、第二筆 order、自動平倉、reduce-only 平倉、TP/SL、stop order、
+> 倉位管理、攤平/加碼、scheduler/cron、策略訊號自動化、任何 protected symbol、逾時/例外後自動重送。
+>
+> **新增檔案：**
+> - `src/demo_only_tiny_execution_adapter_single_real_demo_order.py`
+> - `scripts/run_demo_only_single_real_order.py`
+> - `tests/demo_trading/test_demo_only_tiny_execution_adapter_single_real_demo_order.py`
+>
+> **Endpoint lock：** 僅允許 `https://api-demo.bybit.com`，order path `/v5/order/create`。
+> 拒絕 `api.bybit.com`、`api-testnet.bybit.com`、任何其他 host、跨 host redirect（拒絕而非跟隨）、
+> 呼叫端任意 URL、環境變數 endpoint override、proxy 置換、batch order endpoint。
+>
+> **精確 request body（恰好九個欄位）：** `category, symbol, side, orderType, qty, timeInForce,
+> reduceOnly, closeOnTrigger, orderLinkId`。不加 price / positionIdx / takeProfit / stopLoss /
+> triggerPrice / trailingStop / orderFilter / marketUnit。要求 one-way 倉位模式；若帳戶為 hedge
+> 模式或需要 positionIdx=1/2，fail-closed 不送、不改帳戶模式。
+>
+> **30 道 preflight gates（全部 fail-closed）：** git/commit identity、endpoint host、`BYBIT_DEMO_*`
+> credentials、九欄位逐項精確值、qty=Decimal("0.1")、max order count=1、no retry、no scheduler、
+> 新鮮 instrument 規則 + SOLUSDT 可交易、min qty/step、新鮮 mark price、`0.1 × mark ≤ 20 USDT`、
+> 無 qty 調整、無既有 SOLUSDT order/position、倉位模式相容、Demo 餘額足夠、protected symbol 未觸及、
+> 無衝突的 one-shot journal、精確 authorization marker、精確 execution flags、body hash 相符、
+> POST 前 real order count=0。任一 gate 失敗即拒送。
+>
+> **One-shot journal（crash-safe，置於版控外 `outputs/demo_trading/task_014bo_single_real_demo_order/`）：**
+> POST 前 atomically 寫入 `ARMED_BEFORE_POST` 並 flush 後才允許唯一一次 POST；之後轉為
+> `POST_RESPONSE_RECEIVED` / `POST_EXCEPTION_AMBIGUOUS` / `POST_TIMEOUT_AMBIGUOUS` /
+> `POST_REDIRECT_REJECTED` / `POST_REJECTED_BEFORE_NETWORK` / `POST_RESULT_VERIFIED` /
+> `POST_RESULT_UNVERIFIED`。任何「POST 可能已發生」的 journal 狀態都會讓 rerun 拒絕重送
+> （逾時/連線重置/格式錯誤/程式崩潰/缺回應/未知結果皆不允許自動重送）；operator 須以 orderLinkId 調查。
+>
+> **No-retry / sender 計數：** in-process `OneShotSenderGuard` 起始計數 0，僅能呼叫一次，再呼叫即丟硬性安全錯誤；
+> POST 周圍無 loop、無 retry decorator、無 fallback/batch/第二 sender。
+>
+> **送出後唯讀驗證：** `retCode=0` 的 create 回應不等於成交。之後僅做唯讀查詢：最多 3 次
+> `/v5/order/realtime`、最多 1 次 `/v5/order/history`、1 次 `/v5/execution/list`、1 次 `/v5/position/list`，
+> 以 orderId/orderLinkId 查詢。可能結論：`DEMO_ORDER_FILLED_VERIFIED` /
+> `DEMO_ORDER_PARTIALLY_FILLED_VERIFIED` / `DEMO_ORDER_CANCELLED_VERIFIED` /
+> `DEMO_ORDER_REJECTED_VERIFIED` / `DEMO_ORDER_ACCEPTED_STATUS_PENDING` / `DEMO_ORDER_POST_FAILED` /
+> `DEMO_ORDER_OUTCOME_AMBIGUOUS` / `DEMO_ORDER_REFUSED_PREFLIGHT`。非經唯讀證據不得宣稱 FILLED。
+>
+> **倉位警告：** 此授權為 opening Buy（reduceOnly=false），成交後可能留下 SOLUSDT Demo 多單。
+> 本模組不送平倉、不設 TP/SL、不 reduce；平倉需另一筆獨立明確授權。
+>
+> **CLI：** `preflight`（預設，唯讀，永不送單，列出全部 gate、sanitized 預覽、body hash、orderLinkId、
+> journal state，並印出最終手動指令）；`execute_once`（唯一可送單路徑，需
+> `--mode execute_once --allow-real-network --execute-one-real-demo-order
+> --authorization-marker <marker> --expected-commit <commit> --request-body-hash <hash>` 全部齊備，
+> 且 preflight 全通過、無衝突 journal）。預設與 `--help` 永不送單、無網路。
+>
+> **最終手動 VPS 執行指令範本（review + push + pull + 設定 credential 後才執行）：**
+> ```
+> python scripts/run_demo_only_single_real_order.py \
+>   --mode execute_once \
+>   --allow-real-network \
+>   --execute-one-real-demo-order \
+>   --authorization-marker DEMO_ONLY_SOLUSDT_0_1_BUY_MARKET_IOC_ONE_SHOT_RICK_AUTHORIZED_20260621 \
+>   --expected-commit <FULL_40_CHARACTER_CORRECTED_COMMIT_SHA> \
+>   --request-body-hash <BODY_HASH_FROM_FRESH_PREFLIGHT>
+> ```
+> （經 TASK-014BO 強化修正後已移除 `--journal-dir`；journal 路徑改為不可覆寫的 canonical 路徑。
+> `--expected-commit` 必須為完整 40 字元小寫 hex SHA。）
+>
+> **本地驗證（Windows 11 / .venv Python 3.13，全程 fake transport / fake probe，0 網路）：**
+> - py_compile（3 檔）→ PASS
+> - Focused single-real-demo-order: **75 passed**
+> - Scoped tiny-execution-adapter regression: **886 passed, 7701 deselected**
+> - Complete one-shot family: **186 passed, 8402 deselected**
+> - Postfill audit focused（確認 fake 與 real 證據仍分開分類）: **155 passed**
+>
+> **安全不變項（實作期間）：** Real `/v5/order/create` POST calls: **0**；Real Demo orders sent: **0**；
+> `real_order_network_attempted=False`、`real_order_endpoint_called=False`；未讀取任何 credential；
+> 無法選到 live/Testnet endpoint；未 import/使用 `BybitExecutor` / `main.py` / `src/risk.py`；
+> postfill audit 仍將 real Demo transport 與 `FAKE_SENDER` 分開；Stage 1 fake-only 預設行為不變。
+> Real Demo 執行：**等待 Rick 於 VPS 手動執行上方唯一指令；平倉需另行授權。**
+
+---
 
 > **TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT**（2026-06-21, VPS Ubuntu 24.04.4 / Python 3.12.3 / pytest 9.1.1 / commit 546ecdb）
 > VPS Stage 1 postfill audit validation COMPLETE。以下為在 Ubuntu VPS 上對 commit `546ecdb` 的完整驗證結果。

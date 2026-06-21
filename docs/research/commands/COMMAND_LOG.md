@@ -21,6 +21,101 @@ Notes:
 
 ---
 
+### 2026-06-21 (TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION -- commit-independent orderLinkId + offline fail-closed dedup)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BO_REAL_DEMO_ONE_SHOT_FINAL_DEDUP_IDENTITY_AND_OFFLINE_PREFLIGHT_CORRECTION (correct the final two blockers before the first real Bybit Demo preflight; send zero real order POSTs; amend the unpushed commit 55e6121; do not push).
+Task: (1) Make the durable exchange deduplication identity (orderLinkId) constant across future Git commits by deriving it only from immutable authorization data, not the commit SHA. (2) Ensure offline/no-network preflight never claims authenticated exchange duplicate checks completed; it must fail closed. No real order POST is sent.
+Status before: orderLinkId was derived from TASK_ID + AUTHORIZATION_MARKER + current full commit SHA (a future documentation/result commit would create a new orderLinkId and could bypass exchange-side duplicate detection). The default offline preflight smoke reported the exchange duplicate check as clean=True / realtime_checked=True / history_checked=True / ambiguous=False without performing any authenticated network request.
+Status after: Added immutable constant AUTHORIZATION_SCOPE_IDENTITY; orderLinkId is now sha256(TASK_ID|AUTHORIZATION_MARKER|AUTHORIZATION_SCOPE_IDENTITY)[:16] -> BO1-<16 hex> (this run: BO1-4696d511edf11b50), containing no commit SHA/date/time/UUID/PID/hostname and not caller-overridable; it is identical across different valid commits, future documentation commits, process restarts, and dates. The full 40-char lowercase hex --expected-commit remains a SEPARATE runtime code-identity gate (HEAD must match exactly) and does not influence the orderLinkId, dedup identity, journal filename, or authorization identity. run_preflight gained allow_real_network: offline / no-network / no-credential preflight now returns a fail-closed duplicate result (clean=False, realtime_checked=False, history_checked=False, ambiguous=True, detail="authenticated exchange duplicate checks not performed"), performs no network request, creates/arms no journal, and is never ready. execute_once independently reruns the authenticated realtime + history duplicate checks by the fixed orderLinkId immediately before arming the canonical journal and before any POST. No order sent.
+Files changed:
+- `src/demo_only_tiny_execution_adapter_single_real_demo_order.py` (AUTHORIZATION_SCOPE_IDENTITY; commit-independent build_order_link_id(); offline_duplicate_check(); run_preflight allow_real_network fail-closed dedup; __all__)
+- `scripts/run_demo_only_single_real_order.py` (pass allow_real_network into run_preflight so default offline preflight fails the dedup gate)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_single_real_demo_order.py` (117 focused tests incl. commit-independence, offline fail-closed semantics, real-network requirement, execute-once fresh recheck)
+- `README.md` (final correction banner)
+- `docs/research/commands/NEXT_ACTION.md` (final correction banner + status section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13; all offline / fake transport + fake probe):
+- py_compile: PASS (3 files)
+- Focused single-real-demo-order: 117 passed
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_single_real_demo_order.py -q --basetemp=.pytest_bo
+- Scoped tiny-execution-adapter regression: 929 passed, 7701 deselected
+    python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_bo/scoped
+- Complete one-shot family: 186 passed, 8444 deselected
+    python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_bo/family
+- Postfill audit focused: 155 passed
+- Real /v5/order/create POST calls during correction: 0
+- Real Bybit Demo orders sent during correction: 0
+- No real or demo credential read, printed, or committed. No secret serialized.
+Outputs: No order sent. No journal/report created during this correction (offline preflight creates none).
+Notes: AUTHORIZATION_SCOPE_IDENTITY = "TASK-014BO|BYBIT_DEMO|linear|SOLUSDT|Buy|Market|0.1|IOC|reduceOnly=false|closeOnTrigger=false|max_order_create_post=1". The permanent orderLinkId BO1-4696d511edf11b50 and body hash ea7ca61dd43e26e9856266d0c0800f5fad90783d08820b6bcedaa22a4162b7a1 are now stable across commits; the operator must still take --request-body-hash from a fresh authenticated passing preflight on the VPS. Offline preflight never equates "network not attempted" with "no duplicate exists". execute_once order: validate full HEAD SHA -> marker/flags/body hash/credentials/account+instrument gates -> canonical local journal -> fresh authenticated realtime+history dedup -> sender count zero -> atomic ARMED_BEFORE_POST -> flush -> at most one POST. No force/reset/new-id/ignore option; no automatic journal deletion; no second POST. Amends unpushed commit 55e6121 in place -- not pushed. Next action: push -> VPS pull -> credential setup -> authenticated read-only preflight; execute_once awaits final preflight review. A second order or any close remains unauthorized.
+
+---
+
+### 2026-06-21 (TASK-014BO_REAL_DEMO_ONE_SHOT_DEDUPLICATION_AND_JOURNAL_HARDENING -- canonical journal, stable orderLinkId, exchange dedup)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BO_REAL_DEMO_ONE_SHOT_DEDUPLICATION_AND_JOURNAL_HARDENING (correct three fail-closed gaps before the first real Bybit Demo order; still send no order; amend the unpushed commit b6f7498; do not push).
+Task: Correct three fail-closed gaps in the TASK-014BO single-real-demo-order gate: (1) the one-shot journal location must not be caller-overridable; (2) the orderLinkId must be permanently stable and independent of UTC date/time; (3) preflight must perform exchange-side duplicate detection by the exact fixed orderLinkId. Also enforce an exact 40-character lowercase hex commit SHA. No real Demo order is sent.
+Status before: journal directory was a public --journal-dir CLI option (caller-overridable); orderLinkId depended on the approved commit plus UTC date; there was no exchange-side duplicate detection by orderLinkId; commit identity accepted any non-empty string.
+Status after: journal path is canonical and non-overridable (CANONICAL_JOURNAL_DIR anchored to the repository root via canonical_journal(), with repo-root containment check); orderLinkId is sha256(TASK_ID|AUTHORIZATION_MARKER|full_commit_sha)[:16] -> BO1-<16 hex>, date/time/random/host/pid independent; a new preflight gate no_existing_exchange_order_for_fixed_order_link_id runs authenticated read-only /v5/order/realtime and /v5/order/history lookups by the fixed orderLinkId and fails closed on any match or any query failure; --expected-commit must be an exact 40-char lowercase hex SHA equal to runtime HEAD. 31 preflight gates total. No order sent.
+Files changed:
+- `src/demo_only_tiny_execution_adapter_single_real_demo_order.py` (PROJECT_ROOT/CANONICAL_JOURNAL_DIR + canonical_journal(); date-independent build_order_link_id; is_full_commit_sha; DuplicateCheckResult + perform_duplicate_check; gate 1 full-SHA; gate 31 exchange dedup; PreflightReport.duplicate_check)
+- `scripts/run_demo_only_single_real_order.py` (removed --journal-dir; canonical_journal() everywhere; lookup_order_link_realtime/history on both probes; manual command without --journal-dir and with full-SHA placeholder; preflight prints canonical journal path + dedup detail)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_single_real_demo_order.py` (99 focused tests incl. canonical-path, stable-orderLinkId, full-SHA, and exchange-dedup cases)
+- `README.md` (TASK-014BO deduplication/journal-hardening banner; manual command without --journal-dir)
+- `docs/research/commands/NEXT_ACTION.md` (correction banner + status section prepended; manual command updated)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13; all offline / fake transport + fake probe):
+- py_compile: PASS (3 files)
+- Focused single-real-demo-order: 99 passed
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_single_real_demo_order.py -q --basetemp=.pytest_bo
+- Scoped tiny-execution-adapter regression: 911 passed, 7701 deselected
+    python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_bo/scoped
+- Complete one-shot family: 186 passed, 8426 deselected
+    python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_bo/family
+- Postfill audit focused: 155 passed
+- Real /v5/order/create POST calls during correction: 0
+- Real Bybit Demo orders sent during correction: 0
+- No real or demo credential read, printed, or committed. No secret serialized.
+Outputs: No order sent. The one-shot journal and any reports are written only under the canonical outputs/demo_trading/task_014bo_single_real_demo_order/ directory (outside Git) and only when execute_once is run manually with real network + credentials.
+Notes: Journal directory/filename are NOT configurable by CLI arg, env var, config file, or cwd; canonical_journal() rejects a path that escapes the repo root. orderLinkId is permanently stable for this authorization and survives local journal loss for exchange-side recovery. Exchange duplicate detection queries realtime + history by the exact fixed orderLinkId and fails closed on any match (any state) or any missing/failed/stale/malformed/unauthorized/rate-limited/timeout/ambiguous response. The POST is permitted only when canonical journal is clean AND realtime is clean AND history is clean AND sender count is zero AND all other gates pass. No --force/--reset/--ignore-journal/--new-order-link-id bypass. The approved commit for the manual command is the new corrected commit from this task (not b6f7498). Amends unpushed commit b6f7498 in place -- not pushed. Next action: push -> VPS pull -> credential setup -> read-only preflight; execute_once awaits final preflight review. A second order or any close remains unauthorized.
+
+---
+
+### 2026-06-21 (TASK-014BO_REAL_DEMO_ONE_SHOT -- add manually triggered single-order execution gate)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BO_bybit_demo_single_order_execution_enablement_and_manual_trigger (implement/test/document/commit the one-shot real-Demo execution path; do NOT send the order during implementation; new local commit; do not push).
+Task: Implement a manually-triggered, fail-closed single Bybit Demo order execution gate for Rick's one authorized order (Bybit Demo only; https://api-demo.bybit.com; POST /v5/order/create; category=linear symbol=SOLUSDT side=Buy orderType=Market qty="0.1" timeInForce=IOC reduceOnly=false closeOnTrigger=false; max 1 POST; max 1 order; no automatic retry). The implementation finishes by printing the exact final manual VPS execute command; it does NOT send the order.
+Status before: Only the offline/fake-only Stage 1 postfill audit scaffold existed; no manually-triggered real Demo single-order execution path existed.
+Status after: New narrow module + CLI + 75 focused tests added implementing 30 fail-closed preflight gates, a crash-safe one-shot journal, an in-process one-shot sender guard, read-only post-submit verification, and sanitized reports. NO ORDER WAS SENT during implementation (all transports/probes are injected fakes in tests; CLI execute_once refuses without --allow-real-network + real credentials). Real Demo execution awaits Rick's single manual VPS command.
+Files changed:
+- `src/demo_only_tiny_execution_adapter_single_real_demo_order.py` (new: gates, journal, sender guard, real transport with redirect rejection, read-only verification, reports)
+- `scripts/run_demo_only_single_real_order.py` (new: preflight + execute_once CLI; default preflight is read-only and never sends)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_single_real_demo_order.py` (new: 75 focused tests, all offline)
+- `README.md` (TASK-014BO banner with authorization scope, gates, journal, verification, manual command)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BO banner + status section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13; all offline / fake transport + fake probe):
+- py_compile: PASS (3 files)
+- Focused single-real-demo-order: 75 passed
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_single_real_demo_order.py -q --basetemp=.pytest_bo
+- Scoped tiny-execution-adapter regression: 886 passed, 7701 deselected
+    python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_bo/scoped
+- Complete one-shot family: 186 passed, 8402 deselected
+    python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_bo/family
+- Postfill audit focused (confirms fake vs real evidence still classified separately): 155 passed
+- Real /v5/order/create POST calls during implementation: 0
+- Real Bybit Demo orders sent during implementation: 0
+- real_order_network_attempted=False; real_order_endpoint_called=False; real_order_sent=False
+- No real or demo credential read or printed. No secret serialized (no X-BAPI-SIGN / API key / API secret in any report or journal).
+- No live or Testnet endpoint can be selected; cross-host redirects are rejected, not followed.
+Outputs: Reports and one-shot journals are written only under outputs/demo_trading/task_014bo_single_real_demo_order/ (outside Git) and only when explicitly requested / executed.
+Notes: Endpoint locked to https://api-demo.bybit.com only. Exact nine-field body (category, symbol, side, orderType, qty, timeInForce, reduceOnly, closeOnTrigger, orderLinkId); no positionIdx / price / TP / SL / triggerPrice / trailingStop / orderFilter / marketUnit. One-way position mode required (hedge fails closed). Crash-safe journal: ARMED_BEFORE_POST written and flushed before the single POST; timeout / connection reset / malformed response / crash / missing response / unknown outcome all forbid automatic resubmission -- operator investigates by orderLinkId. OneShotSenderGuard allows exactly one send. retCode=0 is not treated as final fill; read-only verification (<=3 realtime, <=1 history, 1 execution-list, 1 position-list) determines the conclusion. Opening Buy (reduceOnly=false) may leave a SOLUSDT Demo long open; closing it requires a SEPARATE explicit authorization. Does not import or use BybitExecutor / main.py / src/risk.py; does not change global tiny caps / MAX_ORDER_COUNT / protected denylist / Stage 1 fake-only defaults. Final manual VPS execute command printed by preflight. New local commit only -- not pushed. Stage 2 / a second order / any close remain unauthorized.
+
+---
+
 ### 2026-06-21 (TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT -- record successful VPS validation for commit 546ecdb)
 
 Agent: Claude Sonnet 4.6
