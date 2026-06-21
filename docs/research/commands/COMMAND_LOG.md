@@ -21,6 +21,49 @@ Notes:
 
 ---
 
+### 2026-06-21 (TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT -- record successful VPS validation for commit 1453ff6)
+
+Agent: Claude Sonnet 4.6
+Command source: Rick explicit chat authorization for TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_VPS_VALIDATION_CLOSEOUT (documentation-only closeout; new local commit; do not push).
+Task: Record the completed Ubuntu VPS validation results for commit 1453ff6 (TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT: distinguish simulated and real order activity). Documentation-only -- no source files, tests, execution behavior, safety gates, order transport behavior, credentials, scheduler, or VPS files were modified.
+VPS environment: Ubuntu 24.04.4 LTS, Python 3.12.3, pytest 9.1.1. Validated commit: 1453ff6. Branch status at validation: main == origin/main.
+Status before: VPS validation results for commit 1453ff6 existed but were not yet recorded in documentation.
+Status after: VPS validation results recorded in README.md, NEXT_ACTION.md, and COMMAND_LOG.md. Stage 1 audit-semantics-split VPS validation marked COMPLETE/PASS. Next recommended task set to TASK-014BN_demo_only_tiny_execution_postfill_audit.
+Semantic conclusions recorded:
+- Legacy `order_sent` preserves accepted-order/business-outcome semantics: True only when retCode==0 AND non-empty orderId.
+- `simulated_order_sent=True` means the injected fake transport returned normally.
+- A nonzero fake Bybit retCode may produce: simulated_order_sent=True, legacy order_sent=False, real_order_sent=False.
+- A genuinely raised fake-sender exception is caught and converted into the existing safe network-error result (simulated_order_sent=False, sender call count 1, real network calls 0).
+- `REAL_DEMO_SENDER` and unknown transport kinds fail closed (OneShotAuthorizedExecutionOrchestratorError); not silently rewritten.
+- Stage 1 guarantees: real_order_network_attempted=False, real_order_endpoint_called=False, real_order_sent=False.
+Files changed:
+- `README.md` (new VPS closeout banner block added at top of Demo Trading Guarded Lifecycle Status; section header and description updated)
+- `docs/research/commands/NEXT_ACTION.md` (new VPS closeout banner + status section + next-recommended-task block prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (VPS, commit 1453ff6):
+- py_compile: PASS (6 files):
+    src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py
+    scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py
+    tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py
+    tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py
+    tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py
+    tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py
+- Focused audit-semantics split tests: 27 passed
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py -q --basetemp=.pytest_vps/focused
+- Combined Stage 1 + discovery-gate: 66 passed
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1_discovery_gate_fix.py -q --basetemp=.pytest_vps/stage1
+- Complete one-shot family: 186 passed, 8172 deselected
+    python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_vps/family
+- Scoped tiny-execution-adapter regression: 657 passed, 7701 deselected
+    python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_vps/full
+- Real /v5/order/create network calls: 0
+- Real Bybit Demo orders sent: 0
+- No real credential used.
+- Cleanup: .venv-vps-validation and .pytest_vps removed.
+Outputs: No orchestrator JSON/MD reports written. No live credentials used. No VPS files modified by this closeout task.
+Notes: Source files and tests not modified. Documentation-only closeout. New local commit -- not pushed. Stage 2 real Demo execution remains unauthorized; a separate explicit human authorization task is required. Next recommended engineering task: TASK-014BN_demo_only_tiny_execution_postfill_audit (offline/fake-only postfill-audit scaffold).
+
+---
 ### 2026-06-21 (TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION -- correct three semantic and safety gaps on the unpushed split commit)
 
 Agent: Claude Opus 4.7

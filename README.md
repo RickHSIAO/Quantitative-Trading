@@ -14,10 +14,43 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT**（2026-06-21, VPS Ubuntu 24.04.4 / Python 3.12.3 / pytest 9.1.1 / commit 1453ff6）
+> VPS Stage 1 audit-semantics-split validation COMPLETE。以下為在 Ubuntu VPS 上對 commit 1453ff6 的完整驗證結果。
+> Validated commit: `1453ff6 TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT: distinguish simulated and real order activity`
+>
+> **語意結論：**
+> - Legacy `order_sent` 保留 accepted-order/business-outcome 語意（`retCode==0 AND non-empty orderId`）；`simulated_order_sent=True` 不代表 Bybit 接單。
+> - Bybit `retCode` 非 0 → `simulated_order_sent=True`、legacy `order_sent=False`、`real_order_sent=False`。
+> - fake sender 真實丟出例外 → 被捕捉轉成 network-error sentinel；`simulated_order_sent=False`，sender call count 仍為 1，real network call 仍為 0。
+> - `REAL_DEMO_SENDER` 及未知 transport-kind → fail-closed（`OneShotAuthorizedExecutionOrchestratorError`），不 silently rewrite。
+> - Stage 1 保證：`real_order_network_attempted=False`、`real_order_endpoint_called=False`、`real_order_sent=False`。
+>
+> **VPS py_compile PASS（6 files）：**
+> `src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`、
+> `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`、
+> `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py`、
+> `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py`、
+> `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py`、
+> `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py`
+>
+> **VPS 測試結果：**
+> - Focused audit-semantics split: `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py -q --basetemp=.pytest_vps/focused` → **27 passed**
+> - Combined Stage 1 + discovery-gate: `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1_discovery_gate_fix.py -q --basetemp=.pytest_vps/stage1` → **66 passed**
+> - Complete one-shot family: `python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_vps/family` → **186 passed, 8172 deselected**
+> - Scoped tiny-execution-adapter regression: `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_vps/full` → **657 passed, 7701 deselected**
+>
+> **安全不變項：** Real Bybit Demo `/v5/order/create` calls: **0**；Real Bybit Demo orders sent: **0**；
+> 未使用真實 credential；Stage 1 real sender unreachable；
+> Stage 2 real Demo dispatch: **未授權，須獨立 human authorization task 後方可執行。**
+> Cleanup: `.venv-vps-validation` 和 `.pytest_vps` 已移除。
+>
+> **下一步建議：** `TASK-014BN_demo_only_tiny_execution_postfill_audit`（offline/fake-only postfill-audit scaffold）
+
 
 > **TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION**（2026-06-21, semantic + safety correction）
 > 在不削弱任何 Stage 1 安全邊界的前提下，修正前次 AUDIT_SEMANTICS_SPLIT 留下的 3 個語意/安全缺口：

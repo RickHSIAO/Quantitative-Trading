@@ -1,5 +1,82 @@
 # Next Action
 
+> README shared status updated by TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT (2026-06-21).
+> TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT records the completed Ubuntu VPS validation
+> results for commit `1453ff6` (TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT: distinguish
+> simulated and real order activity). Documentation-only closeout: no source files,
+> tests, execution behavior, safety gates, order transport behavior, credentials,
+> scheduler, or VPS files were modified.
+>
+> VPS environment: Ubuntu 24.04.4 LTS, Python 3.12.3, pytest 9.1.1.
+> Validated commit: `1453ff6`. Branch at validation: `main == origin/main`.
+>
+> Semantic conclusions:
+> - Legacy `order_sent` preserves accepted-order/business-outcome semantics:
+>   True only when `retCode == 0` and a non-empty `orderId` exists.
+> - `simulated_order_sent=True` means the injected fake transport returned normally.
+> - A nonzero fake Bybit `retCode` may produce:
+>   `simulated_order_sent=True`, legacy `order_sent=False`, `real_order_sent=False`.
+> - A genuinely raised fake-sender exception is caught and converted into the existing
+>   safe network-error result (`simulated_order_sent=False`, sender call count 1,
+>   real network calls 0).
+> - `REAL_DEMO_SENDER` and unknown transport kinds fail closed
+>   (`OneShotAuthorizedExecutionOrchestratorError`); not silently rewritten.
+> - Stage 1 guarantees: `real_order_network_attempted=False`,
+>   `real_order_endpoint_called=False`, `real_order_sent=False`.
+>
+> VPS validation results (commit 1453ff6):
+> 1. py_compile: PASS (6 files):
+>    src/demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py,
+>    scripts/preview_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py,
+>    tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py,
+>    tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py,
+>    tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py,
+>    tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_orchestrator_read_only_discovery_opt_in_fix.py
+> 2. Focused audit-semantics split: 27 passed
+>    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py -q --basetemp=.pytest_vps/focused
+> 3. Combined Stage 1 + discovery-gate: 66 passed
+>    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1_discovery_gate_fix.py -q --basetemp=.pytest_vps/stage1
+> 4. Complete one-shot family: 186 passed, 8172 deselected
+>    python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_vps/family
+> 5. Scoped tiny-execution-adapter regression: 657 passed, 7701 deselected
+>    python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_vps/full
+>
+> Real Bybit Demo /v5/order/create calls: 0. Real Bybit Demo orders sent: 0.
+> No real credential used. Stage 1 real sender: unreachable.
+> Stage 2 real Demo execution: explicitly unauthorized.
+> Cleanup: .venv-vps-validation and .pytest_vps removed.
+
+## TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT Status (2026-06-21)
+
+- Status: COMPLETE / PASS — VPS audit-semantics-split validation recorded
+- Validated commit: `1453ff6` (TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT: distinguish simulated and real order activity)
+- VPS environment: Ubuntu 24.04.4 LTS, Python 3.12.3, pytest 9.1.1
+- Branch at validation: `main == origin/main`
+- py_compile: PASS (6 files: orchestrator src, CLI preview script, focused split test, and 3 updated/touched test modules)
+- Focused audit-semantics split: 27 passed
+  `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py -q --basetemp=.pytest_vps/focused`
+- Combined Stage 1 + discovery-gate: 66 passed
+  `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_real_demo_order_execution_surface_stage1_discovery_gate_fix.py -q --basetemp=.pytest_vps/stage1`
+- Complete one-shot family: 186 passed, 8172 deselected
+  `python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_vps/family`
+- Scoped tiny-execution-adapter regression: 657 passed, 7701 deselected
+  `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_vps/full`
+- Real /v5/order/create network calls: 0
+- Real Bybit Demo orders sent: 0
+- No real credential used
+- Documentation change only: source files and tests were not modified by this closeout task
+- Stage 2 real Demo execution: explicitly unauthorized
+
+## Next Recommended Engineering Task (after audit-semantics-split VPS closeout)
+
+Stage 1 audit-semantics-split validation is now fully recorded on VPS. Real Bybit Demo order dispatch remains **explicitly unauthorized**.
+
+Next recommended engineering task:
+- **`TASK-014BN_demo_only_tiny_execution_postfill_audit`** — offline/fake-only scaffold: add a postfill audit step that runs after the fake-sender path, records the simulated request body for offline inspection, and flags any field mismatch vs. the pre-validated cap-escalation contract.
+
+**Do NOT** proceed to a real Demo order dispatch without a separate, explicit human authorization task that names the exact commit, qty, symbol, side, and timestamp window.
+
+
 > README shared status updated by TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION (2026-06-21).
 > TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT_CORRECTION amends the previous
 > AUDIT_SEMANTICS_SPLIT commit `d189382` in place (no push) to close three
