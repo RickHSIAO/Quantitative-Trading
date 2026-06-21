@@ -14,10 +14,57 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT**（2026-06-21, VPS Ubuntu 24.04.4 / Python 3.12.3 / pytest 9.1.1 / commit 546ecdb）
+> VPS Stage 1 postfill audit validation COMPLETE。以下為在 Ubuntu VPS 上對 commit `546ecdb` 的完整驗證結果。
+> Validated commit: `546ecdb TASK-014BN_POSTFILL_AUDIT: add offline fake-only postfill audit scaffold`
+>
+> **欄位語意：**
+> - `audit_passed` = 權威稽核完整性結果。Fail-closed 決定式公式：
+>   `audit_passed = auditable AND integrity_all_passed AND audit_status ∈
+>   {SIMULATED_ACCEPTED, SIMULATED_REJECTED, SIMULATED_TRANSPORT_ERROR}`。
+>   `audit_passed=True` 僅代表離線 fake-only 證據內部一致且滿足 Stage 1 postfill contract。
+>   **不代表** real order 成功、real order 已送出、Bybit Demo 接受了 real order、或 Stage 2 已被授權。
+> - `auditable` = 是否存在足夠 fake-only 證據以進行稽核。
+> - `integrity_all_passed` = 30 個命名檢查是否全數通過。
+> - SIMULATED_REJECTED 與 SIMULATED_TRANSPORT_ERROR 可有 `audit_passed=True`，因為稽核完整性通過，
+>   但 order/transport 本身並未成功。
+>
+> **VPS 驗證結果：**
+> - py_compile（3 檔）→ PASS
+> - Focused postfill audit: **155 passed** (8.09s)
+> - Combined postfill + orchestrator + audit-semantics-split: **216 passed** (18.92s)
+> - Complete one-shot family: **186 passed, 8327 deselected** (54.10s)
+> - Scoped tiny-execution-adapter regression: **812 passed, 7701 deselected** (88.61s)
+>
+> **CLI fixture 驗證：**
+> - `simulated_accepted`: audit_passed=true, exit 0（稽核完整性通過；不代表 real order 成功）
+> - `simulated_rejected`: audit_passed=true, exit 0（稽核完整性通過，但 business outcome 為 rejected）
+> - `simulated_transport_error`: audit_passed=true, exit 0（稽核完整性通過，但非 transport/order 成功）
+> - `not_auditable`: audit_passed=false, exit 1（證據不足，failed_check_count=12）
+>
+> **Report writer 驗證：** `--write-report --output-dir .vps_postfill_report_test --json-only` exit 0, report_written=true。
+> 產出檔案：`demo_only_tiny_execution_adapter_tiny_order_postfill_audit_20260621T052825Z.json`,
+> `demo_only_tiny_execution_adapter_tiny_order_postfill_audit_20260621T052825Z.md`,
+> `latest_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.json`,
+> `latest_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.md`。
+>
+> **安全不變項：** Real Bybit Demo `/v5/order/create` calls: **0**；Real Bybit Demo orders sent: **0**；
+> `real_order_network_attempted=False`；`real_order_endpoint_called=False`；`real_order_sent=False`；
+> 未讀取任何 real 或 demo credential；未調用任何 sender 實作；Stage 1 real sender 仍不可達；
+> Stage 2 real Demo dispatch: **未授權。**
+>
+> **Cleanup：** `.venv-vps-postfill-validation`、`.pytest_vps_postfill`、`.vps_postfill_report_test` 已移除。
+> VPS REVIEW-009 修改、dashboard outputs、`.env.discord`、既有 pytest basetemp、`outputs/demo_trading/`、
+> forward-record 日誌、paper portfolio 輸出皆保留未動。
+>
+> **下一步建議：** 下一任務須保持 offline/fake-only 或為獨立 review task。不授權 dispatch。
+
+---
 
 > **TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION**（2026-06-21, Opus 4.8 / 嚴格 offline / fake-only）
 > 修正 `PostfillAuditReport` 與 CLI contract，使權威欄位 `audit_passed`、

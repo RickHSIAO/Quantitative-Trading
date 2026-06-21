@@ -1,6 +1,85 @@
 # Next Action
 
 > README shared status updated by
+> TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT (2026-06-21).
+> This is a documentation-only closeout recording the successful Ubuntu VPS
+> validation of commit `546ecdb` (TASK-014BN_POSTFILL_AUDIT). No source,
+> script, or test files were modified.
+>
+> Validated commit: `546ecdb TASK-014BN_POSTFILL_AUDIT: add offline fake-only postfill audit scaffold`
+> Parent: `4bae030`
+> VPS environment: Ubuntu 24.04.4 LTS / Python 3.12.3 / pytest 9.1.1
+>
+> VPS test results:
+> - py_compile: PASS (3 files)
+> - Focused postfill audit: 155 passed (8.09s)
+> - Combined postfill + orchestrator + audit-semantics-split: 216 passed (18.92s)
+> - Complete one-shot family: 186 passed, 8327 deselected (54.10s)
+> - Scoped tiny-execution-adapter regression: 812 passed, 7701 deselected (88.61s)
+>
+> CLI fixture outcomes (VPS):
+> - simulated_accepted: audit_passed=true, integrity_all_passed=true,
+>   legacy_order_sent=true, real_order_sent=false, failed_check_count=0, exit 0
+> - simulated_rejected: audit_passed=true, simulated_order_sent=true,
+>   legacy_order_sent=false, real_order_sent=false, retCode=10001,
+>   empty orderId, failed_check_count=0, exit 0
+> - simulated_transport_error: audit_passed=true,
+>   simulated_order_network_attempted=true, simulated_order_endpoint_called=true,
+>   simulated_order_sent=false, legacy_order_sent=false, real_order_sent=false,
+>   failed_check_count=0, exit 0
+> - not_auditable: audit_passed=false, auditable=false,
+>   integrity_all_passed=false, failed_check_count=12, exit 1
+>
+> Report writer: exit 0, report_written=true, 4 files produced:
+>   demo_only_tiny_execution_adapter_tiny_order_postfill_audit_20260621T052825Z.json
+>   demo_only_tiny_execution_adapter_tiny_order_postfill_audit_20260621T052825Z.md
+>   latest_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.json
+>   latest_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.md
+>
+> Field semantics:
+> - `audit_passed` = authoritative audit-integrity result. Fail-closed
+>   formula: auditable AND integrity_all_passed AND audit_status in
+>   {SIMULATED_ACCEPTED, SIMULATED_REJECTED, SIMULATED_TRANSPORT_ERROR}.
+>   audit_passed=True does NOT mean a real order succeeded, was sent, or
+>   that Stage 2 is authorized.
+> - `auditable` = whether sufficient fake-only evidence exists.
+> - `integrity_all_passed` = whether all 30 named checks passed.
+> - SIMULATED_REJECTED and SIMULATED_TRANSPORT_ERROR may have
+>   audit_passed=True because integrity passed, while the order/transport
+>   did not succeed.
+>
+> Safety conclusions:
+> - Real Bybit Demo `/v5/order/create` calls: 0
+> - Real Bybit Demo orders sent: 0
+> - real_order_network_attempted=False
+> - real_order_endpoint_called=False
+> - real_order_sent=False
+> - No real or demo credential used
+> - No sender implementation invoked
+> - Stage 1 real sender remains unreachable
+> - Stage 2 remains explicitly unauthorized
+>
+> Cleanup: .venv-vps-postfill-validation, .pytest_vps_postfill,
+> .vps_postfill_report_test removed. All other VPS artifacts preserved.
+
+## TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT Status (2026-06-21)
+
+- Status: COMPLETE / PASS (VPS validation of commit `546ecdb`)
+- VPS: Ubuntu 24.04.4 LTS / Python 3.12.3 / pytest 9.1.1
+- Focused postfill audit: 155 passed
+- Combined postfill + orchestrator + audit-semantics-split: 216 passed
+- Complete one-shot family: 186 passed, 8327 deselected
+- Scoped tiny-execution-adapter regression: 812 passed, 7701 deselected
+- CLI fixtures: simulated_accepted exit 0, simulated_rejected exit 0, simulated_transport_error exit 0, not_auditable exit 1
+- Report writer: exit 0, 4 files produced
+- Real `/v5/order/create` calls: 0
+- Real Bybit Demo orders sent: 0
+- Next task: must remain offline/fake-only or be a separate review task; do not authorize dispatch
+- Stage 2 real Demo execution: explicitly unauthorized
+
+---
+
+> README shared status updated by
 > TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION (2026-06-21).
 > This correction amends the unpushed commit `d0d6c83` in place (no push)
 > to add the authoritative `PostfillAuditReport` fields `audit_passed`,

@@ -21,6 +21,47 @@ Notes:
 
 ---
 
+### 2026-06-21 (TASK-014BNB_POSTFILL_AUDIT_VPS_CLOSEOUT -- record successful VPS validation for commit 546ecdb)
+
+Agent: Claude Sonnet 4.6
+Command source: Rick explicit chat authorization for TASK-014BNB_demo_only_tiny_execution_postfill_audit_vps_validation_closeout (documentation-only closeout; new local commit; do not push).
+Task: Record the completed Ubuntu VPS validation of TASK-014BN postfill audit commit `546ecdb`. Documentation-only closeout -- no source, script, or test files modified.
+Status before: Commit `546ecdb` validated locally on Windows 11 but not yet validated on Ubuntu VPS. VPS closeout documentation not recorded.
+Status after: VPS validation recorded as COMPLETE / PASS. All test suites green on Ubuntu 24.04.4 / Python 3.12.3 / pytest 9.1.1. All four CLI fixture outcomes verified. Report writer validated. Safety conclusions documented.
+Files changed:
+- `README.md` (TASK-014BNB VPS closeout banner prepended)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BNB VPS closeout banner + status section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (VPS, Ubuntu 24.04.4 / Python 3.12.3 / pytest 9.1.1):
+- py_compile: PASS (3 files)
+- Focused postfill audit: 155 passed (8.09s)
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py -q --basetemp=.pytest_vps_postfill/focused
+- Combined postfill + orchestrator + audit-semantics-split: 216 passed (18.92s)
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py -q --basetemp=.pytest_vps_postfill/combined
+- Complete one-shot family: 186 passed, 8327 deselected (54.10s)
+    python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_vps_postfill/family
+- Scoped tiny-execution-adapter regression: 812 passed, 7701 deselected (88.61s)
+    python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_vps_postfill/full
+- CLI fixture outcomes:
+    simulated_accepted: audit_status=POSTFILL_AUDIT_SIMULATED_ACCEPTED, audit_passed=true, integrity_all_passed=true, legacy_order_sent=true, real_order_sent=false, failed_check_count=0, exit 0
+    simulated_rejected: audit_status=POSTFILL_AUDIT_SIMULATED_REJECTED, audit_passed=true, simulated_order_sent=true, legacy_order_sent=false, real_order_sent=false, retCode=10001, empty orderId, failed_check_count=0, exit 0
+    simulated_transport_error: audit_status=POSTFILL_AUDIT_SIMULATED_TRANSPORT_ERROR, audit_passed=true, simulated_order_network_attempted=true, simulated_order_endpoint_called=true, simulated_order_sent=false, legacy_order_sent=false, real_order_sent=false, failed_check_count=0, exit 0
+    not_auditable: audit_status=POSTFILL_AUDIT_NOT_AUDITABLE, audit_passed=false, auditable=false, integrity_all_passed=false, failed_check_count=12, exit 1
+- Report writer: --write-report --output-dir .vps_postfill_report_test --json-only, exit 0, report_written=true, 4 files:
+    demo_only_tiny_execution_adapter_tiny_order_postfill_audit_20260621T052825Z.json
+    demo_only_tiny_execution_adapter_tiny_order_postfill_audit_20260621T052825Z.md
+    latest_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.json
+    latest_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.md
+- Real /v5/order/create network calls: 0
+- Real Bybit Demo orders sent: 0
+- real_order_network_attempted=False, real_order_endpoint_called=False, real_order_sent=False
+- No real or demo credential used. No sender implementation invoked.
+- Cleanup: .venv-vps-postfill-validation, .pytest_vps_postfill, .vps_postfill_report_test removed.
+Outputs: Documentation-only closeout. No new outputs produced.
+Notes: audit_passed is the authoritative audit-integrity result; auditable states whether sufficient evidence exists; integrity_all_passed states whether all 30 named checks passed. SIMULATED_REJECTED and SIMULATED_TRANSPORT_ERROR may have audit_passed=True because integrity passed while the order/transport did not succeed. Stage 1 real sender remains unreachable. Stage 2 real Demo execution remains explicitly unauthorized. Next task must remain offline/fake-only or be a separate review task; do not authorize dispatch.
+
+---
+
 ### 2026-06-21 (TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION -- add audit_passed / audit_reason authoritative fields)
 
 Agent: Claude Opus 4.8
