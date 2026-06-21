@@ -21,6 +21,37 @@ Notes:
 
 ---
 
+### 2026-06-21 (TASK-014BR_PILOT_DAILY_RUNNER -- add idempotent dry-run orchestration and output sync wiring)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BR_DEMO_STRATEGY_PILOT_DAILY_RUNNER_DRY_RUN_WIRING (implement the deterministic daily DRY-RUN orchestration layer; authorize/send no order; no Bybit/Notion/Discord network in tests; new commit on d0f5c4f; do not push).
+Task: Implement the daily orchestration layer for the 7-14 day Bybit Demo strategy pilot, connecting the strategy/forward-record signal output, the TASK-014BQ pilot reporting data model, the append-only store, the real .xlsx workbook exporter, gated Notion daily upsert, gated Discord Chinese daily summary, and per-day run journaling with rerun protection. The runner produces an auditable daily execution-plan preview only; it never executes, authorizes, or sends any Bybit order.
+Status before: the pilot reporting foundation (TASK-014BQ) existed but there was no daily orchestration/runner connecting signals, store, Excel, Notion, and Discord with rerun protection.
+Status after: new daily runner + journal + gated Notion/Discord adapters + CLI + 53 focused tests added. order_execution_authorized is always False (reason TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY). No order POST, no Bybit/Notion/Discord HTTP. The 30-day forward-validation strategy identifier prev3y_crypto_combined_paper_safe_variant (primary run prev3y_crypto) is reused, not invented; a shadow/different strategy fails closed.
+Files changed:
+- `src/demo_strategy_pilot_daily_runner.py` (new; 15 ordered phases, PilotDailyExecutionPlan, plan/dry_run/reconcile_outputs modes, fingerprint conflict + idempotency)
+- `src/demo_strategy_pilot_daily_journal.py` (new; canonical per-day journal, state history, atomic writes, path-traversal refusal, SHA-256 fingerprints)
+- `src/demo_strategy_pilot_notion_sync.py` (new; gated Notion upsert, idempotency key pilot_id:date, injected transport, token never leaked)
+- `src/demo_strategy_pilot_discord_notify.py` (new; gated Discord Chinese dry-run summary, injected transport, webhook never leaked)
+- `scripts/run_demo_strategy_pilot_daily.py` (new; CLI plan/dry_run/reconcile_outputs; no execute/send-order/qty/symbol/endpoint/scheduler/reset flags)
+- `tests/demo_trading/test_demo_strategy_pilot_daily_runner.py` (new; 53 offline focused tests, injected fakes + temp roots)
+- `README.md` (TASK-014BR banner)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BR banner + status section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13 / openpyxl 3.1.5; all offline):
+- py_compile: PASS (6 files)
+    python -m py_compile src/demo_strategy_pilot_daily_runner.py src/demo_strategy_pilot_daily_journal.py src/demo_strategy_pilot_notion_sync.py src/demo_strategy_pilot_discord_notify.py scripts/run_demo_strategy_pilot_daily.py tests/demo_trading/test_demo_strategy_pilot_daily_runner.py
+- Focused pilot_daily_runner: 53 passed
+    python -m pytest tests/demo_trading/test_demo_strategy_pilot_daily_runner.py -q --basetemp=.pytest_br
+- Combined -k "pilot_reporting or pilot_daily_runner or tiny_execution_adapter or reduce_only_close": 1087 passed, 7701 deselected
+- Bybit network calls: 0; order /v5/order/create POST calls: 0; real orders sent: 0
+- Notion HTTP calls: 0; Discord HTTP calls: 0
+- No real or demo credential / token / webhook read, printed, or committed. No secret serialized.
+Outputs: Runtime daily journals, daily records, the .xlsx workbook/snapshots, and Notion/Discord previews are written only under outputs/demo_trading/pilot/<pilot_id>/ (outside Git) and were NOT committed.
+Notes: Three modes -- plan (offline, no permanent state unless an explicit test output root is supplied), dry_run (builds the PilotDailyRecord + audit + Excel + Notion/Discord previews; sends no order; network only with --allow-*-network), reconcile_outputs (rebuilds Excel and retries ONLY failed/skipped Notion/Discord delivery; never recomputes strategy, never appends a record, never triggers an order). 15 ordered phases recorded in the per-day journal. Identical rerun -> ALREADY_COMMITTED_IDEMPOTENT; changed input/plan fingerprint for a committed date -> DAILY_PLAN_CONFLICT. Dry-run daily record has order_count/filled_count/closed_trade_count = 0, appends no PilotTradeRecord, and all PnL stays zero (no real pilot trades; nothing fabricated). The manual TASK-014BO/BP validation trade is excluded from pilot performance. Protected symbols (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) are always blocked and never become executable. Notion idempotency key pilot_id:date upserts one page per date. Excel failure does not duplicate the daily record. Token/webhook never printed/serialized/journaled (sanitized even in error detail). No order endpoint string appears in the new modules/scripts; no live executor / main.py / src/risk.py import; no strategy parameter mutation; no scheduler/cron. New commit on d0f5c4f -- no prior commits amended; not pushed. Next task: a separate reviewed Demo order-execution adapter; activating the real 7-14 day Pilot still requires explicit user authorization.
+
+---
+
 ### 2026-06-21 (TASK-014BQ_PILOT_REPORTING -- close out Demo round trip and add offline reporting foundation)
 
 Agent: Claude Opus 4.8

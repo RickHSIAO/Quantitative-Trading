@@ -1,5 +1,82 @@
 # Next Action
 
+> README shared status updated by TASK-014BR_PILOT_DAILY_RUNNER (2026-06-21).
+> Implements the deterministic daily DRY-RUN orchestration layer for the 7-14
+> day Bybit Demo strategy pilot. It builds an auditable daily execution-plan
+> preview and wires reporting outputs (store, real Excel, gated Notion/Discord)
+> but DOES NOT authorize or send any Bybit order. No order-create POST, no Demo
+> order, no live order, no automated entry/exit, no position mutation. New
+> commit on top of d0f5c4f (no prior commits amended).
+>
+> order_execution_authorized is always False;
+> reason_execution_not_authorized = TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY.
+>
+> Strategy/profile identifier reused (not invented) from the completed 30-day
+> forward validation: primary forward-record run key "prev3y_crypto"; strategy
+> label "prev3y_crypto_combined_paper_safe_variant" (emitted by
+> apps/forward_record/stats_updater.py). "prev3y_crypto_shadow_a_roll12" is a
+> shadow, not the primary candidate. An authoritative summary naming a shadow or
+> a different strategy fails closed (StrategyAmbiguousError).
+>
+> New files (reuse; BO/BP modules unmodified):
+> - src/demo_strategy_pilot_daily_runner.py (15 ordered phases;
+>   PilotDailyExecutionPlan; modes plan / dry_run / reconcile_outputs).
+> - src/demo_strategy_pilot_daily_journal.py (canonical per-day journal; state
+>   history; atomic; path-traversal refused; SHA-256 fingerprints).
+> - src/demo_strategy_pilot_notion_sync.py (gated Notion upsert; idempotency key
+>   pilot_id:date; injected transport; token never leaked).
+> - src/demo_strategy_pilot_discord_notify.py (gated Discord Chinese summary;
+>   injected transport; webhook never leaked).
+> - scripts/run_demo_strategy_pilot_daily.py (CLI; no execute/send-order/qty/
+>   symbol/endpoint/scheduler/reset flags).
+>
+> Journal (outside Git): outputs/demo_trading/pilot/<pilot_id>/daily_runs/
+> <YYYY-MM-DD>/ with run_journal.json / daily_plan.json / notion_payload.json /
+> discord_summary.txt / run_result.json; atomic; history preserved; no
+> reset/force/ignore option. Identical rerun -> ALREADY_COMMITTED_IDEMPOTENT;
+> changed input/plan fingerprint for a committed date -> DAILY_PLAN_CONFLICT.
+> Input fingerprint = SHA-256(pilot_id, date, strategy id, source data date,
+> sanitized metadata, normalized signals); plan fingerprint = SHA-256(input
+> fingerprint, normalized signals, proposed actions, current position,
+> execution_authorized False, reason). No timestamp/UUID/PID/host/secret.
+>
+> Dry-run daily record: order_count=0, filled_count=0, closed_trade_count=0, no
+> PilotTradeRecord, PnL all zero (no real pilot trades; nothing fabricated). The
+> manual TASK-014BO/BP validation trade is excluded from pilot performance.
+> Proposed hypothetical actions are classified ELIGIBLE_FOR_FUTURE_DEMO_PILOT /
+> PROTECTED_SYMBOL_BLOCKED / INVALID_SIGNAL_BLOCKED / NO_ACTION; protected
+> symbols are always blocked and never become executable.
+>
+> Excel: real .xlsx + dated snapshot via the existing openpyxl builder; one
+> daily row; reopens; Excel failure does not duplicate the daily record.
+> Notion/Discord: network only with --allow-*-network; tests use fake
+> transports (zero HTTP); token/webhook never printed/serialized/journaled.
+> Discord summary states DRY-RUN／尚未授權自動下單. Output-delivery failure records
+> FAIL without rerunning the daily record; reconcile_outputs rebuilds Excel and
+> retries ONLY failed/skipped deliveries, never recomputing strategy or
+> appending records. Exit codes: 0 ok/idempotent, 2 invalid, 3 input failure,
+> 4 committed-but-partial-output, 5 conflict, 6 safety refusal.
+>
+> Validation (offline): py_compile (6 files) PASS; focused pilot_daily_runner 53
+> passed; -k "pilot_reporting or pilot_daily_runner or tiny_execution_adapter or
+> reduce_only_close" 1087 passed, 7701 deselected. Bybit network 0; order
+> POSTs 0; orders sent 0; Notion HTTP 0; Discord HTTP 0. Runtime outputs stay
+> outside Git.
+
+## TASK-014BR_PILOT_DAILY_RUNNER Status (2026-06-21)
+
+- Status: COMPLETE / PASS (DRY-RUN orchestration; no orders; no network; new commit on d0f5c4f)
+- order_execution_authorized=False; reason=TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY
+- Strategy reused: prev3y_crypto_combined_paper_safe_variant (primary prev3y_crypto)
+- py_compile: PASS (6 files)
+- Focused pilot_daily_runner: 53 passed
+- Combined -k "pilot_reporting or pilot_daily_runner or tiny_execution_adapter or reduce_only_close": 1087 passed, 7701 deselected
+- Bybit network calls: 0; order POSTs: 0; orders sent: 0; Notion HTTP: 0; Discord HTTP: 0
+- Next action: a separate reviewed Demo order-execution adapter. Activating the
+  real 7-14 day Pilot still requires explicit user authorization.
+
+---
+
 > README shared status updated by TASK-014BQ_PILOT_REPORTING (2026-06-21).
 > Completes the permanent closeout of the verified TASK-014BO opening +
 > TASK-014BP reduce-only closing Bybit Demo round trip, and adds the OFFLINE

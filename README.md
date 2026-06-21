@@ -14,10 +14,63 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BQ_PILOT_REPORTING, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BR_PILOT_DAILY_RUNNER, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BQ_PILOT_REPORTING 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BR_PILOT_DAILY_RUNNER 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BR_DEMO_STRATEGY_PILOT_DAILY_RUNNER_DRY_RUN_WIRING**（2026-06-21, Opus 4.8 / DRY-RUN orchestration / 未送任何 order、未連任何網路）
+> 實作 7–14 天 Bybit Demo 策略 pilot 的**每日編排層（dry-run）**：把策略/forward-record 訊號、TASK-014BQ pilot reporting 資料模型、
+> append-only store、真實 `.xlsx` 匯出、Notion 每日 upsert、Discord 中文日報、每日 run journaling 與重跑保護串起來。
+> **本任務不授權、不送出任何 Bybit order**（無 order-create POST／無 Demo/live 下單／無自動進出場／無倉位變動）。
+> Runner 只產出可稽核的**每日執行計畫 preview**，不執行。`order_execution_authorized=false`、
+> `reason_execution_not_authorized=TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY`。
+>
+> **重用的 30 天 forward validation 策略識別碼（未臆測）：** primary forward-record run key `prev3y_crypto`，
+> 策略標籤 `prev3y_crypto_combined_paper_safe_variant`（由 `apps/forward_record/stats_updater.py` 產生；
+> `prev3y_crypto_shadow_a_roll12` 為 shadow，非 primary）。若權威 summary 指向 shadow 或不同策略 → fail-closed（`StrategyAmbiguousError`）。
+>
+> **新增檔案（重用、不複製、不修改 BO/BP）：**
+> - `src/demo_strategy_pilot_daily_runner.py`（15 個有序 phase、`PilotDailyExecutionPlan` frozen、plan/dry_run/reconcile_outputs 三模式）
+> - `src/demo_strategy_pilot_daily_journal.py`（canonical 每日 journal、狀態歷史、atomic、path-traversal 防護、SHA-256 fingerprint）
+> - `src/demo_strategy_pilot_notion_sync.py`（gated Notion upsert，idempotency key `pilot_id:date`，注入式 transport，token 不外洩）
+> - `src/demo_strategy_pilot_discord_notify.py`（gated Discord 中文日報，注入式 transport，webhook 不外洩）
+> - `scripts/run_demo_strategy_pilot_daily.py`（CLI：plan/dry_run/reconcile_outputs；無 execute/send-order/qty/symbol/endpoint/scheduler/reset 等旗標）
+> - `tests/demo_trading/test_demo_strategy_pilot_daily_runner.py`
+>
+> **每日 journal（版控外）：** `outputs/demo_trading/pilot/<pilot_id>/daily_runs/<YYYY-MM-DD>/`，
+> 檔案 `run_journal.json / daily_plan.json / notion_payload.json / discord_summary.txt / run_result.json`；
+> atomic、保留完整狀態歷史、不刪歷史、無 reset/force/ignore-journal 選項。
+> 相同重跑 → `ALREADY_COMMITTED_IDEMPOTENT`；同日 input/plan fingerprint 變動 → `DAILY_PLAN_CONFLICT`（fail-closed）。
+> Fingerprint：input = SHA-256(pilot_id、date、策略識別碼、source data date、sanitized metadata、normalized 訊號)；
+> plan = SHA-256(input fingerprint、normalized 訊號、proposed actions、目前持倉、execution_authorized=false、未授權原因)；不含時間/UUID/PID/host/密鑰。
+>
+> **每日紀錄（dry-run）：** `order_count=0`、`filled_count=0`、`closed_trade_count=0`，不寫任何 PilotTradeRecord，
+> PnL 全為 0（尚無真實 pilot 交易；不捏造任何 trade/fill/price/fee/slippage）；TASK-014BO/BP 手動驗證交易**不納入** pilot 績效。
+> 提議的 hypothetical 動作分類：`ELIGIBLE_FOR_FUTURE_DEMO_PILOT` / `PROTECTED_SYMBOL_BLOCKED` / `INVALID_SIGNAL_BLOCKED` / `NO_ACTION`；
+> protected symbols（ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT）一律封鎖、絕不轉成可執行動作。
+>
+> **Excel：** dry-run 後呼叫既有 openpyxl builder 產生真實 `.xlsx` + dated snapshot；每日列恰好一筆；不含 BO/BP 驗證交易；
+> Excel 失敗不會重跑或重複每日紀錄（回報 partial-output failure）。
+>
+> **Notion / Discord：** 預設 config 可 enabled，但網路動作**僅在** `--allow-notion-network` / `--allow-discord-network` 明示時才執行；
+> 測試全用注入式 fake transport，零 HTTP；token/webhook 不印出、不序列化、不入 journal/payload/audit/例外訊息。
+> Discord 中文日報明確標示 `DRY-RUN／尚未授權自動下單`。輸出遞送失敗只記 `FAIL`、不更動交易資料、不重跑每日紀錄；
+> `reconcile_outputs` 只重建 Excel 並重試「失敗/略過」的 Notion/Discord 遞送，永不重算策略、永不新增紀錄、永不觸發下單。
+>
+> **Exit codes：** 0 完成/冪等；2 參數錯誤；3 紀錄前輸入失敗；4 已寫紀錄但輸出同步部分失敗；5 fingerprint 衝突；6 安全拒絕。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13；全程 offline / fake transport / temp 路徑）：**
+> - py_compile（6 檔）→ PASS
+> - Focused pilot_daily_runner: **53 passed**
+> - `-k "pilot_reporting or pilot_daily_runner or tiny_execution_adapter or reduce_only_close"`: **1087 passed, 7701 deselected**
+>
+> **安全不變項：** Bybit 網路呼叫: **0**；order POST: **0**；real orders sent: **0**；Notion HTTP: **0**；Discord HTTP: **0**；
+> 新模組/腳本內無 order endpoint 字串、未 import live executor / `main.py` / `src/risk.py`、未改任何策略參數、未安裝 scheduler/cron；
+> runtime outputs（journal/workbook/JSONL/previews）皆留在版控外、未 commit。
+> **下一步：** 下一任務為獨立、經審查的 Demo order-execution adapter；**啟動真實 7–14 天 Pilot 仍須使用者明確授權。**
+
+---
 
 > **TASK-014BQ_DEMO_ROUND_TRIP_CLOSEOUT_AND_PILOT_REPORTING_FOUNDATION**（2026-06-21, Opus 4.8 / offline / 未送任何 order、未連任何網路）
 > 完成 Bybit Demo 開倉（TASK-014BO）+ reduceOnly 平倉（TASK-014BP）round trip 的永久 closeout 記錄，
