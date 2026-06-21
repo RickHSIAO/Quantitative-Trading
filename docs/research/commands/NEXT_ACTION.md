@@ -1,5 +1,91 @@
 # Next Action
 
+> README shared status updated by TASK-014BS_FORWARD_SOURCE (2026-06-21).
+> Wires the existing primary prev3y_crypto Forward Record output into the
+> TASK-014BR Pilot daily runner so plan/dry_run can consume the real local
+> Forward Record artifacts when --fixture is absent. Still reporting/dry-run
+> only; no Bybit order is authorized or sent; no network. New commit on top of
+> f474bf6 (no prior commits amended).
+> order_execution_authorized=false;
+> reason_execution_not_authorized=TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY.
+>
+> Observed VPS result (pre-fix): the real no-fixture plan returned
+> status=INPUT_FAILURE / exit 3 / detail="no strategy_result for plan"
+> (TASK-014BR previously required an injected fixture). TASK-014BS adds the real
+> local source wiring.
+>
+> Authoritative identity (not invented): run_key prev3y_crypto; strategy
+> prev3y_crypto_combined_paper_safe_variant; shadow prev3y_crypto_shadow_a_roll12
+> is never selected; missing/mismatched/ambiguous/malformed/shadow identity
+> fails closed.
+>
+> Forward Record files inspected: configs/forward_record.yaml,
+> apps/forward_record/{primary,report_writer,stats_updater}.py,
+> scripts/run_forward_record*.{py,sh}, outputs/forward_record/prev3y_crypto/
+> (forward_summary.json, <YYYYMMDD>_forward_stats.json, <YYYYMMDD>_pnl.json,
+> <YYYYMMDD>_positions.parquet), outputs/forward_record/dashboard/validation_30d.csv.
+> Authoritative artifacts: strategy/latest_date from forward_summary.json;
+> record date/dry_run/variant from forward_stats.json; n_longs/n_shorts/
+> data_source/positions_rows from pnl.json; runner_status/safety_scan/dry_run/
+> signal_count/n_longs/n_shorts from validation_30d.csv; per-symbol signal rows
+> from positions.parquet (symbol/side/weight; BYBIT:XXXUSDT.P -> XXXUSDT).
+>
+> New/changed files: src/demo_strategy_pilot_forward_source.py (read-only
+> adapter, frozen dataclasses, SHA-256 over source bytes, fail-closed);
+> scripts/run_demo_strategy_pilot_daily.py (no-fixture -> real adapter; test-only
+> --forward-source-root); src/demo_strategy_pilot_daily_runner.py (minimal:
+> input fingerprint now includes run_key and market_data_date);
+> tests/demo_trading/test_demo_strategy_pilot_forward_source.py.
+>
+> Date semantics: Forward Record artifacts are keyed by the YYYYMMDD market-data
+> record date; the Pilot run date (YYYY-MM-DD) maps to that exact calendar date;
+> the system clock is never used to choose a source. The result records pilot
+> run date, forward record date, and market-data date and validates equality;
+> requested date not represented, internal/filename date mismatch, or requested
+> date newer than latest_date all fail closed.
+>
+> Signal-count consistency (any mismatch fails closed): signal_count ==
+> n_longs+n_shorts (validation); pnl(n_longs,n_shorts) == validation;
+> positions_rows == signal_count; parsed row count == signal_count; parsed
+> direction counts == authoritative; side in {long,short}; duplicate/conflicting
+> symbols rejected; nonzero signal_count with no rows rejected; missing evidence
+> is never replaced with zero signals; a legitimate zero-signal day is accepted
+> only when the source explicitly says zero and the artifact is structurally
+> valid.
+>
+> Source hashing: SHA-256 over the exact bytes of each authoritative local
+> artifact, recording repo-relative path, sha256, size, parsed role,
+> deterministic order; dotenv/credentials/webhook/API-secret/unrelated daily
+> logs are never read or hashed.
+>
+> Protected symbols (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) may appear in
+> normalized source evidence but become PROTECTED_SYMBOL_BLOCKED / executable
+> false; no signal is ever executed. Plan stays state-free; dry_run appends one
+> PilotDailyRecord (zero trades, order/fill/closed counts zero, PnL zero) only
+> after full source validation; identical source rerun is idempotent; changed
+> source bytes after commit -> DAILY_PLAN_CONFLICT; reconcile_outputs never
+> reloads/recomputes the source.
+>
+> Validation (offline; injected positions reader): py_compile (5 files) PASS;
+> focused forward_source + daily_runner 94 passed; -k "pilot_forward_source or
+> pilot_daily_runner or pilot_reporting or tiny_execution_adapter or
+> reduce_only_close" 1128 passed, 7701 deselected. Bybit network 0; order
+> POSTs 0; orders sent 0; Notion HTTP 0; Discord HTTP 0.
+
+## TASK-014BS_FORWARD_SOURCE Status (2026-06-21)
+
+- Status: COMPLETE / PASS (real local source wiring; dry-run only; no orders; no network; new commit on f474bf6)
+- Strategy reused: prev3y_crypto_combined_paper_safe_variant (primary prev3y_crypto); shadow rejected
+- py_compile: PASS (5 files)
+- Focused forward_source + daily_runner: 94 passed
+- Combined -k "pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close": 1128 passed, 7701 deselected
+- Bybit network calls: 0; order POSTs: 0; orders sent: 0; Notion HTTP: 0; Discord HTTP: 0
+- Next action: VPS no-fixture `plan` smoke (VPS must have a parquet engine to
+  read positions). Activating the real 7-14 day Pilot still requires explicit
+  user authorization; order execution remains a separate reviewed adapter task.
+
+---
+
 > README shared status updated by TASK-014BR_PILOT_DAILY_RUNNER (2026-06-21).
 > Implements the deterministic daily DRY-RUN orchestration layer for the 7-14
 > day Bybit Demo strategy pilot. It builds an auditable daily execution-plan

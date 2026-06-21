@@ -247,8 +247,10 @@ def build_plan(
     input_fp = jr.sha256_fingerprint({
         "pilot_id": pilot_id,
         "date": date,
+        "run_key": str(strategy_result.get("run_key", "")),
         "strategy_name": strategy_name,
         "source_data_date": source_data_date,
+        "market_data_date": str(strategy_result.get("market_data_date", "")),
         "source_metadata": source_meta,
         "normalized_signals": normalized,
     })

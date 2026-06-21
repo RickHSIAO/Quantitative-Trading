@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import sys
 from decimal import Decimal
 
@@ -28,6 +29,7 @@ if ROOT not in sys.path:
 
 from src import demo_strategy_pilot_daily_runner as rr  # noqa: E402
 from src import demo_strategy_pilot_discord_notify as dn  # noqa: E402
+from src import demo_strategy_pilot_forward_source as fs  # noqa: E402
 from src import demo_strategy_pilot_notion_sync as ns  # noqa: E402
 from src.demo_strategy_pilot_reporting import PilotConfig  # noqa: E402
 
@@ -51,11 +53,21 @@ def _load_config(pilot_id: str, start_date: str) -> PilotConfig:
     )
 
 
-def _load_strategy_result(fixture_path: str | None) -> dict | None:
-    if fixture_path:
-        with open(fixture_path, "r", encoding="utf-8") as fh:
+def _load_strategy_result(args, forward_source_root: str | None) -> dict | None:
+    """Resolve the strategy result for plan/dry_run.
+
+    When --fixture is supplied, use the injected fixture (existing behavior).
+    Otherwise load the real local primary Forward Record source via the
+    read-only adapter (no network). reconcile_outputs never loads source.
+    """
+    if args.mode == rr.MODE_RECONCILE:
+        return None
+    if args.fixture:
+        with open(args.fixture, "r", encoding="utf-8") as fh:
             return json.load(fh)
-    return None
+    result = fs.load_primary_forward_strategy_result(
+        run_date=args.date, repo_root=pathlib.Path(ROOT), forward_source_root=forward_source_root)
+    return result.to_strategy_result()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,6 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fixture", default=None, help="injected strategy-result JSON fixture path")
     p.add_argument("--test-output-root", default=None,
                    help="TEST-ONLY output root; refused outside a temp/test context")
+    p.add_argument("--forward-source-root", default=None,
+                   help="TEST-ONLY Forward Record source root; refused outside a temp/test context. "
+                        "Production uses the canonical outputs/forward_record location.")
     p.add_argument("--allow-notion-network", action="store_true")
     p.add_argument("--allow-discord-network", action="store_true")
     p.add_argument("--snapshot-date", default=None, help="override Excel snapshot YYYYMMDD (testing)")
@@ -101,8 +116,22 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"status": "SAFETY_REFUSAL", "exit_code": rr.EXIT_SAFETY, "detail": refusal}))
         return rr.EXIT_SAFETY
 
+    forward_source_root, fs_refusal = _resolve_output_root(args.forward_source_root)
+    if fs_refusal:
+        print(json.dumps({"status": "SAFETY_REFUSAL", "exit_code": rr.EXIT_SAFETY,
+                          "detail": fs_refusal.replace("output", "Forward Record source")}))
+        return rr.EXIT_SAFETY
+
     config = _load_config(args.pilot_id, args.start_date)
-    strategy_result = _load_strategy_result(args.fixture)
+    try:
+        strategy_result = _load_strategy_result(args, forward_source_root)
+    except fs.ForwardSourceError as exc:
+        payload = {"task_id": rr.TASK_ID, "mode": args.mode, "status": rr.STATUS_INPUT_FAILURE,
+                   "exit_code": rr.EXIT_INPUT_FAILURE, "detail": f"forward source error: {exc}",
+                   "order_execution_authorized": rr.ORDER_EXECUTION_AUTHORIZED,
+                   "reason_execution_not_authorized": rr.REASON_NOT_AUTHORIZED}
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        return rr.EXIT_INPUT_FAILURE
 
     notion_sync = ns.NotionDailySync(allow_network=args.allow_notion_network)
     discord_notify = dn.DiscordDailyNotify(allow_network=args.allow_discord_network)

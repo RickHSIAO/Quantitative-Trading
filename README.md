@@ -14,10 +14,75 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BR_PILOT_DAILY_RUNNER, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BS_FORWARD_SOURCE, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BR_PILOT_DAILY_RUNNER 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BS_FORWARD_SOURCE 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BS_FORWARD_RECORD_SIGNAL_SOURCE_WIRING**（2026-06-21, Opus 4.8 / 真實本地來源 dry-run wiring / 未送任何 order、未連任何網路）
+> 把既有 primary `prev3y_crypto` Forward Record 輸出接到 TASK-014BR Pilot Daily Runner，讓 `--fixture` 未提供時
+> `plan`/`dry_run` 可消費真實本地 Forward Record artifacts。**仍為 reporting/dry-run，絕不授權任何 Bybit 下單。**
+> `order_execution_authorized=false`、`reason_execution_not_authorized=TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY`。
+>
+> **觀察到的 VPS 結果（修正前）：** 真實無 fixture plan 指令回傳 `status=INPUT_FAILURE / exit 3 /
+> detail=no strategy_result for plan`（TASK-014BR 之前需注入 fixture，尚未接真實來源）。本任務補上真實來源 wiring。
+>
+> **權威來源身份（未臆測）：** run_key `prev3y_crypto`、strategy `prev3y_crypto_combined_paper_safe_variant`；
+> shadow run `prev3y_crypto_shadow_a_roll12` **絕不選用**。身份缺失/不符/模糊/malformed/shadow → fail-closed。
+>
+> **檢視之 Forward Record 檔案：** `configs/forward_record.yaml`、`apps/forward_record/primary.py` /
+> `report_writer.py` / `stats_updater.py`、`scripts/run_forward_record*.{py,sh}`、
+> `outputs/forward_record/prev3y_crypto/`（`forward_summary.json`、`<YYYYMMDD>_forward_stats.json`、
+> `<YYYYMMDD>_pnl.json`、`<YYYYMMDD>_positions.parquet`）、`outputs/forward_record/dashboard/validation_30d.csv`。
+>
+> **採用之權威 artifacts：** strategy/latest_date 來自 `forward_summary.json`；record date/dry_run/variant 來自
+> `<date>_forward_stats.json`；n_longs/n_shorts/data_source/positions_rows 來自 `<date>_pnl.json`；
+> runner_status/safety_scan/dry_run/signal_count/n_longs/n_shorts 來自 `validation_30d.csv`；
+> **逐 symbol 訊號列**來自 `<date>_positions.parquet`（欄位 `symbol`/`side`/`weight`；symbol 形如 `BYBIT:XXXUSDT.P`，
+> 正規化為 `XXXUSDT`）。不以 dashboard 總數推導訊號、不以時間戳挑最新目錄。
+>
+> **新增/修改檔案：**
+> - `src/demo_strategy_pilot_forward_source.py`（新；唯讀 adapter `load_primary_forward_strategy_result(...)`、
+>   frozen `ForwardStrategySourceResult`/`SourceArtifact`、SHA-256 over 來源 bytes、fail-closed）
+> - `scripts/run_demo_strategy_pilot_daily.py`（無 `--fixture` 時走真實來源 adapter；新增 test-only `--forward-source-root`）
+> - `src/demo_strategy_pilot_daily_runner.py`（最小變更：input fingerprint 納入 run_key 與 market_data_date）
+> - `tests/demo_trading/test_demo_strategy_pilot_forward_source.py`（新）
+>
+> **日期語意：** Forward Record artifacts 以 `YYYYMMDD` 市場資料 record date 為鍵；Pilot run date（`YYYY-MM-DD`）
+> 對應到該確切日曆日；**絕不用系統時鐘**隱式挑來源。結果分別記錄 pilot run date / forward record date / market-data date，
+> 並驗證三者一致；requested date 未被來源涵蓋、或內部 date 與檔名 date 不符、或 requested > latest_date → fail-closed。
+>
+> **訊號一致性檢查（任一不符即 fail-closed）：** `signal_count == n_longs+n_shorts`（validation）；
+> `pnl(n_longs,n_shorts) == validation`；`positions_rows == signal_count`；解析出的 rows 數 == signal_count；
+> 解析方向計數 == 權威計數；side 僅允許 long/short；重複/衝突 symbol 拒絕；signal_count>0 但無 rows 拒絕；
+> 證據缺失時**絕不**以 0 訊號替代；合法 0 訊號日僅在來源明確為 0 且 artifact 結構合法時接受。
+>
+> **來源檔雜湊：** 對權威本地 artifact 的**確切 bytes**做 SHA-256，記錄 repo-relative path、sha256、size、parsed role；
+> 順序決定式；不讀/不雜湊 dotenv/credentials/webhook/API secret/無關 daily logs。
+>
+> **protected symbols：** ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT 可出現在正規化來源證據，但一律
+> `PROTECTED_SYMBOL_BLOCKED`、`executable=false`，TASK-014BS 絕不執行任何訊號。
+>
+> **CLI：** 有 `--fixture` → 維持注入 fixture；無 `--fixture` → 唯讀 adapter 載入真實本地 primary 來源（零網路）；
+> `plan` 維持無永久狀態；`dry_run` 僅在來源完整驗證後才寫 Pilot 紀錄；`reconcile_outputs` 不重載/不重算來源訊號。
+> 生產來源根固定為 canonical `outputs/forward_record`；`--forward-source-root` 為 test-only，於非 temp/test 路徑被拒。
+> 無 strategy-name/run-key/symbol/side/signal-count/order 覆寫旗標。
+>
+> **Dry-run 紀錄：** 來源驗證成功後 append 恰一筆 PilotDailyRecord、零 PilotTradeRecord、order/fill/closed 計數皆 0、
+> PnL 全為 0（無真實 Pilot 交易）；不把手動 TASK-014BO/BP 驗證交易納入 Pilot 績效。同來源重跑冪等；
+> 已 commit 後來源 bytes 變更 → `DAILY_PLAN_CONFLICT`（不覆寫既有每日紀錄）。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13；全程 offline，注入式 positions reader）：**
+> - py_compile（5 檔）→ PASS
+> - Focused forward_source + daily_runner: **94 passed**
+> - `-k "pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close"`: **1128 passed, 7701 deselected**
+>
+> **安全不變項：** Bybit 網路: **0**；order POST: **0**；real orders sent: **0**；Notion HTTP: **0**；Discord HTTP: **0**；
+> 新 adapter 內無 order endpoint 字串、未 import live executor / `main.py` / `src/risk.py`、未改任何策略參數、未安裝 scheduler；
+> runtime outputs 皆留在版控外、未 commit。
+> **下一步：** VPS 無 fixture `plan` smoke（需 VPS 已裝 parquet engine 讀 positions）；**啟動真實 7–14 天 Pilot 仍須使用者明確授權。**
+
+---
 
 > **TASK-014BR_DEMO_STRATEGY_PILOT_DAILY_RUNNER_DRY_RUN_WIRING**（2026-06-21, Opus 4.8 / DRY-RUN orchestration / 未送任何 order、未連任何網路）
 > 實作 7–14 天 Bybit Demo 策略 pilot 的**每日編排層（dry-run）**：把策略/forward-record 訊號、TASK-014BQ pilot reporting 資料模型、

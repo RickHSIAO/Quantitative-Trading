@@ -21,6 +21,36 @@ Notes:
 
 ---
 
+### 2026-06-21 (TASK-014BS_FORWARD_SOURCE -- wire primary Forward Record signals into Pilot dry-run)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BS_FORWARD_RECORD_SIGNAL_SOURCE_WIRING (connect the primary prev3y_crypto Forward Record output to the TASK-014BR Pilot daily runner; reporting/dry-run only; no Bybit order; new commit on f474bf6; do not push).
+Task: Allow plan/dry_run to consume the real local primary Forward Record artifacts when --fixture is absent, via a new read-only adapter, with full fail-closed validation and source-byte hashing. No Bybit order-create POST, no Demo/live order, no position mutation, no strategy parameter change, no scheduler.
+Observed VPS result (pre-fix): no-fixture plan returned status=INPUT_FAILURE / exit 3 / detail "no strategy_result for plan".
+Status before: TASK-014BR required an injected --fixture and was not wired to the real Forward Record output.
+Status after: new src/demo_strategy_pilot_forward_source.py adapter loads/validates the primary prev3y_crypto source (strategy prev3y_crypto_combined_paper_safe_variant; shadow rejected) and converts authoritative positions.parquet signal rows into the runner's normalized schema; the CLI uses it when --fixture is absent; the runner input fingerprint now includes run_key and market_data_date. order_execution_authorized stays False. 94 focused tests; no orders; no network.
+Files changed:
+- `src/demo_strategy_pilot_forward_source.py` (new; read-only adapter, frozen ForwardStrategySourceResult/SourceArtifact, SHA-256 over source bytes, fail-closed validation, no credential reads)
+- `scripts/run_demo_strategy_pilot_daily.py` (no-fixture -> real Forward Record adapter; test-only --forward-source-root refused outside temp/test; ForwardSourceError -> INPUT_FAILURE exit 3)
+- `src/demo_strategy_pilot_daily_runner.py` (minimal: input fingerprint now includes run_key and market_data_date)
+- `tests/demo_trading/test_demo_strategy_pilot_forward_source.py` (new; 41 offline focused tests, injected positions reader + temp source fixtures)
+- `README.md` (TASK-014BS banner)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BS banner + status section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13; all offline; injected positions reader since this dev env lacks a parquet engine -- the VPS has one):
+- py_compile: PASS (5 files: forward_source, daily_runner, CLI, both test modules)
+    python -m py_compile src/demo_strategy_pilot_forward_source.py src/demo_strategy_pilot_daily_runner.py scripts/run_demo_strategy_pilot_daily.py tests/demo_trading/test_demo_strategy_pilot_forward_source.py tests/demo_trading/test_demo_strategy_pilot_daily_runner.py
+- Focused forward_source + daily_runner: 94 passed
+    python -m pytest tests/demo_trading/test_demo_strategy_pilot_forward_source.py tests/demo_trading/test_demo_strategy_pilot_daily_runner.py -q --basetemp=.pytest_bs
+- Combined -k "pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close": 1128 passed, 7701 deselected
+- Bybit network calls: 0; order /v5/order/create POST calls: 0; real orders sent: 0
+- Notion HTTP calls: 0; Discord HTTP calls: 0
+- No real or demo credential / token / webhook read, printed, or committed. No secret serialized.
+Outputs: Runtime Pilot data and the .xlsx workbook are written only under outputs/demo_trading/pilot/<pilot_id>/ (outside Git); Forward Record artifacts are read-only and never modified; nothing under outputs was committed.
+Notes: Authoritative artifacts -- forward_summary.json (strategy/latest_date), <date>_forward_stats.json (record date/dry_run/variant), <date>_pnl.json (n_longs/n_shorts/data_source/positions_rows), validation_30d.csv (runner_status/safety_scan/dry_run/signal_count/n_longs/n_shorts), <date>_positions.parquet (per-symbol symbol/side/weight; BYBIT:XXXUSDT.P normalized to XXXUSDT). Date convention: artifacts keyed by YYYYMMDD market-data record date; Pilot run date maps to that exact calendar date; the system clock is never used; pilot run date / forward record date / market-data date are recorded separately and validated equal; requested-not-represented / internal-vs-filename date mismatch / requested>latest_date fail closed. Signal-count consistency enforced across validation_30d.csv, pnl.json, positions_rows, and parsed rows; missing evidence is never replaced with zero signals; a legitimate zero-signal day is accepted only when the source explicitly says zero. Source bytes hashed with SHA-256 (repo-relative path, sha256, size, role, deterministic order); dotenv/credentials/webhook/secret/unrelated daily logs are never read. Protected symbols are blocked and never executable. Plan stays state-free; dry_run appends one PilotDailyRecord (zero trades, order/fill/closed counts zero, PnL zero) only after full validation; identical source rerun idempotent; changed source bytes after commit -> DAILY_PLAN_CONFLICT; reconcile_outputs never reloads/recomputes the source. Does not modify TASK-014BO/BP modules, main.py, src/risk.py, the live executor, strategy thresholds, ranking rules, or the protected-symbol list. New commit on f474bf6 -- no prior commits amended; not pushed. Next action: VPS no-fixture plan smoke (VPS parquet engine required to read positions); activating the real 7-14 day Pilot still requires explicit user authorization.
+
+---
+
 ### 2026-06-21 (TASK-014BR_PILOT_DAILY_RUNNER -- add idempotent dry-run orchestration and output sync wiring)
 
 Agent: Claude Opus 4.8
