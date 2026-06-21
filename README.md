@@ -14,10 +14,61 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BT_PILOT_OUTPUT_STATUS, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BU_DELIVERY_TRANSPORT, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BT_PILOT_OUTPUT_STATUS 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BU_DELIVERY_TRANSPORT 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BU_REAL_DELIVERY_TRANSPORT_WIRING_AND_RECONCILE_PREVIEW_FINALIZATION**（2026-06-22, Opus 4.8 / reporting/delivery only / 未送任何 order、實作與測試期間零真實 HTTP）
+> 為 Pilot 的 Notion/Discord adapter 接上「明確 gated」的真實遞送 transport，並讓 reconcile 以最終有效狀態 ledger 重生所有本地 reporting 輸出。仍為 reporting/delivery，未授權任何 Bybit 操作或下單。
+> `order_execution_authorized=false`、`reason_execution_not_authorized=TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY`。
+>
+> **TASK-014BT 真實遞送 smoke 觀察：** VPS 載入憑證存在性（NOTION_TOKEN=PRESENT、NOTION_PILOT_DATABASE_ID=MISSING、
+> NOTION_FORWARD_VALIDATION_DATABASE_ID=PRESENT、MONITOR_DISCORD_WEBHOOK_URL=PRESENT、BYBIT_DEMO_*=MISSING、DELIVERY_READY=True）。
+> 對既有臨時 Smoke 每日紀錄執行 gated `reconcile_outputs --allow-notion-network --allow-discord-network` →
+> status=PARTIAL_OUTPUT_FAILURE / exit 4；Excel=OK；Notion=FAIL（detail="no notion transport injected", network_attempted=false）；
+> Discord=FAIL（同）。無 Discord 訊息、無 Notion 請求。ledger 與 Excel 正確顯示 OK/FAIL/FAIL，每日紀錄維持 1 列；
+> **但** 本地 `notion_payload.json`/`discord_summary.txt` 仍殘留舊的 SKIPPED。
+> **確認兩個缺陷：** (1) 生產 CLI 在帶 allow-network 旗標時未建構/注入真實 Notion/Discord HTTP transport；
+> (2) `reconcile_outputs` 在更新最終狀態後未重生本地 Notion/Discord 預覽。TASK-014BU 修正之。
+>
+> **新增/修改檔案：**
+> - `src/demo_strategy_pilot_delivery_transport.py`（新；gated 工廠 `build_notion_transport`/`build_discord_transport`、
+>   `RealNotionTransport`（schema 讀取 + 相容性檢查 + query/create/update）、`RealDiscordTransport`（單則 post）；
+>   重用 `apps.monitor.channels` 的 Discord HTTP/redaction 與 urllib Notion；密鑰絕不外洩、HTTP 錯誤脫敏）
+> - `src/demo_strategy_pilot_notion_sync.py` / `src/demo_strategy_pilot_discord_notify.py`（network_attempted/sanitized detail 語意；
+>   有 allow 但無 transport→CREDENTIAL_MISSING、schema 不相容→NOTION_DATABASE_SCHEMA_INCOMPATIBLE、HTTP 失敗→HTTP_DELIVERY_FAILED）
+> - `scripts/run_demo_strategy_pilot_daily.py`（僅在對應 allow 旗標下才建構並注入真實 transport；旗標關閉時不讀憑證、不建構）
+> - `src/demo_strategy_pilot_daily_runner.py`（reconcile：載入不可變每日紀錄→驗證 immutable fingerprint→只重試 FAIL/SKIPPED→
+>   持久化最終 ledger→重生 notion_payload.json/discord_summary.txt→以最終狀態重建 Excel+snapshot→寫 run_result.json）
+> - `tests/demo_trading/test_demo_strategy_pilot_delivery_transport.py`（新）
+>
+> **Gating：** 無 allow 旗標 → 不讀憑證、不建 transport、回 `SKIPPED`/`NETWORK_NOT_ALLOWED`；
+> 有 allow 旗標但缺憑證 → `CREDENTIAL_MISSING`、network_attempted=false；有 allow 且憑證齊 → 建真實 transport、network_attempted=true。
+> plan / 無網路 dry_run / 無旗標 reconcile 永不建構網路 transport。僅憑證存在不會建構 transport。
+>
+> **Notion database 選擇與 schema 安全：** 優先 `NOTION_PILOT_DATABASE_ID`；若僅有 `NOTION_FORWARD_VALIDATION_DATABASE_ID`，
+> 經 schema 讀取確認必要 Pilot 欄位（Date / Pilot ID / Excel Export Status / Notion Sync Status / Discord Notify Status）皆存在才允許 fallback，
+> 否則於寫入前 fail-closed 回 `NOTION_DATABASE_SCHEMA_INCOMPATIBLE`（不外洩 db id/token）。**不自動建立/變更任何 Notion 屬性、不寫部分或畸形列。**
+> 觀察到的 VPS 僅有 Forward Validation DB → 真實 reconcile 會在寫入前 fail-closed（需建立專用 Pilot database 才能寫）。
+>
+> **遞送語意（皆脫敏）：** `NETWORK_NOT_ALLOWED` / `CREDENTIAL_MISSING` / `TRANSPORT_CONSTRUCTION_FAILED` /
+> `NOTION_DATABASE_SCHEMA_INCOMPATIBLE` / `HTTP_DELIVERY_FAILED` / `PASS`。Notion idempotency key `<pilot_id>:<date>` 不變（更新或找到同一列，絕不建立重複列）。
+> Discord：成功遞送後 ledger 進到 PASS；後續 reconcile 若現況已 PASS 則**不重送**；FAIL/SKIPPED 時每次明確 reconcile 至多送一次；無自動 retry loop。
+>
+> **reconcile 最終化：** 失敗遞送 → ledger/Excel/Notion 預覽/Discord 預覽皆 FAIL；成功遞送 →
+> `Excel Export Status=OK / Notion Sync Status=PASS / Discord Notify Status=PASS`。不新增第二筆每日紀錄、不新增 trade、不重算策略、不載入 Forward Record 來源。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13；全程 offline / fake HTTP / temp roots）：**
+> - py_compile（所有新/改 source、CLI、tests）→ PASS
+> - Focused delivery + output_status + daily_runner + reporting: **178 passed**
+> - `-k "pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close"`: **1214 passed, 7701 deselected**
+>
+> **安全不變項：** Bybit 網路: **0**；order POST: **0**；real orders sent: **0**；實作/測試期間真實 Notion HTTP: **0**；真實 Discord HTTP: **0**；
+> 無 order endpoint 字串、未 import live executor / `main.py` / `src/risk.py`；token/webhook/db id 不出現在 stdout/stderr/JSON/journal/workbook/preview；runtime outputs 皆留版控外、未 commit。
+> **下一步：** 以既有失敗 Smoke 狀態做真實遞送 reconcile（明確啟用網路）；若要寫 Notion，需先建立相容的專用 Pilot database。**自動 Bybit Demo 執行仍未授權。**
+
+---
 
 > **TASK-014BT_PILOT_OUTPUT_STATUS_FINALIZATION**（2026-06-21, Opus 4.8 / reporting-only / 未送任何 order、未連任何網路）
 > 讓 reporting 輸出反映**最終有效的輸出遞送狀態**，且不變更/不重複任何權威交易資料。仍為 reporting-only，未授權任何 Bybit 下單。

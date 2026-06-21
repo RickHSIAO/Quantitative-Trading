@@ -1,5 +1,112 @@
 # Next Action
 
+> README shared status updated by TASK-014BU_DELIVERY_TRANSPORT (2026-06-22).
+> Wires explicitly gated real Notion/Discord delivery transports into the Pilot
+> adapters and makes reconcile_outputs regenerate all local reporting outputs
+> from the final effective status ledger. Reporting/delivery only; no Bybit
+> operation or order; zero real HTTP during implementation/tests. New commit on
+> top of 79dd1f3 (no prior commits amended).
+> order_execution_authorized=false;
+> reason_execution_not_authorized=TASK-014BR_IS_DRY_RUN_REPORTING_WIRING_ONLY.
+>
+> TASK-014BT no-network VPS smoke passed; output states correctly became
+> OK/SKIPPED/SKIPPED. The subsequent explicitly gated real delivery reconcile
+> returned PARTIAL_OUTPUT_FAILURE / exit 4: Excel OK; Notion FAIL (no notion
+> transport injected, network_attempted=false); Discord FAIL (same). No HTTP
+> occurred despite the allow flags; the ledger and Excel correctly showed FAIL,
+> but the local previews incorrectly remained stale (SKIPPED). TASK-014BU fixes
+> both: (1) the production CLI now constructs/injects real Notion/Discord HTTP
+> transports under the explicit allow flags; (2) reconcile regenerates the
+> Notion and Discord previews from the final effective statuses.
+>
+> New/changed files: src/demo_strategy_pilot_delivery_transport.py (gated
+> factories build_notion_transport/build_discord_transport; RealNotionTransport
+> with schema read + compatibility check + query/create/update; RealDiscordTransport
+> single post; reuses apps.monitor.channels Discord HTTP/redaction and urllib
+> Notion; secrets never serialized; HTTP errors sanitized);
+> src/demo_strategy_pilot_notion_sync.py & discord_notify.py (network_attempted /
+> sanitized detail tokens: NETWORK_NOT_ALLOWED / CREDENTIAL_MISSING /
+> NOTION_DATABASE_SCHEMA_INCOMPATIBLE / HTTP_DELIVERY_FAILED / PASS);
+> scripts/run_demo_strategy_pilot_daily.py (construct + inject real transports
+> only under the corresponding allow flag; no credential read when the flag is
+> absent); src/demo_strategy_pilot_daily_runner.py (reconcile regenerates
+> notion_payload.json + discord_summary.txt and rebuilds Excel/snapshot from the
+> final ledger, writes run_result.json); tests/demo_trading/test_demo_strategy_pilot_delivery_transport.py.
+>
+> Gating: without the allow flag no credential is read, no transport is
+> constructed, status is SKIPPED/NETWORK_NOT_ALLOWED; with the allow flag but
+> missing credential -> CREDENTIAL_MISSING, network_attempted=false; with the
+> flag and credentials -> real transport, network_attempted=true. plan /
+> no-network dry_run / no-flag reconcile never construct a transport. Credentials
+> present alone never construct a transport.
+>
+> Notion database selection: prefer NOTION_PILOT_DATABASE_ID; fall back to
+> NOTION_FORWARD_VALIDATION_DATABASE_ID only after a schema read confirms the
+> required Pilot properties (Date, Pilot ID, Excel/Notion/Discord status) exist;
+> otherwise fail closed with NOTION_DATABASE_SCHEMA_INCOMPATIBLE before any
+> write (db id / token never exposed). No automatic schema modification; no
+> partial/malformed row. The observed VPS has only the Forward Validation
+> database, so a real Notion write currently fails closed -- a dedicated Pilot
+> database is required to write Notion.
+>
+> Idempotency key <pilot_id>:<YYYY-MM-DD> unchanged (update or find the same
+> record, never duplicate). Discord: a successful delivery advances the ledger to
+> PASS and a later reconcile does not resend PASS; FAIL/SKIPPED may attempt
+> exactly one send per explicit reconcile; no automatic retry loop. reconcile
+> never appends a second daily/trade record, never recalculates strategy, never
+> loads the Forward Record source.
+>
+> Validation (offline; fake HTTP): py_compile PASS; focused delivery +
+> output_status + daily_runner + reporting 178 passed; -k "pilot_delivery
+> or pilot_output_status or pilot_forward_source or pilot_daily_runner or
+> pilot_reporting or tiny_execution_adapter or reduce_only_close" 1214 passed,
+> 7701 deselected. Bybit network 0; order POSTs 0; orders sent 0; real Notion
+> HTTP 0; real Discord HTTP 0.
+
+## TASK-014BU_DELIVERY_TRANSPORT Status (2026-06-22)
+
+- Status: COMPLETE / PASS (gated real delivery transports + reconcile preview finalization; no orders; zero real HTTP; new commit on 79dd1f3)
+- py_compile: PASS; focused delivery + output_status + daily_runner + reporting: 178 passed
+- Combined -k "pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close": 1214 passed, 7701 deselected
+- Bybit network calls: 0; order POSTs: 0; orders sent: 0; real Notion HTTP: 0; real Discord HTTP: 0
+- Next action: real delivery reconcile using the existing failed Smoke state
+  (explicit network opt-in). Writing Notion requires a compatible dedicated
+  Pilot database. Automatic Bybit Demo execution remains unauthorized.
+
+## TASK-014BU VPS reconcile-only follow-up (reuse existing Smoke state)
+
+```bash
+# 1) credential presence only (never display values)
+for v in NOTION_TOKEN NOTION_PILOT_DATABASE_ID NOTION_FORWARD_VALIDATION_DATABASE_ID MONITOR_DISCORD_WEBHOOK_URL; do
+  if [ -n "${!v}" ]; then echo "$v=PRESENT"; else echo "$v=MISSING"; fi
+done
+# 2-4) reconcile only; attempt Notion/Discord once; show network_attempted
+python scripts/run_demo_strategy_pilot_daily.py \
+  --mode reconcile_outputs \
+  --pilot-id BYBIT_DEMO_PILOT_BT_SMOKE_202606 \
+  --date 2026-06-21 \
+  --test-output-root /tmp/task014bt_smoke \
+  --allow-notion-network --allow-discord-network --json-only
+# 5) daily-record count stays one
+wc -l /tmp/task014bt_smoke/BYBIT_DEMO_PILOT_BT_SMOKE_202606/daily_records.jsonl
+# 6) status ledger advanced
+cat /tmp/task014bt_smoke/BYBIT_DEMO_PILOT_BT_SMOKE_202606/latest_output_status.json
+# 7) Excel + previews match final statuses
+python - <<'PY'
+from openpyxl import load_workbook
+wb=load_workbook("/tmp/task014bt_smoke/BYBIT_DEMO_PILOT_BT_SMOKE_202606/demo_strategy_pilot_results.xlsx")
+dp=wb["Daily Performance"]; hdr=[c.value for c in dp[1]]
+print({hdr[i]:dp.cell(row=2,column=i+1).value for i in range(len(hdr)) if hdr[i] in ("Date","Excel Export","Notion Sync","Discord Notify")})
+PY
+cat /tmp/task014bt_smoke/BYBIT_DEMO_PILOT_BT_SMOKE_202606/daily_runs/2026-06-21/notion_payload.json
+cat /tmp/task014bt_smoke/BYBIT_DEMO_PILOT_BT_SMOKE_202606/daily_runs/2026-06-21/discord_summary.txt
+# 8) do NOT run dry_run. 9) do NOT load any Bybit credential.
+# 10) clean up ONLY after Rick confirms Notion/Discord results:
+#   rm -rf /tmp/task014bt_smoke
+```
+
+---
+
 > README shared status updated by TASK-014BT_PILOT_OUTPUT_STATUS (2026-06-21).
 > Makes the reporting outputs reflect the final effective output-delivery
 > statuses (Excel/Notion/Discord) without mutating or duplicating authoritative

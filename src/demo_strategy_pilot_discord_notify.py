@@ -90,17 +90,20 @@ class DiscordDailyNotify:
 
     def notify(self, message: str) -> DiscordNotifyResult:
         if not self.allow_network:
-            return DiscordNotifyResult(NOTIFY_SKIPPED, "discord network disabled (allow_network=False)", False)
-        webhook = self._env.get(DISCORD_WEBHOOK_ENV, "").strip()
-        if not webhook:
-            return DiscordNotifyResult(NOTIFY_FAIL, "discord webhook absent", False)
+            return DiscordNotifyResult(NOTIFY_SKIPPED, "NETWORK_NOT_ALLOWED", False)
+        # An explicit allow flag with no injected transport means the webhook was
+        # absent at construction time -> fail closed.
         if self._transport is None:
-            return DiscordNotifyResult(NOTIFY_FAIL, "no discord transport injected", False)
+            return DiscordNotifyResult(NOTIFY_FAIL, "CREDENTIAL_MISSING", False)
+        webhook = self._env.get(DISCORD_WEBHOOK_ENV, "").strip()
         try:
             self._transport.post(webhook_url=webhook, content=message)
             return DiscordNotifyResult(NOTIFY_PASS, "ok", True)
         except Exception as exc:  # noqa: BLE001
-            return DiscordNotifyResult(NOTIFY_FAIL, _sanitize(f"discord error: {exc}", webhook), True)
+            detail = _sanitize(str(exc), webhook)
+            if "HTTP_DELIVERY_FAILED" not in detail:
+                detail = f"HTTP_DELIVERY_FAILED: {detail}"
+            return DiscordNotifyResult(NOTIFY_FAIL, detail[:300], True)
 
 
 __all__ = [

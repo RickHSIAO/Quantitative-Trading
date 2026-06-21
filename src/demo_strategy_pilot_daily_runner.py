@@ -701,16 +701,30 @@ def _reconcile_outputs(*, store, journal, pilot_id, date, config, notion_sync, d
             updated_at_utc=now, plan_fingerprint=plan_fp, input_fingerprint=input_fp,
             daily_core_fingerprint=core_fp))
 
+    # REGENERATE local previews from the FINAL effective statuses (TASK-014BU).
+    effective = {**daily, "excel_export_status": excel_result.get("status"),
+                 "notion_sync_status": new_notion, "discord_notify_status": new_discord}
+    final_payload = ns.build_notion_payload(pilot_id, effective, plan_fingerprint=plan_fp,
+                                            input_fingerprint=input_fp)
+    journal.write_json(jr.NOTION_PAYLOAD_FILENAME, final_payload)
+    final_summary = dn.build_discord_summary(pilot_id, effective)
+    journal.write_text(jr.DISCORD_SUMMARY_FILENAME, final_summary)
+
     store.append_audit(PilotAuditEvent(timestamp_utc=now, pilot_id=pilot_id, event_type="RECONCILE_OUTPUTS",
                                        component="daily_runner", status="OK",
-                                       message="reconcile rebuilt excel / retried output delivery",
+                                       message="reconcile rebuilt excel / regenerated previews / retried delivery",
                                        reference_id=date))
     failed = excel_result.get("status") == osm.STATUS_FAIL or new_notion == ns.SYNC_FAIL \
         or new_discord == dn.NOTIFY_FAIL
-    return RunResult(TASK_ID, MODE_RECONCILE, pilot_id, date,
-                     STATUS_PARTIAL_OUTPUT_FAILURE if failed else STATUS_RECONCILED,
-                     EXIT_PARTIAL_OUTPUT if failed else EXIT_OK, journal.state(), ["RECONCILE_OUTPUTS"],
-                     None, daily, excel_result, notion_result, discord_result, "reconcile complete")
+    result = RunResult(TASK_ID, MODE_RECONCILE, pilot_id, date,
+                       STATUS_PARTIAL_OUTPUT_FAILURE if failed else STATUS_RECONCILED,
+                       EXIT_PARTIAL_OUTPUT if failed else EXIT_OK, journal.state(), ["RECONCILE_OUTPUTS"],
+                       None, daily, excel_result, notion_result, discord_result, "reconcile complete")
+    result_dict = result.to_dict()
+    result_dict["output_status"] = {"excel_status": excel_result.get("status"),
+                                    "notion_status": new_notion, "discord_status": new_discord}
+    journal.write_json(jr.RUN_RESULT_FILENAME, result_dict)
+    return result
 
 
 def _root_of(store: PilotStore) -> str:

@@ -126,21 +126,16 @@ class NotionDailySync:
     def upsert(self, payload: Mapping[str, Any]) -> NotionSyncResult:
         key = str(payload.get("idempotency_key", ""))
         if not self.allow_network:
-            return NotionSyncResult(SYNC_SKIPPED, "none", key, "none",
-                                    "notion network disabled (allow_network=False)", False)
+            return NotionSyncResult(SYNC_SKIPPED, "none", key, "none", "NETWORK_NOT_ALLOWED", False)
+        # An explicit allow flag with no injected transport means the credential
+        # / database id was absent at construction time -> fail closed.
+        if self._transport is None:
+            return NotionSyncResult(SYNC_FAIL, "upsert", key, "none", "CREDENTIAL_MISSING", False)
         token = self._env.get(NOTION_TOKEN_ENV, "").strip()
         db_id = self._database_id()
-        if not token or not db_id:
-            return NotionSyncResult(SYNC_FAIL, "upsert", key, "none",
-                                    "notion credentials/config absent", False)
-        if self._transport is None:
-            return NotionSyncResult(SYNC_FAIL, "upsert", key, "none",
-                                    "no notion transport injected", False)
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Notion-Version": NOTION_API_VERSION,
-            "Content-Type": "application/json",
-        }
+        headers = {"Notion-Version": NOTION_API_VERSION, "Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         try:
             existing = self._transport.query(database_id=db_id, idempotency_key=key, headers=headers)
             page_id = existing.get("page_id") if isinstance(existing, Mapping) else None
@@ -149,8 +144,12 @@ class NotionDailySync:
             action = "updated" if page_id else "created"
             return NotionSyncResult(SYNC_PASS, "upsert", key, action, "ok", True)
         except Exception as exc:  # noqa: BLE001
-            return NotionSyncResult(SYNC_FAIL, "upsert", key, "none",
-                                    _sanitize(f"notion error: {exc}", token), True)
+            detail = _sanitize(str(exc), token)
+            if type(exc).__name__ == "NotionSchemaIncompatible" or "NOTION_DATABASE_SCHEMA_INCOMPATIBLE" in detail:
+                detail = "NOTION_DATABASE_SCHEMA_INCOMPATIBLE"
+            elif "HTTP_DELIVERY_FAILED" not in detail:
+                detail = f"HTTP_DELIVERY_FAILED: {detail}"
+            return NotionSyncResult(SYNC_FAIL, "upsert", key, "none", detail[:300], True)
 
 
 __all__ = [

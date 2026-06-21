@@ -28,6 +28,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from src import demo_strategy_pilot_daily_runner as rr  # noqa: E402
+from src import demo_strategy_pilot_delivery_transport as dt  # noqa: E402
 from src import demo_strategy_pilot_discord_notify as dn  # noqa: E402
 from src import demo_strategy_pilot_forward_source as fs  # noqa: E402
 from src import demo_strategy_pilot_notion_sync as ns  # noqa: E402
@@ -133,8 +134,18 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         return rr.EXIT_INPUT_FAILURE
 
-    notion_sync = ns.NotionDailySync(allow_network=args.allow_notion_network)
-    discord_notify = dn.DiscordDailyNotify(allow_network=args.allow_discord_network)
+    # Construct real delivery transports ONLY when the corresponding explicit
+    # allow flag is supplied (credential reads happen only inside these factories
+    # when the flag is set). Plan / no-network dry_run / no-flag reconcile pass
+    # allow_network=False -> the factories return None and read no credentials.
+    notion_transport, _notion_detail = dt.build_notion_transport(
+        allow_network=args.allow_notion_network, env=os.environ)
+    discord_transport, _discord_detail = dt.build_discord_transport(
+        allow_network=args.allow_discord_network, env=os.environ)
+    notion_sync = ns.NotionDailySync(allow_network=args.allow_notion_network,
+                                     transport=notion_transport, env=os.environ)
+    discord_notify = dn.DiscordDailyNotify(allow_network=args.allow_discord_network,
+                                           transport=discord_transport, env=os.environ)
 
     result = rr.run_daily(
         mode=args.mode, pilot_id=args.pilot_id, date=args.date, config=config,

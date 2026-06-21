@@ -21,6 +21,36 @@ Notes:
 
 ---
 
+### 2026-06-22 (TASK-014BU_DELIVERY_TRANSPORT -- wire explicit Notion Discord transports and finalize reconcile previews)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BU_REAL_DELIVERY_TRANSPORT_WIRING_AND_RECONCILE_PREVIEW_FINALIZATION (wire explicitly gated production Notion/Discord transports and make reconcile regenerate local reporting outputs; reporting/delivery only; no Bybit operation; zero real HTTP during implementation/tests; new commit on 79dd1f3; do not push).
+Task: After the TASK-014BT no-network VPS smoke passed (states became OK/SKIPPED/SKIPPED), the gated real delivery reconcile returned PARTIAL_OUTPUT_FAILURE/exit 4 with Notion/Discord FAIL "no transport injected" (network_attempted=false) and the local previews stayed stale at SKIPPED. Two defects: (1) the CLI did not construct/inject real HTTP transports under the allow flags; (2) reconcile did not regenerate the Notion/Discord previews. TASK-014BU implements narrow gated real transports and fixes reconcile preview finalization.
+Status before: NotionDailySync/DiscordDailyNotify required an injected transport but the CLI passed none; reconcile updated the ledger + Excel but not the local previews.
+Status after: new src/demo_strategy_pilot_delivery_transport.py provides gated factories (build_notion_transport/build_discord_transport) and real transports (RealNotionTransport with schema read + compatibility check + query/create/update; RealDiscordTransport single post) reusing apps.monitor.channels Discord HTTP/redaction and a urllib Notion client. The CLI constructs/injects a real transport ONLY under the corresponding allow flag (no credential read otherwise). reconcile regenerates notion_payload.json + discord_summary.txt and rebuilds Excel/snapshot from the final ledger and writes run_result.json. order_execution_authorized stays false. Zero real HTTP in tests.
+Files changed:
+- `src/demo_strategy_pilot_delivery_transport.py` (new; gated factories, RealNotionTransport/RealDiscordTransport, schema safety, sanitized errors, status tokens)
+- `src/demo_strategy_pilot_notion_sync.py` (network_attempted/sanitized detail; allow+no-transport -> CREDENTIAL_MISSING; schema incompat -> NOTION_DATABASE_SCHEMA_INCOMPATIBLE; HTTP fail -> HTTP_DELIVERY_FAILED)
+- `src/demo_strategy_pilot_discord_notify.py` (same status/detail semantics)
+- `scripts/run_demo_strategy_pilot_daily.py` (construct + inject real transports only under explicit allow flags; credential reads only inside the factories when the flag is set)
+- `src/demo_strategy_pilot_daily_runner.py` (reconcile: validate immutable core -> retry only FAIL/SKIPPED -> persist ledger -> regenerate Notion/Discord previews -> rebuild Excel+snapshot -> write run_result.json)
+- `tests/demo_trading/test_demo_strategy_pilot_delivery_transport.py` (new; 45 offline focused tests, fake HTTP)
+- `README.md` (TASK-014BU banner)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BU banner + status + VPS reconcile-only follow-up commands)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13; all offline; fake HTTP + temp roots):
+- py_compile: PASS (delivery transport, notion_sync, discord_notify, daily_runner, CLI, delivery test)
+- Focused delivery + output_status + daily_runner + reporting: 178 passed
+    python -m pytest tests/demo_trading/test_demo_strategy_pilot_delivery_transport.py tests/demo_trading/test_demo_strategy_pilot_output_status.py tests/demo_trading/test_demo_strategy_pilot_daily_runner.py tests/demo_trading/test_demo_strategy_pilot_reporting.py -q --basetemp=.pytest_bu
+- Combined -k "pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close": 1214 passed, 7701 deselected
+- Bybit network calls: 0; order /v5/order/create POST calls: 0; real orders sent: 0
+- Real Notion HTTP calls during implementation/tests: 0; real Discord HTTP calls: 0
+- No real credential / token / webhook / database id read, printed, or committed. No secret serialized.
+Outputs: ledger, daily records, workbook/snapshots, and previews are written only under outputs/demo_trading/pilot/<pilot_id>/ (outside Git) and were NOT committed.
+Notes: Gating -- without the allow flag no credential is read and no transport is constructed (SKIPPED/NETWORK_NOT_ALLOWED); with the flag but missing credential -> CREDENTIAL_MISSING / network_attempted=false; with the flag and credentials -> real transport / network_attempted=true. Credentials present alone never construct a transport; plan / no-network dry_run / no-flag reconcile never construct one. Notion database selection prefers NOTION_PILOT_DATABASE_ID and only falls back to NOTION_FORWARD_VALIDATION_DATABASE_ID after a schema read confirms the required Pilot properties exist, else fails closed with NOTION_DATABASE_SCHEMA_INCOMPATIBLE before any write (no db id/token exposed); no automatic schema modification; no partial/malformed row. The observed VPS has only the Forward Validation DB, so a real Notion write fails closed -- a dedicated Pilot database is required. Notion idempotency key <pilot_id>:<date> unchanged. Discord PASS is not resent by a later reconcile; FAIL/SKIPPED may attempt exactly one send per explicit reconcile; no automatic retry loop. reconcile never appends a second daily/trade record, never recalculates strategy, never loads the Forward Record source. Does not modify TASK-014BO/BP, main.py, src/risk.py, the live executor, strategy parameters, or the protected-symbol list. New commit on 79dd1f3 -- no prior commits amended; not pushed. Next action: real delivery reconcile using the existing failed Smoke state (explicit network opt-in); writing Notion requires a compatible dedicated Pilot database; automatic Bybit Demo execution remains unauthorized.
+
+---
+
 ### 2026-06-21 (TASK-014BT_PILOT_OUTPUT_STATUS -- finalize Excel Notion and Discord delivery states)
 
 Agent: Claude Opus 4.8
