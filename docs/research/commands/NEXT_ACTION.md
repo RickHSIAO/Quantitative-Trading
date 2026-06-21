@@ -1,5 +1,160 @@
 # Next Action
 
+> README shared status updated by
+> TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION (2026-06-21).
+> This correction amends the unpushed commit `d0d6c83` in place (no push)
+> to add the authoritative `PostfillAuditReport` fields `audit_passed`,
+> `audit_reason`, and `audited_at_utc`, so downstream consumers no longer
+> derive `audit_passed` by combining `auditable` + `integrity_all_passed`.
+>
+> Field semantics:
+> - `audit_passed` is the authoritative audit-integrity result. Fail-closed
+>   deterministic formula:
+>   `audit_passed = auditable AND integrity_all_passed AND audit_status in
+>   {SIMULATED_ACCEPTED, SIMULATED_REJECTED, SIMULATED_TRANSPORT_ERROR}`.
+>   `audit_passed=True` does NOT mean a real order succeeded, a real order
+>   was sent, Bybit Demo accepted a real order, or that Stage 2 is
+>   authorized. A real order still requires `real_order_sent=True`; Stage 1
+>   guarantees `real_order_sent=False`.
+> - `auditable` states whether sufficient fake-only evidence exists.
+> - `integrity_all_passed` states whether all 30 named checks passed.
+> - `audit_reason` is a non-empty, deterministic, sanitized explanation
+>   that explicitly distinguishes audit integrity, business outcome, and
+>   real order activity (never includes keys, secrets, signatures, or
+>   authorization-marker contents).
+>
+> Per-status `audit_passed` values:
+> `SIMULATED_ACCEPTED` -> True (when auditable + all checks pass + accepted
+> evidence consistent + all real fields False); `SIMULATED_REJECTED` ->
+> True (audit integrity passed, order NOT accepted); `SIMULATED_TRANSPORT_ERROR`
+> -> True (audit integrity passed, NOT transport/order success);
+> `NOT_AUDITABLE` -> False; `FORBIDDEN_REAL_TRANSPORT` -> False; any failed
+> required check or tampering -> False.
+>
+> CLI: normal stdout and `--json-only` now both surface `task_id`,
+> `audit_status`, `audit_passed`, `audit_reason`,
+> `simulated_business_outcome`, `order_transport_kind`, `sender_call_count`,
+> `simulated_order_sent`, `legacy_order_sent`, `real_order_sent`,
+> `actual_request_body_qty`, `actual_request_body_qty_source`,
+> `resolved_notional`, `failed_check_count`, `failed_check_names`, and
+> `report_written`. Exit codes are expressed directly in terms of
+> `audit_passed`: `0` (audit_passed=True), `1` (audit_passed=False due to
+> NOT_AUDITABLE or contract/integrity mismatch), `2`
+> (FORBIDDEN_REAL_TRANSPORT / invalid fixture / safety violation).
+>
+> Safety invariants (held): 0 real Bybit Demo `/v5/order/create` calls,
+> 0 real Bybit Demo orders sent, no credential read, no sender
+> implementation exists in the postfill module, no `main.py` /
+> `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor` import, global
+> tiny caps untouched, `MAX_ORDER_COUNT=1` unchanged, protected denylist
+> unchanged, BL packet `DEFAULT_QTY=0.01` unchanged, 20 USDT
+> cap-escalation ceiling unchanged. Stage 2 real Demo dispatch remains
+> explicitly unauthorized.
+
+## TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION Status (2026-06-21)
+
+- Status: COMPLETE / PASS (local validation only; amends unpushed `d0d6c83`)
+- New `PostfillAuditReport` fields: `audit_passed`, `audit_reason`, `audited_at_utc`
+- New public helper: `compute_audit_passed(auditable, integrity_all_passed, audit_status)`
+- Retained for compatibility/diagnostics: `auditable`, `integrity_all_passed`, `integrity_failed_checks`
+- py_compile: PASS (3 files)
+- Focused postfill audit: 155 passed
+  `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py -q --basetemp=.pytest_local_pf`
+- Combined postfill + orchestrator + audit-semantics-split: 216 passed
+- Complete one-shot family: 186 passed, 8327 deselected
+  `python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_local/family`
+- Scoped tiny-execution-adapter regression: 812 passed, 7701 deselected
+  `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full`
+- Real `/v5/order/create` calls: 0
+- Real Bybit Demo orders sent: 0
+- Next required task (unchanged): `TASK-014BNB_demo_only_tiny_execution_postfill_audit_vps_validation`
+- Stage 2 real Demo execution: explicitly unauthorized
+
+---
+
+> README shared status updated by TASK-014BN_POSTFILL_AUDIT (2026-06-21).
+> TASK-014BN_POSTFILL_AUDIT adds an offline / fake-only postfill audit
+> scaffold module that consumes an already-produced `OrchestrationReport`
+> (from the one-shot authorized execution orchestrator) and re-validates
+> the simulated Stage 1 fake-sender run against the locked
+> cap-escalation contract. No source files belonging to the live order
+> chain, BL packet builder, risk module, or scheduler were modified.
+>
+> New files:
+> - `src/demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py`
+> - `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py`
+> - `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py`
+>
+> Audit statuses (5):
+>   `POSTFILL_AUDIT_SIMULATED_ACCEPTED`,
+>   `POSTFILL_AUDIT_SIMULATED_REJECTED`,
+>   `POSTFILL_AUDIT_SIMULATED_TRANSPORT_ERROR`,
+>   `POSTFILL_AUDIT_NOT_AUDITABLE`,
+>   `POSTFILL_AUDIT_FORBIDDEN_REAL_TRANSPORT`.
+>
+> Deterministic named checks: 30 (transport_is_fake_sender,
+> fake_sender_used, sender_call_count_exactly_one,
+> simulated_network_attempted, simulated_endpoint_called,
+> real_network_not_attempted, real_endpoint_not_called,
+> real_order_not_sent, stage1_real_execute_disabled,
+> symbol_is_solusdt, category_is_linear, side_is_buy,
+> order_type_is_market, time_in_force_is_ioc, reduce_only_false,
+> close_on_trigger_false, original_packet_qty_is_0_01,
+> actual_qty_is_authorized_0_1,
+> actual_qty_source_is_authorized_candidate,
+> resolved_qty_is_authorized_0_1,
+> resolved_qty_source_is_authorized_candidate, candidate_qty_is_0_1,
+> body_qty_authorized_override_true,
+> candidate_notional_within_20_usdt,
+> resolved_notional_within_20_usdt, cap_gate_authorized,
+> wiring_authorized, no_real_transport_evidence,
+> accepted_outcome_consistent, no_protected_symbol_scope).
+>
+> CLI exit codes:
+>   0 -- audit_status in (SIMULATED_ACCEPTED, SIMULATED_REJECTED,
+>        SIMULATED_TRANSPORT_ERROR) AND integrity_all_passed=True
+>   1 -- audit_status == NOT_AUDITABLE OR integrity mismatch
+>   2 -- audit_status == FORBIDDEN_REAL_TRANSPORT (safety violation)
+>
+> Safety invariants (held): 0 real Bybit Demo `/v5/order/create` calls,
+> 0 real Bybit Demo orders sent, no live or demo credential read, no
+> `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`
+> import, global tiny caps untouched, `MAX_ORDER_COUNT=1` unchanged,
+> protected symbols denylist unchanged, BL packet `DEFAULT_QTY=0.01`
+> unchanged, 20 USDT cap-escalation notional ceiling unchanged.
+> Stage 2 real Demo dispatch remains explicitly unauthorized.
+
+## TASK-014BN_POSTFILL_AUDIT Status (2026-06-21)
+
+- Status: COMPLETE / PASS (local validation only; VPS closeout follows)
+- Implementing commit message: `TASK-014BN_POSTFILL_AUDIT: add offline fake-only postfill audit scaffold`
+- Identity: `DEMO-ONLY-TINY-EXECUTION-ADAPTER-TINY-ORDER-POSTFILL-AUDIT`
+- Implementation path phase: `tiny_order_postfill_audit`
+- Upstream tasks include: `TASK-014BM`, `TASK-014BM_ONE_SHOT_AUTHORIZED_EXECUTION_ORCHESTRATOR`, `TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT`
+- Next required task: `TASK-014BNB_demo_only_tiny_execution_postfill_audit_vps_validation`
+- py_compile: PASS (3 files)
+- Focused postfill audit: 131 passed
+  `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py -q --basetemp=.pytest_local_pf`
+- Postfill + orchestrator + split focused: 192 passed
+- Complete one-shot family: 186 passed, 8303 deselected
+  `python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_local_pf/family`
+- Scoped tiny-execution-adapter regression: 788 passed, 7701 deselected
+  `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local_pf/scoped`
+- Real `/v5/order/create` calls: 0
+- Real Bybit Demo orders sent: 0
+- Stage 2 real Demo execution: explicitly unauthorized
+
+## Next Recommended Engineering Task (after postfill audit scaffold)
+
+The local postfill audit scaffold is in place. Real Bybit Demo order dispatch remains **explicitly unauthorized**.
+
+Next recommended engineering task:
+- **`TASK-014BNB_demo_only_tiny_execution_postfill_audit_vps_validation`** — pure documentation closeout that re-runs the postfill audit focused + family + scoped suites on the Ubuntu VPS against this commit and records the result counts.
+
+**Do NOT** proceed to a real Demo order dispatch without a separate, explicit human authorization task that names the exact commit, qty, symbol, side, and timestamp window.
+
+---
+
 > README shared status updated by TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT (2026-06-21).
 > TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT records the completed Ubuntu VPS validation
 > results for commit `1453ff6` (TASK-014BM_STAGE1_AUDIT_SEMANTICS_SPLIT: distinguish

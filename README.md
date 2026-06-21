@@ -14,10 +14,98 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 real trading。
+TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION 同步更新；不解除 G20、不開啟 real trading。
+
+> **TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION**（2026-06-21, Opus 4.8 / 嚴格 offline / fake-only）
+> 修正 `PostfillAuditReport` 與 CLI contract，使權威欄位 `audit_passed`、
+> `audit_reason`、`audited_at_utc` 確實存在、序列化、文件化並有測試覆蓋；
+> 下游消費者不再需要自行組合 `auditable` + `integrity_all_passed` 推導 `audit_passed`。
+> 就地 amend 未推送的 commit `d0d6c83`（不 push）。
+>
+> **欄位語意：**
+> - `audit_passed` = 權威稽核完整性結果。Fail-closed 決定式公式：
+>   `audit_passed = auditable AND integrity_all_passed AND audit_status ∈
+>   {SIMULATED_ACCEPTED, SIMULATED_REJECTED, SIMULATED_TRANSPORT_ERROR}`。
+>   `audit_passed=True` **不代表** real order 成功、real order 已送出、
+>   Bybit Demo 接受了 real order、或 Stage 2 已被授權。Real order 仍需
+>   `real_order_sent=True`；Stage 1 保證 `real_order_sent=False`。
+> - `auditable` = 是否存在足夠 fake-only 證據。
+> - `integrity_all_passed` = 30 個命名檢查是否全數通過。
+> - `audit_reason` = 非空、決定式、已脫敏的說明，明確區分
+>   稽核完整性 / business outcome / real order activity（不含 key / secret /
+>   signature / authorization-marker 內容）。
+>
+> **各狀態 `audit_passed` 值：** `SIMULATED_ACCEPTED` → True；
+> `SIMULATED_REJECTED` → True（稽核完整性通過，但 order 未被接受）；
+> `SIMULATED_TRANSPORT_ERROR` → True（稽核完整性通過，但非 transport/order 成功）；
+> `NOT_AUDITABLE` → False；`FORBIDDEN_REAL_TRANSPORT` → False；
+> 任一必檢失敗或竄改 → False。
+>
+> **CLI：** normal stdout 與 `--json-only` 皆輸出 `task_id`、`audit_status`、
+> `audit_passed`、`audit_reason`、`simulated_business_outcome`、
+> `order_transport_kind`、`sender_call_count`、`simulated_order_sent`、
+> `legacy_order_sent`、`real_order_sent`、`actual_request_body_qty`、
+> `actual_request_body_qty_source`、`resolved_notional`、`failed_check_count`、
+> `failed_check_names`、`report_written`。Exit code 直接以 `audit_passed` 表示：
+> `0`（audit_passed=True）/ `1`（audit_passed=False：NOT_AUDITABLE 或
+> contract/integrity 不符）/ `2`（FORBIDDEN_REAL_TRANSPORT / 無效 fixture / 安全違規）。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13）：**
+> - py_compile（3 檔）→ PASS
+> - Focused postfill audit: **155 passed**
+> - Combined postfill + orchestrator + audit-semantics-split: **216 passed**
+> - Complete one-shot family: **186 passed, 8327 deselected**
+> - Scoped tiny-execution-adapter regression: **812 passed, 7701 deselected**
+>
+> **安全不變項：** Real `/v5/order/create` calls: **0**；Real Bybit Demo orders sent: **0**；
+> 未讀取任何 credential；postfill 模組內無任何 sender 實作；未 import `main.py` /
+> `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`；未變動全域 tiny cap /
+> `MAX_ORDER_COUNT=1` / protected denylist / BL packet `DEFAULT_QTY=0.01` / 20 USDT 上限；
+> Stage 2 real Demo dispatch: **未授權。**
+
+---
+
+> **TASK-014BN_POSTFILL_AUDIT**（2026-06-21, Opus 4.7 / 嚴格 offline / fake-only）
+> 新增 Stage 1 fake-sender 後置稽核 scaffold。該模組消費既有的
+> `OrchestrationReport`（由 one-shot orchestrator 產生），離線重核
+> simulated transport / cap-escalation contract / business outcome 完整性，
+> 對任何 real transport 證據 fail-closed。不送任何 order、不開任何 HTTP、
+> 不讀任何 credential、不授權 Stage 2 real Demo dispatch。
+>
+> **新增檔案：**
+> - `src/demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py`
+> - `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py`
+> - `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py`
+>
+> **稽核 5 級狀態：** `POSTFILL_AUDIT_SIMULATED_ACCEPTED`、`POSTFILL_AUDIT_SIMULATED_REJECTED`、
+> `POSTFILL_AUDIT_SIMULATED_TRANSPORT_ERROR`、`POSTFILL_AUDIT_NOT_AUDITABLE`、
+> `POSTFILL_AUDIT_FORBIDDEN_REAL_TRANSPORT`。
+>
+> **30 個 deterministic 命名檢查：** transport 種類 / fake_sender 用量 / sender call count /
+> simulated network attempted / real network NOT attempted / Stage 1 real execute disabled /
+> SOLUSDT-linear-Buy-Market-IOC contract / qty=0.1 (CAP_ESCALATION_AUTHORIZED_CANDIDATE_QTY 來源) /
+> body_qty_authorized_override / candidate+resolved notional ≤ 20 USDT / cap gate authorized /
+> wiring authorized / no real transport evidence / accepted-outcome 一致性 / protected symbol untouched。
+>
+> **本地稽核驗證（Windows 11 / .venv Python 3.13）：**
+> - py_compile: `python -m py_compile src/demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py scripts/preview_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py` → PASS
+> - Focused postfill audit: `python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py -q --basetemp=.pytest_local_pf` → **131 passed**
+> - Postfill + orchestrator + split focused: **192 passed**
+> - Complete one-shot family: `python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_local_pf/family` → **186 passed, 8303 deselected**
+> - Scoped tiny-execution-adapter regression: `python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local_pf/scoped` → **788 passed, 7701 deselected**
+>
+> **安全不變項：** Real Bybit Demo `/v5/order/create` calls: **0**；Real Bybit Demo orders sent: **0**；
+> 未讀取任何 credential；未 import `main.py` / `src/risk.py` / `src/executors/bybit.py` / `BybitExecutor`；
+> 未變動全域 tiny cap / `MAX_ORDER_COUNT=1` / protected denylist / BL packet `DEFAULT_QTY=0.01` / 20 USDT cap-escalation 上限；
+> Stage 2 real Demo dispatch: **未授權，須獨立 human authorization task 後方可執行。**
+>
+> **下一步建議：** `TASK-014BNB_demo_only_tiny_execution_postfill_audit_vps_validation`
+> （Ubuntu VPS 上 clean-environment 重跑同一稽核 scaffold；純 documentation closeout）。
+
+---
 
 > **TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT**（2026-06-21, VPS Ubuntu 24.04.4 / Python 3.12.3 / pytest 9.1.1 / commit 1453ff6）
 > VPS Stage 1 audit-semantics-split validation COMPLETE。以下為在 Ubuntu VPS 上對 commit 1453ff6 的完整驗證結果。

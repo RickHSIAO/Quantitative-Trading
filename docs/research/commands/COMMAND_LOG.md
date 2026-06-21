@@ -21,6 +21,75 @@ Notes:
 
 ---
 
+### 2026-06-21 (TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION -- add audit_passed / audit_reason authoritative fields)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BN_POSTFILL_AUDIT_AUTHORITATIVE_PASS_FIELD_CORRECTION (amend the current unpushed commit d0d6c83; do not push).
+Task: Correct the public PostfillAuditReport and CLI contract so the authoritative fields `audit_passed`, `audit_reason`, and `audited_at_utc` are present, serialized (to_dict / JSON / Markdown), surfaced on CLI normal + `--json-only` output, documented, and tested. Downstream consumers must no longer have to derive `audit_passed` by combining `auditable` + `integrity_all_passed`. Exit codes are re-expressed directly in terms of `audit_passed`.
+Status before: PostfillAuditReport exposed `auditable` and `integrity_all_passed` but not the contract-required `audit_passed` / `audit_reason`; CLI exit codes were keyed off `integrity_all_passed`; CLI did not surface the required authoritative summary fields.
+Status after: `audit_passed` (deterministic fail-closed formula), `audit_reason` (non-empty, sanitized, distinguishing audit integrity vs. business outcome vs. real order activity), and `audited_at_utc` added to PostfillAuditReport + to_dict + JSON + Markdown. New public helper `compute_audit_passed(...)`. CLI emits all required authoritative fields on normal stdout and `--json-only`; exit codes now 0 (audit_passed=True) / 1 (audit_passed=False via NOT_AUDITABLE or contract/integrity mismatch) / 2 (FORBIDDEN_REAL_TRANSPORT). Focused postfill tests grew 131 -> 155; family/scoped regressions green. Real Bybit Demo order dispatch remains explicitly unauthorized.
+Files changed:
+- `src/demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py` (audit_passed / audit_reason / audited_at_utc fields + compute_audit_passed helper + _build_audit_reason + Markdown render)
+- `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py` (authoritative CLI summary fields; exit codes keyed off audit_passed; write-first report_written flag)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py` (24 new/updated focused tests)
+- `README.md` (TASK-014BN_POSTFILL_AUDIT banner updated with audit_passed / audit_reason semantics)
+- `docs/research/commands/NEXT_ACTION.md` (correction banner + status section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13):
+- py_compile: PASS (3 files: postfill source, postfill CLI, postfill test module)
+- Focused postfill audit: 155 passed
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py -q --basetemp=.pytest_local_pf
+- Combined postfill + orchestrator + audit-semantics-split: 216 passed
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py -q --basetemp=.pytest_local_pf/combined
+- Complete one-shot family: 186 passed, 8327 deselected
+    python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_local/family
+- Scoped tiny-execution-adapter regression: 812 passed, 7701 deselected
+    python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local/full
+- Real /v5/order/create network calls: 0
+- Real Bybit Demo orders sent: 0
+- No live or demo credential read. No sender implementation exists in the postfill module.
+- Corrected line counts (for the record; not hard-coded in docs): source ~1214 lines, CLI ~478 lines, test ~1264 lines. (The earlier final-report estimate of ~1053 / ~401 / ~973 was the pre-correction commit d0d6c83 snapshot and is superseded.)
+Outputs: Preview CLI writes optional JSON+Markdown reports only when --write-report is supplied; default invocation prints to stdout only.
+Notes: audit_passed is the authoritative audit-integrity result (offline/fake-only evidence is internally consistent and satisfies the Stage 1 postfill contract); auditable states whether sufficient evidence exists; integrity_all_passed states whether all named checks passed. audit_passed=True does NOT mean an order succeeded; a real order still requires real_order_sent=True; Stage 1 guarantees real_order_sent=False. Does not modify main.py / src/risk.py / src/executors/bybit.py / BybitExecutor / global tiny caps / MAX_ORDER_COUNT=1 / protected denylist / BL packet DEFAULT_QTY=0.01 / 20 USDT cap-escalation ceiling. Amends unpushed commit d0d6c83 in place -- not pushed. Stage 2 real Demo execution remains unauthorized.
+
+---
+
+### 2026-06-21 (TASK-014BN_POSTFILL_AUDIT -- add offline fake-only postfill audit scaffold)
+
+Agent: Claude Opus 4.7
+Command source: Rick explicit chat authorization for TASK-014BN_demo_only_tiny_execution_postfill_audit (offline / fake-only scaffold; new local commit; do not push).
+Task: Add a strictly offline / fake-only postfill audit scaffold that consumes an already-produced OrchestrationReport from the Stage 1 fake-sender path and re-validates the simulated request body against the locked cap-escalation contract. The module emits one of 5 deterministic audit statuses (POSTFILL_AUDIT_SIMULATED_ACCEPTED / POSTFILL_AUDIT_SIMULATED_REJECTED / POSTFILL_AUDIT_SIMULATED_TRANSPORT_ERROR / POSTFILL_AUDIT_NOT_AUDITABLE / POSTFILL_AUDIT_FORBIDDEN_REAL_TRANSPORT) plus 30 deterministic named integrity checks.
+Status before: No postfill audit surface existed for the Stage 1 fake-sender orchestration runs; the OrchestrationReport had to be inspected manually.
+Status after: Postfill audit module, preview CLI, and 131 focused tests added. Family (one-shot) and scoped (tiny-execution-adapter) regressions remain green: 186 and 788 passed respectively. Real Bybit Demo order dispatch remains explicitly unauthorized.
+Files changed:
+- `src/demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py` (new)
+- `scripts/preview_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py` (new)
+- `tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py` (new)
+- `README.md` (Demo Trading Guarded Lifecycle Status banner updated; new TASK-014BN_POSTFILL_AUDIT block prepended)
+- `docs/research/commands/NEXT_ACTION.md` (new TASK-014BN_POSTFILL_AUDIT banner + status section + next-recommended-task block prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13):
+- py_compile: PASS (3 files):
+    src/demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py
+    scripts/preview_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py
+    tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py
+- Focused postfill audit: 131 passed
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py -q --basetemp=.pytest_local_pf
+- Postfill + orchestrator + split focused: 192 passed
+    python -m pytest tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_postfill_audit.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator.py tests/demo_trading/test_demo_only_tiny_execution_adapter_tiny_order_one_shot_stage1_real_vs_simulated_order_audit_semantics_split.py -q --basetemp=.pytest_local_pf/focused
+- Complete one-shot family: 186 passed, 8303 deselected
+    python -m pytest tests/demo_trading -k "one_shot" -q --basetemp=.pytest_local_pf/family
+- Scoped tiny-execution-adapter regression: 788 passed, 7701 deselected
+    python -m pytest tests/demo_trading -k "tiny_execution_adapter" -q --basetemp=.pytest_local_pf/scoped
+- Preview CLI smoke (4 fixtures): simulated_accepted/rejected/transport_error exit=0; not_auditable exit=1.
+- Real /v5/order/create network calls: 0
+- Real Bybit Demo orders sent: 0
+- No live or demo credential read.
+Outputs: Preview CLI writes optional JSON+Markdown reports to outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_postfill_audit/ only when --write-report is supplied. Default invocation prints to stdout only.
+Notes: Strictly offline / fake-only scaffold. Does not modify main.py / src/risk.py / src/executors/bybit.py / BybitExecutor / global tiny caps / MAX_ORDER_COUNT=1 / protected denylist / BL packet DEFAULT_QTY=0.01 / 20 USDT cap-escalation ceiling. New local commit -- not pushed. Stage 2 real Demo execution remains unauthorized; a separate explicit human authorization task is required. Next recommended task: TASK-014BNB_demo_only_tiny_execution_postfill_audit_vps_validation (Ubuntu VPS closeout for this commit; documentation-only).
+
+---
+
 ### 2026-06-21 (TASK-014BM_AUDIT_SEMANTICS_VPS_CLOSEOUT -- record successful VPS validation for commit 1453ff6)
 
 Agent: Claude Sonnet 4.6
