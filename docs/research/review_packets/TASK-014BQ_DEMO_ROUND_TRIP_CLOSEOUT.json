@@ -1,0 +1,83 @@
+{
+  "calculation": {
+    "close_avg_price": "73.8",
+    "close_fee": "0.004059",
+    "currency": "USDT",
+    "estimated_net_pnl_excluding_funding": "-0.03913505",
+    "funding_pnl": "unknown_not_included",
+    "gross_price_pnl": "-0.031",
+    "method": "Decimal",
+    "open_avg_price": "74.11",
+    "open_fee": "0.00407605",
+    "quantity": "0.1",
+    "total_fees": "0.00813505"
+  },
+  "classification": {
+    "included_in_pilot_performance": false,
+    "included_in_strategy_performance": false,
+    "note": "Manually authorized execution-pipeline validation trade. NOT a strategy trade and NOT pilot performance. Do not mix this result into future strategy pilot metrics.",
+    "trade_classification": "MANUAL_EXECUTION_PIPELINE_VALIDATION"
+  },
+  "closing": {
+    "armed_utc": "2026-06-21T11:09:21Z",
+    "avg_fill_price": "73.8",
+    "close_order_id": "4ae9e849-655c-4ac3-b830-d49d587c4f4c",
+    "close_order_link_id": "BC1-566b8509e96b2def",
+    "cum_exec_qty": "0.1",
+    "environment": "Bybit Demo",
+    "execution_fee": "0.004059",
+    "final_conclusion": "DEMO_REDUCE_ONLY_CLOSE_FILLED_POSITION_ZERO_VERIFIED",
+    "journal_final_state": "CLOSE_RESULT_VERIFIED",
+    "order_type": "Market",
+    "position_after": "0",
+    "position_before": "0.1",
+    "quantity": "0.1",
+    "reduce_only": true,
+    "short_position_after": false,
+    "side": "Sell",
+    "symbol": "SOLUSDT",
+    "task": "TASK-014BP",
+    "time_in_force": "IOC",
+    "verified_utc": "2026-06-21T11:09:22Z"
+  },
+  "environment": "BYBIT_DEMO_ONLY",
+  "lifecycle": {
+    "closed_armed_utc": "2026-06-21T11:09:21Z",
+    "closed_verified_utc": "2026-06-21T11:09:22Z",
+    "opened_armed_utc": "2026-06-21T10:30:39Z",
+    "opened_verified_utc": "2026-06-21T10:30:40Z",
+    "round_trip_quantity": "0.1",
+    "round_trip_symbol": "SOLUSDT"
+  },
+  "opening": {
+    "armed_utc": "2026-06-21T10:30:39Z",
+    "avg_fill_price": "74.11",
+    "cum_exec_qty": "0.1",
+    "environment": "Bybit Demo",
+    "execution_fee": "0.00407605",
+    "final_conclusion": "DEMO_ORDER_FILLED_VERIFIED",
+    "journal_final_state": "POST_RESULT_VERIFIED",
+    "order_id": "77173918-71f6-4829-91c9-025bd8cd76fa",
+    "order_link_id": "BO1-4696d511edf11b50",
+    "order_type": "Market",
+    "position_after": "0.1",
+    "quantity": "0.1",
+    "reduce_only": false,
+    "side": "Buy",
+    "symbol": "SOLUSDT",
+    "task": "TASK-014BO",
+    "time_in_force": "IOC",
+    "verified_utc": "2026-06-21T10:30:40Z"
+  },
+  "safety": {
+    "automatic_retry_count": 0,
+    "closing_post_count": 1,
+    "opening_post_count": 1,
+    "position_zero_verified": true,
+    "real_credentials_committed": false,
+    "secrets_in_artifact": false,
+    "short_position_created": false
+  },
+  "task_id": "TASK-014BQ",
+  "title": "Bybit Demo SOLUSDT manual execution-pipeline validation round trip"
+}

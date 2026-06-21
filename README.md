@@ -14,10 +14,55 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BP_DEMO_REDUCE_ONLY_CLOSE, 2026-06-21）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BQ_PILOT_REPORTING, 2026-06-21）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BP_DEMO_REDUCE_ONLY_CLOSE 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BQ_PILOT_REPORTING 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BQ_DEMO_ROUND_TRIP_CLOSEOUT_AND_PILOT_REPORTING_FOUNDATION**（2026-06-21, Opus 4.8 / offline / 未送任何 order、未連任何網路）
+> 完成 Bybit Demo 開倉（TASK-014BO）+ reduceOnly 平倉（TASK-014BP）round trip 的永久 closeout 記錄，
+> 並建立 7–14 天 Bybit Demo 策略 pilot 的離線 reporting 基礎。**本任務未送任何 order、未連 Bybit、未做任何 Notion/Discord 網路請求、未啟動 scheduler、未把策略訊號接上執行。**
+>
+> **已驗證 round trip（sanitized）：**
+> - 開倉 TASK-014BO：SOLUSDT Buy Market IOC 0.1，order id `77173918-71f6-4829-91c9-025bd8cd76fa`，
+>   orderLinkId `BO1-4696d511edf11b50`，均價 `74.11`，成交 `0.1`，手續費 `0.00407605`，持倉後 `0.1`，結論 `DEMO_ORDER_FILLED_VERIFIED`。
+> - 平倉 TASK-014BP：SOLUSDT Sell Market IOC 0.1 reduceOnly，close order id `4ae9e849-655c-4ac3-b830-d49d587c4f4c`，
+>   orderLinkId `BC1-566b8509e96b2def`，均價 `73.8`，成交 `0.1`，手續費 `0.004059`，持倉前 `0.1`、持倉後 `0`、無空單，結論 `DEMO_REDUCE_ONLY_CLOSE_FILLED_POSITION_ZERO_VERIFIED`。
+> - **Round-trip PnL（Decimal）：** gross price PnL = `-0.031`；total fees = `0.00813505`；
+>   estimated net PnL（不含 funding）= **`-0.03913505` USDT**。
+> - **分類：** `MANUAL_EXECUTION_PIPELINE_VALIDATION`，`included_in_strategy_performance=false`、
+>   `included_in_pilot_performance=false`。此為手動授權的執行管線驗證交易，**非策略交易、非 pilot 績效**，不得混入未來 pilot 指標。
+>
+> **永久 closeout 產物（已 commit、sanitized、無任何密鑰）：**
+> `docs/research/review_packets/TASK-014BQ_DEMO_ROUND_TRIP_CLOSEOUT.json` 與 `.md`（不複製 runtime journal 進 Git）。
+>
+> **Pilot reporting 基礎（offline，code modified）：**
+> - `src/demo_strategy_pilot_reporting.py`：frozen dataclasses `PilotConfig` / `PilotDailyRecord` /
+>   `PilotTradeRecord` / `PilotAuditEvent`（金額與數量皆 Decimal；預設 `environment=BYBIT_DEMO_ONLY`、
+>   `maximum_calendar_days=14`、`excel_enabled=true`）+ round-trip closeout builder。
+> - `src/demo_strategy_pilot_store.py`：append-only JSONL 本地 store（config/latest_summary atomic、
+>   daily/trade/audit append-only、Decimal 以字串序列化、重複日期/重複 trade_id fail-closed、
+>   壞掉的 JSONL 會丟明確錯誤、無自動刪除/覆寫、無網路、無密鑰；runtime 路徑
+>   `outputs/demo_trading/pilot/<pilot_id>/`，留在版控外）。
+> - `scripts/build_demo_strategy_pilot_workbook.py`：以 **openpyxl** 產生真實 `.xlsx`
+>   `outputs/demo_trading/pilot/<pilot_id>/demo_strategy_pilot_results.xlsx`（+ `snapshots/...<YYYYMMDD>.xlsx`），
+>   六個工作表（Pilot Summary / Daily Performance / Trades / Execution Quality / Forward Comparison / Audit Log）、
+>   凍結表頭、篩選、百分比/金額為數值格、空資料仍產出有效工作簿、tmp+atomic replace。
+> - `scripts/preview_demo_strategy_pilot_notion_payload.py`：**preview only**，輸出 sanitized Notion upsert payload
+>   （idempotent key=`pilot_id+date`），零 HTTP、不讀 token、不 import 生產 Notion client。
+> - `scripts/preview_demo_strategy_pilot_discord_summary.py`：**preview only**，輸出中文每日摘要，零 HTTP、不讀 webhook。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13 / openpyxl 3.1.5；全程 offline）：**
+> - py_compile（6 檔）→ PASS
+> - Focused pilot_reporting: **39 passed**
+> - `-k "tiny_execution_adapter or reduce_only_close or pilot_reporting"`: **1034 passed, 7701 deselected**
+>
+> **安全不變項：** Real order POST calls: **0**；Real orders sent: **0**；Notion HTTP: **0**；Discord HTTP: **0**；
+> 未 import live executor / `main.py` / `src/risk.py` / 任何網路 client；新 reporting 模組/腳本內無 order endpoint 字串；
+> outputs（workbook/JSONL/snapshots）皆留在版控外、未 commit。
+> **下一步：** push → 下一任務將把真實 pilot 每日 runner 與策略 trade records 接上；**7 天策略 pilot 已可在此 reporting 基礎上啟動**（執行串接由後續任務負責）。
+
+---
 
 > **TASK-014BP_DEMO_REDUCE_ONLY_CLOSE**（2026-06-21, Opus 4.8 / 實作 single reduce-only close gate / 實作期間未送任何 order）
 > 實作一條「手動觸發、fail-closed」的單筆 Bybit Demo reduce-only Market 平倉路徑，用以關閉 TASK-014BO 已驗證成交的多單。

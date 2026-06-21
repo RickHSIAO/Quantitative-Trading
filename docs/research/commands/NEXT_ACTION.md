@@ -1,5 +1,64 @@
 # Next Action
 
+> README shared status updated by TASK-014BQ_PILOT_REPORTING (2026-06-21).
+> Completes the permanent closeout of the verified TASK-014BO opening +
+> TASK-014BP reduce-only closing Bybit Demo round trip, and adds the OFFLINE
+> reporting foundation for the upcoming 7-14 day Bybit Demo strategy pilot.
+> NO order was sent, NO Bybit/Notion/Discord network request was made, NO
+> scheduler was started, and strategy signals are NOT connected to execution.
+> New commit on top of 8756ab7 (TASK-014BP not amended).
+>
+> Verified round trip (sanitized): TASK-014BO open SOLUSDT Buy Market IOC 0.1
+> (order 77173918-71f6-4829-91c9-025bd8cd76fa / BO1-4696d511edf11b50, avg 74.11,
+> fee 0.00407605, position 0.1, DEMO_ORDER_FILLED_VERIFIED); TASK-014BP close
+> SOLUSDT Sell Market IOC 0.1 reduceOnly (order 4ae9e849-655c-4ac3-b830-
+> d49d587c4f4c / BC1-566b8509e96b2def, avg 73.8, fee 0.004059, position
+> 0.1->0, no short, DEMO_REDUCE_ONLY_CLOSE_FILLED_POSITION_ZERO_VERIFIED).
+> Decimal PnL: gross -0.031, fees 0.00813505, estimated net excluding funding
+> -0.03913505 USDT. Classification MANUAL_EXECUTION_PIPELINE_VALIDATION;
+> included_in_strategy_performance=false; included_in_pilot_performance=false
+> (do not mix into pilot metrics).
+>
+> Committed sanitized closeout artifacts:
+> docs/research/review_packets/TASK-014BQ_DEMO_ROUND_TRIP_CLOSEOUT.json and .md
+> (no secrets; runtime journals are NOT copied into Git).
+>
+> Pilot reporting foundation (offline; code modified):
+> - src/demo_strategy_pilot_reporting.py (frozen PilotConfig / PilotDailyRecord
+>   / PilotTradeRecord / PilotAuditEvent; Decimal everywhere; defaults
+>   environment=BYBIT_DEMO_ONLY, maximum_calendar_days=14, excel_enabled=true).
+> - src/demo_strategy_pilot_store.py (append-only JSONL store; atomic config /
+>   latest_summary; duplicate daily date and duplicate trade_id fail closed;
+>   explicit idempotent daily upsert; malformed JSONL raises; no deletion; no
+>   network; runtime under outputs/demo_trading/pilot/<pilot_id>/, outside Git).
+> - scripts/build_demo_strategy_pilot_workbook.py (real .xlsx via openpyxl;
+>   sheets Pilot Summary, Daily Performance, Trades, Execution Quality, Forward
+>   Comparison, Audit Log; freeze + filters; numeric percent/money cells; empty
+>   data still valid; tmp + atomic replace; dated snapshot).
+> - scripts/preview_demo_strategy_pilot_notion_payload.py (PREVIEW ONLY;
+>   sanitized upsert payload; idempotency key pilot_id+date; zero HTTP; no token).
+> - scripts/preview_demo_strategy_pilot_discord_summary.py (PREVIEW ONLY;
+>   Chinese daily summary; zero HTTP; no webhook).
+>
+> Validation (offline): py_compile (6 files) PASS; focused pilot_reporting 39 passed; -k "tiny_execution_adapter or reduce_only_close or pilot_reporting"
+> 1034 passed, 7701 deselected. Real order POSTs 0; orders sent 0; Notion HTTP
+> 0; Discord HTTP 0. Outputs (workbook/JSONL/snapshots) remain outside Git.
+
+## TASK-014BQ_PILOT_REPORTING Status (2026-06-21)
+
+- Status: COMPLETE / PASS (offline; no orders; no network; new commit on 8756ab7)
+- Round-trip estimated net PnL (validation trade, excluded from strategy/pilot): -0.03913505 USDT
+- Committed closeout: docs/research/review_packets/TASK-014BQ_DEMO_ROUND_TRIP_CLOSEOUT.{json,md}
+- py_compile: PASS (6 files)
+- Focused pilot_reporting: 39 passed
+- Combined -k "tiny_execution_adapter or reduce_only_close or pilot_reporting": 1034 passed, 7701 deselected
+- Real order POST calls: 0; real orders sent: 0; Notion HTTP: 0; Discord HTTP: 0
+- Next action: connect the real pilot daily runner and strategy trade records
+  (separate task). No strategy execution is wired yet. The 7-14 day Bybit Demo
+  pilot can run on this reporting foundation once the runner is connected.
+
+---
+
 > README shared status updated by TASK-014BP_DEMO_REDUCE_ONLY_CLOSE
 > (2026-06-21). Implements a manually-triggered, fail-closed single Bybit Demo
 > reduce-only Market close of the TASK-014BO verified-filled SOLUSDT 0.1 long.

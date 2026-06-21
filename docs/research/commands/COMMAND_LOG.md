@@ -21,6 +21,41 @@ Notes:
 
 ---
 
+### 2026-06-21 (TASK-014BQ_PILOT_REPORTING -- close out Demo round trip and add offline reporting foundation)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization for TASK-014BQ_DEMO_ROUND_TRIP_CLOSEOUT_AND_PILOT_REPORTING_FOUNDATION (record the verified TASK-014BO/BP round trip and build the offline pilot reporting foundation; send no order; no Bybit/Notion/Discord network; new commit on 8756ab7; do not push).
+Task: Complete the permanent sanitized closeout for the verified Bybit Demo opening (TASK-014BO) + reduce-only closing (TASK-014BP) round trip, and implement the offline reporting foundation (data model + append-only store + real .xlsx exporter + Notion/Discord preview-only) for the upcoming 7-14 day Bybit Demo strategy pilot. No order sent; no network; no scheduler; strategy signals not connected to execution.
+Status before: the verified round trip had no permanent committed closeout record, and no pilot reporting foundation existed.
+Status after: committed sanitized closeout artifacts + offline pilot reporting modules/scripts + 49 focused tests added. Round-trip estimated net PnL (Decimal) = -0.03913505 USDT, classified MANUAL_EXECUTION_PIPELINE_VALIDATION and excluded from strategy/pilot performance. Real order POSTs 0; orders sent 0; Notion HTTP 0; Discord HTTP 0.
+Verified round trip (sanitized): open SOLUSDT Buy Market IOC 0.1, order 77173918-71f6-4829-91c9-025bd8cd76fa / BO1-4696d511edf11b50, avg 74.11, fee 0.00407605, position 0.1, DEMO_ORDER_FILLED_VERIFIED; close SOLUSDT Sell Market IOC 0.1 reduceOnly, order 4ae9e849-655c-4ac3-b830-d49d587c4f4c / BC1-566b8509e96b2def, avg 73.8, fee 0.004059, position 0.1->0, no short, DEMO_REDUCE_ONLY_CLOSE_FILLED_POSITION_ZERO_VERIFIED. gross_price_pnl=-0.031, total_fees=0.00813505, estimated_net_pnl_excluding_funding=-0.03913505 (Decimal).
+Files changed:
+- `docs/research/review_packets/TASK-014BQ_DEMO_ROUND_TRIP_CLOSEOUT.json` (new; sanitized closeout artifact)
+- `docs/research/review_packets/TASK-014BQ_DEMO_ROUND_TRIP_CLOSEOUT.md` (new; sanitized closeout artifact)
+- `src/demo_strategy_pilot_reporting.py` (new; frozen dataclasses + round-trip closeout builder; Decimal only)
+- `src/demo_strategy_pilot_store.py` (new; append-only JSONL store, atomic config/summary, fail-closed dedup, malformed-raise)
+- `scripts/build_demo_strategy_pilot_workbook.py` (new; real .xlsx via openpyxl; 6 sheets; numeric percent/money cells; atomic + snapshot)
+- `scripts/preview_demo_strategy_pilot_notion_payload.py` (new; preview-only sanitized payload; idempotent key pilot_id+date; zero HTTP/no token)
+- `scripts/preview_demo_strategy_pilot_discord_summary.py` (new; preview-only Chinese daily summary; zero HTTP/no webhook)
+- `tests/demo_trading/test_demo_strategy_pilot_reporting.py` (new; 49 offline focused tests)
+- `README.md` (TASK-014BQ banner)
+- `docs/research/commands/NEXT_ACTION.md` (TASK-014BQ banner + status section prepended)
+- `docs/research/commands/COMMAND_LOG.md` (this entry)
+Validation (local, Windows 11 / .venv Python 3.13 / openpyxl 3.1.5; all offline):
+- py_compile: PASS (6 files)
+    python -m py_compile src/demo_strategy_pilot_reporting.py src/demo_strategy_pilot_store.py scripts/build_demo_strategy_pilot_workbook.py scripts/preview_demo_strategy_pilot_notion_payload.py scripts/preview_demo_strategy_pilot_discord_summary.py tests/demo_trading/test_demo_strategy_pilot_reporting.py
+- Focused pilot_reporting: 39 passed
+    python -m pytest tests/demo_trading/test_demo_strategy_pilot_reporting.py -q --basetemp=.pytest_bq
+- Combined -k "tiny_execution_adapter or reduce_only_close or pilot_reporting": 1034 passed, 7701 deselected
+- Real order /v5/order/create POST calls: 0
+- Real Bybit Demo orders sent: 0
+- Notion HTTP calls: 0; Discord HTTP calls: 0
+- No real or demo credential read, printed, or committed. No secret serialized.
+Outputs: Runtime pilot data (pilot_config.json, daily_records.jsonl, trade_records.jsonl, audit_events.jsonl, latest_summary.json) and the .xlsx workbook/snapshots are written only under outputs/demo_trading/pilot/<pilot_id>/ (outside Git) and were NOT committed; only the sanitized review-packet closeout artifacts are committed.
+Notes: PilotConfig defaults environment=BYBIT_DEMO_ONLY, maximum_calendar_days=14, excel_enabled=true. Store is append-only with atomic config/latest_summary; duplicate daily date and duplicate trade_id fail closed; explicit idempotent upsert_daily provided; malformed JSONL raises MalformedStoreError; no automatic deletion/overwrite. The workbook uses openpyxl (not LibreOffice), deterministic sheet order, frozen header rows, filters, numeric percentage and monetary cells, valid empty workbook, tmp+atomic replace, and dated snapshots. Notion and Discord scripts are preview-only: zero HTTP, no token/webhook read, do not import the production synchronizer/client. The validation trade is excluded from all strategy/pilot metrics. No strategy execution is wired; no scheduler; no order endpoint string appears in the new reporting modules/scripts. New commit on 8756ab7 -- TASK-014BP not amended; not pushed. Next action: connect the real pilot daily runner and strategy trade records in a separate task.
+
+---
+
 ### 2026-06-21 (TASK-014BP_DEMO_REDUCE_ONLY_CLOSE -- add one-shot verified position-close gate)
 
 Agent: Claude Opus 4.8
