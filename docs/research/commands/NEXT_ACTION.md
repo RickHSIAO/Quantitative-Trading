@@ -1,5 +1,65 @@
 # Next Action
 
+> README shared status updated by TASK-014BX_STRATEGY_NATIVE_PILOT (2026-06-22).
+> **`7-DAY PILOT NOT STARTED DURING IMPLEMENTATION / LIVE TRADING NOT AUTHORIZED`**
+> Implements the explicit manual START and strategy-native automatic Bybit DEMO
+> execution path for `BYBIT_DEMO_PILOT_7D_202606_V1`. Per Rick's explicit decision
+> this is a Bybit Demo-only strategy validation: the previously proposed artificial
+> Pilot caps are REMOVED/superseded -- NO fixed max 1 opening order/day, NO 10 USDT
+> per-order cap, NO 10 USDT daily opening cap, NO max 1 simultaneous position, and
+> NO prohibition on strategy-produced averaging/pyramiding/adding/partial-close/
+> multi-position. The Pilot runs the existing strategy's own rules; strategy
+> signals / sizing / ranking / universe / portfolio / risk logic are UNCHANGED.
+>
+> Hard safety boundaries RETAINED (never weakened): Bybit Demo endpoint only; Live
+> permanently denied; Live credentials never used; protected symbols
+> (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) rejected; no Demo->Live fallback; no
+> duplicate order on rerun (reconcile, never resend); no auto-retry; ambiguous
+> request/response fails closed and requires reconciliation; manual BO/BP + smoke
+> records excluded; local JSONL/state authoritative; Notion/Discord delivery failure
+> never re-runs execution. Implementation does NOT start the Pilot and sends no order;
+> tests use fake transports only (0 real HTTP, 0 Bybit calls, 0 orders).
+>
+> New files: src/demo_strategy_pilot_lifecycle.py (strategy-native SAFETY policy,
+> audited INACTIVE->INACTIVE policy migration, explicit one-time INACTIVE->RUNNING
+> start), src/demo_strategy_pilot_native_execution.py (strategy-native action model,
+> hard-safety classifier, idempotent Demo execution engine via INJECTED transport,
+> reconcile, successful-day advancement), scripts/run_demo_strategy_pilot_native_daily.py
+> (production daily command; plan-only by default, sends only under --send-orders-to-demo),
+> tests/demo_trading/test_demo_strategy_pilot_native_pilot.py. Extended:
+> scripts/manage_demo_strategy_pilot.py (+--mode migrate, +--mode start).
+>
+> Exact commands (Windows PowerShell .venv and VPS bash are identical):
+> ```
+> # (one-time, only if a state already exists with the old caps) audited policy migration
+> python scripts/manage_demo_strategy_pilot.py --mode migrate --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --i-acknowledge-strategy-native-policy-migration --json-only
+> # explicit one-time START (INACTIVE -> RUNNING; requires Demo credential PRESENCE)
+> python scripts/manage_demo_strategy_pilot.py --mode start --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --i-authorize-strategy-native-automatic-bybit-demo-execution-for-this-7-day-pilot --json-only
+> # daily strategy-native execution (plan-only without the send flag; add --send-orders-to-demo to execute on Bybit Demo, --advance-on-success to count a clean day)
+> python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --strategy-actions-json <strategy_actions.json> --send-orders-to-demo --advance-on-success --json-only
+> # status / emergency-block: status is read-only; to halt, do NOT pass --send-orders-to-demo (plan-only sends nothing) and stop running the daily command
+> python scripts/manage_demo_strategy_pilot.py --mode status --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+> ```
+>
+> Validation (offline; Windows 11 / .venv Python 3.13): py_compile PASS; focused
+> native 35 passed; -k "pilot_readiness or pilot_delivery or pilot_output_status or
+> pilot_forward_source or pilot_daily_runner or pilot_reporting or
+> tiny_execution_adapter or reduce_only_close or native_pilot or
+> provision_demo_strategy_pilot_notion" 1331 passed, 7701 deselected. Bybit network
+> 0; order POSTs 0; orders sent 0; real HTTP 0; no BYBIT_DEMO_* values read. New
+> commit on aa7c592 (not amended; not pushed).
+
+## TASK-014BX_STRATEGY_NATIVE_PILOT Status (2026-06-22)
+
+- Status: COMPLETE / PASS (explicit start authorization + strategy-native Demo execution path; artificial caps removed; Pilot NOT started; Live NOT authorized; new commit on aa7c592)
+- py_compile: PASS; focused native: 35 passed; combined regression: 1331 passed, 7701 deselected
+- Bybit network calls: 0; order POSTs: 0; orders sent: 0; real HTTP: 0; tests used fake transports only
+- Removed artificial caps: 1 opening order/day, 10 USDT per-order, 10 USDT daily opening, 1 simultaneous position, averaging/pyramiding prohibition
+- Retained hard safety: Bybit Demo only; Live permanently denied; Live creds never used; protected symbols rejected; no Demo->Live fallback; no duplicate order; no auto-retry; ambiguous fails closed; manual BO/BP + smoke excluded
+- 7-DAY PILOT NOT STARTED DURING IMPLEMENTATION / LIVE TRADING NOT AUTHORIZED
+
+---
+
 > README shared status updated by TASK-014BW_PILOT_READINESS (2026-06-22).
 > **`7-DAY PILOT NOT STARTED / AUTOMATIC DEMO EXECUTION NOT AUTHORIZED`**
 > Defines and implements the fail-closed readiness foundation for a 7-successful-day

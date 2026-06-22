@@ -21,6 +21,20 @@ Notes:
 
 ---
 
+### 2026-06-22 (TASK-014BX_STRATEGY_NATIVE_PILOT -- explicit 7-day Bybit Demo execution start; artificial caps removed)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization (continue from aa7c592)
+Task: TASK-014BX_STRATEGY_NATIVE_7_DAY_DEMO_PILOT_START
+Status before: TASK-014BW_PILOT_READINESS COMPLETE/PASS (Pilot INACTIVE; automatic Demo execution unauthorized)
+Status after: COMPLETE / PASS -- explicit one-time START authorization + strategy-native automatic Bybit DEMO execution path implemented; Pilot NOT started during implementation; Live trading NOT authorized
+Files changed: src/demo_strategy_pilot_lifecycle.py (new), src/demo_strategy_pilot_native_execution.py (new), scripts/manage_demo_strategy_pilot.py (extended: +migrate +start), scripts/run_demo_strategy_pilot_native_daily.py (new), tests/demo_trading/test_demo_strategy_pilot_native_pilot.py (new), tests/demo_trading/test_demo_strategy_pilot_readiness.py (CLI-mode test updated for superseding modes), README.md, docs/research/commands/NEXT_ACTION.md, docs/research/commands/COMMAND_LOG.md
+Validation: py_compile PASS (lifecycle+engine+both CLIs); focused native 35 passed; -k "pilot_readiness or pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close or native_pilot or provision_demo_strategy_pilot_notion" 1331 passed, 7701 deselected; offline (Windows 11 / .venv Python 3.13)
+Outputs: Pilot NOT started; no Demo position; no canonical pilot_state.json on disk; Bybit network 0; order POSTs 0; orders sent 0; real HTTP 0; tests used fake transports only (no BYBIT_DEMO_* values read)
+Notes: Rick's explicit decision -- this is a Bybit Demo-only strategy validation; the previously proposed artificial Pilot caps are REMOVED/superseded: NO fixed max 1 opening order/day, NO 10 USDT per-order cap, NO 10 USDT daily opening cap, NO max 1 simultaneous position, NO prohibition on strategy-produced averaging/pyramiding/adding/partial-close/multi-position. The Pilot executes the existing strategy's own rules; strategy signals/sizing/portfolio/risk logic unchanged. Hard safety boundaries RETAINED: Bybit Demo endpoint only; Live permanently denied; Live credentials never used; protected symbols (ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT) rejected; no Demo->Live fallback; no duplicate order on rerun (reconcile not resend); no auto-retry; ambiguous outcome fails closed; manual BO/BP + smoke excluded; local JSONL/state authoritative; Notion/Discord delivery failure never re-runs execution. New CLI: --mode migrate (--i-acknowledge-strategy-native-policy-migration; audited INACTIVE policy migration; preserves original fingerprint; appends MIGRATION event; idempotent) and --mode start (--i-authorize-strategy-native-automatic-bybit-demo-execution-for-this-7-day-pilot; INACTIVE->RUNNING once; requires strategy-native policy + empty blockers + Demo credential PRESENCE; sets order/automatic/automatic_demo execution authorized true, live_trading_authorized false; idempotent single START event). Successful-day counter advances at most once per date; COMPLETED after exactly 7 accepted dates. 7-DAY PILOT NOT STARTED DURING IMPLEMENTATION / LIVE TRADING NOT AUTHORIZED. One new commit on aa7c592; not amended; not pushed.
+
+---
+
 ### 2026-06-22 (TASK-014BW_PILOT_READINESS -- inactive 7-successful-day Demo Pilot readiness foundation)
 
 Agent: Claude Opus 4.8

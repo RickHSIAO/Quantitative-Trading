@@ -17,7 +17,50 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BW_PILOT_READINESS 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BX_STRATEGY_NATIVE_PILOT 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014BX_STRATEGY_NATIVE_7_DAY_DEMO_PILOT_START**（2026-06-22, Opus 4.8 / 實作明確 START 授權 + strategy-native 自動 Bybit DEMO 執行路徑 / 實作期間未啟動 Pilot、未送任何 order）
+> **`7-DAY PILOT NOT STARTED DURING IMPLEMENTATION / LIVE TRADING NOT AUTHORIZED`**
+>
+> **Rick 明確決定：** 這是 Bybit Demo-only 的策略驗證。**不**強加非策略本身的人為 Pilot 限制。
+> 先前提出的人為上限已**移除/取代**：
+> - **取消**「每日最多 1 筆開倉單」
+> - **取消**「每單 10 USDT 名目上限」
+> - **取消**「每日 10 USDT 開倉名目上限」
+> - **取消**「最多 1 個同時持倉」
+> - **不再禁止**由既有策略產生的加碼/金字塔/加倉/部分平倉/多倉行為
+>
+> Pilot 依**既有策略本身的規則**執行；策略 signals / sizing / ranking / universe / portfolio / risk 邏輯**完全不變**。
+> 本任務**不**修改 main.py、不修改 src/risk.py、不弱化 Demo/Live endpoint guard。
+>
+> **保留的硬安全邊界（永不弱化）：** 只用 Bybit Demo endpoint；Live 永久禁止；Live 憑證永不使用；
+> 保護幣 ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT 拒絕；無 Demo→Live fallback；重跑同 Pilot/日期/signal **不重送**（改為 reconcile）；
+> 無自動 retry；模糊結果 fail-closed 需 reconcile；手動 BO/BP + smoke 紀錄排除於 Pilot 績效；本地 JSONL/state 為權威；
+> Notion/Discord 投遞失敗**不**重跑策略執行。`live_trading_authorized` 永為 false。
+>
+> **新增檔案：**
+> - `src/demo_strategy_pilot_lifecycle.py`（strategy-native 安全政策、INACTIVE 政策稽核遷移、明確一次性 INACTIVE→RUNNING START）
+> - `src/demo_strategy_pilot_native_execution.py`（strategy-native 動作模型、硬安全分類、idempotent Demo 執行引擎（注入式 transport）、reconcile、成功日推進）
+> - `scripts/run_demo_strategy_pilot_native_daily.py`（正式每日指令；預設 plan-only 不連網，僅在 `--send-orders-to-demo` 才送單）
+> - `tests/demo_trading/test_demo_strategy_pilot_native_pilot.py`
+> - 擴充 `scripts/manage_demo_strategy_pilot.py`（新增 `--mode migrate`、`--mode start`）
+>
+> **確切指令（Windows PowerShell .venv 與 VPS bash 相同）：**
+> ```
+> # （僅當既有 state 仍含舊上限時）稽核式政策遷移
+> python scripts/manage_demo_strategy_pilot.py --mode migrate --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --i-acknowledge-strategy-native-policy-migration --json-only
+> # 明確一次性 START（INACTIVE→RUNNING；需 Demo 憑證存在性）
+> python scripts/manage_demo_strategy_pilot.py --mode start --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --i-authorize-strategy-native-automatic-bybit-demo-execution-for-this-7-day-pilot --json-only
+> # 每日 strategy-native 執行（無 send flag 為 plan-only；加 --send-orders-to-demo 才真的對 Bybit Demo 送單，--advance-on-success 計入乾淨日）
+> python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --strategy-actions-json <strategy_actions.json> --send-orders-to-demo --advance-on-success --json-only
+> # 狀態 / 緊急停止：status 為唯讀；要停止就「不要」帶 --send-orders-to-demo（plan-only 不送任何單）並停止執行每日指令
+> python scripts/manage_demo_strategy_pilot.py --mode status --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+> ```
+>
+> **驗證（offline / Windows 11 / .venv Python 3.13）：** py_compile PASS；focused native 35 passed；
+> `-k "pilot_readiness or pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close or native_pilot or provision_demo_strategy_pilot_notion"` 1331 passed, 7701 deselected。
+> Bybit 網路 0；order POST 0；orders sent 0；real HTTP 0；測試只用 fake transport（未讀任何 BYBIT_DEMO_* 值）。新 commit 於 aa7c592（未 amend、未 push）。
+> **`7-DAY PILOT NOT STARTED DURING IMPLEMENTATION / LIVE TRADING NOT AUTHORIZED`**
 
 > **TASK-014BW_7_DAY_DEMO_PILOT_READINESS**（2026-06-22, Opus 4.8 / 只做 readiness/狀態機/驗證 / 未啟動 Pilot、未送任何 order）
 > **`7-DAY PILOT NOT STARTED / AUTOMATIC DEMO EXECUTION NOT AUTHORIZED`**

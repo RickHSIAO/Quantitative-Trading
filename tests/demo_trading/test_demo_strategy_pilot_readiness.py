@@ -335,10 +335,13 @@ def test_cli_test_output_root_refused_outside_temp(capsys):
     assert payload["status"] == "SAFETY_REFUSAL" and rc == cli.EXIT_SAFETY
 
 
-def test_no_start_or_execute_cli_mode():
+def test_cli_modes_include_strategy_native_start_and_migrate():
+    # TASK-014BX supersedes the readiness-only mode set: migrate + explicit
+    # one-time start are now first-class modes. Bare --start / --execute /
+    # --send-order style flags remain absent (start is --mode start).
     actions = {a.dest: a for a in cli.build_parser()._actions}
     mode_action = actions["mode"]
-    assert set(mode_action.choices) == {"readiness", "initialize", "status"}
+    assert set(mode_action.choices) == {"readiness", "initialize", "status", "migrate", "start"}
     opts = set()
     for a in cli.build_parser()._actions:
         opts.update(a.option_strings)
