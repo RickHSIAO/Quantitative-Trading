@@ -9623,3 +9623,46 @@ Files changed (committed):
   MOD  README.md                                               (TASK-014BZ_FIX shared status)
   MOD  docs/research/commands/NEXT_ACTION.md                   (TASK-014BZ_FIX block)
   MOD  docs/research/commands/COMMAND_LOG.md                   (this entry)
+
+---
+
+### TASK-014BZ_FIX2_SAME_DATE_INCREMENTAL_RERUN_AGGREGATION
+
+- **Date:** 2026-06-23
+- **Model:** Sonnet 4.6 (Codex GPT-5.5 reasoning high)
+- **Parent commit:** 957f76c
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  The two 20260605 ledger rows are an incremental same-date rerun chain, not
+  independent replacement candidates: 10480.2968 - 61.0413 = 10419.2555 (row1);
+  10419.2555 + 26.6375 = 10445.8930 (row2). Canonical daily PnL = -61.0413 +
+  26.6375 = -34.4038 (NOT +26.6375). New SAME_DATE_INCREMENTAL_RERUN_CHAIN
+  classification detects ordered intra-date additive chains and constructs a
+  synthetic canonical row with aggregated daily PnL. This fixes the prior
+  TASK-014BZ_FIX LEDGER_SEMANTICS_FAILURE (consistency_failure_count=1) on the
+  real VPS ledger: after correct canonicalization all 36 canonical dates pass
+  the three additive relations with 0 failures. Other duplicate handling retained:
+  IDENTICAL_DUPLICATE (safe dedupe), TRUE_REPLACEMENT_RERUN (full-day replacement
+  connecting independently to both prior and next rows), AMBIGUOUS_DUPLICATE_CONFLICT
+  (fail closed; no first/last-wins). Scorecard becomes KEEP_BASELINE_PROVISIONAL on
+  the VPS. Holding period +6.077668%, end NAV 10607.7668, fresh 19 days, daily risk
+  INSUFFICIENT unchanged. Extension period return (10495.4855/10607.7668-1) now
+  exposed at top-level JSON. 0 challengers promoted; Active V1/Pilot/capital unchanged;
+  no Demo order sent; Live unauthorized.
+  Tests: focused 29 passed; strategy_selection + demo 165 passed. 0 network / 0 Bybit /
+  0 orders. Runtime reports under outputs/research/strategy_selection/TASK-014BZ_FIX2/
+  (gitignored; VPS regen); TASK-014BY/, TASK-014BZ/, TASK-014BZ_FIX/ retained.
+
+VPS regenerate command:
+  python scripts/analyze_forward30_ledger_fix.py --input-root outputs/forward_record \r
+    --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BZ_FIX2 --json-only
+
+Files changed (committed):
+  MOD  src/strategy_selection/ledger_fix_semantics.py          (+SAME_DATE_INCREMENTAL_RERUN_CHAIN,
+                                                                +TRUE_REPLACEMENT_RERUN, aggregation logic)
+  MOD  scripts/analyze_forward30_ledger_fix.py                 (+extension_period_return, updated fields)
+  MOD  tests/strategy_selection/test_ledger_fix_semantics.py   (29 tests, +4 new FIX2-specific)
+  MOD  README.md                                               (TASK-014BZ_FIX2 shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                   (TASK-014BZ_FIX2 block)
+  MOD  docs/research/commands/COMMAND_LOG.md                   (this entry)

@@ -1,5 +1,25 @@
 # Next Action
 
+> README shared status updated by TASK-014BZ_FIX2 (2026-06-23).
+> **`SAME-DATE INCREMENTAL RERUN AGGREGATED / ADDITIVE LEDGER VALID / 30-CALENDAR-DAY HOLDING RETURN +6.077668% / DAILY RISK METRICS PROVISIONAL / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 957f76c correcting same-date incremental rerun aggregation.
+>
+> - **20260605 is an incremental same-date rerun chain:** `10480.2968 − 61.0413 = 10419.2555` (row1);
+>   `10419.2555 + 26.6375 = 10445.8930` (row2). Canonical daily PnL = `−34.4038` (NOT +26.6375).
+> - New classification `SAME_DATE_INCREMENTAL_RERUN_CHAIN`: raw rows form an ordered intra-date additive chain;
+>   canonical row aggregates all same-date deltas. Other handling retained: `IDENTICAL_DUPLICATE` (safe dedupe),
+>   `TRUE_REPLACEMENT_RERUN` (full-day replacement), `AMBIGUOUS_DUPLICATE_CONFLICT` (fail closed).
+> - After canonicalization: 36 canonical rows, all 3 additive relations pass, `consistency_failure_count = 0`,
+>   `LEDGER_SEMANTICS_VALID`. VPS scorecard: `KEEP_BASELINE_PROVISIONAL`.
+> - Holding period 30 days +6.077668%, end NAV 10607.7668 unchanged; fresh 19 days, daily risk INSUFFICIENT.
+> - Extension period return = 10495.4855 / 10607.7668 − 1 ≈ −1.058% (now in top-level JSON).
+> - 0 challengers promoted; Primary/Shadow non-comparable; Active V1/Pilot/capital unchanged; 0 Demo orders.
+>
+> Validation: focused 29 passed; strategy_selection + demo 165 passed; 0 HTTP, 0 Bybit, 0 orders.
+> VPS regenerate: `python scripts/analyze_forward30_ledger_fix.py --input-root outputs/forward_record --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BZ_FIX2 --json-only`
+
+---
+
 > README shared status updated by TASK-014BZ_FIX (2026-06-22).
 > **`ADDITIVE LEDGER VERIFIED / 20260605 CANONICAL RERUN RESOLVED / 30-CALENDAR-DAY HOLDING RETURN +6.077668% / DAILY RISK METRICS PROVISIONAL / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 399e461 correcting ledger semantics, duplicate canonicalization and stale-mark risk scoping.

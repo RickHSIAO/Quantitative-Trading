@@ -45,9 +45,9 @@ def real_shaped_navs():
     """36-day additive NAV path matching the confirmed VPS structure.
 
     0518 anchor (10000, flat), 0519-0527 stale (flat), 0528 catch-up jump,
-    0529-0604 drift to 10419.2555, 0605 canonical 10445.8930 (+ superseded
-    10419.2555), 0606 10597.4148, ... 0616 official end 10607.7668, ... 0622
-    extension end 10495.4855.
+    0529-0604 drift to 10480.2968, 0605 canonical 10445.8930 (incremental chain:
+    row1 -61.0413 -> 10419.2555, row2 +26.6375 -> 10445.8930), 0606 10597.4148,
+    ... 0616 official end 10607.7668, ... 0622 extension end 10495.4855.
     """
     dates = cal_dates("20260518", 36)
     nav = {}
@@ -55,12 +55,12 @@ def real_shaped_navs():
     for d in dates[1:10]:                          # 0519-0527 stale flat
         nav[d] = 10000.0
     nav[dates[10]] = 10460.2878                     # 0528 catch-up
-    # 0529-0604 linear drift 10460.2878 -> 10419.2555 (idx 11..17)
-    start_v, end_v = 10460.2878, 10419.2555
+    # 0529-0604 linear drift 10460.2878 -> 10480.2968 (idx 11..17)
+    start_v, end_v = 10460.2878, 10480.2968
     for k, idx in enumerate(range(11, 18), start=1):
         nav[dates[idx]] = round(start_v + (end_v - start_v) * (k / 7.0), 4)
-    nav[dates[17]] = 10419.2555                     # 0604 exact
-    nav[dates[18]] = 10445.8930                     # 0605 CANONICAL
+    nav[dates[17]] = 10480.2968                     # 0604 exact (VPS confirmed)
+    nav[dates[18]] = 10445.8930                     # 0605 CANONICAL (aggregated)
     nav[dates[19]] = 10597.4148                     # 0606
     # 0607-0616 linear 10597.4148 -> 10607.7668 (idx 20..29)
     start_v, end_v = 10597.4148, 10607.7668
@@ -82,9 +82,9 @@ def write_real_shaped_ledger(paper_dir: pathlib.Path, *, include_duplicate=True)
     prev = INIT
     for i, d in enumerate(dates):
         if d == "20260605" and include_duplicate:
-            # Superseded rerun row A FIRST (append order), then canonical B.
-            lines.append(_csv_row(d, 10419.2555, -61.0413))          # A (superseded)
-            lines.append(_csv_row(d, 10445.8930, 10445.8930 - prev))  # B (canonical)
+            # Incremental same-date rerun chain: row1 from 0604 nav, row2 from row1 nav.
+            lines.append(_csv_row(d, 10419.2555, -61.0413))          # row1: 10480.2968 - 61.0413
+            lines.append(_csv_row(d, 10445.8930, 26.6375))           # row2: 10419.2555 + 26.6375
             prev = 10445.8930
             continue
         daily = nav[d] - prev
@@ -178,20 +178,28 @@ def test_additive_failure_detected(tmp_path):
 # ===========================================================================
 
 
-def test_20260605_conflicting_duplicate_selects_second_row(tmp_path):
+def test_20260605_incremental_chain_aggregates_deltas(tmp_path):
     write_real_shaped_ledger(tmp_path / "pp", include_duplicate=True)
     raw, canon = load_canonical(tmp_path / "pp")
     assert canon.status == lfs.CANONICALIZATION_VALID
     assert canon.duplicate_date_count == 1
-    assert canon.superseded_rerun_count == 1
+    assert canon.same_date_incremental_rerun_chain_count == 1
+    assert canon.true_replacement_rerun_count == 0
     assert canon.ambiguous_duplicate_conflict_count == 0
     chosen = {r.date: r for r in canon.canonical_rows}["20260605"]
     assert chosen.nav_usd == pytest.approx(10445.8930, abs=1e-4)
-    assert chosen.daily_pnl_usd == pytest.approx(26.6375, abs=1e-3)
+    assert chosen.daily_pnl_usd == pytest.approx(-34.4038, abs=1e-3)
+    assert chosen.daily_pnl_pct == pytest.approx(-0.344038, abs=1e-5)
+    assert chosen.cumulative_pnl_pct == pytest.approx(4.458930, abs=1e-5)
     rec = [r for r in canon.resolution_records if r["date"] == "2026-06-05"][0]
-    assert rec["classification"] == lfs.SUPERSEDED_RERUN
-    assert rec["resolution_method"] == "next_date_additive_continuity"
-    assert rec["superseded_rows"][0]["nav_usd"] == pytest.approx(10419.2555, abs=1e-4)
+    assert rec["classification"] == lfs.SAME_DATE_INCREMENTAL_RERUN_CHAIN
+    assert rec["contributing_raw_row_count"] == 2
+    assert rec["canonical_daily_pnl_usd"] == pytest.approx(-34.4038, abs=1e-3)
+    assert rec["canonical_daily_pnl_pct"] == pytest.approx(-0.344038, abs=1e-5)
+    assert rec["canonical_nav_usd"] == pytest.approx(10445.8930, abs=1e-4)
+    assert rec["prior_continuity_pass"] is True
+    assert rec["intra_date_chain_pass"] is True
+    assert rec["next_date_continuity_pass"] is True
 
 
 def test_identical_duplicate_safe_dedupe(tmp_path):
@@ -231,12 +239,14 @@ def test_duplicate_resolution_report_fields(tmp_path):
     raw, canon = load_canonical(tmp_path / "pp")
     rep = lfs.build_duplicate_resolution_report(canon)
     for k in ("raw_performance_row_count", "canonical_performance_row_count", "duplicate_date_count",
-              "identical_duplicate_count", "superseded_rerun_count", "ambiguous_duplicate_conflict_count",
+              "identical_duplicate_count", "same_date_incremental_rerun_chain_count",
+              "true_replacement_rerun_count", "ambiguous_duplicate_conflict_count",
               "duplicate_resolution_records", "canonical_row_fingerprints", "superseded_row_fingerprints"):
         assert k in rep
     assert rep["raw_performance_row_count"] == 37   # 36 dates + 1 duplicate row
     assert rep["canonical_performance_row_count"] == 36
-    assert len(rep["superseded_row_fingerprints"]) == 1
+    assert rep["same_date_incremental_rerun_chain_count"] == 1
+    assert rep["true_replacement_rerun_count"] == 0
 
 
 def test_raw_ledger_byte_identical_after_analysis(tmp_path):
@@ -411,6 +421,77 @@ def test_zero_challengers_promoted():
 
 
 # ===========================================================================
+# FIX2 — incremental chain ordering, replacement rerun, provenance
+# ===========================================================================
+
+
+def test_reversed_same_date_order_fails_closed(tmp_path):
+    """Reversing raw row order for 20260605 must not silently produce a valid chain;
+    the additive intra-date chain only holds in file (append) order."""
+    paper = tmp_path / "pp"
+    paper.mkdir(parents=True)
+    rows = [
+        _csv_row("20260604", 10480.2968, 480.2968, n_entered=50),
+        # REVERSED order: row2 first, then row1.
+        _csv_row("20260605", 10445.8930, 26.6375),
+        _csv_row("20260605", 10419.2555, -61.0413),
+        _csv_row("20260606", 10597.4148, 151.5218),
+    ]
+    (paper / "daily_pnl.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    raw, canon = load_canonical(paper)
+    # Reversed order: 10480.2968 + 26.6375 != 10445.8930 (since 10480.2968+26.6375=10506.9343),
+    # so the incremental chain should NOT validate. Expect ambiguous or a different resolution.
+    recs = [r for r in canon.resolution_records if r.get("classification") == lfs.SAME_DATE_INCREMENTAL_RERUN_CHAIN]
+    assert len(recs) == 0, "reversed order must not produce a valid incremental chain"
+
+
+def test_genuine_full_day_replacement_rerun(tmp_path):
+    """A genuine full-day replacement: one candidate independently connects to both
+    prior and next rows, classified as TRUE_REPLACEMENT_RERUN."""
+    paper = tmp_path / "pp"
+    paper.mkdir(parents=True)
+    # prior: 10000 + 100 = 10100; dup1 10200 (wrong chain), dup2 10150 connects both ways;
+    # next: 10150 + 50 = 10200. Only dup2 connects to both.
+    rows = [
+        _csv_row("20260518", 10000.0, 0.0, n_entered=50),
+        _csv_row("20260519", 10100.0, 100.0),
+        _csv_row("20260520", 10200.0, 100.0),  # doesn't connect: 10100+100=10200 ok prior, but next needs 10150
+        _csv_row("20260520", 10150.0, 50.0),   # connects: 10100+50=10150 ok prior, 10150+50=10200 ok next
+        _csv_row("20260521", 10200.0, 50.0),
+    ]
+    (paper / "daily_pnl.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    raw, canon = load_canonical(paper)
+    recs = [r for r in canon.resolution_records if r.get("classification") == lfs.TRUE_REPLACEMENT_RERUN]
+    assert len(recs) == 1
+    assert canon.true_replacement_rerun_count == 1
+    chosen = {r.date: r for r in canon.canonical_rows}["20260520"]
+    assert chosen.nav_usd == pytest.approx(10150.0, abs=1e-2)
+
+
+def test_raw_duplicate_provenance_in_audit(tmp_path):
+    """The resolution record for an incremental chain lists all contributing raw
+    row fingerprints in append order."""
+    write_real_shaped_ledger(tmp_path / "pp")
+    raw, canon = load_canonical(tmp_path / "pp")
+    rec = [r for r in canon.resolution_records
+           if r["classification"] == lfs.SAME_DATE_INCREMENTAL_RERUN_CHAIN][0]
+    assert len(rec["contributing_raw_row_fingerprints"]) == 2
+    # Each fingerprint is a sha256:... string.
+    assert all(fp.startswith("sha256:") for fp in rec["contributing_raw_row_fingerprints"])
+    assert rec["canonical_row_fingerprint"].startswith("sha256:")
+
+
+def test_extension_period_return_in_cli_output(tmp_path):
+    """Top-level extension_period_return is emitted in the CLI result."""
+    write_real_shaped_ledger(tmp_path / "fwd" / "paper_portfolio")
+    result = cli.run_analysis(input_root=str(tmp_path / "fwd"), run_key="prev3y_crypto",
+                              output_root=str(tmp_path / "out"), pilot_id="TEST_PILOT")
+    assert "extension_period_return" in result
+    expected = 10495.4855 / 10607.7668 - 1.0
+    assert result["extension_period_return"] == pytest.approx(expected, abs=1e-8)
+
+
+# ===========================================================================
 # Determinism + CLI end-to-end + safety
 # ===========================================================================
 
@@ -444,7 +525,8 @@ def test_cli_end_to_end(tmp_path):
     assert sem["overall_status"] == lfs.LEDGER_SEMANTICS_VALID
     assert sem["consistency_failure_count"] == 0
     dup = json.loads((out / "duplicate_resolution.json").read_text(encoding="utf-8"))
-    assert dup["superseded_rerun_count"] == 1
+    assert dup["same_date_incremental_rerun_chain_count"] == 1
+    assert dup["true_replacement_rerun_count"] == 0
     holding = json.loads((out / "official_holding_period_metrics.json").read_text(encoding="utf-8"))
     assert holding["cumulative_return_decimal"] == pytest.approx(0.06077668, abs=1e-8)
     assert holding["end_nav_usd"] == pytest.approx(10607.7668, abs=1e-4)
@@ -471,4 +553,6 @@ def test_cli_zero_network_and_orders(tmp_path):
     assert result["orders_sent"] == 0
     assert result["challengers_promoted"] == 0
     assert result["consistency_failure_count"] == 0
-    assert result["superseded_rerun_count"] == 1
+    assert result["same_date_incremental_rerun_chain_count"] == 1
+    assert result["true_replacement_rerun_count"] == 0
+    assert result["extension_period_return"] is not None

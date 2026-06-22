@@ -33,7 +33,8 @@ from src.strategy_selection import ledger_fix_scorecard as lfsc  # noqa: E402
 
 OFFICIAL_DAYS = pp.OFFICIAL_VALIDATION_DAYS
 PRESERVED = ["outputs/research/strategy_selection/TASK-014BY",
-             "outputs/research/strategy_selection/TASK-014BZ"]
+             "outputs/research/strategy_selection/TASK-014BZ",
+             "outputs/research/strategy_selection/TASK-014BZ_FIX"]
 
 WORKBOOK_SHEETS = [
     "Executive Summary", "Ledger Semantics", "Duplicate Resolution", "Price Freshness",
@@ -114,15 +115,16 @@ def build_report_md(*, semantics, duplicate_report, freshness, holding, fresh_ri
     L.append("## Duplicate-Date Canonicalization (raw ledger preserved byte-identical)")
     L.append(f"- raw_performance_row_count: `{duplicate_report['raw_performance_row_count']}`; "
              f"canonical_performance_row_count: `{duplicate_report['canonical_performance_row_count']}`.")
-    L.append(f"- duplicate_date_count: `{duplicate_report['duplicate_date_count']}`; identical: "
-             f"`{duplicate_report['identical_duplicate_count']}`; superseded_rerun: "
-             f"`{duplicate_report['superseded_rerun_count']}`; ambiguous: "
-             f"`{duplicate_report['ambiguous_duplicate_conflict_count']}`.")
+    L.append(f"- duplicate_date_count: `{duplicate_report['duplicate_date_count']}`; "
+             f"same_date_incremental_rerun_chain: "
+             f"`{duplicate_report['same_date_incremental_rerun_chain_count']}`; "
+             f"true_replacement_rerun: `{duplicate_report['true_replacement_rerun_count']}`; "
+             f"ambiguous: `{duplicate_report['ambiguous_duplicate_conflict_count']}`.")
     for rec in duplicate_report["duplicate_resolution_records"]:
         L.append(f"  - {rec['date']}: **{rec['classification']}** — {rec['reason']}")
-    L.append("- 20260605: the second row (nav 10445.8930) is CANONICAL_RERUN_FINAL because only it "
-             "continues additively into 20260606 (10445.8930 + 151.5218 = 10597.4148); the first row "
-             "(nav 10419.2555) is SUPERSEDED_RERUN.")
+    L.append("- 20260605: the two raw rows form an incremental same-date rerun chain: "
+             "10480.2968 − 61.0413 = 10419.2555; 10419.2555 + 26.6375 = 10445.8930. "
+             "Canonical daily PnL = −61.0413 + 26.6375 = **−34.4038** (not +26.6375).")
     L.append("")
     L.append("## Price Freshness (structural positions vector + operational data_source)")
     L.append(f"- counts: `{freshness['counts']}`.")
@@ -213,7 +215,8 @@ def build_workbook(path, *, semantics, duplicate_report, freshness, holding, fre
         ("canonical_performance_row_count", duplicate_report["canonical_performance_row_count"]),
         ("duplicate_date_count", duplicate_report["duplicate_date_count"]),
         ("identical_duplicate_count", duplicate_report["identical_duplicate_count"]),
-        ("superseded_rerun_count", duplicate_report["superseded_rerun_count"]),
+        ("same_date_incremental_rerun_chain_count", duplicate_report["same_date_incremental_rerun_chain_count"]),
+        ("true_replacement_rerun_count", duplicate_report["true_replacement_rerun_count"]),
         ("ambiguous_duplicate_conflict_count", duplicate_report["ambiguous_duplicate_conflict_count"])])
     kv(sh["Price Freshness"], [
         ("counts", freshness["counts"]),
@@ -325,7 +328,8 @@ def run_analysis(*, input_root: str, run_key: str, output_root: str, pilot_id: s
         "raw_performance_row_count": duplicate_report["raw_performance_row_count"],
         "canonical_performance_row_count": duplicate_report["canonical_performance_row_count"],
         "duplicate_date_count": duplicate_report["duplicate_date_count"],
-        "superseded_rerun_count": duplicate_report["superseded_rerun_count"],
+        "same_date_incremental_rerun_chain_count": duplicate_report["same_date_incremental_rerun_chain_count"],
+        "true_replacement_rerun_count": duplicate_report["true_replacement_rerun_count"],
         "ambiguous_duplicate_conflict_count": duplicate_report["ambiguous_duplicate_conflict_count"],
         "official_calendar_day_count": len(official_rows),
         "official_holding_period_return": holding.get("cumulative_return_decimal"),
@@ -334,6 +338,7 @@ def run_analysis(*, input_root: str, run_key: str, output_root: str, pilot_id: s
         "daily_risk_status": fresh_risk.get("status"),
         "extension_latest_cumulative_return_from_initial":
             extension.get("extension_latest_cumulative_return_from_initial"),
+        "extension_period_return": extension.get("extension_period_return"),
         "corrected_scorecard_label": scorecard["label"],
         "primary_shadow_comparable": comparability["primary_shadow_comparable"],
         "challengers_promoted": 0, "workbook_written": xlsx_ok,

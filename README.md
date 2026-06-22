@@ -17,7 +17,20 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BZ_FIX 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014BZ_FIX2 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014BZ_FIX2_SAME_DATE_INCREMENTAL_RERUN_AGGREGATION**（2026-06-23, Sonnet 4.6 / 同日遞增重跑鏈聚合）
+> **`SAME-DATE INCREMENTAL RERUN AGGREGATED / ADDITIVE LEDGER VALID / 30-CALENDAR-DAY HOLDING RETURN +6.077668% / DAILY RISK METRICS PROVISIONAL / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **20260605 是同日遞增重跑鏈，不是獨立替換。** `10480.2968 − 61.0413 = 10419.2555`（row1），
+>   `10419.2555 + 26.6375 = 10445.8930`（row2）。正規日 PnL = `−34.4038`（不是 +26.6375）。
+> - 新分類 `SAME_DATE_INCREMENTAL_RERUN_CHAIN`；36 個正規列加法語意 `consistency_failure_count = 0`，
+>   `LEDGER_SEMANTICS_VALID`。Scorecard 升為 `KEEP_BASELINE_PROVISIONAL`（VPS）。
+> - 持有期 30 日 +6.077668%、end NAV 10607.7668；fresh 19 日、daily risk INSUFFICIENT。
+> - Extension period return ≈ −1.058%（頂層 JSON）。0 Challenger promoted；Active V1 / Pilot 不變；0 Demo 單。
+>
+> 驗證（offline）：focused 29 passed；strategy_selection + demo 165 passed；0 HTTP / 0 Bybit / 0 orders。
+> VPS 重生：`python scripts/analyze_forward30_ledger_fix.py --input-root outputs/forward_record --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BZ_FIX2 --json-only`
 
 > **TASK-014BZ_FIX_LEDGER_SEMANTICS_DUPLICATE_CANONICALIZATION_AND_STALE_MARK_CLASSIFICATION**（2026-06-22, Opus 4.8 / 修正帳本加法語意、重複日正規化、stale-mark 風險分類）
 > **`ADDITIVE LEDGER VERIFIED / 20260605 CANONICAL RERUN RESOLVED / 30-CALENDAR-DAY HOLDING RETURN +6.077668% / DAILY RISK METRICS PROVISIONAL / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
