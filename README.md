@@ -17,7 +17,31 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BX_STRATEGY_NATIVE_PILOT 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014BX_FIX 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014BX_FIX_NATIVE_SOURCE_REPORTING_AND_COMMAND_LOG**（2026-06-22, Opus 4.8 / 修正三項 review blocker / 仍未啟動 Pilot）
+> **`7-DAY PILOT STILL NOT STARTED / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **Pilot 仍為 INACTIVE；尚未啟動任何自動 Demo 下單。**
+> - **正式每日指令不再需要手動準備策略動作 JSON。**
+>   `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id <ID> --date <YYYY-MM-DD> --send-orders-to-demo --json-only`
+>   會由權威 Primary Forward Record（TASK-014BS）經新的 canonical planner
+>   `src/demo_strategy_pilot_action_planner.py` 推導實際動作；該 planner **重用既有**的
+>   0.4 fractional-Kelly 倉位 sizer（`src/demo_portfolio_risk.compute_demo_portfolio_sizing`）、
+>   TASK-014P 停損模型、instrument 進位、以及 target-vs-current 倉位轉換。**不發明** weight→數量公式；
+>   無法取得帳戶/行情資料時 fail closed `STRATEGY_NATIVE_ACTION_PLANNER_UNAVAILABLE`。
+>   `--strategy-actions-json` 已從正式模式移除（僅保留 test-only 注入 fixture，且在非測試根目錄會被拒絕）。
+>   策略自身的組合上限（≤10 倉等）屬策略風險邏輯，**不是**已移除的人為 Pilot 上限。
+> - **原生執行已接回既有報表基礎**（`src/demo_strategy_pilot_native_reporting.py`）：無模糊結果後，
+>   結果寫入既有 Pilot 每日紀錄 + output-status ledger、重建六分頁 workbook、並接上 Notion/Discord（gated）；
+>   `--reconcile-outputs-only` 只重試 Excel/Notion/Discord，**不**規劃也**不**執行。成功日最多計一次，且只在無模糊
+>   且 Excel 成功建置後才推進；投遞失敗不會重送訂單。
+> - **Live trading 仍未授權。**
+> - COMMAND_LOG.md 換行 churn 已修正：自 aa7c592 逐位元組還原，僅重新插入 BX / BX_FIX 兩筆 entry
+>   （`git diff aa7c592..HEAD --numstat` 與其 `--ignore-space-at-eol` 版本一致，皆 28/0）。
+>
+> 驗證（offline）：py_compile PASS；focused native_fix 18 passed；native regression 1349 passed, 7701 deselected；
+> Bybit 網路 0；order POST 0；orders sent 0；real HTTP 0；fake transport + fake 帳戶/行情 provider（canonical sizer 為真）。新 fix commit 於 a4e70ea（未 amend、未 push）。
 
 > **TASK-014BX_STRATEGY_NATIVE_7_DAY_DEMO_PILOT_START**（2026-06-22, Opus 4.8 / 實作明確 START 授權 + strategy-native 自動 Bybit DEMO 執行路徑 / 實作期間未啟動 Pilot、未送任何 order）
 > **`7-DAY PILOT NOT STARTED DURING IMPLEMENTATION / LIVE TRADING NOT AUTHORIZED`**

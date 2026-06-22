@@ -1,5 +1,41 @@
 # Next Action
 
+> README shared status updated by TASK-014BX_FIX (2026-06-22).
+> **`7-DAY PILOT STILL NOT STARTED / LIVE TRADING NOT AUTHORIZED`**
+> Fix commit on top of a4e70ea resolving three review blockers.
+>
+> - **Pilot is still INACTIVE.** No automatic Demo order execution has been started.
+> - **The production daily command no longer requires manually prepared strategy actions.**
+>   `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id <ID> --date <YYYY-MM-DD> --send-orders-to-demo --json-only`
+>   derives concrete actions from the authoritative Primary Forward Record (TASK-014BS)
+>   via the new canonical planner (`src/demo_strategy_pilot_action_planner.py`), which
+>   REUSES the existing 0.4 fractional-Kelly portfolio sizer
+>   (`src/demo_portfolio_risk.compute_demo_portfolio_sizing`), the TASK-014P stop model,
+>   instrument rounding, and the target-vs-current position transition. No weight->quantity
+>   formula is invented; it fails closed `STRATEGY_NATIVE_ACTION_PLANNER_UNAVAILABLE` when
+>   account/market data is unavailable. `--strategy-actions-json` is REMOVED from production
+>   (a test-only injected fixture is refused outside a test root). The strategy's own
+>   portfolio limits (<=10 positions, gross/net/single-position caps) are strategy risk
+>   logic, NOT the removed artificial Pilot caps.
+> - **Native execution is wired back into the existing reporting foundation**
+>   (`src/demo_strategy_pilot_native_reporting.py`): on an unambiguous day the result becomes
+>   the existing Pilot daily record + output-status ledger, the canonical six-sheet workbook
+>   is rebuilt, and Notion/Discord delivery is wired (gated). A `--reconcile-outputs-only`
+>   pass retries Excel/Notion/Discord WITHOUT planning or executing. Successful-day advances
+>   AT MOST once and only after the day is unambiguous AND Excel built OK; delivery failure
+>   never resends an order.
+> - **Live trading remains unauthorized.**
+> - COMMAND_LOG.md line-ending churn fixed: restored byte-for-byte from aa7c592 and only the
+>   BX / BX_FIX entries reinserted (net `git diff aa7c592..HEAD --numstat` == its
+>   `--ignore-space-at-eol` form, both 28/0).
+>
+> Validation (offline): py_compile PASS; focused native_fix 18 passed; combined native
+> regression 1349 passed, 7701 deselected; Bybit network 0; order POSTs 0; orders sent 0;
+> real HTTP 0; fake transport + fake account/market provider (canonical sizer real).
+> New fix commit on a4e70ea (not amended; not pushed).
+
+---
+
 > README shared status updated by TASK-014BX_STRATEGY_NATIVE_PILOT (2026-06-22).
 > **`7-DAY PILOT NOT STARTED DURING IMPLEMENTATION / LIVE TRADING NOT AUTHORIZED`**
 > Implements the explicit manual START and strategy-native automatic Bybit DEMO
