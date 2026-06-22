@@ -1,0 +1,34 @@
+{
+  "artifact_fingerprints": {
+    "20260517_forward_stats.json": "sha256:d58fc372a9a0bd100988f984130ed092f0509edd2f9a655f9d4b21d6cc7ec8c7",
+    "20260517_pnl.json": "sha256:ec9a6b4062c7e11f799891de8e0b9130c0ecab0fad18d56f0e527d24cfd315cc",
+    "20260517_positions.parquet": "sha256:23b604eb4615b1a2f23477b78683bd49e34ac635b2581661b5825c4077282e3b",
+    "20260518_forward_stats.json": "sha256:6e72fd3dab0821dd967d6a5f887f2af1dd0ed71543906a9778d34f6989ce9ab0",
+    "20260518_pnl.json": "sha256:f4be50922a7cdaf5f752673041954a6507b35dfee829df8a3256ba708751ce52",
+    "20260518_positions.parquet": "sha256:23b604eb4615b1a2f23477b78683bd49e34ac635b2581661b5825c4077282e3b",
+    "dashboard/validation_30d.csv": "sha256:887de69c7a63719cd0bf593abfeef025503ba77fd3639209d4b26309f66f766a",
+    "forward_summary.json": "sha256:22b1484f5546b71a96c4e64eb1a738499c0c74ccc52d0f1b6fbfc3ce6bae56a3"
+  },
+  "baseline_name": "V1",
+  "code_commit": "ee1113a0d8b09045b251200f97228dab070ad7d7",
+  "exclusions": [
+    "TASK-014BO_BP_MANUAL_ROUND_TRIP",
+    "SMOKE_TEST"
+  ],
+  "forward_validation_period": {
+    "covered_dates": [
+      "2026-05-17",
+      "2026-05-18"
+    ],
+    "expected_date_count": 30,
+    "present_date_count": 2
+  },
+  "manifest_fingerprint": "sha256:b3a06d60215cd91ab66394cfe0722b3fc1a673db66fec4104f4b4e6b4c5cc880",
+  "notes": "Active V1 strategy logic is FROZEN and UNCHANGED; this manifest only identifies and fingerprints the baseline. The running Pilot state was not mutated.",
+  "pilot_id": "BYBIT_DEMO_PILOT_7D_202606_V1",
+  "policy_configuration_fingerprint": "248c805f43a1fb1f9d76d9f96c902b4a7701460898bcb29f6f2262de5ff1c9c3",
+  "source_run_key": "prev3y_crypto",
+  "status": "FROZEN_ACTIVE_BASELINE",
+  "strategy_id": "prev3y_crypto_combined_paper_safe_variant",
+  "task_id": "TASK-014BY"
+}

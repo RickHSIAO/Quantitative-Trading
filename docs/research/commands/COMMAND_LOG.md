@@ -21,6 +21,20 @@ Notes:
 
 ---
 
+### 2026-06-22 (TASK-014BY_STRATEGY_SELECTION -- 30-day Forward diagnostics + challenger design; V1 frozen)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization (continue from ee1113a)
+Task: TASK-014BY_FORWARD30_STRATEGY_DIAGNOSTIC_AND_CHALLENGER_DESIGN
+Status before: TASK-014BX_FIX COMPLETE/PASS (Pilot RUNNING; 0/7 successful days)
+Status after: COMPLETE / PASS -- offline strategy-selection foundation; V1 frozen+running; no V1 strategy change; no Pilot mutation; no order; challengers offline-only NOT promoted
+Files changed: src/strategy_selection/__init__.py (new), src/strategy_selection/forward30_diagnostics.py (new), src/strategy_selection/strategy_scorecard.py (new), scripts/analyze_forward30_strategy_selection.py (new), tests/strategy_selection/test_forward30_diagnostics.py (new), tests/strategy_selection/test_strategy_scorecard.py (new), docs/research/strategy_selection/V1_BASELINE_MANIFEST.json (new, FROZEN_ACTIVE_BASELINE), .gitignore (ignore outputs/research/ runtime products), README.md, docs/research/commands/NEXT_ACTION.md, docs/research/commands/COMMAND_LOG.md
+Validation: py_compile PASS; focused strategy_selection 36 passed; combined with forward-source + pilot native 130 passed; offline (Windows 11 / .venv Python 3.13); workbook = 12 named sheets; CLI read-only on sources (verified bytes unchanged)
+Outputs: runtime analysis under outputs/research/strategy_selection/TASK-014BY/ (gitignored, NOT committed); committed review artifact docs/research/strategy_selection/V1_BASELINE_MANIFEST.json; Bybit network 0; order POSTs 0; orders sent 0; real HTTP 0; Notion/Discord 0
+Notes: Unifies the completed 30-day Forward Validation (strategy quality/stability) and the running 7-day Bybit Demo Pilot (execution quality) into one strategy-selection workflow. Reuses canonical metrics src/metrics/performance.py (no duplicate formulas). Honest input audit (PRESENT/MISSING/PARTIAL/INCOMPATIBLE/EXCLUDED); never fabricates MAE/MFE/regime/cost/trade -> UNAVAILABLE/INSUFFICIENT_SAMPLE/NO_CANONICAL_DEFINITION. LOCAL REALITY: only 2 of 30 Forward dates present (days_elapsed=0, flat paper dry-run); scorecard label NEEDS_MORE_DATA; real report requires the VPS command in NEXT_ACTION against the full 30-day artifacts. Deterministic gated scorecard (not return-only) with explicit labels. <=2 single-change Challenger hypotheses, evidence-gated to confirmed existing repo capabilities, PROVISIONAL until full sample; promotion_status NONE_PROMOTED. Updateable 7-day Demo comparison scaffold with NOT_YET_AVAILABLE fields and V1 baseline linkage. V1 baseline frozen+fingerprinted WITHOUT modifying strategy logic or mutating the Pilot state. ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED. One new commit on ee1113a; not amended; not pushed.
+
+---
+
 ### 2026-06-22 (TASK-014BX_FIX -- wire canonical strategy source and restore clean audit log diff)
 
 Agent: Claude Opus 4.8

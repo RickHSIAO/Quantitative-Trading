@@ -115,3 +115,6 @@ outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_execution/
 outputs/_test_scratch/
 .pytest_basetemp/
 .pytest_tmp/
+
+# TASK-014BY: strategy-selection runtime analysis outputs (not committed)
+outputs/research/

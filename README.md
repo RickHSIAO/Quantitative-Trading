@@ -17,7 +17,33 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BX_FIX 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014BY_STRATEGY_SELECTION 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014BY_FORWARD30_STRATEGY_DIAGNOSTIC_AND_CHALLENGER_DESIGN**（2026-06-22, Opus 4.8 / 離線唯讀 30 天 Forward 診斷 + Challenger 設計）
+> **`ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **Active V1 Pilot 維持 FROZEN 且 RUNNING。** 未修改 V1 策略邏輯（signals/sizing/universe/entries/exits 皆未動），
+>   未變更運行中的 Pilot state，未送任何 Bybit Demo order，未對 Bybit/Notion/Discord 連網。
+> - **Challenger 為離線/shadow-only，本任務不 promote。** 不啟用 V2/V3；7 天 Demo 結果待累積成功日後再加入比較層。
+> - 新增 `src/strategy_selection/`（`forward30_diagnostics.py`、`strategy_scorecard.py`）重用既有 canonical
+>   metrics `src/metrics/performance.py`（不重複公式），不捏造 MAE/MFE / regime / cost / trade 資料，缺資料一律標
+>   UNAVAILABLE / INSUFFICIENT_SAMPLE / NO_CANONICAL_DEFINITION。CLI：
+>   `python scripts/analyze_forward30_strategy_selection.py --input-root outputs/forward_record --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BY --json-only`
+>   （對來源唯讀；只寫 --output-root；runtime 產物已 gitignore）。
+> - Frozen baseline manifest 已 commit 於 `docs/research/strategy_selection/V1_BASELINE_MANIFEST.json`
+>   （status `FROZEN_ACTIVE_BASELINE`；code_commit ee1113a；排除 TASK-014BO_BP_MANUAL_ROUND_TRIP / SMOKE_TEST）。
+> - **本機資料現況：** Forward 僅本機 2/30 天（`days_elapsed=0`、flat paper dry-run），故 scorecard label 為
+>   **NEEDS_MORE_DATA**，各指標誠實標示不足；需在 VPS 對完整 30 天 artifacts 執行才能產生真實報告。
+> - 產出 2 個 PROVISIONAL 單一變更 Challenger 假說（離線）：H1 以既有 canonical 0.4-Kelly 風險 sizer 取代 equal-weight；
+>   H2 啟用既有 canonical overlay/regime gate 作入場過濾。皆引用已確認存在的 repo 能力，待完整 30 天樣本（與 7 天 Demo）確認。
+>
+> 驗證（offline）：py_compile PASS；focused strategy_selection 36 passed；併同 forward-source + pilot native = 130 passed；
+> Bybit 網路 0；order POST 0；orders sent 0；real HTTP 0。新 commit 於 ee1113a（未 amend、未 push）。
+>
+> VPS 指令（對完整 30 天 artifacts 執行）：
+> ```
+> python scripts/analyze_forward30_strategy_selection.py --input-root outputs/forward_record --run-key prev3y_crypto --shadow-run-key prev3y_crypto_shadow_a_roll12 --output-root outputs/research/strategy_selection/TASK-014BY --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+> ```
 
 > **TASK-014BX_FIX_NATIVE_SOURCE_REPORTING_AND_COMMAND_LOG**（2026-06-22, Opus 4.8 / 修正三項 review blocker / 仍未啟動 Pilot）
 > **`7-DAY PILOT STILL NOT STARTED / LIVE TRADING NOT AUTHORIZED`**

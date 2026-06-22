@@ -1,5 +1,44 @@
 # Next Action
 
+> README shared status updated by TASK-014BY_STRATEGY_SELECTION (2026-06-22).
+> **`ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
+> Offline, deterministic 30-day Forward strategy-diagnostic + challenger-selection foundation.
+>
+> - **Active V1 Pilot remains FROZEN and RUNNING.** No V1 strategy modification occurred
+>   (no change to signals, sizing, universe, entries or exits). The running Pilot state was
+>   NOT mutated. No Bybit Demo order was sent; no Bybit/Notion/Discord network call.
+> - **Challenger work is offline/shadow-only and is NOT promoted by this task.** V2/V3 are not
+>   activated. 7-day Demo results will be added to the comparison layer AFTER successful days
+>   accumulate (the Pilot currently has no completed performance sample).
+> - New package `src/strategy_selection/` (`forward30_diagnostics.py`, `strategy_scorecard.py`)
+>   reuses the canonical metrics in `src/metrics/performance.py` (no duplicate formulas), never
+>   fabricates unavailable MAE/MFE / regime / cost / trade data, and labels every gap
+>   UNAVAILABLE / INSUFFICIENT_SAMPLE / NO_CANONICAL_DEFINITION. CLI:
+>   `python scripts/analyze_forward30_strategy_selection.py --input-root outputs/forward_record --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BY --json-only`
+>   (read-only on sources; writes only under --output-root; runtime outputs are gitignored).
+> - Frozen baseline manifest committed at `docs/research/strategy_selection/V1_BASELINE_MANIFEST.json`
+>   (status `FROZEN_ACTIVE_BASELINE`; code_commit ee1113a; exclusions TASK-014BO_BP_MANUAL_ROUND_TRIP /
+>   SMOKE_TEST; artifact + policy fingerprints).
+> - **Local data reality:** only 2 of 30 Forward dates are present locally (`days_elapsed=0`,
+>   flat paper dry-run), so the scorecard label is **NEEDS_MORE_DATA** and metrics are honestly
+>   marked insufficient. Run the exact VPS command below against the full 30-day artifacts to
+>   produce the real report.
+> - Two PROVISIONAL, single-change Challenger hypotheses emitted (offline-only): H1 replace
+>   equal-weight sizing with the existing canonical 0.4-Kelly risk sizer; H2 enable the existing
+>   canonical overlay/regime gate as an entry filter. Both reference confirmed existing repo
+>   capabilities and require the full 30-day sample (and 7-day Demo) to confirm.
+>
+> Validation (offline): py_compile PASS; focused strategy_selection 36 passed; combined with
+> forward-source + pilot native = 130 passed; Bybit network 0; order POSTs 0; orders sent 0;
+> real HTTP 0. New commit on ee1113a (not amended; not pushed).
+>
+> Exact VPS command (run against the completed 30-day artifacts on the VPS):
+> ```
+> python scripts/analyze_forward30_strategy_selection.py --input-root outputs/forward_record --run-key prev3y_crypto --shadow-run-key prev3y_crypto_shadow_a_roll12 --output-root outputs/research/strategy_selection/TASK-014BY --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+> ```
+
+---
+
 > README shared status updated by TASK-014BX_FIX (2026-06-22).
 > **`7-DAY PILOT STILL NOT STARTED / LIVE TRADING NOT AUTHORIZED`**
 > Fix commit on top of a4e70ea resolving three review blockers.
