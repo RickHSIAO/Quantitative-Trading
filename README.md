@@ -14,10 +14,58 @@
 
 ---
 
-## Demo Trading Guarded Lifecycle Status（updated by TASK-014BV_NOTION_SCHEMA, 2026-06-22）
+## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BV_NOTION_SCHEMA 同步更新；不解除 G20、不開啟自動 real trading。
+TASK-014BW_PILOT_READINESS 同步更新；不解除 G20、不開啟自動 real trading。
+
+> **TASK-014BW_7_DAY_DEMO_PILOT_READINESS**（2026-06-22, Opus 4.8 / 只做 readiness/狀態機/驗證 / 未啟動 Pilot、未送任何 order）
+> **`7-DAY PILOT NOT STARTED / AUTOMATIC DEMO EXECUTION NOT AUTHORIZED`**
+> 定義並實作「7 個成功 Pilot 日」的 fail-closed readiness 基礎（設定/驗證/狀態機/報表整備）。
+> 本任務**不**啟動 Pilot、不送任何 Bybit order、不授權自動執行、不接 live endpoint、不加 scheduler、不 retry、
+> 不改 live BybitExecutor、不建立 Demo 倉位、測試不使用 BYBIT_DEMO_* 憑證。`order_execution / automatic_execution /
+> live_trading` 全為 false；所有提議動作 `executable=false`。
+>
+> **「7 個成功日」≠ 7 個日曆日：** 只有通過 successful-day 驗證的「相異 ISO 日期」才計入；失敗/不完整/缺輸入/重複/
+> 安全拒絕的執行**不**增加計數；需恰好 7 個相異成功日才完成。手動 BO/BP SOLUSDT round-trip 與所有 smoke 紀錄**排除**於 Pilot 績效。
+>
+> **新增檔案：**
+> - `src/demo_strategy_pilot_readiness.py`（安全政策常數、lifecycle 狀態機、`PilotStateStore`、readiness 檢查、純函式 successful-day 驗證器）
+> - `scripts/manage_demo_strategy_pilot.py`（CLI：`--mode readiness|initialize|status`；**無** start/execute/下單模式）
+> - `tests/demo_trading/test_demo_strategy_pilot_readiness.py`
+>
+> **CLI 模式：** `readiness`（唯讀；驗證設定、Forward Record 可用性、報表 import、Notion/Discord/專用 Pilot Notion DB 憑證**存在性**、
+> 安全政策；不需 Bybit 憑證；無持久化變更、無網路）；`initialize`（僅在帶 `--i-understand-this-creates-an-inactive-7-day-pilot`
+> 時建立 INACTIVE 狀態；不計天、不跑策略、不送報表、不呼叫 Bybit；同設定冪等；衝突 fail-closed；**永不**產生 RUNNING/COMPLETED）；
+> `status`（唯讀；顯示 lifecycle、已完成成功日、剩餘天數、最後接受日期、blockers）。
+>
+> **Pilot 身份：** 需明確 `--pilot-id`（保守 allowlist 格式）；拒絕重用 `BYBIT_DEMO_PILOT_BT_SMOKE_202606`、BO/BP 稽核身份、
+> 含 SMOKE/AUDIT/MANUAL 等字樣；建議正式格式 `BYBIT_DEMO_PILOT_7D_<YYYYMM>_V1`；不靜默發明或覆寫既有 Pilot ID。
+>
+> **Canonical 狀態：** `outputs/demo_trading/pilot/<PILOT_ID>/pilot_state.json`（atomic）+ append-only `pilot_state_events.jsonl`。
+> Lifecycle：NOT_INITIALIZED / INACTIVE / READY_FOR_MANUAL_START_REVIEW / RUNNING / BLOCKED / COMPLETED（本任務 initialize 僅產生 INACTIVE 或 BLOCKED）。
+>
+> **Successful-day 驗證器（純函式、不改狀態）：** 回傳 `ACCEPTABLE_SUCCESSFUL_DAY` / `REJECT_DUPLICATE_DATE` /
+> `REJECT_RUN_FAILED` / `REJECT_SOURCE_INVALID` / `REJECT_OUTPUT_INCOMPLETE` / `REJECT_FINGERPRINT_CONFLICT` /
+> `REJECT_SAFETY_BLOCK` / `REJECT_UNAUTHORIZED_EXECUTION` / `REJECT_INVALID_DATE`。
+>
+> **提議的 INACTIVE 安全政策（編碼但未啟用）：** Bybit Demo only；live endpoint 永久拒絕；每成功日最多 1 筆新開倉；
+> 最多 1 個同時持倉；每單與每日新開倉 notional ≤ 10 USDT；禁止攤平/加碼/加倉；禁止自動 retry；平倉僅 reduce-only；
+> 資料不完整/過期 fail-closed；不支援 symbol fail-closed；protected symbols（ENAUSDT/TIAUSDT/AIXBTUSDT/POLYXUSDT/EDUUSDT）禁止；
+> 自動 Demo 執行未授權；所有提議動作 executable=false。
+>
+> **「Ready for manual start review」不代表授權或啟動 Pilot** — 啟動授權是**獨立的下一個任務**。
+>
+> **本地驗證（Windows 11 / .venv Python 3.13；全程 offline）：**
+> - py_compile（readiness + CLI + 測試）→ PASS
+> - Focused readiness: **39 passed**
+> - `-k "pilot_readiness or pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close"`: **1272 passed, 7725 deselected**
+>
+> **安全不變項：** Bybit 網路: **0**；order POST: **0**；real orders sent: **0**；真實網路: **0**；測試未用 BYBIT_DEMO_* 憑證；
+> readiness 模組無 order endpoint 字串、未 import live executor；憑證值（含 Bybit）絕不出現在輸出/log/例外/測試。
+> **下一步（獨立任務，需 Rick 明確授權）：** 手動 start 授權 review（不在本任務範圍）。**自動 Bybit Demo 執行仍未授權；Pilot 尚未啟動。**
+
+---
 
 > **TASK-014BV_ONE_SHOT_NOTION_PILOT_SCHEMA_PROVISIONER**（2026-06-22, Opus 4.8 / 一次性 schema 工具 / 不送任何 order、不寫任何 Notion 頁面、不呼叫 Discord）
 > 新增獨立、需明確授權的「一次性」Notion Pilot schema 佈建腳本，讓 Forward Validation/專用資料庫具備 Pilot 寫入所需欄位。

@@ -1,5 +1,76 @@
 # Next Action
 
+> README shared status updated by TASK-014BW_PILOT_READINESS (2026-06-22).
+> **`7-DAY PILOT NOT STARTED / AUTOMATIC DEMO EXECUTION NOT AUTHORIZED`**
+> Defines and implements the fail-closed readiness foundation for a 7-successful-day
+> Bybit Demo strategy Pilot — configuration, validation, state-machine and reporting
+> readiness ONLY. It does NOT start the Pilot, send any Bybit order, authorize automatic
+> execution, touch a live endpoint, add a scheduler, retry orders, modify the live
+> BybitExecutor/main.py/src/risk.py, or create a Demo position. Tests use NO BYBIT_DEMO_*
+> credentials and make zero real network calls. order_execution / automatic_execution /
+> live_trading = false; all proposed actions executable=false. New commit on top of
+> 6cabbf8 (not amended).
+>
+> "7 successful days" = 7 DISTINCT successful Pilot dates, NOT 7 calendar days. Only a date
+> that passes the successful-day validator counts; failed / incomplete / missing-input /
+> duplicated / safety-rejected runs do not increment. Manual BO/BP SOLUSDT round-trip and
+> all smoke records are EXCLUDED from Pilot performance.
+>
+> New files: src/demo_strategy_pilot_readiness.py (safety-policy constants, lifecycle
+> state machine, PilotStateStore, readiness checks, pure successful-day validator);
+> scripts/manage_demo_strategy_pilot.py (CLI: --mode readiness|initialize|status — there
+> is intentionally NO start/execute/order mode);
+> tests/demo_trading/test_demo_strategy_pilot_readiness.py.
+>
+> CLI modes: readiness (read-only; validates configuration, Forward Record availability,
+> reporting import, Notion/Discord + dedicated Pilot Notion DB credential PRESENCE, and the
+> inactive safety policy; needs NO Bybit credentials; no persistent mutation, no network);
+> initialize (creates an INACTIVE state only, requires
+> --i-understand-this-creates-an-inactive-7-day-pilot; idempotent for the same config;
+> conflicting state fails closed; NEVER produces RUNNING/COMPLETED, never counts a day,
+> runs strategy, sends reports, or calls Bybit); status (read-only lifecycle, completed
+> successful days, remaining days, last accepted date, blockers).
+>
+> Lifecycle: NOT_INITIALIZED / INACTIVE / READY_FOR_MANUAL_START_REVIEW / RUNNING / BLOCKED
+> / COMPLETED (this task's initialize only yields INACTIVE or BLOCKED). READY_FOR_MANUAL_START_REVIEW
+> does NOT authorize or start the Pilot — manual start authorization is a SEPARATE next task.
+> Canonical state at outputs/demo_trading/pilot/<PILOT_ID>/pilot_state.json (atomic) +
+> append-only pilot_state_events.jsonl.
+>
+> Validation (offline; Windows 11 / .venv Python 3.13): py_compile PASS; focused readiness
+> 39 passed; -k "pilot_readiness or pilot_delivery or pilot_output_status or
+> pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or
+> reduce_only_close" 1272 passed, 7725 deselected. Bybit network 0; order POSTs 0; orders
+> sent 0; real HTTP 0; tests used no BYBIT_DEMO_* credentials.
+
+## TASK-014BW_PILOT_READINESS Status (2026-06-22)
+
+- Status: COMPLETE / PASS (inactive 7-successful-day Pilot readiness foundation; no orders; no Pilot start; no execution authorization; new commit on 6cabbf8)
+- py_compile: PASS; focused readiness: 39 passed
+- Combined regression: 1272 passed, 7725 deselected
+- Bybit network calls: 0; order POSTs: 0; orders sent: 0; real HTTP: 0; tests used no BYBIT_DEMO_* credentials
+- 7 successful days = 7 distinct successful Pilot dates (NOT calendar days); manual BO/BP + smoke excluded
+- Next task (SEPARATE; requires Rick's explicit authorization): manual start-authorization review. Automatic Bybit Demo execution remains UNAUTHORIZED; the Pilot has NOT started.
+
+### TASK-014BW commands (readiness / initialize / status are offline & non-authorizing)
+
+```bash
+# --- Windows 11 (PowerShell, .venv) ---
+# Credential PRESENCE only (never display values); readiness needs NO Bybit credentials
+python scripts/manage_demo_strategy_pilot.py --mode readiness --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+# Create the INACTIVE state only (explicit acknowledgement; never RUNNING/COMPLETED)
+python scripts/manage_demo_strategy_pilot.py --mode initialize --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --i-understand-this-creates-an-inactive-7-day-pilot --json-only
+# Read-only status (shows lifecycle, completed successful days, remaining, blockers)
+python scripts/manage_demo_strategy_pilot.py --mode status --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+
+# --- VPS (bash, same commands; still no Pilot start, no order) ---
+python scripts/manage_demo_strategy_pilot.py --mode readiness   --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+python scripts/manage_demo_strategy_pilot.py --mode initialize  --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --i-understand-this-creates-an-inactive-7-day-pilot --json-only
+python scripts/manage_demo_strategy_pilot.py --mode status      --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+```
+
+---
+
 > README shared status updated by TASK-014BV_NOTION_SCHEMA (2026-06-22). Adds a
 > separate, explicitly-authorized one-shot Notion Pilot schema provisioner. The
 > normal daily runner never auto-creates/auto-alters a schema. No order, no

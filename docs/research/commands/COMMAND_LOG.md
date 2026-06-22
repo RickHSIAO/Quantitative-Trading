@@ -21,6 +21,20 @@ Notes:
 
 ---
 
+### 2026-06-22 (TASK-014BW_PILOT_READINESS -- inactive 7-successful-day Demo Pilot readiness foundation)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization (continue from 6cabbf8)
+Task: TASK-014BW_7_DAY_DEMO_PILOT_READINESS
+Status before: TASK-014BV_NOTION_SCHEMA COMPLETE/PASS
+Status after: COMPLETE / PASS -- readiness/state-machine/validation only; Pilot NOT started; automatic Demo execution NOT authorized
+Files changed: src/demo_strategy_pilot_readiness.py (new), scripts/manage_demo_strategy_pilot.py (new), tests/demo_trading/test_demo_strategy_pilot_readiness.py (new), README.md, docs/research/commands/NEXT_ACTION.md, docs/research/commands/COMMAND_LOG.md
+Validation: py_compile PASS (module+CLI+tests); focused readiness 39 passed; -k "pilot_readiness or pilot_delivery or pilot_output_status or pilot_forward_source or pilot_daily_runner or pilot_reporting or tiny_execution_adapter or reduce_only_close" 1272 passed, 7725 deselected; offline (Windows 11 / .venv Python 3.13)
+Outputs: no Pilot started; no Demo position; canonical state outputs/demo_trading/pilot/<PILOT_ID>/ untouched in repo (gitignored runtime); Bybit network 0; order POSTs 0; orders sent 0; real HTTP 0; tests used no BYBIT_DEMO_* credentials
+Notes: "7 successful days" = 7 distinct successful Pilot dates (not calendar days); failed/incomplete/missing-input/duplicated/safety-rejected runs do not count; manual BO/BP + smoke excluded. CLI modes readiness|initialize|status only -- no start/execute/order mode; initialize yields INACTIVE/BLOCKED only (never RUNNING/COMPLETED). Inactive safety policy encoded (Bybit Demo only, live endpoint permanently denied, <=1 new opening order/successful day, <=1 open position, <=10 USDT per-order & per-day notional, no averaging/pyramiding, no auto-retry, reduce-only close, fail-closed on stale data & unsupported symbol, protected symbols blocked, executable=false). READY_FOR_MANUAL_START_REVIEW does NOT authorize/start the Pilot -- manual start authorization is a SEPARATE next task. Banner: 7-DAY PILOT NOT STARTED / AUTOMATIC DEMO EXECUTION NOT AUTHORIZED. One new commit on 6cabbf8; not amended; not pushed.
+
+---
+
 ### 2026-06-22 (TASK-014BV_NOTION_SCHEMA -- add explicit one-shot Pilot schema provisioner)
 
 Agent: Claude Opus 4.8
