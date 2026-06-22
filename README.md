@@ -17,7 +17,24 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BY_FIX 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014BY_FIX2 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014BY_FIX2_SEPARATE_V1_CAPITAL_BASE_FROM_DEMO_WALLET**（2026-06-22, Sonnet 4.6 / 分離 V1 策略資金基底與 Demo 錢包餘額）
+> **`PILOT RUNNING 0/7 / NO STRATEGY DEMO ORDER SENT / FIRST EXECUTION BLOCKED UNTIL V1 SIZING PARITY VERIFIED / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **Pilot 仍 RUNNING 但 0/7；** 未送任何策略 Demo 單；無已接受 Pilot 日。
+> - **V1 資金基底分離：** V1 目標部位以**凍結策略資金基底** `PaperTradingConfig.initial_nav_usd = 10,000 USDT`
+>   計算（`target_notional = target_weight × capital_base`），**不再使用 Demo 錢包餘額**（`provider.equity_usd()`）
+>   做 sizing。Demo 錢包餘額僅作為參考值記錄在 `sizing_verification.demo_wallet_equity_usd`。
+>   新增 `resolve_v1_capital_base()` 自動從 Forward config 解析；`V1_BASELINE_CAPITAL_BASE_UNVERIFIED` fail-closed
+>   在資金基底無法解析時攔截送單路徑（EXIT code 8）。
+> - **sizing_verification 新增欄位：** `capital_base_usd`、`capital_base_source`、`wallet_used_for_target_sizing: false`、
+>   `demo_wallet_equity_usd`。錢包獨立性測試：100K / 20K / 50K / 1M 錢包 → notional 永遠等於 `weight × 10,000`。
+> - **Plan-only 標籤修正：** `_build_production_provider()` 使用 `DemoReadOnlyClient(allow_real_network=True)` 做真實讀取，
+>   status 改為 `PLAN_ONLY_READ_ONLY_DEMO`（provider 可用時）或 `PLAN_ONLY_NO_NETWORK`（provider 建構失敗時）。
+> - Active V1 未變；Kelly 不在 active path；Challenger 未選；Live 未授權。
+>
+> 驗證（offline）：py_compile PASS；focused 81 passed；0 real HTTP / 0 Bybit / 0 orders。新 fix commit 於 0990bd1（未 amend、未 push）。
 
 > **TASK-014BY_FIX_V1_BASELINE_ALIGNMENT_AND_FULL30_HANDOFF**（2026-06-22, Opus 4.8 / 修正四項 review blocker）
 > **`PILOT RUNNING 0/7 / NO STRATEGY DEMO ORDER SENT / FIRST EXECUTION BLOCKED UNTIL V1 SIZING PARITY VERIFIED / LIVE TRADING NOT AUTHORIZED`**

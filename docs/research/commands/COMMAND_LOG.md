@@ -21,6 +21,20 @@ Notes:
 
 ---
 
+### 2026-06-22 (TASK-014BY_FIX2 -- separate V1 capital base from Demo wallet equity)
+
+Agent: Claude Sonnet 4.6
+Command source: Rick explicit chat authorization (continue from 0990bd1)
+Task: TASK-014BY_FIX2_SEPARATE_V1_CAPITAL_BASE_FROM_DEMO_WALLET
+Status before: TASK-014BY_FIX COMPLETE/PASS (V1 sizing aligned but uses Demo wallet equity as capital base)
+Status after: COMPLETE / PASS -- V1 capital base separated from Demo wallet equity; target sizing uses frozen PaperTradingConfig.initial_nav_usd=10000; wallet reads for reference only; send path refuses on SIZING_UNVERIFIED or CAPITAL_BASE_UNVERIFIED; plan-only label fixed; Pilot RUNNING 0/7; no strategy Demo order sent
+Files changed: src/demo_strategy_pilot_action_planner.py (resolve_v1_capital_base; target_notional=weight*capital_base not wallet; capital_base_usd/source/wallet_used_for_target_sizing in sizing_verification; STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED fail-closed), scripts/run_demo_strategy_pilot_native_daily.py (EXIT_V1_CAPITAL_BASE_UNVERIFIED=8; send path checks both gates; plan-only label PLAN_ONLY_READ_ONLY_DEMO), tests/strategy_selection/test_v1_sizing_alignment.py (wallet independence parametrized 100K/20K/50K/1M; capital provenance; auto-resolve from config; invalid/zero/negative/inf fail closed; orchestrator refuses capital base unverified; exit code 8), README.md, docs/research/commands/NEXT_ACTION.md, docs/research/commands/COMMAND_LOG.md
+Validation: py_compile PASS; focused strategy_selection + native 81 passed; offline (Windows 11 / .venv Python 3.13); COMMAND_LOG byte-safe (net diff small, LF/EOL parity)
+Outputs: Bybit network 0; order POSTs 0; orders sent 0; real HTTP 0; Notion/Discord 0
+Notes: V1 target sizing = target_weight * frozen_capital_base (10000 USDT from PaperTradingConfig.initial_nav_usd), NOT Demo wallet equity. Demo wallet equity (provider.equity_usd()) is read for reference and provider liveness check only; it never scales V1 target positions. Wallet independence: parametrized tests with 100K/20K/50K/1M wallet equity all produce target_notional = weight * 10000. Capital base resolution: resolve_v1_capital_base() imports PaperTradingConfig, reads .initial_nav_usd; explicit v1_capital_base_usd parameter accepted for testing. Invalid/missing/zero/negative/inf capital base -> V1_BASELINE_CAPITAL_BASE_UNVERIFIED (fail closed). Plan-only label corrected: PLAN_ONLY_READ_ONLY_DEMO when _build_production_provider() succeeds (real Demo reads), PLAN_ONLY_NO_NETWORK when provider fails. PILOT RUNNING 0/7 / NO STRATEGY DEMO ORDER SENT / FIRST EXECUTION BLOCKED UNTIL V1 SIZING PARITY VERIFIED / LIVE TRADING NOT AUTHORIZED. One new fix commit on 0990bd1; not amended; not pushed.
+
+---
+
 ### 2026-06-22 (TASK-014BY_FIX -- align Demo V1 sizing and defer challengers to full evidence)
 
 Agent: Claude Opus 4.8

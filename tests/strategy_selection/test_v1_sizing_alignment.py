@@ -1,8 +1,9 @@
-"""TASK-014BY_FIX -- V1 baseline sizing alignment + parity tests.
+"""TASK-014BY_FIX / FIX2 -- V1 baseline sizing alignment + parity tests.
 
 Proves the active Demo V1 planner reproduces the frozen 30-day Forward V1 target
-(equal-weight target weights, gross ~1.0, net ~0) via execution translation, NOT
-0.4-Kelly. Offline; no network, no Bybit, no orders.
+(equal-weight target weights, gross ~1.0, net ~0) via execution translation using
+the frozen V1 capital base (NOT Demo wallet equity, NOT 0.4-Kelly).
+Offline; no network, no Bybit, no orders.
 """
 
 from __future__ import annotations
@@ -193,3 +194,100 @@ def test_orchestrator_refuses_send_when_unverified(tmp_path):
 
 def test_send_exit_code_constant_exists():
     assert daily_cli.EXIT_V1_SIZING_UNVERIFIED == 7
+
+
+# --- FIX2: V1 capital base separated from Demo wallet equity ----------------
+
+
+V1_CAPITAL_BASE = 10_000.0  # frozen from PaperTradingConfig.initial_nav_usd
+
+
+@pytest.mark.parametrize("wallet_equity", [100_000.0, 20_000.0, 50_000.0, 1_000_000.0])
+def test_wallet_independence_notional_always_uses_capital_base(wallet_equity):
+    """Target notional = weight * V1 capital base (10K), regardless of wallet equity."""
+    fwd = FakeForward([{"symbol": "AAAUSDT", "side": "long", "score": 0.02}])
+    prov = FakeProvider(equity=wallet_equity, prices={"AAAUSDT": 100.0}, step=0.001)
+    plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=prov,
+                                           v1_capital_base_usd=V1_CAPITAL_BASE)
+    assert plan.status == ap.STATUS_PLANNED
+    # target_notional = 0.02 * 10000 = 200 ; qty = 200/100 = 2.0
+    assert float(plan.actions[0].qty) == pytest.approx(2.0)
+    assert plan.target_positions[0]["target_notional"] == pytest.approx(200.0)
+
+
+@pytest.mark.parametrize("wallet_equity", [100_000.0, 20_000.0, 50_000.0, 1_000_000.0])
+def test_wallet_independence_exposure_invariant(wallet_equity):
+    """Gross/net exposure unchanged regardless of Demo wallet balance."""
+    fwd = FakeForward(eqw_signals())
+    plan = ap.plan_strategy_native_actions(forward_result=fwd,
+                                           provider=FakeProvider(equity=wallet_equity),
+                                           v1_capital_base_usd=V1_CAPITAL_BASE)
+    v = plan.sizing_verification
+    assert v["gross_target_exposure"] == pytest.approx(1.0, abs=1e-9)
+    assert v["net_target_exposure"] == pytest.approx(0.0, abs=1e-9)
+    assert v["capital_base_usd"] == V1_CAPITAL_BASE
+    assert v["demo_wallet_equity_usd"] == wallet_equity
+
+
+def test_capital_provenance_in_sizing_verification():
+    """Sizing verification records capital base provenance and wallet non-use."""
+    fwd = FakeForward([{"symbol": "AAAUSDT", "side": "long", "score": 0.02}])
+    plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=FakeProvider(),
+                                           v1_capital_base_usd=V1_CAPITAL_BASE)
+    v = plan.sizing_verification
+    assert v["capital_base_usd"] == V1_CAPITAL_BASE
+    assert v["capital_base_source"] == "explicit_parameter"
+    assert v["wallet_used_for_target_sizing"] is False
+    assert v["demo_wallet_equity_usd"] == EQUITY
+    assert v["verified"] is True
+
+
+def test_capital_base_auto_resolved_from_forward_config():
+    """Without explicit v1_capital_base_usd, planner resolves from PaperTradingConfig."""
+    fwd = FakeForward([{"symbol": "AAAUSDT", "side": "long", "score": 0.02}])
+    plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=FakeProvider())
+    v = plan.sizing_verification
+    assert v["capital_base_usd"] == V1_CAPITAL_BASE
+    assert "PaperTradingConfig" in v["capital_base_source"]
+    assert v["wallet_used_for_target_sizing"] is False
+
+
+def test_capital_base_invalid_zero_fails_closed():
+    fwd = FakeForward([{"symbol": "AAAUSDT", "side": "long", "score": 0.02}])
+    plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=FakeProvider(),
+                                           v1_capital_base_usd=0.0)
+    assert plan.status == ap.STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED
+    assert plan.available is False
+
+
+def test_capital_base_invalid_negative_fails_closed():
+    fwd = FakeForward([{"symbol": "AAAUSDT", "side": "long", "score": 0.02}])
+    plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=FakeProvider(),
+                                           v1_capital_base_usd=-5000.0)
+    assert plan.status == ap.STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED
+    assert plan.available is False
+
+
+def test_capital_base_invalid_inf_fails_closed():
+    fwd = FakeForward([{"symbol": "AAAUSDT", "side": "long", "score": 0.02}])
+    plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=FakeProvider(),
+                                           v1_capital_base_usd=float("inf"))
+    assert plan.status == ap.STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED
+    assert plan.available is False
+
+
+def test_orchestrator_refuses_send_when_capital_base_unverified(tmp_path):
+    fwd = FakeForward([{"symbol": "AAAUSDT", "side": "long", "score": 0.02}])
+    t = FakeTransport()
+    plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=FakeProvider(),
+                                           v1_capital_base_usd=0.0)
+    out = daily_cli.orchestrate_native_daily(
+        pilot_id="BYBIT_DEMO_PILOT_7D_202606_V1", date="2026-06-22", forward_result=fwd,
+        provider=FakeProvider(), transport=t, output_root=str(tmp_path / "out"), plan=plan)
+    assert out["status"] == ap.STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED
+    assert out["send_refused"] is True
+    assert len(t.posts) == 0
+
+
+def test_exit_code_capital_base_unverified_exists():
+    assert daily_cli.EXIT_V1_CAPITAL_BASE_UNVERIFIED == 8
