@@ -1,5 +1,30 @@
 # Next Action
 
+> README shared status updated by TASK-014CA (2026-06-23).
+> **`PUBLIC INSTRUMENT RULES WIRED / V1 FIXED-CAPITAL SIZING UNCHANGED / PLAN-ONLY READ-ONLY NETWORK / PROTECTED POSITIONS UNCHANGED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 939853c wiring public instrument rules into the Demo plan-only provider.
+>
+> Root cause: `_build_production_provider()` called `self._client.get_instruments()` (nonexistent)
+> instead of `self._client.get_instruments_info()`. The empty instrument map caused all 50 V1 target
+> symbols to be rejected with `no_market_price_or_instrument_rule`.
+>
+> Fix: Wire the existing canonical `DemoReadOnlyClient.get_instruments_info()` (public GET,
+> /v5/market/instruments-info, paginated, category=linear) into the provider. Batch-load + cache once
+> per run. Map `InstrumentSnapshot` → `InstrumentRules` with `price_precision`/`qty_precision`.
+> Non-Trading instruments and malformed rules fail closed. Protected symbols skip diff (no
+> CLOSE/REDUCE actions generated for EDUUSDT/POLYXUSDT).
+>
+> Split rejection reasons: `no_market_price`, `no_instrument_rule`, `malformed_instrument_rule`,
+> `qty_floored_to_zero`, `protected_symbol`. Provider audit fields exposed in plan-only JSON.
+>
+> VPS plan-only: `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
+>
+> Expected: status=PLAN_ONLY_READ_ONLY_DEMO_NETWORK, instrument_rule_cache_count>0,
+> matched_instrument_rule_count>0, target_symbol_count>0, action_count>0, order_post_count=0,
+> live_endpoint_called=false. Some symbols may truthfully fail closed (delisted/non-Trading/malformed).
+
+---
+
 > README shared status updated by TASK-014BZ_FIX2 (2026-06-23).
 > **`SAME-DATE INCREMENTAL RERUN AGGREGATED / ADDITIVE LEDGER VALID / 30-CALENDAR-DAY HOLDING RETURN +6.077668% / DAILY RISK METRICS PROVISIONAL / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 957f76c correcting same-date incremental rerun aggregation.

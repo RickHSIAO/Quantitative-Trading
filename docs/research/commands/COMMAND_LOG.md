@@ -9700,3 +9700,58 @@ Files changed (committed):
   MOD  scripts/analyze_forward30_ledger_fix.py             (hardcoded strings -> lfsc.TASK_ID)
   MOD  tests/strategy_selection/test_ledger_fix_semantics.py (34 tests, +5 FIX2A audit)
   MOD  docs/research/commands/COMMAND_LOG.md               (this entry)
+
+---
+
+### TASK-014CA_DEMO_PLAN_ONLY_PUBLIC_INSTRUMENT_RULE_PROVIDER_WIRING
+
+- **Date:** 2026-06-23
+- **Model:** Sonnet 4.6 (Codex GPT-5.5 reasoning high)
+- **Parent commit:** 939853c
+- **Status:** COMMITTED (pending review)
+
+Root cause:
+  _build_production_provider() called self._client.get_instruments() (nonexistent)
+  instead of self._client.get_instruments_info(). The hasattr fallback silently used
+  an empty instrument map, causing all 50 V1 targets to be rejected with the combined
+  no_market_price_or_instrument_rule. Market prices were working; only the instrument
+  rule map was empty.
+
+Fix:
+  Wire the existing canonical DemoReadOnlyClient.get_instruments_info() (public GET,
+  /v5/market/instruments-info, paginated, category=linear) into the provider.
+  Batch-load + cache once per run. Map InstrumentSnapshot -> InstrumentRules with
+  price_precision/qty_precision. Non-Trading instruments and malformed rules fail
+  closed. Protected symbols skip the diff (no CLOSE/REDUCE actions generated for
+  EDUUSDT/POLYXUSDT).
+
+  Split the combined rejection reason into distinct reasons: no_market_price,
+  no_instrument_rule, malformed_instrument_rule, qty_floored_to_zero,
+  protected_symbol. Provider audit fields (instrument_rule_source,
+  instrument_rule_cache_count, matched, missing, non_trading, malformed, etc.)
+  exposed in the plan-only JSON output.
+
+  InstrumentSnapshot now carries a status field (Trading/Closed/etc) with
+  backward-compatible default. _parse_instrument_snapshot prefers maxMktOrderQty
+  over maxOrderQty and minNotionalValue over minOrderAmt.
+
+  No strategy or sizing change. V1 capital_base=10000, verified=true,
+  wallet_used=false, kelly=false unchanged.
+
+  Tests: focused 27 passed (new file); demo_native 18 passed; strategy_selection 34
+  passed; full regression 9228 passed (1 pre-existing failure in emergency_close
+  unrelated to this change).
+  0 order POST, 0 live endpoint, 0 Demo order sent, 0 Pilot advancement.
+
+VPS plan-only verification:
+  python scripts/run_demo_strategy_pilot_native_daily.py \r
+    --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py      (get_instruments_info wiring + audit)
+  MOD  src/demo_readonly_client.py                          (+status field, maxMktOrderQty pref)
+  MOD  src/demo_strategy_pilot_action_planner.py            (split rejection + protected diff skip)
+  NEW  tests/demo_trading/test_demo_strategy_pilot_instrument_rule_wiring.py (27 tests)
+  MOD  README.md                                            (TASK-014CA shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CA block)
+  MOD  docs/research/commands/COMMAND_LOG.md                (this entry)

@@ -121,7 +121,12 @@ class RealDemoOrderTransport:
 def _build_production_provider():
     """Build the canonical account/market provider from the existing read-only
     Demo client + market guard + instrument rules. Fails closed (returns None) if
-    real reads are unavailable. Runs ONLY on the VPS under explicit authorization."""
+    real reads are unavailable. Runs ONLY on the VPS under explicit authorization.
+
+    Instrument metadata is fetched via the canonical DemoReadOnlyClient.get_instruments_info()
+    public read-only GET (/v5/market/instruments-info, category=linear). The data is
+    batch-loaded once per run and cached in _instruments. No API secret is required for
+    this endpoint; pagination is handled by the client."""
     try:
         from src.demo_readonly_client import DemoReadOnlyClient
         from src.demo_market_price_guard import DemoMarketPriceGuard
@@ -130,14 +135,50 @@ def _build_production_provider():
     except Exception:  # noqa: BLE001
         return None
 
+    def _decimal_places(step: float) -> int:
+        if step <= 0:
+            return 0
+        s = f"{step:.15g}"
+        if "." not in s:
+            return 0
+        return len(s.rstrip("0").split(".")[1])
+
     class _RealDemoProvider:
         def __init__(self) -> None:
             self._client = DemoReadOnlyClient(allow_real_network=True)
             self._guard = DemoMarketPriceGuard(allow_real_network=True)
             self._wallet = self._client.get_wallet_balance()
             self._positions = self._client.get_open_positions()
-            self._instruments = {i.symbol: i for i in self._client.get_instruments()} \
-                if hasattr(self._client, "get_instruments") else {}
+            self._raw_instruments = self._client.get_instruments_info()
+            self._instruments: dict[str, InstrumentRules | None] = {}
+            self._non_trading_count = 0
+            self._malformed_count = 0
+            for sym, snap in self._raw_instruments.items():
+                if getattr(snap, "status", "Trading") != "Trading":
+                    self._non_trading_count += 1
+                    self._instruments[sym] = None
+                    continue
+                try:
+                    rule = InstrumentRules(
+                        symbol=sym,
+                        qty_step=float(snap.qty_step),
+                        min_qty=float(getattr(snap, "min_qty", 0)),
+                        max_qty=float(getattr(snap, "max_qty", 0)),
+                        tick_size=float(snap.tick_size),
+                        min_notional=float(getattr(snap, "min_notional", 0)),
+                        price_precision=_decimal_places(float(snap.tick_size)),
+                        qty_precision=_decimal_places(float(snap.qty_step)),
+                    )
+                    ok, _ = rule.is_valid()
+                    if not ok:
+                        self._malformed_count += 1
+                        self._instruments[sym] = None
+                    else:
+                        self._instruments[sym] = rule
+                except (TypeError, ValueError):
+                    self._malformed_count += 1
+                    self._instruments[sym] = None
+            self._public_get_count = 1
 
         def equity_usd(self) -> float:
             return float(self._wallet.equity_usd)
@@ -159,14 +200,20 @@ def _build_production_provider():
                 return None
 
         def instrument_rule(self, symbol: str):
-            inst = self._instruments.get(symbol)
-            if inst is None:
-                return None
-            return InstrumentRules(symbol=symbol, qty_step=float(inst.qty_step),
-                                   min_qty=float(getattr(inst, "min_qty", 0)),
-                                   max_qty=float(getattr(inst, "max_qty", 0)),
-                                   tick_size=float(inst.tick_size),
-                                   min_notional=float(getattr(inst, "min_notional", 0)))
+            return self._instruments.get(symbol)
+
+        def audit(self) -> dict:
+            valid_count = sum(1 for v in self._instruments.values() if v is not None)
+            return {
+                "instrument_rule_source": "DemoReadOnlyClient.get_instruments_info() -> /v5/market/instruments-info (public GET, category=linear)",
+                "market_price_source": "DemoMarketPriceGuard -> /v5/market/tickers (public GET)",
+                "instrument_rule_cache_count": len(self._raw_instruments),
+                "valid_instrument_rule_count": valid_count,
+                "non_trading_instrument_count": self._non_trading_count,
+                "malformed_instrument_rule_count": self._malformed_count,
+                "public_market_get_count": self._public_get_count,
+            }
+
     try:
         return _RealDemoProvider()
     except Exception:  # noqa: BLE001
@@ -310,11 +357,32 @@ def main(argv: list[str] | None = None) -> int:
         plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
         plan_label = ("PLAN_ONLY_READ_ONLY_DEMO_NETWORK" if provider_built
                       else plan.status)
+
+        rejected_reasons: dict[str, int] = {}
+        for r in plan.rejected_signals:
+            reason = r.get("reason", "unknown")
+            rejected_reasons[reason] = rejected_reasons.get(reason, 0) + 1
+
+        provider_audit = provider.audit() if hasattr(provider, "audit") else {}
+        target_count = plan.sizing_verification.get("target_symbol_count", 0)
+        matched = provider_audit.get("valid_instrument_rule_count", 0) if provider_audit else 0
+
         out = {"status": plan_label if plan.available else plan.status,
                "pilot_id": args.pilot_id, "date": args.date, "planner": plan.to_dict(),
                "detail": "plan preview only; pass --send-orders-to-demo to execute on Bybit Demo",
                "network_attempted": provider_built,
                "read_only_network": provider_built,
+               "market_price_source": provider_audit.get("market_price_source", "unavailable"),
+               "instrument_rule_source": provider_audit.get("instrument_rule_source", "unavailable"),
+               "instrument_rule_cache_count": provider_audit.get("instrument_rule_cache_count", 0),
+               "requested_target_symbol_count": len(plan.target_positions) + len(plan.rejected_signals),
+               "matched_instrument_rule_count": matched,
+               "missing_instrument_rule_count": rejected_reasons.get("no_instrument_rule", 0),
+               "non_trading_instrument_count": provider_audit.get("non_trading_instrument_count", 0),
+               "malformed_instrument_rule_count": provider_audit.get("malformed_instrument_rule_count", 0),
+               "rejected_reason_counts": rejected_reasons,
+               "public_market_get_count": provider_audit.get("public_market_get_count", 0),
+               "private_read_only_get_count": 2 if provider_built else 0,
                "order_endpoint_called": False,
                "order_post_count": 0,
                "live_endpoint_called": False,

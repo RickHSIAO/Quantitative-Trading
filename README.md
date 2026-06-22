@@ -17,7 +17,26 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BZ_FIX2 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CA 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CA_DEMO_PLAN_ONLY_PUBLIC_INSTRUMENT_RULE_PROVIDER_WIRING**（2026-06-23, Sonnet 4.6 / 公共 instrument rules 接通）
+> **`PUBLIC INSTRUMENT RULES WIRED / V1 FIXED-CAPITAL SIZING UNCHANGED / PLAN-ONLY READ-ONLY NETWORK / PROTECTED POSITIONS UNCHANGED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **Root cause:** `DemoReadOnlyClient` has `get_instruments_info()` (public GET, /v5/market/instruments-info),
+>   but the production provider called `get_instruments()` (nonexistent), silently falling back to an empty map.
+>   All 50 symbols rejected with `no_market_price_or_instrument_rule`.
+> - **Fix:** Wire `get_instruments_info()` into the provider; batch-load + cache once per run; map
+>   `InstrumentSnapshot` → `InstrumentRules` with `price_precision`/`qty_precision`. Non-Trading instruments
+>   and malformed rules fail closed. Protected symbols skip diff (no CLOSE/REDUCE actions generated).
+> - **Split rejection reasons:** `no_market_price`, `no_instrument_rule`, `malformed_instrument_rule`,
+>   `qty_floored_to_zero`, `protected_symbol` (each distinct). Provider audit fields exposed in plan-only JSON.
+> - **Bybit field parsing:** `maxMktOrderQty` preferred over `maxOrderQty`; `minNotionalValue` preferred over
+>   `minOrderAmt`; `status` field captured for Trading/non-Trading gate.
+> - V1 sizing: capital_base=10000, verified=true, wallet_used=false, kelly=false unchanged.
+> - 0 order POST, 0 live endpoint, 0 Demo order sent, 0 Pilot advancement.
+>
+> VPS plan-only:
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014BZ_FIX2_SAME_DATE_INCREMENTAL_RERUN_AGGREGATION**（2026-06-23, Sonnet 4.6 / 同日遞增重跑鏈聚合）
 > **`SAME-DATE INCREMENTAL RERUN AGGREGATED / ADDITIVE LEDGER VALID / 30-CALENDAR-DAY HOLDING RETURN +6.077668% / DAILY RISK METRICS PROVISIONAL / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**

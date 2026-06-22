@@ -359,8 +359,16 @@ def plan_strategy_native_actions(
 
         price = provider.market_price(symbol)
         rule = provider.instrument_rule(symbol)
-        if price is None or not (float(price) > 0) or rule is None:
-            rejected.append({"symbol": symbol, "reason": "no_market_price_or_instrument_rule"})
+        if price is None or not (float(price) > 0):
+            rejected.append({"symbol": symbol, "reason": "no_market_price"})
+            continue
+        if rule is None:
+            rejected.append({"symbol": symbol, "reason": "no_instrument_rule"})
+            continue
+        rule_ok, rule_err = rule.is_valid()
+        if not rule_ok:
+            rejected.append({"symbol": symbol, "reason": "malformed_instrument_rule",
+                             "detail": rule_err})
             continue
 
         # EXECUTION TRANSLATION (NOT a new sizing strategy):
@@ -423,6 +431,8 @@ def _diff_positions(targets: Mapping[str, Mapping[str, Any]],
     actions: list[nx.StrategyNativeAction] = []
     seq = 0
     for symbol in sorted(set(targets) | set(current)):
+        if symbol in PROTECTED_SYMBOLS:
+            continue
         tgt = targets.get(symbol)
         cur = current.get(symbol)
         cur_side = _side_to_long_short(getattr(cur, "side", "")) if cur is not None else ""

@@ -108,6 +108,7 @@ class InstrumentSnapshot:
     min_notional:    float
     price_precision: int
     qty_precision:   int
+    status:          str = "Trading"  # Bybit instrument status
 
 
 @dataclass
@@ -458,9 +459,12 @@ class DemoReadOnlyClient:
         pf = item.get("priceFilter", {}) or {}
         qty_step = float(lot.get("qtyStep", lot.get("basePrecision", 0.001)) or 0.001)
         min_qty = float(lot.get("minOrderQty", 0.001) or 0.001)
-        max_qty = float(lot.get("maxOrderQty", 0) or 0)
-        min_notional = float(lot.get("minOrderAmt", 1.0) or 1.0)
+        max_mkt = lot.get("maxMktOrderQty")
+        max_ord = lot.get("maxOrderQty")
+        max_qty = float(max_mkt or max_ord or 0)
+        min_notional = float(lot.get("minNotionalValue", lot.get("minOrderAmt", 1.0)) or 1.0)
         tick_size = float(pf.get("tickSize", 0.01) or 0.01)
+        status = str(item.get("status", "Trading"))
         return InstrumentSnapshot(
             symbol=sym,
             qty_step=qty_step,
@@ -470,6 +474,7 @@ class DemoReadOnlyClient:
             min_notional=min_notional,
             price_precision=_decimal_places(tick_size),
             qty_precision=_decimal_places(qty_step),
+            status=status,
         )
 
     def _proof_real(self) -> RuntimeProofSnapshot:
