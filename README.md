@@ -17,7 +17,33 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CB 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CB_FIX 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CB_FIX_CANONICAL_ONE_SHOT_DELEGATION_AND_RULE_BOUND_QUANTITY**（2026-06-23, Opus 4.8 / 委派既有 one-shot adapter + 規則綁定數量）
+> **`FULL V1 PLAN PRESERVED / NATIVE SEND DISPATCH DISABLED / EXECUTION DELEGATED TO CANONICAL ONE-SHOT ADAPTER / QUANTITY RULES FROM AUTHORITATIVE INSTRUMENT METADATA / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **修正 TASK-014CB 的兩個架構缺陷：** (1) 不再有平行的通用執行授權堆疊將 `StrategyNativeAction` 透過
+>   `execute_daily_native` 送單；(2) 不再從序列化的 planner 數量字串推斷 qtyStep。
+> - **Native 送單面 `--send-orders-to-demo` 不再 dispatch。** 產生完整 Plan-only 執行審查後 fail closed，狀態
+>   `EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER`：`execute_daily_native` 呼叫=0、transport sender 呼叫=0、
+>   order/amend/cancel POST=0、live=false、Pilot 不前進。不構造 order transport，不保留任何可達的通用真實送單路徑。
+> - **委派既有 canonical one-shot 鏈（重用，未取代）：** `demo_only_tiny_execution_adapter`（`ALLOWED_SYMBOL=SOLUSDT`、
+>   Market/IOC、`TINY_SIZE_CAP_USDT=5`、`TINY_QTY_STEP_SOL=0.01`）、instrument-rule 發現、cap-escalation gate
+>   （marker `DEMO_ONLY_SOLUSDT_EXCHANGE_MIN_QTY_CAP_ESCALATION_RICK_AUTHORIZED_v1`）、one-shot orchestrator
+>   （真實送單 marker `DEMO_ONLY_SOLUSDT_ONE_SHOT_REAL_ORDER_RICK_AUTHORIZED_v1`）、Demo-only endpoint guard。
+>   **不引入第二個獨立授權 marker**；TASK-014CB 的 `REQUIRED_AUTHORIZATION_MARKER` 已移除。
+> - **qtyStep 僅來自真實 InstrumentRules：** `qty_step_source=INSTRUMENT_RULE_PROVIDER`、
+>   `qty_step_inferred_from_action=false`、含 `instrument_rule_fingerprint`、`rule_status`、
+>   `candidate_rule_validation_status`、`market_price_snapshot`。同一動作數量搭配不同 qtyStep 產生不同驗證結果。
+> - **符號範圍：** 僅 SOLUSDT 為審查可委派；其餘 49 個 V1 symbol 為 planning-only，
+>   `execution_candidate_eligible=false` / `SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER`。SOLUSDT 亦不會自動授權
+>   （僅委派，`canonical_execution_packet_present=false`）。本任務不放寬 allowlist、不授權任何 cap escalation。
+> - **既有受保護持倉（EDUUSDT/POLYXUSDT）持續阻擋新開倉**，受保護 symbol 永不成為候選；缺失/非 Trading/格式錯誤規則 fail closed。
+> - 完整 50 動作 V1 規劃輸出不變且可見；稽核計數修正與 canonical Decimal 顯示保留；Pilot/Forward byte-identical；輸出無金鑰。
+> - 驗證：focused 29 passed；demo regression 9105 passed（1 個既有無關失敗）；既有 one-shot/tiny adapter 安全測試全通過。
+>
+> VPS Plan-only（僅此命令）：
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CB_DEMO_SEND_PATH_SINGLE_TINY_ORDER_GATE_AND_PLAN_AUDIT_HARDENING**（2026-06-23, Opus 4.8 / 單筆微量送單閘 + 稽核硬化）
 > **`FULL V1 PLAN PRESERVED / RAW MULTI-ACTION SEND FORBIDDEN / SINGLE TINY EXECUTION REQUIRES EXPLICIT AUTHORIZATION / PROTECTED POSITIONS UNCHANGED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

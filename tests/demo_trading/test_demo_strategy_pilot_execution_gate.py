@@ -1,9 +1,11 @@
-"""TASK-014CB -- single-tiny-order execution gate + plan/audit hardening tests.
+"""TASK-014CB_FIX -- non-dispatching execution-review gate + canonical delegation.
 
-Proves the raw 50-action V1 plan can never be sent, that single tiny execution
-requires explicit fingerprint + authorization marker, that existing protected
-positions block new opening, that audit counts are corrected, and that quantity
-serialization is canonical. Fully offline: zero real HTTP, zero Bybit, zero orders.
+Proves the native daily send surface no longer dispatches: the full 50-action V1
+plan stays planning output, real Demo execution is delegated to the existing
+canonical one-shot tiny adapter, qtyStep comes only from authoritative
+InstrumentRules (never inferred), unsupported non-SOL symbols are not
+execution-eligible, and no independent real-order authorization marker remains.
+Fully offline: zero real HTTP, zero Bybit, zero orders.
 """
 
 from __future__ import annotations
@@ -25,9 +27,12 @@ from src import demo_strategy_pilot_execution_gate as gate
 from src import demo_strategy_pilot_lifecycle as lc
 from src import demo_strategy_pilot_native_execution as nx
 from src import demo_strategy_pilot_readiness as rd
+from src import demo_only_tiny_execution_adapter as bh
+from src import demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator as osh
+from src import demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate as ce
 from src.demo_instrument_rules import InstrumentRules
 from src.demo_portfolio_risk import DemoOpenPosition
-from src.demo_readonly_client import DemoReadOnlyClient, InstrumentSnapshot
+from src.demo_readonly_client import DemoReadOnlyClient
 from src.demo_market_price_guard import DemoMarketPriceGuard
 
 daily_cli = importlib.import_module("scripts.run_demo_strategy_pilot_native_daily")
@@ -52,13 +57,16 @@ class FakeForward:
 
 
 class FakeProvider:
-    """Real canonical sizer runs on these injected fixtures (no network)."""
+    """Canonical sizer runs on these fixtures; also exposes authoritative
+    instrument_rule_evidence (qty_step from rules, never inferred)."""
 
-    def __init__(self, *, positions=None, prices=None, steps=None, symbols=None):
+    def __init__(self, *, positions=None, prices=None, steps=None, symbols=None,
+                 rule_status=None):
         self._positions = positions or []
         self._symbols = symbols or []
         self._prices = prices or {s: 2.0 for s in self._symbols}
         self._steps = steps or {}
+        self._rule_status = rule_status or {}
 
     def equity_usd(self): return INIT
     def available_balance_usd(self): return 8_500.0
@@ -71,26 +79,31 @@ class FakeProvider:
                                tick_size=0.0001, min_notional=1.0,
                                price_precision=4, qty_precision=3)
 
+    def instrument_rule_evidence(self, symbol):
+        status = self._rule_status.get(symbol, "TRADING")
+        ev = {"symbol": symbol, "rule_status": status,
+              "instrument_rule_source": "fixture_provider",
+              "market_price_source": "fixture_guard",
+              "market_price": self._prices.get(symbol)}
+        if status == "TRADING":
+            step = self._steps.get(symbol, 0.1)
+            ev.update({"qty_step": step, "min_qty": step, "max_qty": 0.0,
+                       "min_notional": 1.0, "tick_size": 0.0001})
+        return ev
+
 
 class SpyTransport:
-    """Records every order POST / reconcile so we can assert ZERO sends."""
-
     def __init__(self):
         self.posts = []
         self.reconciles = []
 
     def post_order_create(self, *, url, body):
         self.posts.append((url, dict(body)))
-        link = body["orderLinkId"]
-        return {"retCode": 0, "retMsg": "OK",
-                "result": {"orderId": "OID-" + link, "orderLinkId": link}}
+        return {"retCode": 0, "result": {"orderId": "X", "orderLinkId": body.get("orderLinkId")}}
 
     def reconcile(self, *, order_link_id):
         self.reconciles.append(order_link_id)
-        return {"retCode": 0, "result": {"list": [{
-            "orderLinkId": order_link_id, "orderId": "OID-" + order_link_id,
-            "orderStatus": "Filled", "cumExecQty": "1", "avgPrice": "2",
-            "cumExecFee": "0.01"}]}}
+        return {"retCode": 0, "result": {"list": []}}
 
 
 def fake_workbook_builder(*a, **k):
@@ -98,28 +111,29 @@ def fake_workbook_builder(*a, **k):
 
 
 def _50_symbols():
-    base = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOT", "LINK", "AAVE", "AVAX",
+    base = ["BTC", "ETH", "BNB", "XRP", "ADA", "DOT", "LINK", "AAVE", "AVAX",
             "MATIC", "ATOM", "UNI", "LTC", "BCH", "FIL", "APT", "ARB", "OP", "INJ",
-            "SUI", "SEI", "TIA2", "NEAR", "ALGO", "ICP", "HBAR", "VET", "GRT", "STX",
+            "SUI", "SEI", "NEAR", "ALGO", "ICP", "HBAR", "VET", "GRT", "STX",
             "IMX", "RENDER", "FET", "RUNE", "AXS", "SAND", "MANA", "GALA", "CHZ", "CRV",
-            "DYDX", "SNX", "COMP", "MKR", "1INCH", "ENJ", "BAT", "ZEC", "DASH", "KSM"]
+            "DYDX", "SNX", "COMP", "MKR", "ONEINCH", "ENJ", "BAT", "ZEC", "DASH", "KSM",
+            "WLD", "PYTH"]
     return [b + "USDT" for b in base]
 
 
 def _signals(symbols, weight=0.02):
-    out = []
-    for i, s in enumerate(symbols):
-        side = "long" if i < len(symbols) // 2 else "short"
-        out.append({"symbol": s, "side": side, "weight": weight, "score": weight})
-    return out
+    return [{"symbol": s, "side": "long" if i < len(symbols) // 2 else "short",
+             "weight": weight, "score": weight} for i, s in enumerate(symbols)]
 
 
-def _50_action_plan(prices=None, steps=None, positions=None):
+def _50_action_plan(positions=None, include_sol=False, sol_step=0.1):
     symbols = _50_symbols()
-    prov = FakeProvider(symbols=symbols, prices=prices or {s: 2.0 for s in symbols},
-                        steps=steps, positions=positions)
-    fwd = FakeForward(_signals(symbols))
-    plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=prov)
+    if include_sol:
+        symbols = symbols[:49] + ["SOLUSDT"]
+    steps = {"SOLUSDT": sol_step}
+    prov = FakeProvider(symbols=symbols, prices={s: 2.0 for s in symbols}, steps=steps,
+                        positions=positions)
+    plan = ap.plan_strategy_native_actions(forward_result=FakeForward(_signals(symbols)),
+                                           provider=prov)
     return plan, prov
 
 
@@ -142,8 +156,17 @@ def fwd_root(tmp_path):
     return str(tmp_path / "fwd")
 
 
+def _sol_plan(sol_step=0.1, rule_status=None):
+    prov = FakeProvider(symbols=["SOLUSDT"], prices={"SOLUSDT": 150.0},
+                        steps={"SOLUSDT": sol_step}, rule_status=rule_status or {})
+    plan = ap.plan_strategy_native_actions(
+        forward_result=FakeForward([{"symbol": "SOLUSDT", "side": "long",
+                                     "weight": 0.02, "score": 0.02}]), provider=prov)
+    return plan, prov
+
+
 # ---------------------------------------------------------------------------
-# 1, 14, 15 -- full 50-action V1 plan remains visible & unchanged
+# 1 -- full 50-action plan remains visible/unchanged
 # ---------------------------------------------------------------------------
 
 
@@ -152,203 +175,225 @@ def test_full_50_action_plan_remains_visible():
     assert plan.status == ap.STATUS_PLANNED
     assert len(plan.actions) == 50
     assert len(plan.target_positions) == 50
-
-
-def test_full_v1_200usdt_target_unchanged_in_planner():
-    plan, _ = _50_action_plan()
     for tp in plan.target_positions:
         assert abs(abs(tp["target_notional"]) - 200.0) < 1e-6
-    for a in plan.actions:
-        assert abs(abs(float(a.notional_usdt)) - 200.0) < 1e-6
-
-
-def test_200usdt_not_silently_reduced_in_plan():
-    plan, prov = _50_action_plan()
-    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
-                                       date=DATE, forward_fingerprint="sha256:x")
-    # The planner still carries 200; the gate reports the tiny cap SEPARATELY.
-    assert all(abs(abs(tp["target_notional"]) - 200.0) < 1e-6 for tp in plan.target_positions)
-    assert Decimal(res.effective_per_order_notional_cap_usdt) < Decimal("200")
 
 
 # ---------------------------------------------------------------------------
-# 2, 3, 25 -- send path performs zero POST; raw iteration impossible
+# 2, 3, 4, 19, 20 -- native send dispatches nothing
 # ---------------------------------------------------------------------------
 
 
-def test_unselected_50_action_send_zero_post(tmp_path, fwd_root):
+def test_native_send_zero_transport_calls(tmp_path, fwd_root):
     out_root = running_pilot(tmp_path, fwd_root)
     plan, prov = _50_action_plan()
     t = SpyTransport()
     out = daily_cli.orchestrate_gated_send(
         pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=t,
         output_root=out_root, plan=plan, workbook_builder=fake_workbook_builder)
-    assert len(t.posts) == 0
+    assert len(t.posts) == 0 and len(t.reconciles) == 0
     assert out["order_post_count"] == 0
     assert out["amend_post_count"] == 0
     assert out["cancel_post_count"] == 0
-    assert out["order_endpoint_called"] is False
+    assert out["transport_sender_call_count"] == 0
     assert out["live_endpoint_called"] is False
-    assert out["execution_authorized"] is False
-    assert out["send_path_refused"] is True
+    assert out["status"] == gate.EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER
 
 
-def test_multi_action_raw_iteration_impossible(tmp_path, fwd_root):
+def test_native_send_never_calls_execute_daily_native(tmp_path, fwd_root, monkeypatch):
     out_root = running_pilot(tmp_path, fwd_root)
-    plan, prov = _50_action_plan()
+    calls = {"n": 0}
+
+    def _boom(*a, **k):
+        calls["n"] += 1
+        raise AssertionError("execute_daily_native must NEVER be called by the native send surface")
+
+    monkeypatch.setattr(nx, "execute_daily_native", _boom)
+    plan, prov = _50_action_plan(include_sol=True)
     t = SpyTransport()
     out = daily_cli.orchestrate_gated_send(
         pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=t,
         output_root=out_root, plan=plan, workbook_builder=fake_workbook_builder)
-    g = out["execution_gate"]
-    assert g["multi_action_send_refused"] is True
-    assert g["raw_planned_action_count"] == 50
+    assert calls["n"] == 0
+    assert out["execute_daily_native_called"] is False
     assert len(t.posts) == 0
 
 
-def test_gate_refuses_multi_without_protected_positions():
-    plan, _ = _50_action_plan()
+def test_no_generic_action_reaches_sender(tmp_path, fwd_root):
+    out_root = running_pilot(tmp_path, fwd_root)
+    plan, prov = _50_action_plan(include_sol=True)
+    t = SpyTransport()
+    daily_cli.orchestrate_gated_send(
+        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=t,
+        output_root=out_root, plan=plan, workbook_builder=fake_workbook_builder)
+    assert t.posts == []
+
+
+def test_native_dispatch_disabled_flag(tmp_path, fwd_root):
+    out_root = running_pilot(tmp_path, fwd_root)
+    plan, prov = _50_action_plan()
+    out = daily_cli.orchestrate_gated_send(
+        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=None,
+        output_root=out_root, plan=plan)
+    assert out["native_dispatch_disabled"] is True
+    assert out["execution_authorized"] is False
+    assert out["execution_ready"] is False
+    assert out["sender_reachable"] is False
+    assert out["canonical_one_shot_adapter_required"] is True
+    assert out["canonical_execution_packet_present"] is False
+
+
+# ---------------------------------------------------------------------------
+# 5, 6 -- no new marker; canonical marker/constants referenced
+# ---------------------------------------------------------------------------
+
+
+def test_no_new_independent_authorization_marker():
+    # The TASK-014CB generic marker must be gone.
+    assert not hasattr(gate, "REQUIRED_AUTHORIZATION_MARKER")
+    assert not hasattr(gate, "AUTHORIZED_SINGLE_TINY_EXECUTION_CANDIDATE")
+
+
+def test_canonical_marker_and_constants_referenced():
+    assert gate.CANONICAL_REAL_ORDER_AUTHORIZATION_MARKER == osh.EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER
+    assert gate.CANONICAL_CAP_ESCALATION_AUTHORIZATION_MARKER == ce.EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER
+    assert gate.CANONICAL_ONE_SHOT_ALLOWED_SYMBOL == bh.ALLOWED_SYMBOL == "SOLUSDT"
+    refs = gate.canonical_one_shot_references()
+    assert refs["allowed_symbol"] == "SOLUSDT"
+    assert refs["real_order_authorized"] is False
+    assert refs["cap_escalation_authorized"] is False
+    assert "src.demo_only_tiny_execution_adapter" in refs["modules"]
+
+
+# ---------------------------------------------------------------------------
+# 7, 8, 9, 10 -- authoritative qtyStep provenance
+# ---------------------------------------------------------------------------
+
+
+def test_qty_step_from_instrument_rules():
+    plan, prov = _sol_plan(sol_step=0.1)
     res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
-                                       date=DATE, forward_fingerprint="sha256:x")
-    assert res.final_execution_authorization_status == gate.EXECUTION_NOT_AUTHORIZED_MULTI_ACTION_PLAN
-    assert res.multi_action_send_refused is True
-    assert res.authorized is False
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    ev = res.rule_evidence
+    assert ev["qty_step"] == "0.1"
+    assert ev["qty_step_source"] == "INSTRUMENT_RULE_PROVIDER"
+    assert ev["qty_step_inferred_from_action"] is False
 
 
-# ---------------------------------------------------------------------------
-# 4, 5, 6, 7, 8 -- explicit selection / fingerprint / marker required
-# ---------------------------------------------------------------------------
-
-
-def _single_action_plan():
-    fwd = FakeForward([{"symbol": "SOLUSDT", "side": "long", "weight": 0.02, "score": 0.02}])
-    prov = FakeProvider(symbols=["SOLUSDT"], prices={"SOLUSDT": 2.0}, steps={"SOLUSDT": 0.1})
-    return ap.plan_strategy_native_actions(forward_result=fwd, provider=prov), prov
-
-
-def test_no_default_first_action_selection():
-    plan, _ = _single_action_plan()
-    # action_seq=0 must NOT be auto-selected.
+def test_qty_step_not_inferred_from_action_decimals():
+    # Planner qty for SOLUSDT (price 150, step 0.01) would have 2 decimals, which
+    # a naive inference might read as step 0.01. The authoritative rule says 0.5.
+    prov = FakeProvider(symbols=["SOLUSDT"], prices={"SOLUSDT": 150.0},
+                        steps={"SOLUSDT": 0.5})
+    plan = ap.plan_strategy_native_actions(
+        forward_result=FakeForward([{"symbol": "SOLUSDT", "side": "long",
+                                     "weight": 0.02, "score": 0.02}]), provider=prov)
     res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
-                                       date=DATE, forward_fingerprint="sha256:x")
-    assert res.selected_execution_candidate_count == 0
-    assert res.authorized is False
-    assert gate.EXECUTION_NOT_AUTHORIZED_NO_SELECTION in res.refusal_reasons
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    # qty_step reflects the RULE (0.5), regardless of the action qty's decimals.
+    assert res.rule_evidence["qty_step"] == "0.5"
 
 
-def test_explicit_fingerprint_selection_required():
-    plan, _ = _single_action_plan()
-    a = plan.actions[0]
-    fp = gate.action_fingerprint(a, pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x")
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=[], pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x",
-        selected_action_fingerprint=fp, authorization_marker=gate.REQUIRED_AUTHORIZATION_MARKER)
-    assert res.selected_execution_candidate_count == 1
-    assert res.authorized is True
-    assert res.final_execution_authorization_status == gate.AUTHORIZED_SINGLE_TINY_EXECUTION_CANDIDATE
+def test_same_qty_different_steps_different_outcome():
+    plan, _ = _sol_plan(sol_step=0.1)
+    r1 = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT, date=DATE,
+                                      forward_fingerprint="fp",
+                                      rule_provider=FakeProvider(symbols=["SOLUSDT"],
+                                                                 prices={"SOLUSDT": 150.0},
+                                                                 steps={"SOLUSDT": 0.1}))
+    r2 = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT, date=DATE,
+                                      forward_fingerprint="fp",
+                                      rule_provider=FakeProvider(symbols=["SOLUSDT"],
+                                                                 prices={"SOLUSDT": 150.0},
+                                                                 steps={"SOLUSDT": 0.01}))
+    assert r1.rule_evidence["instrument_rule_fingerprint"] != r2.rule_evidence["instrument_rule_fingerprint"]
+    assert r1.rule_evidence["qty_step"] == "0.1"
+    assert r2.rule_evidence["qty_step"] == "0.01"
 
 
-def test_mismatched_fingerprint_refuses():
-    plan, _ = _single_action_plan()
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=[], pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x",
-        selected_action_fingerprint="sha256:STALE", authorization_marker=gate.REQUIRED_AUTHORIZATION_MARKER)
-    assert res.authorized is False
-    assert res.final_execution_authorization_status == gate.EXECUTION_NOT_AUTHORIZED_FINGERPRINT_MISMATCH
-
-
-def test_stale_fingerprint_from_different_date_refuses():
-    plan, _ = _single_action_plan()
-    a = plan.actions[0]
-    stale_fp = gate.action_fingerprint(a, pilot_id=PILOT, date="2026-06-21",
-                                       forward_fingerprint="sha256:x")
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=[], pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x",
-        selected_action_fingerprint=stale_fp, authorization_marker=gate.REQUIRED_AUTHORIZATION_MARKER)
-    assert res.authorized is False
-    assert res.final_execution_authorization_status == gate.EXECUTION_NOT_AUTHORIZED_FINGERPRINT_MISMATCH
-
-
-def test_missing_authorization_marker_refuses():
-    plan, _ = _single_action_plan()
-    a = plan.actions[0]
-    fp = gate.action_fingerprint(a, pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x")
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=[], pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x",
-        selected_action_fingerprint=fp, authorization_marker=None)
-    assert res.authorized is False
-    assert res.final_execution_authorization_status == gate.EXECUTION_NOT_AUTHORIZED_MISSING_MARKER
-
-
-def test_wrong_authorization_marker_refuses():
-    plan, _ = _single_action_plan()
-    a = plan.actions[0]
-    fp = gate.action_fingerprint(a, pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x")
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=[], pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x",
-        selected_action_fingerprint=fp, authorization_marker="not-the-marker")
-    assert res.authorized is False
-    assert gate.EXECUTION_NOT_AUTHORIZED_MISSING_MARKER in res.refusal_reasons
-
-
-def test_multiple_selected_refuses():
-    # Two identical eligible actions -> same fingerprint -> selection is ambiguous.
-    a1 = nx.StrategyNativeAction(symbol="SOLUSDT", side="Buy", qty="2.5", intent="OPEN",
-                                 reduce_only=False, notional_usdt="5", action_seq=0,
-                                 source_reference="target_open")
-    a2 = nx.StrategyNativeAction(symbol="SOLUSDT", side="Buy", qty="2.5", intent="OPEN",
-                                 reduce_only=False, notional_usdt="5", action_seq=1,
-                                 source_reference="target_open")
-
-    class P:
-        available = True
-        actions = [a1, a2]
-        sizing_verification = {"verified": True}
-        target_positions = []; current_positions = []; rejected_signals = []
-        status = "OK"
-        def to_dict(self): return {}
-
-    fp = gate.action_fingerprint(a1, pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x")
-    res = gate.evaluate_execution_gate(
-        plan=P(), open_positions=[], pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x",
-        selected_action_fingerprint=fp, authorization_marker=gate.REQUIRED_AUTHORIZATION_MARKER)
-    assert res.selected_execution_candidate_count == 2
-    assert res.final_execution_authorization_status == gate.EXECUTION_NOT_AUTHORIZED_MULTIPLE_SELECTED
+def test_instrument_rule_fingerprint_present():
+    plan, prov = _sol_plan()
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    assert res.rule_evidence["instrument_rule_fingerprint"].startswith("sha256:")
 
 
 # ---------------------------------------------------------------------------
-# 9, 10 -- effective per-order / daily cap enforced
+# 11, 12, 13 -- rule failures fail closed
 # ---------------------------------------------------------------------------
 
 
-def test_effective_per_order_cap_is_strictest():
-    pol = gate.resolve_effective_policy()
-    # strictest of SAFETY_POLICY 10 and tiny adapter 5 -> 5.
-    assert pol.per_order_notional_cap_usdt == Decimal("5")
-    assert pol.conflict is False
+def test_missing_rule_fails_closed():
+    plan, _ = _sol_plan(rule_status={"SOLUSDT": "MISSING"})
+    prov = FakeProvider(symbols=["SOLUSDT"], prices={"SOLUSDT": 150.0},
+                        rule_status={"SOLUSDT": "MISSING"})
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    assert res.execution_candidate_eligible is False
+    assert res.final_execution_authorization_status == gate.RULE_MISSING
 
 
-def test_effective_daily_cap_enforced():
-    pol = gate.resolve_effective_policy()
-    # daily bounded by per-order(5) * max_new_per_day(1) -> 5.
-    assert pol.daily_new_opening_notional_cap_usdt == Decimal("5")
+def test_non_trading_rule_fails_closed():
+    plan, _ = _sol_plan()
+    prov = FakeProvider(symbols=["SOLUSDT"], prices={"SOLUSDT": 150.0},
+                        rule_status={"SOLUSDT": "NON_TRADING"})
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    assert res.execution_candidate_eligible is False
+    assert res.final_execution_authorization_status == gate.RULE_NON_TRADING
 
 
-def test_200usdt_target_capped_to_tiny_in_candidate():
-    plan, _ = _single_action_plan()
-    a = plan.actions[0]
-    fp = gate.action_fingerprint(a, pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x")
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=[], pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x",
-        selected_action_fingerprint=fp, authorization_marker=gate.REQUIRED_AUTHORIZATION_MARKER)
-    c = res.selected_candidate
-    assert c["strategy_target_notional_usdt"] == "200"
-    assert Decimal(c["execution_candidate_notional_usdt"]) <= Decimal("5")
-    assert res.cap_compliance_status == "TARGET_EXCEEDS_TINY_CAP"
+def test_malformed_rule_fails_closed():
+    plan, _ = _sol_plan()
+    prov = FakeProvider(symbols=["SOLUSDT"], prices={"SOLUSDT": 150.0},
+                        rule_status={"SOLUSDT": "MALFORMED"})
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    assert res.execution_candidate_eligible is False
+    assert res.final_execution_authorization_status == gate.RULE_MALFORMED
 
 
 # ---------------------------------------------------------------------------
-# 11, 12, 13 -- existing positions limit / protected positions block / candidates
+# 14, 15, 16 -- symbol scope; SOL delegates (never auto-authorized); no escalation
+# ---------------------------------------------------------------------------
+
+
+def test_unsupported_non_sol_symbols_not_eligible():
+    plan, prov = _50_action_plan()  # no SOLUSDT
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    assert res.execution_candidate_eligible is False
+    assert gate.SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER in res.refusal_reasons
+    assert res.final_execution_authorization_status == gate.SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER
+
+
+def test_solusdt_delegates_never_auto_authorized():
+    plan, prov = _sol_plan()
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    # SOLUSDT with a valid rule is review-eligible, but NEVER authorized here.
+    assert res.execution_candidate_eligible is True
+    assert res.authorized is False
+    assert res.execution_authorized is False
+    assert res.canonical_execution_packet_present is False
+    assert res.final_execution_authorization_status == gate.EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER
+    assert res.execution_delegation_status == gate.CANONICAL_ONE_SHOT_EXECUTION_PACKET_REQUIRED
+
+
+def test_no_cap_escalation_implied():
+    plan, prov = _sol_plan()
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    refs = res.canonical_one_shot_references
+    assert refs["cap_escalation_authorized"] is False
+    assert refs["real_order_authorized"] is False
+    inv = {s["source"]: s for s in res.policy_sources}
+    ceg = [s for s in res.policy_sources if "cap_escalation_gate" in s["source"]][0]
+    assert ceg["cap_escalation_authorized"] is False
+
+
+# ---------------------------------------------------------------------------
+# 17, 18 -- protected positions block; protected symbols untouched
 # ---------------------------------------------------------------------------
 
 
@@ -361,37 +406,32 @@ def _protected_positions():
     ]
 
 
-def test_existing_protected_positions_block_new_opening():
-    plan, _ = _single_action_plan()
-    a = plan.actions[0]
-    fp = gate.action_fingerprint(a, pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x")
-    # Even with a correct selection + marker, 2 protected positions block.
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=_protected_positions(), pilot_id=PILOT, date=DATE,
-        forward_fingerprint="sha256:x", selected_action_fingerprint=fp,
-        authorization_marker=gate.REQUIRED_AUTHORIZATION_MARKER)
-    assert res.authorized is False
+def test_protected_positions_block_even_with_sol():
+    plan, prov = _sol_plan()
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=_protected_positions(),
+                                       pilot_id=PILOT, date=DATE, forward_fingerprint="fp",
+                                       rule_provider=prov)
     assert res.final_execution_authorization_status == \
         gate.NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS
     assert res.existing_protected_position_count == 2
-    assert res.simultaneous_position_policy_status == gate.SIM_POLICY_PROTECTED_EXCLUSION_UNDEFINED
+    assert res.execution_candidate_eligible is False
 
 
-def test_real_vps_scenario_fails_closed():
-    """50 actions + 2 protected positions -> fail closed, zero candidates executable."""
-    plan, _ = _50_action_plan(positions=_protected_positions())
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=_protected_positions(), pilot_id=PILOT, date=DATE,
-        forward_fingerprint="sha256:x")
-    assert res.final_execution_authorization_status == \
+def test_real_vps_scenario_delegates_and_blocks(tmp_path, fwd_root):
+    out_root = running_pilot(tmp_path, fwd_root)
+    plan, prov = _50_action_plan(positions=_protected_positions())
+    t = SpyTransport()
+    out = daily_cli.orchestrate_gated_send(
+        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=t,
+        output_root=out_root, plan=plan, workbook_builder=fake_workbook_builder)
+    assert out["status"] == gate.EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER
+    g = out["execution_gate"]
+    assert g["final_execution_authorization_status"] == \
         gate.NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS
-    assert res.multi_action_send_refused is True
-    assert res.authorized is False
+    assert len(t.posts) == 0
 
 
-def test_protected_symbols_never_become_candidates():
-    # A protected symbol in the signals is dropped by the planner; even if forced
-    # into actions, the gate never treats it as eligible.
+def test_protected_symbols_never_candidates():
     protected_action = nx.StrategyNativeAction(
         symbol="ENAUSDT", side="Buy", qty="5", intent="OPEN", reduce_only=False,
         notional_usdt="200", action_seq=0, source_reference="target_open")
@@ -405,169 +445,20 @@ def test_protected_symbols_never_become_candidates():
         def to_dict(self): return {}
 
     res = gate.evaluate_execution_gate(plan=P(), open_positions=[], pilot_id=PILOT,
-                                       date=DATE, forward_fingerprint="sha256:x")
+                                       date=DATE, forward_fingerprint="fp", rule_provider=None)
     assert res.eligible_execution_candidate_count == 0
 
 
-def test_edu_polyx_positions_untouched_in_send(tmp_path, fwd_root):
-    out_root = running_pilot(tmp_path, fwd_root)
-    plan, prov = _50_action_plan(positions=_protected_positions())
-    t = SpyTransport()
-    out = daily_cli.orchestrate_gated_send(
-        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=t,
-        output_root=out_root, plan=plan, workbook_builder=fake_workbook_builder)
-    assert len(t.posts) == 0
-    # No CLOSE/REDUCE/OPEN action for any protected symbol reached the transport.
-    assert all(p[1].get("symbol") not in PROTECTED for p in t.posts)
-    assert out["status"] == gate.NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS
-
-
 # ---------------------------------------------------------------------------
-# 16 -- tiny execution candidate labeled as probe
+# 21, 22 -- Pilot / Forward byte identity
 # ---------------------------------------------------------------------------
 
 
-def test_tiny_candidate_labeled_as_execution_probe():
-    plan, _ = _single_action_plan()
-    a = plan.actions[0]
-    fp = gate.action_fingerprint(a, pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x")
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=[], pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x",
-        selected_action_fingerprint=fp, authorization_marker=gate.REQUIRED_AUTHORIZATION_MARKER)
-    assert res.selected_candidate["candidate_kind"] == "EXECUTION_PROBE_NOT_V1_PORTFOLIO_REPLICATION"
-
-
-# ---------------------------------------------------------------------------
-# 17, 18, 19 -- canonical Decimal quantity serialization
-# ---------------------------------------------------------------------------
-
-
-def test_canonical_qty_is_decimal_string():
-    # notional 5, price 1.81, step 0.01 -> 2.76 exactly (no float tail).
-    q = gate.canonical_qty_str("5", "1.81", "0.01")
-    assert q == "2.76"
-    assert not gate.has_float_artifact(q)
-
-
-def test_canonical_qty_exact_step_multiple():
-    q = gate.canonical_qty("200", "0.07287", "0.1")
-    assert gate.is_exact_multiple(q, "0.1")
-
-
-def test_no_float_artifact_in_planner_qty():
-    # A price/step combination that would yield a binary-float artifact under
-    # naive float serialization must be canonical in the planner output.
-    fwd = FakeForward([{"symbol": "ONEINCHUSDT", "side": "long", "weight": 0.02, "score": 0.02}])
-    prov = FakeProvider(symbols=["ONEINCHUSDT"], prices={"ONEINCHUSDT": 0.07287},
-                        steps={"ONEINCHUSDT": 0.1})
-    plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=prov)
-    for a in plan.actions:
-        assert not gate.has_float_artifact(a.qty), f"float artifact in qty {a.qty!r}"
-
-
-def test_no_float_artifact_in_gate_json():
-    plan, _ = _single_action_plan()
-    a = plan.actions[0]
-    fp = gate.action_fingerprint(a, pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x")
-    res = gate.evaluate_execution_gate(
-        plan=plan, open_positions=[], pilot_id=PILOT, date=DATE, forward_fingerprint="sha256:x",
-        selected_action_fingerprint=fp, authorization_marker=gate.REQUIRED_AUTHORIZATION_MARKER)
-    text = json.dumps(res.to_dict())
-    # canonical qty in the candidate must not carry a binary-float tail.
-    assert not gate.has_float_artifact(res.selected_candidate["canonical_qty"])
-    assert "0000000001" not in text
-    assert "9999999999" not in text
-
-
-def test_canonical_qty_floors_never_up():
-    # 5 / 3 = 1.666...; step 0.01 -> 1.66 (floored), notional <= 5.
-    q = gate.canonical_qty("5", "3", "0.01")
-    assert q == Decimal("1.66")
-    assert q * Decimal("3") <= Decimal("5")
-
-
-# ---------------------------------------------------------------------------
-# 20, 21, 22, 23, 24 -- corrected audit semantics + real network accounting
-# ---------------------------------------------------------------------------
-
-
-def _fixture_provider():
-    """Build the production provider with fixture-mode client + guard (offline)."""
-    client = DemoReadOnlyClient(allow_real_network=False)
-    guard = DemoMarketPriceGuard(allow_real_network=False)
-    return daily_cli._build_production_provider(_client=client, _guard=guard)
-
-
-def test_matched_count_is_requested_not_cache():
-    prov = _fixture_provider()
-    audit = prov.audit()
-    cache_count = audit["instrument_rule_cache_count"]
-    # Request only 2 known targets; matched must be 2, NOT the full cache count.
-    match = prov.match_targets(["BTCUSDT", "ETHUSDT"])
-    assert match["requested_target_symbol_count"] == 2
-    assert match["matched_instrument_rule_count"] == 2
-    assert match["matched_instrument_rule_count"] != cache_count or cache_count == 2
-
-
-def test_catalog_cache_count_reported_separately():
-    prov = _fixture_provider()
-    audit = prov.audit()
-    assert audit["instrument_rule_cache_count"] >= 1
-    assert "valid_instrument_rule_cache_count" in audit
-    # match over a single target is independent of the catalog cache.
-    match = prov.match_targets(["BTCUSDT"])
-    assert match["matched_instrument_rule_count"] == 1
-
-
-def test_missing_target_reported():
-    prov = _fixture_provider()
-    match = prov.match_targets(["BTCUSDT", "NOTLISTEDUSDT"])
-    assert match["matched_instrument_rule_count"] == 1
-    assert match["missing_instrument_rule_count"] == 1
-
-
-def test_ticker_get_count_is_real():
-    prov = _fixture_provider()
-    assert prov.audit()["ticker_public_get_count"] == 0  # none fetched yet
-    prov.market_price("BTCUSDT")
-    prov.market_price("ETHUSDT")
-    prov.market_price("BTCUSDT")  # cached -> no new GET
-    assert prov.audit()["ticker_public_get_count"] == 2
-
-
-def test_instrument_metadata_get_count_is_real():
-    prov = _fixture_provider()
-    assert prov.audit()["instrument_metadata_public_get_count"] == 1
-
-
-def test_private_get_counts_are_real():
-    prov = _fixture_provider()
-    audit = prov.audit()
-    assert audit["wallet_private_read_only_get_count"] == 1
-    assert audit["positions_private_read_only_get_count"] == 1
-    assert audit["total_private_read_only_get_count"] == 2
-
-
-def test_audit_zero_post_and_live():
-    prov = _fixture_provider()
-    audit = prov.audit()
-    assert audit["order_post_count"] == 0
-    assert audit["amend_post_count"] == 0
-    assert audit["cancel_post_count"] == 0
-    assert audit["live_endpoint_called"] is False
-
-
-# ---------------------------------------------------------------------------
-# 26, 27 -- source / Pilot byte-identity during plan-only & refused send
-# ---------------------------------------------------------------------------
-
-
-def test_pilot_state_byte_identical_on_refused_send(tmp_path, fwd_root):
+def test_pilot_state_byte_identical(tmp_path, fwd_root):
     out_root = running_pilot(tmp_path, fwd_root)
     state_path = pathlib.Path(out_root)
-    # Snapshot all pilot state files.
     before = {p: p.read_bytes() for p in state_path.rglob("pilot_state.json")}
-    assert before, "expected a pilot_state.json"
+    assert before
     plan, prov = _50_action_plan(positions=_protected_positions())
     t = SpyTransport()
     daily_cli.orchestrate_gated_send(
@@ -577,66 +468,104 @@ def test_pilot_state_byte_identical_on_refused_send(tmp_path, fwd_root):
     assert after == before
 
 
-def test_no_pilot_advancement_on_refused_send(tmp_path, fwd_root):
+def test_no_pilot_advancement(tmp_path, fwd_root):
     out_root = running_pilot(tmp_path, fwd_root)
-    plan, prov = _50_action_plan(positions=_protected_positions())
-    t = SpyTransport()
+    plan, prov = _50_action_plan()
     out = daily_cli.orchestrate_gated_send(
-        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=t,
-        output_root=out_root, plan=plan, workbook_builder=fake_workbook_builder)
+        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=None,
+        output_root=out_root, plan=plan)
     assert out["pilot_advanced"] is False
     state = rd.PilotStateStore(PILOT, out_root).read_state()
     assert state["completed_successful_days"] == 0
 
 
 # ---------------------------------------------------------------------------
-# 28, 29 -- live endpoint denied; no secret material
+# 23 -- no secret material
 # ---------------------------------------------------------------------------
 
 
-def test_live_endpoint_remains_denied(tmp_path, fwd_root):
+def test_no_secret_material_in_output(tmp_path, fwd_root):
     out_root = running_pilot(tmp_path, fwd_root)
-    plan, prov = _50_action_plan()
-    t = SpyTransport()
+    plan, prov = _50_action_plan(include_sol=True)
     out = daily_cli.orchestrate_gated_send(
-        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=t,
-        output_root=out_root, base_url="https://api.bybit.com", plan=plan,
-        workbook_builder=fake_workbook_builder)
-    assert out["live_endpoint_called"] is False
-    assert out["live_trading_authorized"] is False
-    assert len(t.posts) == 0
-
-
-def test_no_secret_material_in_gate_output():
-    plan, prov = _50_action_plan()
-    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
-                                       date=DATE, forward_fingerprint="sha256:x")
-    text = json.dumps(res.to_dict()).lower()
+        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=None,
+        output_root=out_root, plan=plan)
+    text = json.dumps(out).lower()
     for sensitive in ("api_key", "api_secret", "bybit_demo_api_key", "bybit_demo_api_secret",
                       "demokey", "demosecret", "x-bapi-sign"):
         assert sensitive not in text
 
 
 # ---------------------------------------------------------------------------
-# Authorized path executes EXACTLY ONE tiny order (mechanism w/ fake transport)
+# 24 (retained planning/audit) -- corrected audit semantics + canonical display
 # ---------------------------------------------------------------------------
 
 
-def test_authorized_single_tiny_executes_exactly_one(tmp_path, fwd_root):
-    out_root = running_pilot(tmp_path, fwd_root)
-    plan, prov = _single_action_plan()
-    a = plan.actions[0]
-    fwd_fp = daily_cli._forward_fingerprint_of(plan)
-    fp = gate.action_fingerprint(a, pilot_id=PILOT, date=DATE, forward_fingerprint=fwd_fp)
-    t = SpyTransport()
-    out = daily_cli.orchestrate_gated_send(
-        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=t,
-        output_root=out_root, plan=plan, selected_action_fingerprint=fp,
-        authorization_marker=gate.REQUIRED_AUTHORIZATION_MARKER,
-        workbook_builder=fake_workbook_builder)
-    assert out["execution_authorized"] is True
-    # EXACTLY ONE order POST (the tiny probe), never the 50-action plan.
-    assert len(t.posts) == 1
-    body = t.posts[0][1]
-    assert not gate.has_float_artifact(str(body["qty"]))
-    assert Decimal(str(body["qty"])) > 0
+def _fixture_provider():
+    client = DemoReadOnlyClient(allow_real_network=False)
+    guard = DemoMarketPriceGuard(allow_real_network=False)
+    return daily_cli._build_production_provider(_client=client, _guard=guard)
+
+
+def test_matched_count_is_requested_not_cache():
+    prov = _fixture_provider()
+    audit = prov.audit()
+    match = prov.match_targets(["BTCUSDT", "ETHUSDT"])
+    assert match["requested_target_symbol_count"] == 2
+    assert match["matched_instrument_rule_count"] == 2
+    assert audit["instrument_rule_cache_count"] >= 2
+
+
+def test_ticker_get_count_real_and_cached():
+    prov = _fixture_provider()
+    assert prov.audit()["ticker_public_get_count"] == 0
+    prov.market_price("BTCUSDT")
+    prov.market_price("BTCUSDT")
+    assert prov.audit()["ticker_public_get_count"] == 1
+
+
+def test_private_get_counts_real():
+    prov = _fixture_provider()
+    audit = prov.audit()
+    assert audit["wallet_private_read_only_get_count"] == 1
+    assert audit["positions_private_read_only_get_count"] == 1
+    assert audit["order_post_count"] == 0
+    assert audit["live_endpoint_called"] is False
+
+
+def test_provider_rule_evidence_qty_step_from_rule():
+    prov = _fixture_provider()
+    ev = prov.instrument_rule_evidence("BTCUSDT")
+    assert ev["rule_status"] == "TRADING"
+    # qty_step comes from the fixture InstrumentSnapshot (0.001), not any action.
+    assert float(ev["qty_step"]) == 0.001
+
+
+def test_canonical_display_no_float_artifact_in_planner():
+    prov = FakeProvider(symbols=["ONEINCHUSDT"], prices={"ONEINCHUSDT": 0.07287},
+                        steps={"ONEINCHUSDT": 0.1})
+    plan = ap.plan_strategy_native_actions(
+        forward_result=FakeForward([{"symbol": "ONEINCHUSDT", "side": "long",
+                                     "weight": 0.02, "score": 0.02}]), provider=prov)
+    for a in plan.actions:
+        assert not gate.has_float_artifact(a.qty)
+
+
+# ---------------------------------------------------------------------------
+# Policy-source inventory completeness (F)
+# ---------------------------------------------------------------------------
+
+
+def test_policy_source_inventory_includes_canonical_sources():
+    inv = gate.policy_source_inventory()
+    sources = " ".join(s["source"] for s in inv)
+    assert "SAFETY_POLICY" in sources
+    assert "cap_escalation_gate" in sources
+    assert "one_shot_authorized_execution_orchestrator" in sources
+    assert "tiny_execution_adapter" in sources
+    assert "PROTECTED_SYMBOLS" in sources
+    # cap escalation + one-shot real order explicitly NOT authorized here.
+    ceg = [s for s in inv if "cap_escalation_gate" in s["source"]][0]
+    osh_s = [s for s in inv if "one_shot_authorized_execution_orchestrator" in s["source"]][0]
+    assert ceg["cap_escalation_authorized"] is False
+    assert osh_s["real_order_authorized"] is False

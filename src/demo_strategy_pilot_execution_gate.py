@@ -1,31 +1,33 @@
-"""TASK-014CB -- single-tiny-order execution gate + plan/audit hardening.
+"""TASK-014CB_FIX -- non-dispatching execution-review gate that delegates real
+Demo execution to the existing canonical one-shot tiny adapter.
 
 The V1 planner (``demo_strategy_pilot_action_planner``) legitimately emits the
-FULL 50-target V1 portfolio as research/translation output (50 OPEN actions at
-200 USDT each). That raw multi-action plan must NEVER be submitted directly to
-Bybit Demo merely because ``--send-orders-to-demo`` is present.
+FULL 50-target V1 portfolio (50 OPEN actions at 200 USDT each) as research /
+translation output. That raw multi-action plan is PLANNING OUTPUT ONLY and is
+never executable as-is.
 
-This module is the explicit, fail-closed authorization layer that sits between
-the planner and any order send. It separates *planning* (the full V1 portfolio)
-from *execution* (at most ONE explicitly authorized tiny probe order):
+TASK-014CB introduced a generic execution-authorization stack that converted a
+``StrategyNativeAction`` into an order via ``execute_daily_native`` and inferred
+the exchange ``qtyStep`` from the serialized planner quantity. Both are corrected
+here:
 
-    * The raw planner action list can never be iterated and submitted.
-    * A future executable action requires an explicit, stable action fingerprint
-      (run date / pilot id / symbol / side / intent / reduce_only / canonical qty
-      / notional / source reference / forward artifact fingerprint) AND the exact
-      authorization marker. Selection by list position / action_seq is impossible.
-    * The effective safety restriction is the STRICTEST of every approved policy
-      source; irreconcilable sources fail closed ``POLICY_CONFLICT_REQUIRES_REVIEW``.
-    * Protected symbols (ENA/TIA/AIXBT/POLYX/EDU) never become candidates, and
-      existing protected open positions block new-opening eligibility until the
-      policy explicitly defines whether they are excluded from the simultaneous
-      position count.
-    * The full V1 200-USDT target is reported separately from the (lower) tiny
-      execution cap; the V1 weight is never renormalized to look compliant.
-    * Canonical Decimal quantities (exact qty_step multiples, floored) are used
-      for any execution candidate -- no binary-float artifact reaches a payload.
+  * The native daily send surface NO LONGER dispatches any order. This gate is a
+    READ-ONLY execution REVIEW; it produces no executable packet and never
+    reaches a real sender. Real Demo execution is delegated to the existing,
+    authoritative canonical one-shot tiny adapter chain (SOLUSDT-locked,
+    Market/IOC, single-shot, cap-escalation + explicit Rick authorization marker,
+    Demo-only endpoint guard, exact signed payload).
+  * Quantity rules come ONLY from the authoritative ``InstrumentRules`` snapshot
+    surfaced by the read-only instrument-metadata provider -- never inferred from
+    a quantity string, decimal places, or notional/qty.
+  * Only symbols inside the canonical one-shot adapter allowlist
+    (``demo_only_tiny_execution_adapter.ALLOWED_SYMBOL`` = SOLUSDT) are even
+    review-eligible; every other V1 symbol is planning-only and explicitly
+    ``SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER``.
 
-This module performs NO network I/O, sends NO order, reads NO secret, and imports
+No independent real-order authorization marker is defined here. The authoritative
+markers live in the canonical chain and are NOT consumed by this module. This
+module performs NO network I/O, sends NO order, reads NO secret, and imports
 neither ``main``, ``src.risk`` nor the live ``BybitExecutor``.
 """
 
@@ -33,84 +35,83 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from decimal import Decimal, ROUND_DOWN, InvalidOperation
-from typing import Any, Mapping, Sequence
+from decimal import Decimal, InvalidOperation
+from typing import Any, Sequence
 
 from src import demo_strategy_pilot_readiness as rd
 from src import demo_only_tiny_execution_adapter as bh
+from src import demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate as ce
+from src import (
+    demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator as osh,
+)
 
-TASK_ID = "TASK-014CB"
+TASK_ID = "TASK-014CB_FIX"
 
 PROTECTED_SYMBOLS = frozenset(rd.PROTECTED_SYMBOLS)
 
-# The exact, explicit authorization marker a future operator must supply for a
-# single tiny Demo execution probe. Anything else fails closed.
-REQUIRED_AUTHORIZATION_MARKER = "EXPLICIT_SINGLE_TINY_DEMO_EXECUTION_AUTHORIZED"
+# --- Canonical one-shot chain references (REUSED, never replaced) -----------
+# The single symbol the existing canonical one-shot tiny Demo adapter supports.
+CANONICAL_ONE_SHOT_ALLOWED_SYMBOL = bh.ALLOWED_SYMBOL                 # "SOLUSDT"
+CANONICAL_ONE_SHOT_ALLOWED_ENVIRONMENT = bh.ALLOWED_ENVIRONMENT       # "bybit_demo"
+CANONICAL_ONE_SHOT_ALLOWED_ORDER_TYPE = bh.ALLOWED_ORDER_TYPE         # "Market"
+CANONICAL_ONE_SHOT_ALLOWED_TIME_IN_FORCE = bh.ALLOWED_TIME_IN_FORCE   # "IOC"
+# The authoritative real-order authorization marker already exists in the
+# canonical one-shot orchestrator. It is referenced for audit ONLY and is NEVER
+# consumed by this module (no real order is ever dispatched from here).
+CANONICAL_REAL_ORDER_AUTHORIZATION_MARKER = osh.EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER
+CANONICAL_CAP_ESCALATION_AUTHORIZATION_MARKER = ce.EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER
 
-# --- Final execution-authorization statuses --------------------------------
-AUTHORIZED_SINGLE_TINY_EXECUTION_CANDIDATE = "AUTHORIZED_SINGLE_TINY_EXECUTION_CANDIDATE"
+# --- Top-level delegation statuses -----------------------------------------
+EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER = "EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER"
+CANONICAL_ONE_SHOT_EXECUTION_PACKET_REQUIRED = "CANONICAL_ONE_SHOT_EXECUTION_PACKET_REQUIRED"
+
+# --- Review refusal / detail statuses --------------------------------------
 EXECUTION_NOT_AUTHORIZED_PLAN_INVALID = "EXECUTION_NOT_AUTHORIZED_PLAN_INVALID"
-EXECUTION_NOT_AUTHORIZED_MULTI_ACTION_PLAN = "EXECUTION_NOT_AUTHORIZED_MULTI_ACTION_PLAN"
 NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS = "NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS"
 POLICY_CONFLICT_REQUIRES_REVIEW = "POLICY_CONFLICT_REQUIRES_REVIEW"
-EXECUTION_NOT_AUTHORIZED_NO_SELECTION = "EXECUTION_NOT_AUTHORIZED_NO_SELECTION"
-EXECUTION_NOT_AUTHORIZED_MISSING_MARKER = "EXECUTION_NOT_AUTHORIZED_MISSING_AUTHORIZATION_MARKER"
-EXECUTION_NOT_AUTHORIZED_FINGERPRINT_MISMATCH = "EXECUTION_NOT_AUTHORIZED_FINGERPRINT_MISMATCH"
-EXECUTION_NOT_AUTHORIZED_MULTIPLE_SELECTED = "EXECUTION_NOT_AUTHORIZED_MULTIPLE_SELECTED"
-EXECUTION_NOT_AUTHORIZED_CANDIDATE_INELIGIBLE = "EXECUTION_NOT_AUTHORIZED_CANDIDATE_INELIGIBLE"
-EXECUTION_NOT_AUTHORIZED_TINY_CAP_EXCEEDED = "EXECUTION_NOT_AUTHORIZED_TINY_CAP_EXCEEDED"
+SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER = "SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER"
+RULE_MISSING = "INSTRUMENT_RULE_MISSING"
+RULE_NON_TRADING = "INSTRUMENT_RULE_NON_TRADING"
+RULE_MALFORMED = "INSTRUMENT_RULE_MALFORMED"
+
+# Candidate rule-validation states (display).
+RULE_VALID_DELEGATION_REQUIRED = "RULE_VALID_DELEGATION_REQUIRED"
 
 # Simultaneous-position policy resolution states.
 SIM_POLICY_PROTECTED_EXCLUSION_UNDEFINED = "AMBIGUOUS_PROTECTED_LEGACY_EXCLUSION_UNDEFINED"
 SIM_POLICY_WITHIN_LIMIT = "WITHIN_SIMULTANEOUS_LIMIT"
 SIM_POLICY_AT_OR_OVER_LIMIT = "AT_OR_OVER_SIMULTANEOUS_LIMIT"
 
-# Execution candidates may only be derived from genuine NEW-opening intents.
 _OPENING_INTENTS = frozenset({"OPEN"})
 
 
 # ---------------------------------------------------------------------------
-# Canonical Decimal quantity
+# Small display utilities (NOT used to infer any exchange rule)
 # ---------------------------------------------------------------------------
 
 
-def canonical_qty(notional: Any, price: Any, qty_step: Any) -> Decimal:
-    """Return the largest exact ``qty_step`` multiple whose notional does not
-    exceed ``notional`` at ``price``. Pure Decimal: never a binary-float artifact.
-
-    The result is ALWAYS floored (never rounds up) and is an exact integer
-    multiple of ``qty_step``.
-    """
+def _format_decimal(value: Any) -> str | None:
+    if value is None:
+        return None
     try:
-        n = Decimal(str(notional))
-        p = Decimal(str(price))
-        step = Decimal(str(qty_step))
+        v = Decimal(str(value)).normalize()
     except (InvalidOperation, ValueError, TypeError):
-        return Decimal("0")
-    if n <= 0 or p <= 0 or step <= 0:
-        return Decimal("0")
-    raw = n / p
-    steps = (raw / step).to_integral_value(rounding=ROUND_DOWN)
-    return (steps * step).normalize()
-
-
-def canonical_qty_str(notional: Any, price: Any, qty_step: Any) -> str:
-    """Canonical fixed-point string for :func:`canonical_qty` (no exponent, no
-    float artifact)."""
-    return _format_decimal(canonical_qty(notional, price, qty_step))
-
-
-def _format_decimal(value: Decimal) -> str:
-    """Format a Decimal as a canonical fixed-point string (e.g. ``110.6``)."""
-    v = value.normalize()
-    # normalize() can yield scientific notation for integers (e.g. 1E+2); expand.
+        return None
     if v == v.to_integral_value():
         v = v.quantize(Decimal("1"))
     return format(v, "f")
 
 
+def has_float_artifact(text: Any) -> bool:
+    """A canonical decimal string never carries a long binary-float tail."""
+    s = str(text)
+    if "." not in s:
+        return False
+    frac = s.split(".", 1)[1]
+    return ("000000" in frac) or ("999999" in frac)
+
+
 def is_exact_multiple(qty: Any, qty_step: Any) -> bool:
-    """True iff ``qty`` is an exact integer multiple of ``qty_step`` (Decimal)."""
     try:
         q = Decimal(str(qty))
         step = Decimal(str(qty_step))
@@ -121,18 +122,8 @@ def is_exact_multiple(qty: Any, qty_step: Any) -> bool:
     return (q % step) == 0
 
 
-def has_float_artifact(text: str) -> bool:
-    """Heuristic: a canonical decimal string never carries a long binary-float
-    tail such as ``...0000001`` or ``...9999999``."""
-    s = str(text)
-    if "." not in s:
-        return False
-    frac = s.split(".", 1)[1]
-    return ("000000" in frac) or ("999999" in frac)
-
-
 # ---------------------------------------------------------------------------
-# Effective safety policy (strictest applicable approved source)
+# Effective safety policy + canonical-source inventory
 # ---------------------------------------------------------------------------
 
 
@@ -163,20 +154,9 @@ class EffectivePolicy:
 
 
 def resolve_effective_policy() -> EffectivePolicy:
-    """Compute the strictest applicable approved policy across every source.
-
-    Sources inventoried:
-      * ``demo_strategy_pilot_readiness.SAFETY_POLICY`` (canonical Pilot policy:
-        1 new-opening order/day, 1 simultaneous position, 10 USDT per-order,
-        10 USDT daily, averaging forbidden);
-      * the canonical tiny-order adapter caps (``TINY_SIZE_CAP_USDT=5``);
-    The effective restriction is the most restrictive (smallest) value. A missing
-    or structurally contradictory source fails closed (``conflict=True``).
-    """
+    """Strictest applicable approved policy across every source. A missing or
+    structurally contradictory source fails closed (``conflict=True``)."""
     sources: list[str] = []
-    conflict = False
-    conflict_detail = ""
-
     sp = rd.SAFETY_POLICY
     try:
         sp_per_order = Decimal(str(sp["max_per_order_notional_usdt"]))
@@ -188,7 +168,6 @@ def resolve_effective_policy() -> EffectivePolicy:
     except (KeyError, ValueError, InvalidOperation, TypeError) as exc:
         return EffectivePolicy(0, 0, Decimal("0"), Decimal("0"), True, False,
                                tuple(sources), True, f"SAFETY_POLICY unreadable: {exc}")
-
     try:
         tiny_per_order = Decimal(str(bh.TINY_SIZE_CAP_USDT))
         sources.append("demo_only_tiny_execution_adapter.TINY_SIZE_CAP_USDT")
@@ -196,125 +175,154 @@ def resolve_effective_policy() -> EffectivePolicy:
         return EffectivePolicy(0, 0, Decimal("0"), Decimal("0"), True, False,
                                tuple(sources), True, f"tiny cap unreadable: {exc}")
 
-    # Strictest = smallest cap. The tiny adapter (5) is stricter than the Pilot
-    # SAFETY_POLICY (10); choosing the smaller is the safe (not weaker) direction.
     per_order = min(sp_per_order, tiny_per_order)
-    # Daily new-opening notional is bounded by both the SAFETY_POLICY daily cap
-    # and (per-order cap * max new-opening orders/day).
     daily = min(sp_daily, per_order * Decimal(sp_max_new))
-    max_sim = max(0, sp_max_sim)
-    max_new = max(0, sp_max_new)
-
-    # The SAFETY_POLICY does not state whether protected LEGACY positions are
-    # excluded from the simultaneous-position count -> exclusion is UNDEFINED.
     protected_legacy_exclusion_defined = "protected_legacy_excluded_from_simultaneous_count" in sp
 
     return EffectivePolicy(
-        max_new_opening_orders_per_successful_day=max_new,
-        max_simultaneous_open_positions=max_sim,
+        max_new_opening_orders_per_successful_day=max(0, sp_max_new),
+        max_simultaneous_open_positions=max(0, sp_max_sim),
         per_order_notional_cap_usdt=per_order,
         daily_new_opening_notional_cap_usdt=daily,
         averaging_pyramiding_forbidden=sp_avg_forbidden,
         protected_legacy_exclusion_defined=protected_legacy_exclusion_defined,
         sources=tuple(sources),
-        conflict=conflict,
-        conflict_detail=conflict_detail,
+        conflict=False,
+        conflict_detail="",
     )
 
 
+def policy_source_inventory() -> list[dict[str, Any]]:
+    """Full inventory of every relevant policy / authorization source. The
+    cap-escalation gate and the one-shot real-order marker are explicitly
+    enumerated and reported as NOT authorized by this task."""
+    return [
+        {"source": "demo_strategy_pilot_readiness.SAFETY_POLICY",
+         "role": "canonical Pilot safety policy (caps, simultaneous, averaging)",
+         "authorized_here": False},
+        {"source": "demo_only_tiny_execution_adapter (TINY_SIZE_CAP_USDT / TINY_QTY_CAP_SOL / TINY_QTY_STEP_SOL)",
+         "role": "canonical tiny-order caps + SOLUSDT/Market/IOC locks",
+         "tiny_size_cap_usdt": str(bh.TINY_SIZE_CAP_USDT),
+         "allowed_symbol": bh.ALLOWED_SYMBOL,
+         "authorized_here": False},
+        {"source": "demo_only_tiny_execution_adapter_tiny_order_instrument_rules",
+         "role": "instrument minimum candidate derivation (authoritative qtyStep)",
+         "authorized_here": False},
+        {"source": "demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate",
+         "role": "cap-escalation authorization gate",
+         "cap_escalation_marker": CANONICAL_CAP_ESCALATION_AUTHORIZATION_MARKER,
+         "cap_escalation_authorized": False,
+         "authorized_here": False},
+        {"source": "demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator",
+         "role": "one-shot real-demo authorization marker + orchestrator",
+         "real_order_marker": CANONICAL_REAL_ORDER_AUTHORIZATION_MARKER,
+         "real_order_authorized": False,
+         "authorized_here": False},
+        {"source": "demo_only_tiny_execution_adapter_single_real_demo_order (endpoint guard)",
+         "role": "Demo-only endpoint guard; live host permanently denied",
+         "authorized_here": False},
+        {"source": "demo_strategy_pilot_readiness.PROTECTED_SYMBOLS",
+         "role": "protected-symbol policy",
+         "protected_symbols": list(PROTECTED_SYMBOLS),
+         "authorized_here": False},
+    ]
+
+
+def canonical_one_shot_references() -> dict[str, Any]:
+    """Audit of the exact canonical one-shot modules/constants this review
+    delegates to (reused, never replaced)."""
+    return {
+        "delegated": True,
+        "allowed_symbol": CANONICAL_ONE_SHOT_ALLOWED_SYMBOL,
+        "allowed_environment": CANONICAL_ONE_SHOT_ALLOWED_ENVIRONMENT,
+        "allowed_order_type": CANONICAL_ONE_SHOT_ALLOWED_ORDER_TYPE,
+        "allowed_time_in_force": CANONICAL_ONE_SHOT_ALLOWED_TIME_IN_FORCE,
+        "tiny_qty_step_sol": str(bh.TINY_QTY_STEP_SOL),
+        "tiny_qty_cap_sol": str(bh.TINY_QTY_CAP_SOL),
+        "tiny_size_cap_usdt": str(bh.TINY_SIZE_CAP_USDT),
+        "real_order_authorization_marker_name": "EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER",
+        "cap_escalation_authorization_marker_name": "EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER",
+        "cap_escalation_authorized": False,
+        "real_order_authorized": False,
+        "modules": [
+            "src.demo_only_tiny_execution_adapter",
+            "src.demo_only_tiny_execution_adapter_tiny_order_instrument_rules",
+            "src.demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate",
+            "src.demo_only_tiny_execution_adapter_tiny_order_authorized_execution_qty_wiring",
+            "src.demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator",
+            "src.demo_only_tiny_execution_adapter_single_real_demo_order",
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
-# Canonical action fingerprint / identity
+# Canonical action fingerprint
 # ---------------------------------------------------------------------------
 
 
 def action_fingerprint(
     action: Any, *, pilot_id: str, date: str, forward_fingerprint: str | None,
 ) -> str:
-    """Stable execution-identity fingerprint for one planned action.
-
-    Includes run date, pilot id, symbol, side, intent, reduce_only, canonical
-    qty, notional, source reference, and the forward artifact fingerprint. An
-    action can therefore only ever be selected by this explicit identity, never
-    by list position or ``action_seq``.
-    """
+    """Stable PLANNING-candidate identity (run date / pilot / symbol / side /
+    intent / reduce_only / canonical qty display / notional / source ref /
+    forward fingerprint). For human review reference only -- it never authorizes
+    or addresses a real order."""
     payload = "|".join([
-        TASK_ID,
-        str(date),
-        str(pilot_id),
-        str(getattr(action, "symbol", "")),
-        str(getattr(action, "side", "")),
-        str(getattr(action, "intent", "")),
-        str(getattr(action, "reduce_only", "")),
-        str(getattr(action, "qty", "")),
-        str(getattr(action, "notional_usdt", "")),
-        str(getattr(action, "source_reference", "")),
-        str(forward_fingerprint or ""),
+        TASK_ID, str(date), str(pilot_id),
+        str(getattr(action, "symbol", "")), str(getattr(action, "side", "")),
+        str(getattr(action, "intent", "")), str(getattr(action, "reduce_only", "")),
+        str(getattr(action, "qty", "")), str(getattr(action, "notional_usdt", "")),
+        str(getattr(action, "source_reference", "")), str(forward_fingerprint or ""),
     ])
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
-# Execution candidate (tiny probe; NEVER the full 200-USDT V1 target)
+# Authoritative instrument-rule evidence (NEVER inferred from action qty)
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class TinyExecutionCandidate:
-    symbol: str
-    side: str
-    intent: str
-    reduce_only: bool
-    action_fingerprint: str
-    strategy_target_notional_usdt: str
-    tiny_execution_cap_usdt: str
-    execution_candidate_notional_usdt: str
-    canonical_qty: str
-    qty_step: str
-    price_usdt: str
-    candidate_kind: str = "EXECUTION_PROBE_NOT_V1_PORTFOLIO_REPLICATION"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "symbol": self.symbol, "side": self.side, "intent": self.intent,
-            "reduce_only": self.reduce_only, "action_fingerprint": self.action_fingerprint,
-            "candidate_kind": self.candidate_kind,
-            "strategy_target_notional_usdt": self.strategy_target_notional_usdt,
-            "tiny_execution_cap_usdt": self.tiny_execution_cap_usdt,
-            "execution_candidate_notional_usdt": self.execution_candidate_notional_usdt,
-            "canonical_qty": self.canonical_qty,
-            "qty_step": self.qty_step,
-            "price_usdt": self.price_usdt,
-        }
-
-
-def build_tiny_execution_candidate(
-    *, symbol: str, side: str, intent: str, reduce_only: bool,
-    action_fp: str, strategy_target_notional: Any, price: Any, qty_step: Any,
-    tiny_cap: Decimal,
-) -> TinyExecutionCandidate:
-    """Construct a clearly-labelled tiny EXECUTION PROBE candidate.
-
-    The execution notional is capped at ``tiny_cap`` (NOT the 200-USDT V1
-    target); the canonical qty is the largest exact ``qty_step`` multiple within
-    that capped notional. This is execution probing, never V1 replication.
-    """
-    cap = min(Decimal(str(strategy_target_notional)), tiny_cap)
-    cq = canonical_qty(cap, price, qty_step)
-    candidate_notional = (cq * Decimal(str(price))).normalize() if cq > 0 else Decimal("0")
-    return TinyExecutionCandidate(
-        symbol=symbol, side=side, intent=intent, reduce_only=reduce_only,
-        action_fingerprint=action_fp,
-        strategy_target_notional_usdt=_format_decimal(Decimal(str(strategy_target_notional))),
-        tiny_execution_cap_usdt=_format_decimal(tiny_cap),
-        execution_candidate_notional_usdt=_format_decimal(candidate_notional),
-        canonical_qty=_format_decimal(cq),
-        qty_step=_format_decimal(Decimal(str(qty_step))),
-        price_usdt=_format_decimal(Decimal(str(price))),
-    )
+def build_rule_evidence(raw_evidence: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalise an authoritative instrument-rule evidence dict from the provider
+    into the audited review form. ``qty_step`` and all numeric rule fields come
+    from the real ``InstrumentRules`` snapshot; nothing is inferred from a
+    quantity string."""
+    ev = dict(raw_evidence or {})
+    status = ev.get("rule_status", RULE_MISSING)
+    out: dict[str, Any] = {
+        "symbol": ev.get("symbol"),
+        "rule_status": status,
+        "qty_step_source": "INSTRUMENT_RULE_PROVIDER",
+        "qty_step_inferred_from_action": False,
+        "instrument_rule_source": ev.get("instrument_rule_source"),
+        "market_price_source": ev.get("market_price_source"),
+        "market_price_snapshot": _format_decimal(ev.get("market_price")),
+        "qty_step": _format_decimal(ev.get("qty_step")),
+        "min_qty": _format_decimal(ev.get("min_qty")),
+        "max_qty": _format_decimal(ev.get("max_qty")),
+        "min_notional": _format_decimal(ev.get("min_notional")),
+        "tick_size": _format_decimal(ev.get("tick_size")),
+    }
+    if status == "TRADING" and out["qty_step"] is not None:
+        fp_input = "|".join([
+            str(out["symbol"]), str(out["qty_step"]), str(out["min_qty"]),
+            str(out["max_qty"]), str(out["tick_size"]), str(out["min_notional"]),
+            str(status),
+        ])
+        out["instrument_rule_fingerprint"] = "sha256:" + hashlib.sha256(
+            fp_input.encode("utf-8")).hexdigest()
+        out["candidate_rule_validation_status"] = RULE_VALID_DELEGATION_REQUIRED
+    else:
+        out["instrument_rule_fingerprint"] = None
+        out["candidate_rule_validation_status"] = {
+            "MISSING": RULE_MISSING, "NON_TRADING": RULE_NON_TRADING,
+            "MALFORMED": RULE_MALFORMED,
+        }.get(status, RULE_MISSING)
+    return out
 
 
 # ---------------------------------------------------------------------------
-# Execution gate result
+# Execution-review gate result (NON-dispatching)
 # ---------------------------------------------------------------------------
 
 
@@ -322,29 +330,39 @@ def build_tiny_execution_candidate(
 class ExecutionGateResult:
     raw_planned_action_count: int
     eligible_execution_candidate_count: int
-    selected_execution_candidate_count: int
-    selected_action_id: str | None
-    authorization_marker_present: bool
-    effective_per_order_notional_cap_usdt: str
-    effective_daily_new_opening_notional_cap_usdt: str
     existing_open_position_count: int
     existing_protected_position_count: int
     simultaneous_position_policy_status: str
     multi_action_send_refused: bool
-    final_execution_authorization_status: str
-    refusal_reasons: list[str]
-    effective_policy: dict[str, Any]
+    # Planning candidate (review only).
+    requested_symbol: str | None
+    requested_side: str | None
+    planning_candidate_fingerprint: str | None
     strategy_target_notional_usdt: str | None
-    execution_authorized_notional_usdt: str | None
+    execution_candidate_eligible: bool
+    # Delegation invariants (always non-dispatching here).
+    execution_delegation_status: str
+    canonical_one_shot_adapter_required: bool
+    canonical_execution_packet_present: bool
+    execution_authorized: bool
+    execution_ready: bool
+    sender_reachable: bool
+    # Caps / policy / rule evidence.
+    effective_per_order_notional_cap_usdt: str
+    effective_daily_new_opening_notional_cap_usdt: str
     tiny_execution_cap_usdt: str
     cap_compliance_status: str
-    selected_candidate: dict[str, Any] | None = None
-    eligible_candidate_fingerprints: list[str] = field(default_factory=list)
+    rule_evidence: dict[str, Any] | None
+    effective_policy: dict[str, Any]
+    policy_sources: list[dict[str, Any]]
+    canonical_one_shot_references: dict[str, Any]
+    refusal_reasons: list[str]
+    final_execution_authorization_status: str
     detail: str = ""
 
     @property
     def authorized(self) -> bool:
-        return self.final_execution_authorization_status == AUTHORIZED_SINGLE_TINY_EXECUTION_CANDIDATE
+        return False  # this gate NEVER authorizes a dispatch
 
     @property
     def plan_valid(self) -> bool:
@@ -355,30 +373,36 @@ class ExecutionGateResult:
             "task_id": TASK_ID,
             "raw_planned_action_count": self.raw_planned_action_count,
             "eligible_execution_candidate_count": self.eligible_execution_candidate_count,
-            "selected_execution_candidate_count": self.selected_execution_candidate_count,
-            "selected_action_id": self.selected_action_id,
-            "authorization_marker_present": self.authorization_marker_present,
-            "effective_per_order_notional_cap_usdt": self.effective_per_order_notional_cap_usdt,
-            "effective_daily_new_opening_notional_cap_usdt": self.effective_daily_new_opening_notional_cap_usdt,
             "existing_open_position_count": self.existing_open_position_count,
             "existing_protected_position_count": self.existing_protected_position_count,
             "simultaneous_position_policy_status": self.simultaneous_position_policy_status,
             "multi_action_send_refused": self.multi_action_send_refused,
-            "final_execution_authorization_status": self.final_execution_authorization_status,
-            "refusal_reasons": list(self.refusal_reasons),
-            "effective_policy": self.effective_policy,
+            "requested_symbol": self.requested_symbol,
+            "requested_side": self.requested_side,
+            "planning_candidate_fingerprint": self.planning_candidate_fingerprint,
             "strategy_target_notional_usdt": self.strategy_target_notional_usdt,
-            "execution_authorized_notional_usdt": self.execution_authorized_notional_usdt,
+            "execution_candidate_eligible": self.execution_candidate_eligible,
+            "execution_delegation_status": self.execution_delegation_status,
+            "canonical_one_shot_adapter_required": self.canonical_one_shot_adapter_required,
+            "canonical_execution_packet_present": self.canonical_execution_packet_present,
+            "execution_authorized": self.execution_authorized,
+            "execution_ready": self.execution_ready,
+            "sender_reachable": self.sender_reachable,
+            "effective_per_order_notional_cap_usdt": self.effective_per_order_notional_cap_usdt,
+            "effective_daily_new_opening_notional_cap_usdt": self.effective_daily_new_opening_notional_cap_usdt,
             "tiny_execution_cap_usdt": self.tiny_execution_cap_usdt,
             "cap_compliance_status": self.cap_compliance_status,
-            "selected_candidate": self.selected_candidate,
-            "eligible_candidate_fingerprints": list(self.eligible_candidate_fingerprints),
+            "rule_evidence": self.rule_evidence,
+            "effective_policy": self.effective_policy,
+            "policy_sources": self.policy_sources,
+            "canonical_one_shot_references": self.canonical_one_shot_references,
+            "refusal_reasons": list(self.refusal_reasons),
+            "final_execution_authorization_status": self.final_execution_authorization_status,
             "detail": self.detail,
         }
 
 
 def _is_opening_eligible(action: Any) -> bool:
-    """True iff the action is a genuine NEW-opening of a non-protected symbol."""
     symbol = str(getattr(action, "symbol", "")).strip().upper()
     intent = str(getattr(action, "intent", ""))
     reduce_only = bool(getattr(action, "reduce_only", False))
@@ -396,6 +420,20 @@ def _is_opening_eligible(action: Any) -> bool:
     return True
 
 
+def _rule_evidence_from_provider(rule_provider: Any, symbol: str) -> dict[str, Any] | None:
+    """Pull AUTHORITATIVE instrument-rule evidence for ``symbol`` from the
+    provider. The provider owns the real ``InstrumentRules`` snapshot; this gate
+    never infers any rule from a quantity string."""
+    if rule_provider is None:
+        return None
+    if hasattr(rule_provider, "instrument_rule_evidence"):
+        try:
+            return rule_provider.instrument_rule_evidence(symbol)
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
 def evaluate_execution_gate(
     *,
     plan: Any,
@@ -403,25 +441,19 @@ def evaluate_execution_gate(
     pilot_id: str,
     date: str,
     forward_fingerprint: str | None = None,
-    selected_action_fingerprint: str | None = None,
-    authorization_marker: str | None = None,
+    rule_provider: Any = None,
     effective_policy: EffectivePolicy | None = None,
 ) -> ExecutionGateResult:
-    """Evaluate whether a single tiny Demo execution probe is authorized.
-
-    Fails closed in every ambiguous case. The raw multi-action plan can never be
-    authorized as-is; only one explicitly fingerprinted + marker-authorized,
-    cap-compliant, non-protected NEW-opening candidate -- with no blocking
-    protected legacy positions and a resolvable strictest policy -- yields
-    ``AUTHORIZED_SINGLE_TINY_EXECUTION_CANDIDATE``.
+    """Produce a NON-dispatching execution review. The native daily surface uses
+    this only to show that the full V1 plan is planning output and that any real
+    Demo execution is delegated to the canonical one-shot tiny adapter. It never
+    authorizes, builds, or addresses a real order.
     """
     policy = effective_policy or resolve_effective_policy()
     tiny_cap = policy.per_order_notional_cap_usdt
-
     refusal_reasons: list[str] = []
 
     plan_available = bool(getattr(plan, "available", False))
-    sizing_verified = bool(getattr(plan, "sizing_verification", {}) or {})
     sizing_verified = bool((getattr(plan, "sizing_verification", {}) or {}).get("verified", False))
     actions = list(getattr(plan, "actions", []) or [])
     raw_count = len(actions)
@@ -432,160 +464,138 @@ def evaluate_execution_gate(
                           if str(getattr(p, "symbol", "")).strip().upper() in PROTECTED_SYMBOLS]
     existing_protected_count = len(existing_protected)
 
-    # Eligible candidates: non-protected genuine NEW-opening actions only.
     eligible = [a for a in actions if _is_opening_eligible(a)]
-    eligible_fps = [action_fingerprint(a, pilot_id=pilot_id, date=date,
-                                       forward_fingerprint=forward_fingerprint) for a in eligible]
     eligible_count = len(eligible)
+    # Canonical one-shot allowlist: SOLUSDT only.
+    allowlisted = [a for a in eligible
+                   if str(getattr(a, "symbol", "")).strip().upper() == CANONICAL_ONE_SHOT_ALLOWED_SYMBOL]
 
-    marker_present = authorization_marker == REQUIRED_AUTHORIZATION_MARKER
+    base_kwargs: dict[str, Any] = dict(
+        raw_planned_action_count=raw_count,
+        eligible_execution_candidate_count=eligible_count,
+        existing_open_position_count=existing_open_count,
+        existing_protected_position_count=existing_protected_count,
+        canonical_one_shot_adapter_required=True,
+        canonical_execution_packet_present=False,
+        execution_authorized=False,
+        execution_ready=False,
+        sender_reachable=False,
+        effective_per_order_notional_cap_usdt=_format_decimal(tiny_cap),
+        effective_daily_new_opening_notional_cap_usdt=_format_decimal(
+            policy.daily_new_opening_notional_cap_usdt),
+        tiny_execution_cap_usdt=_format_decimal(tiny_cap),
+        effective_policy=policy.to_dict(),
+        policy_sources=policy_source_inventory(),
+        canonical_one_shot_references=canonical_one_shot_references(),
+    )
 
-    # --- Plan validity gate (fail closed) ---------------------------------
+    # --- Plan validity (fail closed) --------------------------------------
     if not plan_available or not sizing_verified:
         return ExecutionGateResult(
-            raw_planned_action_count=raw_count,
-            eligible_execution_candidate_count=eligible_count,
-            selected_execution_candidate_count=0,
-            selected_action_id=None,
-            authorization_marker_present=marker_present,
-            effective_per_order_notional_cap_usdt=_format_decimal(tiny_cap),
-            effective_daily_new_opening_notional_cap_usdt=_format_decimal(
-                policy.daily_new_opening_notional_cap_usdt),
-            existing_open_position_count=existing_open_count,
-            existing_protected_position_count=existing_protected_count,
+            **base_kwargs,
             simultaneous_position_policy_status=SIM_POLICY_PROTECTED_EXCLUSION_UNDEFINED
             if existing_protected_count else SIM_POLICY_WITHIN_LIMIT,
             multi_action_send_refused=raw_count > 1,
-            final_execution_authorization_status=EXECUTION_NOT_AUTHORIZED_PLAN_INVALID,
+            requested_symbol=None, requested_side=None, planning_candidate_fingerprint=None,
+            strategy_target_notional_usdt=None, execution_candidate_eligible=False,
+            execution_delegation_status=EXECUTION_NOT_AUTHORIZED_PLAN_INVALID,
+            cap_compliance_status="PLAN_INVALID", rule_evidence=None,
             refusal_reasons=[EXECUTION_NOT_AUTHORIZED_PLAN_INVALID],
-            effective_policy=policy.to_dict(),
-            strategy_target_notional_usdt=None,
-            execution_authorized_notional_usdt=None,
-            tiny_execution_cap_usdt=_format_decimal(tiny_cap),
-            cap_compliance_status="PLAN_INVALID",
-            detail="planner output is not a valid verified V1 plan; execution refused",
-        )
+            final_execution_authorization_status=EXECUTION_NOT_AUTHORIZED_PLAN_INVALID,
+            detail="planner output is not a valid verified V1 plan; execution review refused")
 
-    # --- Selection resolution (explicit fingerprint only) ------------------
-    selected_indices: list[int] = []
-    if selected_action_fingerprint:
-        selected_indices = [i for i, fp in enumerate(eligible_fps)
-                            if fp == selected_action_fingerprint]
-    selected_count = len(selected_indices)
-    selected_action_id = selected_action_fingerprint if selected_count == 1 else None
-
-    # --- Policy conflict (fail closed) ------------------------------------
+    # --- Simultaneous-position / protected legacy resolution --------------
+    sim_status = SIM_POLICY_WITHIN_LIMIT
     if policy.conflict:
         refusal_reasons.append(POLICY_CONFLICT_REQUIRES_REVIEW)
-
-    # --- Existing protected positions block (fail closed) ------------------
-    sim_status = SIM_POLICY_WITHIN_LIMIT
     if existing_protected_count > 0 and not policy.protected_legacy_exclusion_defined:
         sim_status = SIM_POLICY_PROTECTED_EXCLUSION_UNDEFINED
         refusal_reasons.append(NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS)
-    elif existing_open_count >= policy.max_simultaneous_open_positions:
+    elif existing_open_count >= policy.max_simultaneous_open_positions and existing_open_count > 0:
         sim_status = SIM_POLICY_AT_OR_OVER_LIMIT
         refusal_reasons.append(NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS
                                if existing_protected_count else POLICY_CONFLICT_REQUIRES_REVIEW)
 
-    # --- Single-candidate authorization checks ----------------------------
-    if selected_count == 0:
-        if not selected_action_fingerprint:
-            refusal_reasons.append(EXECUTION_NOT_AUTHORIZED_NO_SELECTION)
-        else:
-            refusal_reasons.append(EXECUTION_NOT_AUTHORIZED_FINGERPRINT_MISMATCH)
-    elif selected_count > 1:
-        refusal_reasons.append(EXECUTION_NOT_AUTHORIZED_MULTIPLE_SELECTED)
+    multi_action_send_refused = raw_count > 1
 
-    if not marker_present:
-        refusal_reasons.append(EXECUTION_NOT_AUTHORIZED_MISSING_MARKER)
-
-    # --- Raw multi-action refusal -----------------------------------------
-    # Refuse whenever the plan carries more than one action and we do NOT have
-    # exactly one validly selected + marker-authorized candidate.
-    single_authorized_selection = (selected_count == 1 and marker_present)
-    multi_action_send_refused = (raw_count > 1) and not single_authorized_selection
-    if multi_action_send_refused:
-        refusal_reasons.append(EXECUTION_NOT_AUTHORIZED_MULTI_ACTION_PLAN)
-
-    # --- Build (or refuse) the tiny execution candidate -------------------
-    selected_candidate_dict: dict[str, Any] | None = None
-    strategy_target_notional: str | None = None
-    execution_authorized_notional: str | None = None
+    # --- Identify the (review-only) planning candidate --------------------
+    requested_symbol: str | None = None
+    requested_side: str | None = None
+    planning_fp: str | None = None
+    target_notional: str | None = None
+    rule_valid_candidate = False
+    rule_evidence: dict[str, Any] | None = None
     cap_compliance_status = "NO_CANDIDATE"
 
-    if selected_count == 1:
-        action = eligible[selected_indices[0]]
-        target_notional = _action_notional(action)
-        strategy_target_notional = _format_decimal(target_notional)
-        price = _action_price(action, target_notional)
-        qty_step = _action_qty_step(action)
-        candidate = build_tiny_execution_candidate(
-            symbol=str(getattr(action, "symbol", "")), side=str(getattr(action, "side", "")),
-            intent=str(getattr(action, "intent", "")), reduce_only=bool(getattr(action, "reduce_only", False)),
-            action_fp=eligible_fps[selected_indices[0]],
-            strategy_target_notional=target_notional, price=price, qty_step=qty_step,
-            tiny_cap=tiny_cap)
-        selected_candidate_dict = candidate.to_dict()
-        if target_notional > tiny_cap:
-            cap_compliance_status = "TARGET_EXCEEDS_TINY_CAP"
+    if len(allowlisted) == 1:
+        cand = allowlisted[0]
+        requested_symbol = str(getattr(cand, "symbol", "")).strip().upper()
+        requested_side = str(getattr(cand, "side", ""))
+        planning_fp = action_fingerprint(cand, pilot_id=pilot_id, date=date,
+                                         forward_fingerprint=forward_fingerprint)
+        target_notional = _format_decimal(getattr(cand, "notional_usdt", None))
+        raw_ev = _rule_evidence_from_provider(rule_provider, requested_symbol)
+        rule_evidence = build_rule_evidence(raw_ev) if raw_ev is not None else build_rule_evidence(
+            {"symbol": requested_symbol, "rule_status": "MISSING"})
+        rstatus = rule_evidence.get("candidate_rule_validation_status")
+        if rstatus == RULE_VALID_DELEGATION_REQUIRED:
+            rule_valid_candidate = True
+            cap_compliance_status = ("TARGET_EXCEEDS_TINY_CAP"
+                                     if (target_notional and Decimal(target_notional) > tiny_cap)
+                                     else "TARGET_WITHIN_TINY_CAP")
         else:
-            cap_compliance_status = "TARGET_WITHIN_TINY_CAP"
-        if Decimal(candidate.canonical_qty) <= 0:
-            refusal_reasons.append(EXECUTION_NOT_AUTHORIZED_TINY_CAP_EXCEEDED)
+            refusal_reasons.append(rstatus)
+            cap_compliance_status = "RULE_INVALID"
+    else:
+        # No SOLUSDT candidate. If there ARE eligible non-SOL V1 symbols, they are
+        # planning-only and explicitly unsupported by the canonical adapter.
+        if eligible:
+            first = eligible[0]
+            requested_symbol = str(getattr(first, "symbol", "")).strip().upper()
+            requested_side = str(getattr(first, "side", ""))
+            target_notional = _format_decimal(getattr(first, "notional_usdt", None))
+        refusal_reasons.append(SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER)
+        cap_compliance_status = "SYMBOL_UNSUPPORTED"
 
-    # --- Final status resolution (priority order) -------------------------
-    # Deduplicate preserving order.
+    # --- Final status -----------------------------------------------------
     seen: set[str] = set()
     refusal_reasons = [r for r in refusal_reasons if not (r in seen or seen.add(r))]
-
-    final_status = _resolve_final_status(refusal_reasons)
-    authorized = final_status == AUTHORIZED_SINGLE_TINY_EXECUTION_CANDIDATE
-
-    if authorized and selected_candidate_dict is not None:
-        execution_authorized_notional = selected_candidate_dict["execution_candidate_notional_usdt"]
+    final_status = _resolve_final_status(refusal_reasons, rule_valid_candidate)
+    # A candidate is execution-eligible ONLY when the gate resolves to the clean
+    # delegation status (rule valid, symbol supported, no protected-position block,
+    # no policy conflict). Any blocker fails closed -> not eligible.
+    candidate_eligible = final_status == EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER
+    # The native surface ALWAYS delegates; the detailed review status is surfaced
+    # here. CANONICAL_ONE_SHOT_EXECUTION_PACKET_REQUIRED only when cleanly eligible.
+    delegation_status = (CANONICAL_ONE_SHOT_EXECUTION_PACKET_REQUIRED if candidate_eligible
+                         else final_status)
 
     return ExecutionGateResult(
-        raw_planned_action_count=raw_count,
-        eligible_execution_candidate_count=eligible_count,
-        selected_execution_candidate_count=selected_count,
-        selected_action_id=selected_action_id,
-        authorization_marker_present=marker_present,
-        effective_per_order_notional_cap_usdt=_format_decimal(tiny_cap),
-        effective_daily_new_opening_notional_cap_usdt=_format_decimal(
-            policy.daily_new_opening_notional_cap_usdt),
-        existing_open_position_count=existing_open_count,
-        existing_protected_position_count=existing_protected_count,
+        **base_kwargs,
         simultaneous_position_policy_status=sim_status,
         multi_action_send_refused=multi_action_send_refused,
-        final_execution_authorization_status=final_status,
+        requested_symbol=requested_symbol, requested_side=requested_side,
+        planning_candidate_fingerprint=planning_fp,
+        strategy_target_notional_usdt=target_notional,
+        execution_candidate_eligible=candidate_eligible,
+        execution_delegation_status=delegation_status,
+        cap_compliance_status=cap_compliance_status, rule_evidence=rule_evidence,
         refusal_reasons=refusal_reasons,
-        effective_policy=policy.to_dict(),
-        strategy_target_notional_usdt=strategy_target_notional,
-        execution_authorized_notional_usdt=execution_authorized_notional,
-        tiny_execution_cap_usdt=_format_decimal(tiny_cap),
-        cap_compliance_status=cap_compliance_status,
-        selected_candidate=selected_candidate_dict,
-        eligible_candidate_fingerprints=eligible_fps,
-        detail=("single tiny execution candidate authorized" if authorized
-                else "execution refused; see refusal_reasons"),
-    )
+        final_execution_authorization_status=final_status,
+        detail=("review only: the full V1 plan is planning output; real Demo execution is "
+                "delegated to the canonical one-shot tiny adapter. No order is dispatched here."))
 
 
-def _resolve_final_status(refusal_reasons: list[str]) -> str:
-    """Pick the most salient refusal as the final status, else AUTHORIZED."""
+def _resolve_final_status(refusal_reasons: list[str], candidate_eligible: bool) -> str:
     if not refusal_reasons:
-        return AUTHORIZED_SINGLE_TINY_EXECUTION_CANDIDATE
+        # A clean, rule-valid, allowlisted candidate still only DELEGATES.
+        return (EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER if candidate_eligible
+                else SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER)
     priority = [
         POLICY_CONFLICT_REQUIRES_REVIEW,
         NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS,
-        EXECUTION_NOT_AUTHORIZED_MULTIPLE_SELECTED,
-        EXECUTION_NOT_AUTHORIZED_MULTI_ACTION_PLAN,
-        EXECUTION_NOT_AUTHORIZED_FINGERPRINT_MISMATCH,
-        EXECUTION_NOT_AUTHORIZED_TINY_CAP_EXCEEDED,
-        EXECUTION_NOT_AUTHORIZED_MISSING_MARKER,
-        EXECUTION_NOT_AUTHORIZED_NO_SELECTION,
-        EXECUTION_NOT_AUTHORIZED_CANDIDATE_INELIGIBLE,
+        SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER,
+        RULE_MISSING, RULE_NON_TRADING, RULE_MALFORMED,
         EXECUTION_NOT_AUTHORIZED_PLAN_INVALID,
     ]
     for status in priority:
@@ -594,51 +604,20 @@ def _resolve_final_status(refusal_reasons: list[str]) -> str:
     return refusal_reasons[0]
 
 
-def _action_notional(action: Any) -> Decimal:
-    try:
-        n = Decimal(str(getattr(action, "notional_usdt", "") or "0"))
-        return n if n > 0 else Decimal("0")
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal("0")
-
-
-def _action_price(action: Any, notional: Decimal) -> Decimal:
-    """Derive price from notional / qty (the planner sized qty = |notional|/price)."""
-    try:
-        qty = Decimal(str(getattr(action, "qty", "0")))
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal("0")
-    if qty <= 0 or notional <= 0:
-        return Decimal("0")
-    return (notional / qty).normalize()
-
-
-def _action_qty_step(action: Any) -> Decimal:
-    """Best-effort qty_step inference from the planned qty's decimal exponent."""
-    try:
-        q = Decimal(str(getattr(action, "qty", "0")))
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal("0.001")
-    exp = q.as_tuple().exponent
-    if isinstance(exp, int) and exp < 0:
-        return Decimal(1).scaleb(exp)
-    return Decimal("1")
-
-
 __all__ = [
-    "TASK_ID", "REQUIRED_AUTHORIZATION_MARKER", "PROTECTED_SYMBOLS",
-    "AUTHORIZED_SINGLE_TINY_EXECUTION_CANDIDATE",
+    "TASK_ID", "PROTECTED_SYMBOLS",
+    "CANONICAL_ONE_SHOT_ALLOWED_SYMBOL", "CANONICAL_REAL_ORDER_AUTHORIZATION_MARKER",
+    "CANONICAL_CAP_ESCALATION_AUTHORIZATION_MARKER",
+    "EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER",
+    "CANONICAL_ONE_SHOT_EXECUTION_PACKET_REQUIRED",
     "EXECUTION_NOT_AUTHORIZED_PLAN_INVALID",
-    "EXECUTION_NOT_AUTHORIZED_MULTI_ACTION_PLAN",
     "NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS",
     "POLICY_CONFLICT_REQUIRES_REVIEW",
-    "EXECUTION_NOT_AUTHORIZED_NO_SELECTION",
-    "EXECUTION_NOT_AUTHORIZED_MISSING_MARKER",
-    "EXECUTION_NOT_AUTHORIZED_FINGERPRINT_MISMATCH",
-    "EXECUTION_NOT_AUTHORIZED_MULTIPLE_SELECTED",
-    "EXECUTION_NOT_AUTHORIZED_TINY_CAP_EXCEEDED",
-    "EffectivePolicy", "resolve_effective_policy", "ExecutionGateResult",
-    "evaluate_execution_gate", "action_fingerprint", "canonical_qty",
-    "canonical_qty_str", "is_exact_multiple", "has_float_artifact",
-    "TinyExecutionCandidate", "build_tiny_execution_candidate",
+    "SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER",
+    "RULE_MISSING", "RULE_NON_TRADING", "RULE_MALFORMED",
+    "SIM_POLICY_PROTECTED_EXCLUSION_UNDEFINED", "SIM_POLICY_WITHIN_LIMIT",
+    "SIM_POLICY_AT_OR_OVER_LIMIT",
+    "EffectivePolicy", "resolve_effective_policy", "policy_source_inventory",
+    "canonical_one_shot_references", "ExecutionGateResult", "evaluate_execution_gate",
+    "action_fingerprint", "build_rule_evidence", "has_float_artifact", "is_exact_multiple",
 ]

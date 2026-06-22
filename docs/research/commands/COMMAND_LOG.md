@@ -9823,3 +9823,70 @@ Files changed (committed):
   MOD  README.md                                            (TASK-014CB shared status)
   MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CB block)
   MOD  docs/research/commands/COMMAND_LOG.md                (this entry)
+
+---
+
+### TASK-014CB_FIX_CANONICAL_ONE_SHOT_DELEGATION_AND_RULE_BOUND_QUANTITY
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** 890b349
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Corrects two TASK-014CB architecture defects. (1) TASK-014CB built a parallel
+  generic execution-authorization stack that converted a StrategyNativeAction into
+  an order via execute_daily_native and authorized it behind a NEW marker
+  (REQUIRED_AUTHORIZATION_MARKER). (2) The gate inferred the exchange qtyStep from
+  the serialized planner quantity string. Both are removed.
+
+  Native send surface is now NON-dispatching: --send-orders-to-demo produces the
+  full Plan-only execution review and fails closed with
+  EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER. orchestrate_gated_send never
+  calls orchestrate_native_daily / execute_daily_native and never touches a
+  transport; the CLI constructs no order transport at all. execute_daily_native
+  call count = 0, transport sender call count = 0, order/amend/cancel POST = 0,
+  live endpoint = false, Pilot advancement = false. No reachable generic real-order
+  path remains behind any marker.
+
+  Real Demo execution is delegated to the EXISTING canonical one-shot tiny adapter
+  chain (reused, never replaced): demo_only_tiny_execution_adapter (ALLOWED_SYMBOL=
+  SOLUSDT, Market/IOC, TINY_SIZE_CAP_USDT=5, TINY_QTY_STEP_SOL=0.01), instrument-rule
+  discovery, cap-escalation gate (EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER), one-shot
+  authorized execution orchestrator (EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER),
+  Demo-only endpoint guard. The TASK-014CB REQUIRED_AUTHORIZATION_MARKER is removed;
+  the authoritative one-shot real-order marker is referenced for audit only and never
+  consumed here.
+
+  qtyStep now comes ONLY from the authoritative InstrumentRules snapshot surfaced by
+  the provider (new instrument_rule_evidence): qty_step_source=INSTRUMENT_RULE_PROVIDER,
+  qty_step_inferred_from_action=false, instrument_rule_fingerprint, rule_status,
+  candidate_rule_validation_status, market_price_snapshot. Same action qty with
+  different actual qtySteps yields different rule fingerprints / outcomes.
+
+  Symbol scope: only SOLUSDT is review-delegable; every other V1 symbol is planning-
+  only and SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER. SOLUSDT never auto-
+  authorizes (delegation only; canonical_execution_packet_present=false). The adapter
+  allowlist is NOT expanded; no cap escalation authorized. Protected legacy positions
+  still block; protected symbols never become candidates; missing/non-Trading/malformed
+  rules fail closed. Full 50-action V1 plan unchanged and visible.
+
+  Policy-source inventory enumerates SAFETY_POLICY, tiny caps, instrument minimum,
+  cap-escalation gate, one-shot real-order marker, endpoint guard, protected symbols;
+  cap-escalation and one-shot real order both reported authorized_here=False.
+
+  Tests: focused 29 passed (rewritten gate file); demo regression 9105 passed (1
+  pre-existing unrelated emergency_close failure); existing one-shot/tiny adapter
+  safety tests and TASK-014CB planning/audit tests pass.
+
+VPS Plan-only verification (no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py \r
+    --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  MOD  src/demo_strategy_pilot_execution_gate.py           (non-dispatching delegation review)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py     (no dispatch; rule-evidence; no markers)
+  MOD  tests/demo_trading/test_demo_strategy_pilot_execution_gate.py (29 tests, delegation model)
+  MOD  README.md                                           (TASK-014CB_FIX shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md               (TASK-014CB_FIX block)
+  MOD  docs/research/commands/COMMAND_LOG.md               (this entry)

@@ -1,5 +1,32 @@
 # Next Action
 
+> README shared status updated by TASK-014CB_FIX (2026-06-23).
+> **`FULL V1 PLAN PRESERVED / NATIVE SEND DISPATCH DISABLED / EXECUTION DELEGATED TO CANONICAL ONE-SHOT ADAPTER / QUANTITY RULES FROM AUTHORITATIVE INSTRUMENT METADATA / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 890b349 delegating real Demo execution to the existing canonical one-shot adapter.
+>
+> - Corrects two TASK-014CB defects: (1) the parallel generic authorization stack that dispatched a
+>   StrategyNativeAction via execute_daily_native; (2) inferring qtyStep from the planner quantity string.
+> - The native --send-orders-to-demo branch no longer dispatches. It produces the full Plan-only execution
+>   review then fails closed with EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER: execute_daily_native
+>   call count = 0, transport sender call count = 0, order/amend/cancel POST = 0, live = false, no advancement.
+>   No order transport is even constructed; no reachable generic real-order path remains.
+> - Real Demo execution is delegated to the existing canonical one-shot tiny adapter chain
+>   (demo_only_tiny_execution_adapter SOLUSDT/Market/IOC + cap-escalation gate + one-shot authorized
+>   execution orchestrator + Demo-only endpoint guard). The TASK-014CB REQUIRED_AUTHORIZATION_MARKER is
+>   removed; the authoritative one-shot real-order marker is referenced, never replaced.
+> - qtyStep comes ONLY from the authoritative InstrumentRules snapshot (qty_step_source=INSTRUMENT_RULE_PROVIDER,
+>   qty_step_inferred_from_action=false, instrument_rule_fingerprint present). Same action qty with different
+>   actual qtySteps yields different validated outcomes.
+> - Only SOLUSDT is review-delegable; every other V1 symbol is planning-only and
+>   SYMBOL_NOT_SUPPORTED_BY_CANONICAL_ONE_SHOT_ADAPTER. SOLUSDT never auto-authorizes. No cap escalation authorized.
+> - Protected legacy positions (EDUUSDT/POLYXUSDT) still block; protected symbols never become candidates;
+>   missing/non-Trading/malformed rules fail closed. Full 50-action V1 plan unchanged and visible.
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
+
+---
+
 > README shared status updated by TASK-014CB (2026-06-23).
 > **`FULL V1 PLAN PRESERVED / RAW MULTI-ACTION SEND FORBIDDEN / SINGLE TINY EXECUTION REQUIRES EXPLICIT AUTHORIZATION / PROTECTED POSITIONS UNCHANGED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 009c633 hardening the Demo send path with a single-tiny-order execution gate.

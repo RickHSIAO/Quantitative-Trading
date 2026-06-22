@@ -219,6 +219,37 @@ def _build_production_provider(_client=None, _guard=None):
         def instrument_rule(self, symbol: str):
             return self._instruments.get(symbol)
 
+        def instrument_rule_evidence(self, symbol: str) -> dict:
+            """AUTHORITATIVE instrument-rule evidence for one symbol, derived ONLY
+            from the real InstrumentRules snapshot (never inferred from any
+            quantity string). qty_step / min_qty / max_qty / min_notional /
+            tick_size come from the validated rule; status comes from the raw
+            catalog snapshot."""
+            snap = self._raw_instruments.get(symbol)
+            rule = self._instruments.get(symbol)
+            if snap is None:
+                status = "MISSING"
+            elif getattr(snap, "status", "Trading") != "Trading":
+                status = "NON_TRADING"
+            elif rule is None:
+                status = "MALFORMED"
+            else:
+                status = "TRADING"
+            ev = {
+                "symbol": symbol, "rule_status": status,
+                "instrument_rule_source":
+                    "DemoReadOnlyClient.get_instruments_info() -> /v5/market/instruments-info (public GET, category=linear)",
+                "market_price_source": "DemoMarketPriceGuard -> /v5/market/tickers (public GET)",
+                "market_price": self.market_price(symbol),
+            }
+            if rule is not None:
+                ev.update({
+                    "qty_step": float(rule.qty_step), "min_qty": float(rule.min_qty),
+                    "max_qty": float(rule.max_qty), "min_notional": float(rule.min_notional),
+                    "tick_size": float(rule.tick_size),
+                })
+            return ev
+
         def match_targets(self, symbols) -> dict:
             """Classify the REQUESTED target symbols against the cached catalog.
 
@@ -295,7 +326,7 @@ def orchestrate_gated_send(
     date: str,
     forward_result: Any,
     provider: Any,
-    transport: Any,
+    transport: Any = None,
     output_root: str | None = None,
     base_url: str = DEMO_BASE_URL,
     advance_on_success: bool = False,
@@ -303,18 +334,16 @@ def orchestrate_gated_send(
     allow_discord_network: bool = False,
     workbook_builder: Any = None,
     plan: Any = None,
-    selected_action_fingerprint: str | None = None,
-    authorization_marker: str | None = None,
 ) -> dict[str, Any]:
-    """The ONLY hardened send path. Planning (full V1 portfolio) is separated
-    from execution (at most one explicitly authorized tiny probe order).
+    """NON-dispatching native send surface. TASK-014CB_FIX.
 
-    The raw planner action list is NEVER iterated or submitted here. The execution
-    gate must authorize exactly ONE explicitly fingerprinted + marker-authorized,
-    cap-compliant, non-protected NEW-opening candidate with no blocking protected
-    legacy positions. In every other case this returns a fail-closed refusal with
-    zero order/amend/cancel POST and zero live endpoint call -- without ever
-    calling :func:`orchestrate_native_daily` on the raw plan.
+    This NEVER dispatches an order and NEVER calls :func:`orchestrate_native_daily`
+    or ``execute_daily_native``. It produces the full Plan-only execution review
+    and then FAILS CLOSED with ``EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER``:
+    real Demo execution is delegated to the existing, authoritative canonical
+    one-shot tiny adapter chain (separate human review). No generic
+    ``StrategyNativeAction`` is ever converted into an order payload here; the
+    injected transport is intentionally never touched.
     """
     if plan is None:
         plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
@@ -326,19 +355,25 @@ def orchestrate_gated_send(
 
     gate_result = gate.evaluate_execution_gate(
         plan=plan, open_positions=open_positions, pilot_id=pilot_id, date=date,
-        forward_fingerprint=_forward_fingerprint_of(plan),
-        selected_action_fingerprint=selected_action_fingerprint,
-        authorization_marker=authorization_marker)
+        forward_fingerprint=_forward_fingerprint_of(plan), rule_provider=provider)
 
-    base: dict[str, Any] = {
-        "status": gate_result.final_execution_authorization_status,
+    # The native daily surface ALWAYS delegates real execution to the canonical
+    # one-shot adapter. Zero dispatch, zero transport call, zero POST.
+    return {
+        "status": gate.EXECUTION_DELEGATED_TO_CANONICAL_ONE_SHOT_ADAPTER,
         "pilot_id": pilot_id, "date": date,
         "planner": plan.to_dict(),
         "execution_gate": gate_result.to_dict(),
         "plan_valid": gate_result.plan_valid,
-        "execution_authorized": gate_result.authorized,
-        "execution_ready": gate_result.authorized,
-        "send_path_refused": not gate_result.authorized,
+        "execution_authorized": False,
+        "execution_ready": False,
+        "sender_reachable": False,
+        "canonical_one_shot_adapter_required": True,
+        "canonical_execution_packet_present": False,
+        "send_path_refused": True,
+        "native_dispatch_disabled": True,
+        "execute_daily_native_called": False,
+        "transport_sender_call_count": 0,
         "order_endpoint_called": False,
         "order_post_count": 0,
         "amend_post_count": 0,
@@ -346,42 +381,11 @@ def orchestrate_gated_send(
         "live_endpoint_called": False,
         "live_trading_authorized": False,
         "pilot_advanced": False,
+        "detail": ("native daily send is NOT a real execution dispatcher; the full V1 plan is "
+                   "planning output only. Real Demo execution is delegated to the existing canonical "
+                   "one-shot tiny adapter (SOLUSDT-locked, Market/IOC, single-shot, explicit Rick "
+                   "authorization marker, Demo-only endpoint guard). No order dispatched."),
     }
-
-    if not gate_result.authorized:
-        # FAIL CLOSED. The raw multi-action plan is never executed; zero POST.
-        base["detail"] = ("raw multi-action V1 plan is planning output only; a single tiny "
-                          "execution probe requires explicit fingerprint + authorization marker")
-        return base
-
-    # AUTHORIZED single tiny execution probe: build a one-action plan with the
-    # canonical capped qty (NOT the 200-USDT V1 target) and route it through the
-    # existing execution engine + endpoint guards.
-    cand = gate_result.selected_candidate or {}
-    tiny_action = nx.StrategyNativeAction(
-        symbol=cand["symbol"], side=cand["side"], qty=cand["canonical_qty"],
-        intent=cand["intent"], reduce_only=bool(cand["reduce_only"]),
-        notional_usdt=cand["execution_candidate_notional_usdt"], action_seq=0,
-        source_reference="tiny_execution_probe")
-    single_plan = planner.PlannerResult(
-        status=plan.status, actions=[tiny_action],
-        target_positions=plan.target_positions, current_positions=plan.current_positions,
-        rejected_signals=plan.rejected_signals, sizing_verification=plan.sizing_verification,
-        detail="single tiny execution probe (gate-authorized)")
-
-    out = orchestrate_native_daily(
-        pilot_id=pilot_id, date=date, forward_result=forward_result, provider=provider,
-        transport=transport, output_root=output_root, base_url=base_url,
-        advance_on_success=advance_on_success, allow_notion_network=allow_notion_network,
-        allow_discord_network=allow_discord_network, workbook_builder=workbook_builder,
-        plan=single_plan)
-    out["execution_gate"] = gate_result.to_dict()
-    out["plan_valid"] = True
-    out["execution_authorized"] = True
-    out["execution_ready"] = True
-    out["send_path_refused"] = False
-    out["live_trading_authorized"] = False
-    return out
 
 
 def orchestrate_native_daily(
@@ -460,12 +464,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pilot-id", required=True)
     p.add_argument("--date", required=True, help="Pilot run date YYYY-MM-DD")
     p.add_argument("--send-orders-to-demo", action="store_true",
-                   help="route through the single-tiny-order execution gate (NEVER sends the raw "
-                        "multi-action V1 plan); fails closed without explicit single-action authorization")
-    p.add_argument("--execution-authorize-action-fingerprint", default=None,
-                   help="explicit sha256 action fingerprint of the ONE tiny candidate to execute")
-    p.add_argument("--execution-authorization-marker", default=None,
-                   help="exact authorization marker required to authorize a single tiny Demo probe")
+                   help="produce the Plan-only execution review then FAIL CLOSED: the native surface "
+                        "never dispatches; real Demo execution is delegated to the canonical one-shot adapter")
     p.add_argument("--reconcile-outputs-only", action="store_true",
                    help="retry Excel/Notion/Discord only; never plans or executes")
     p.add_argument("--advance-on-success", action="store_true",
@@ -546,15 +546,16 @@ def main(argv: list[str] | None = None) -> int:
                             "matched_instrument_rule_count": 0, "missing_instrument_rule_count": 0,
                             "non_trading_instrument_count": 0, "malformed_instrument_rule_count": 0}
 
-        # Build the execution gate so plan-only TRUTHFULLY shows the plan is NOT
-        # send-ready (raw multi-action plan can never be executed as-is).
+        # Build the execution REVIEW gate so plan-only TRUTHFULLY shows the plan is
+        # planning output only and that real execution is delegated to the canonical
+        # one-shot adapter. qtyStep evidence comes from the authoritative provider.
         try:
             open_positions = list(provider.open_positions()) if provider_built else []
         except Exception:  # noqa: BLE001
             open_positions = []
         gate_result = gate.evaluate_execution_gate(
             plan=plan, open_positions=open_positions, pilot_id=args.pilot_id, date=args.date,
-            forward_fingerprint=_forward_fingerprint_of(plan))
+            forward_fingerprint=_forward_fingerprint_of(plan), rule_provider=provider)
 
         out = {"status": plan_label if plan.available else plan.status,
                "pilot_id": args.pilot_id, "date": args.date, "planner": plan.to_dict(),
@@ -562,10 +563,14 @@ def main(argv: list[str] | None = None) -> int:
                "plan_valid": plan.available and bool(plan.sizing_verification.get("verified", False)),
                "execution_authorized": False,
                "execution_ready": False,
+               "sender_reachable": False,
+               "canonical_one_shot_adapter_required": True,
+               "canonical_execution_packet_present": False,
+               "native_dispatch_disabled": True,
                "send_path_refused": True,
-               "detail": "plan preview only; the raw multi-action V1 plan is planning output and is "
-                         "NOT executable as-is. A single tiny Demo probe requires explicit "
-                         "fingerprint + authorization marker via the execution gate.",
+               "detail": "plan preview only; the full V1 plan is planning output. Real Demo execution "
+                         "is delegated to the canonical one-shot tiny adapter. The native surface never "
+                         "dispatches an order.",
                "network_attempted": provider_built,
                "read_only_network": provider_built,
                "market_price_source": provider_audit.get("market_price_source", "unavailable"),
@@ -602,16 +607,12 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_V1_CAPITAL_BASE_UNVERIFIED
         return EXIT_OK if plan.available else EXIT_PLANNER_UNAVAILABLE
 
-    # Authorized Demo execution.
-    creds = load_demo_credentials(os.environ)
-    if not creds.usable:
-        print(json.dumps({"status": "BLOCKED", "detail": "Demo credentials absent; cannot send"},
-                         ensure_ascii=False, indent=2, sort_keys=True))
-        return EXIT_BLOCKED
+    # --send-orders-to-demo: NON-dispatching. TASK-014CB_FIX.
+    # The native surface produces the full Plan-only execution review and then
+    # FAILS CLOSED, delegating real Demo execution to the canonical one-shot tiny
+    # adapter. It constructs NO order transport, calls NO execute_daily_native, and
+    # never converts a generic StrategyNativeAction into an order payload.
     provider = _build_production_provider()
-
-    # Pre-verify V1 baseline sizing + capital base BEFORE constructing the order
-    # transport. The send path REFUSES while either is unverified or conflicting.
     plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
     if plan.status == planner.STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT:
         print(json.dumps({"status": planner.STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT,
@@ -627,39 +628,13 @@ def main(argv: list[str] | None = None) -> int:
                           "planner": plan.to_dict(), "live_trading_authorized": False},
                          ensure_ascii=False, indent=2, sort_keys=True))
         return EXIT_V1_CAPITAL_BASE_UNVERIFIED
-    if plan.status == planner.STATUS_V1_BASELINE_SIZING_UNVERIFIED \
-            or not plan.sizing_verification.get("verified", False):
-        print(json.dumps({"status": planner.STATUS_V1_BASELINE_SIZING_UNVERIFIED,
-                          "pilot_id": args.pilot_id, "date": args.date, "send_refused": True,
-                          "detail": "first Demo execution blocked until V1 baseline sizing parity is "
-                                    "verified; no order sent", "planner": plan.to_dict(),
-                          "live_trading_authorized": False},
-                         ensure_ascii=False, indent=2, sort_keys=True))
-        return EXIT_V1_SIZING_UNVERIFIED
-    if not plan.available:
-        print(json.dumps({"status": plan.status, "detail": plan.detail, "planner": plan.to_dict(),
-                          "live_trading_authorized": False}, ensure_ascii=False, indent=2, sort_keys=True))
-        return EXIT_PLANNER_UNAVAILABLE
 
-    transport = RealDemoOrderTransport(api_key=os.environ.get("BYBIT_DEMO_API_KEY", ""),
-                                       api_secret=os.environ.get("BYBIT_DEMO_API_SECRET", ""),
-                                       recv_window=creds.recv_window)
-    # HARDENED send path: routes through the single-tiny-order execution gate.
-    # The raw multi-action V1 plan is NEVER iterated or submitted here; the gate
-    # fails closed unless exactly one explicitly fingerprinted + marker-authorized
-    # tiny candidate passes (which the real VPS run never supplies).
+    # NON-dispatching delegation review (zero transport, zero execute_daily_native).
     out = orchestrate_gated_send(
         pilot_id=args.pilot_id, date=args.date, forward_result=forward_result, provider=provider,
-        transport=transport, output_root=output_root, advance_on_success=args.advance_on_success,
-        allow_notion_network=args.allow_notion_network, allow_discord_network=args.allow_discord_network,
-        plan=plan, selected_action_fingerprint=args.execution_authorize_action_fingerprint,
-        authorization_marker=args.execution_authorization_marker)
+        transport=None, output_root=output_root, plan=plan)
     print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
-    if out.get("send_path_refused") and not out.get("execution_authorized"):
-        return EXIT_BLOCKED
-    if out.get("status") == planner.STATUS_PLANNER_UNAVAILABLE:
-        return EXIT_PLANNER_UNAVAILABLE
-    return EXIT_AMBIGUOUS if out.get("day_verdict") == nx.DAY_AMBIGUOUS else EXIT_OK
+    return EXIT_BLOCKED  # native surface never dispatches; execution is delegated
 
 
 if __name__ == "__main__":
