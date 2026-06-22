@@ -1,5 +1,38 @@
 # Next Action
 
+> README shared status updated by TASK-014BZ (2026-06-22).
+> **`PRIOR ZERO-RETURN ANALYSIS SUPERSEDED / AUTHORITATIVE PAPER PORTFOLIO PERFORMANCE RESTORED / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 473733f correcting the strategy-performance source lineage.
+>
+> - **TASK-014BY `REJECT_INSUFFICIENT_EDGE` / `coverage=37/30` is INVALID and superseded.** It scored the
+>   Forward dry-run snapshot JSON (`prev3y_crypto/<date>_pnl.json`: `clock_started=false`, `day_number=0`,
+>   `daily_pnl_pct=0`, `paper_execution_status=FORBIDDEN`) instead of the authoritative Paper Portfolio ledger.
+>   The TASK-014BY runtime output is RETAINED (not deleted) and marked superseded.
+> - **Authoritative performance source:** `paper_portfolio/daily_pnl.csv` + `state.json`. New module
+>   `src/strategy_selection/paper_portfolio_performance.py` reads ONLY this source and FAILS CLOSED when it is
+>   missing/invalid (`PERFORMANCE_SOURCE_MISSING/_CONFLICT`, `NAV_CONTINUITY_FAILURE`,
+>   `DUPLICATE_PERFORMANCE_DATE`, `INSUFFICIENT_VALID_PERFORMANCE_DAYS`). It NEVER falls back to the
+>   zero-valued dry-run JSON.
+> - **Official validation window (VPS-authoritative, DERIVED not hardcoded):** first 30 valid/unique/ordered
+>   performance rows = `20260518 → 20260616`, cumulative return **+6.077668%**. `20260617–20260622` is the
+>   `POST_VALIDATION_EXTENSION` (latest cumulative **+4.954855%**, NAV 10495.4855, peak 10650.5660).
+>   snapshot_file_count(37), authoritative_performance_row_count(36) and official_validation_day_count(30) are
+>   SEPARATE fields; `37/30` is not a coverage label.
+> - **Corrected scorecard:** scores ONLY the official 30 valid days; a positive official cumulative return can
+>   never fail the positive-net-expectancy gate → superseded label is `KEEP_BASELINE`. Missing trade-level PF /
+>   cost-funding-slippage / OOS / regime are explicitly UNAVAILABLE (never fabricated).
+> - **Primary vs Shadow:** `primary_shadow_comparable = false` (no independent Shadow authoritative series).
+> - **Static-hold:** `STATIC_LONG_SHORT_HOLD_WITH_DAILY_MARK_TO_MARKET`, NOT auto-flagged as a defect.
+> - **Challengers:** prior dry-run H1/H2 `INVALIDATED_FROM_DRY_RUN_ANALYSIS`; none promoted.
+> - Active V1 and Pilot unchanged; no Demo order sent; Live unauthorized.
+>
+> Validation (offline): py_compile PASS; focused 25 passed; strategy_selection + demo 136 passed; 0 real HTTP,
+> 0 Bybit, 0 orders. Runtime reports under `outputs/research/strategy_selection/TASK-014BZ/` (gitignored;
+> regenerated on the VPS).
+> VPS regenerate: `python scripts/analyze_forward30_authoritative_performance.py --input-root outputs/forward_record --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BZ --json-only`
+
+---
+
 > README shared status updated by TASK-014BY_FIX3 (2026-06-22).
 > **`PILOT RUNNING 0/7 / V1 CAPITAL BASE VERIFIED BY MATCHING AUTHORITATIVE SOURCES / DEMO WALLET DOES NOT SCALE TARGETS / NO STRATEGY DEMO ORDER SENT / LIVE TRADING NOT AUTHORIZED`**
 > Fix commit on top of ddff19a adding cross-validated V1 capital base evidence and plan-only network audit fields.

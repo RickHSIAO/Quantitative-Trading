@@ -17,7 +17,33 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BY_FIX3 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014BZ 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014BZ_FORWARD30_AUTHORITATIVE_PERFORMANCE_SOURCE_AND_REANALYSIS**（2026-06-22, Opus 4.8 / 修正策略績效來源血統）
+> **`PRIOR ZERO-RETURN ANALYSIS SUPERSEDED / AUTHORITATIVE PAPER PORTFOLIO PERFORMANCE RESTORED / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **TASK-014BY 的 `REJECT_INSUFFICIENT_EDGE` / `coverage=37/30` 判定無效並被取代。** 該分析誤把 Forward dry-run
+>   快照 `prev3y_crypto/<date>_pnl.json`（`clock_started=false`、`day_number=0`、`daily_pnl_pct=0`、
+>   `paper_execution_status=FORBIDDEN`）當成策略報酬。TASK-014BY 的 runtime 輸出保留但標記 superseded。
+> - **權威績效來源：** `paper_portfolio/daily_pnl.csv` + `state.json`。新模組 `paper_portfolio_performance.py`
+>   只讀此來源，缺失/無效時 **fail-closed**（`PERFORMANCE_SOURCE_MISSING` / `_CONFLICT` / `NAV_CONTINUITY_FAILURE`
+>   / `DUPLICATE_PERFORMANCE_DATE` / `INSUFFICIENT_VALID_PERFORMANCE_DAYS`），**絕不回退到零值 dry-run JSON**。
+> - **官方驗證窗（VPS 權威）：** 取前 30 個有效、唯一、排序的績效列（**結束日由資料推導，非硬編碼**）：
+>   `20260518 → 20260616`，30 個有效日，累積報酬 **+6.077668%**。`20260617–20260622` 為 `POST_VALIDATION_EXTENSION`，
+>   最新累積 **+4.954855%**（NAV 10495.4855，peak 10650.5660）。snapshot_file_count(37)、
+>   authoritative_performance_row_count(36)、official_validation_day_count(30) 為**三個獨立欄位**；`37/30` 非覆蓋率標籤。
+> - **修正後評分：** 只評官方 30 個有效日；正的官方累積報酬不能再 fail 正期望值閘 → 取代後標籤 `KEEP_BASELINE`。
+>   缺 trade-level PF / 成本-資金費-滑點 / OOS / regime 定義 皆明確標 UNAVAILABLE，不捏造。
+> - **Primary vs Shadow：** `primary_shadow_comparable = false`（Shadow 無獨立權威日績效序列；快照存在不足以判定可比）。
+> - **靜態持有：** `STATIC_LONG_SHORT_HOLD_WITH_DAILY_MARK_TO_MARKET`（首日 50 進場、之後無進出、每日 mark-to-market），
+>   **不自動視為缺陷**；僅當策略文件聲明預期每日 rebalance 才加警告。
+> - **Challenger：** dry-run 衍生的 H1/H2 全部 `INVALIDATED_FROM_DRY_RUN_ANALYSIS`，僅保留為 future_research_candidates；
+>   無 contribution 證據時不做因果宣稱、不發 EVIDENCE_BACKED；**無任何 Challenger 被 promote。**
+> - Active V1 與 Pilot 未變；未送任何 Demo 單；Live 未授權。
+>
+> 驗證（offline）：py_compile PASS；focused 25 passed；strategy_selection + demo 136 passed；0 real HTTP / 0 Bybit / 0 orders。
+> Runtime 報表於 `outputs/research/strategy_selection/TASK-014BZ/`（gitignored；VPS 重生）。新 commit 於 473733f 之上（未 amend、未 push）。
+> VPS 重生指令：`python scripts/analyze_forward30_authoritative_performance.py --input-root outputs/forward_record --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BZ --json-only`
 
 > **TASK-014BY_FIX3_CAPITAL_PROVENANCE_AND_PLAN_AUDIT**（2026-06-22, Sonnet 4.6 / 資金基底跨來源驗證 + plan-only 審計欄位）
 > **`PILOT RUNNING 0/7 / V1 CAPITAL BASE VERIFIED BY MATCHING AUTHORITATIVE SOURCES / DEMO WALLET DOES NOT SCALE TARGETS / NO STRATEGY DEMO ORDER SENT / LIVE TRADING NOT AUTHORIZED`**

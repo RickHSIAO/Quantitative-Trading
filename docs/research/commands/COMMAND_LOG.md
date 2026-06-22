@@ -9522,3 +9522,49 @@ Files changed:
   MOD  README.md                                       (FIX3 status)
   MOD  docs/research/commands/NEXT_ACTION.md           (updated)
   MOD  docs/research/commands/COMMAND_LOG.md           (this entry)
+
+---
+
+### TASK-014BZ_FORWARD30_AUTHORITATIVE_PERFORMANCE_SOURCE_AND_REANALYSIS
+
+- **Date:** 2026-06-22
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** 473733f
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Corrected the strategy-performance source lineage. TASK-014BY scored the
+  Forward dry-run snapshot JSON (prev3y_crypto/<date>_pnl.json: clock_started=false,
+  day_number=0, daily_pnl_pct=0, paper_execution_status=FORBIDDEN) as if it were
+  strategy returns; its REJECT_INSUFFICIENT_EDGE and coverage=37/30 are INVALID and
+  are now SUPERSEDED. Authoritative source = paper_portfolio/daily_pnl.csv + state.json.
+  New module paper_portfolio_performance.py reads ONLY the authoritative ledger and
+  FAILS CLOSED when missing/invalid (PERFORMANCE_SOURCE_MISSING/_CONFLICT,
+  NAV_CONTINUITY_FAILURE, DUPLICATE_PERFORMANCE_DATE, INSUFFICIENT_VALID_PERFORMANCE_DAYS);
+  never falls back to the zero-valued dry-run JSON. Official window is DERIVED (first 30
+  valid/unique/ordered rows), not hardcoded: VPS-authoritative 20260518->20260616,
+  cumulative +6.077668%; POST_VALIDATION_EXTENSION 20260617->20260622, latest +4.954855%.
+  snapshot_file_count(37) / authoritative_performance_row_count(36) /
+  official_validation_day_count(30) are SEPARATE fields. Corrected scorecard scores ONLY
+  the official 30 valid days; positive official return cannot fail positive-net-expectancy
+  -> superseded label KEEP_BASELINE. primary_shadow_comparable=false (no independent shadow
+  authoritative series). Static hold STATIC_LONG_SHORT_HOLD_WITH_DAILY_MARK_TO_MARKET is not
+  auto-flagged a defect. Prior dry-run challengers INVALIDATED_FROM_DRY_RUN_ANALYSIS; none
+  promoted. Active V1 and Pilot unchanged; no Demo order sent; Live unauthorized.
+  Tests: focused 25 passed; strategy_selection + demo 136 passed. 0 network / 0 Bybit / 0 orders.
+  Runtime reports under outputs/research/strategy_selection/TASK-014BZ/ (gitignored; VPS regen).
+
+VPS regenerate command:
+  python scripts/analyze_forward30_authoritative_performance.py --input-root outputs/forward_record \r
+    --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BZ --json-only
+
+Files changed (committed):
+  ADD  src/strategy_selection/paper_portfolio_performance.py   (authoritative ledger loader,
+                                                                window derivation, data-quality)
+  ADD  src/strategy_selection/corrected_strategy_analysis.py   (lineage, corrected scorecard,
+                                                                challenger correction, comparability, hold)
+  ADD  scripts/analyze_forward30_authoritative_performance.py  (TASK-014BZ CLI; report generator)
+  ADD  tests/strategy_selection/test_paper_portfolio_performance.py (25 focused tests)
+  MOD  README.md                                               (TASK-014BZ shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                   (TASK-014BZ block)
+  MOD  docs/research/commands/COMMAND_LOG.md                   (this entry)
