@@ -139,7 +139,7 @@ def signals(*pairs):
 # ---------------------------------------------------------------------------
 
 
-def test_planner_derives_actions_from_canonical_sizer():
+def test_planner_derives_actions_via_v1_target_weight_translation():
     fwd = FakeForward(signals(("SOLUSDT", "long", 0.9), ("BTCUSDT", "short", 0.8)))
     plan = ap.plan_strategy_native_actions(forward_result=fwd, provider=FakeProvider())
     assert plan.status == ap.STATUS_PLANNED
@@ -147,9 +147,11 @@ def test_planner_derives_actions_from_canonical_sizer():
     by = {a.symbol: a for a in plan.actions}
     assert by["SOLUSDT"].side == "Buy" and by["SOLUSDT"].intent == nx.INTENT_OPEN
     assert by["BTCUSDT"].side == "Sell"
-    # Quantities are strategy-sized (>0), not invented/capped to 10 USDT.
     assert float(by["SOLUSDT"].qty) > 0 and float(by["BTCUSDT"].qty) > 0
-    assert plan.sizing is not None  # canonical sizer output present
+    # V1 baseline target-weight translation; Kelly NOT used.
+    assert plan.sizing_verification["verified"] is True
+    assert plan.sizing_verification["sizing_mode"] == ap.V1_SIZING_MODE
+    assert plan.sizing_verification["kelly_used"] is False
 
 
 def test_planner_unavailable_without_provider():

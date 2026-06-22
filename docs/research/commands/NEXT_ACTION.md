@@ -1,5 +1,49 @@
 # Next Action
 
+> README shared status updated by TASK-014BY_FIX (2026-06-22).
+> **`PILOT RUNNING 0/7 / NO STRATEGY DEMO ORDER SENT / FIRST EXECUTION BLOCKED UNTIL V1 SIZING PARITY VERIFIED / LIVE TRADING NOT AUTHORIZED`**
+> Fix commit on fd71ab4 resolving four review blockers.
+>
+> - **Pilot remains RUNNING but 0/7;** no strategy Demo order has been sent; no accepted Pilot date.
+> - **V1 sizing alignment (BLOCKER 1):** proven canonical V1 semantics from the authoritative
+>   Forward Record (`apps/forward_record/primary.py`: `position_usd = weight * paper_config.initial_nav_usd`;
+>   `paper_portfolio/state.json` confirms `position_usd/weight == initial_nav_usd`). The active Demo V1
+>   planner now reproduces the frozen 30-day V1 **target-weight** portfolio via execution translation
+>   (`target_notional = target_weight × equity`; `qty = |notional| / price` floored to the exchange step),
+>   preserving symbol/direction/target weights/gross≈1.0/net≈0/transitions. **0.4-Kelly is NOT used or
+>   imported in the active V1 path** (it remains available only for offline/shadow Challenger work). The
+>   planner fails closed `V1_BASELINE_SIZING_UNVERIFIED` and **`--send-orders-to-demo` refuses while V1
+>   sizing is unverified** (no artificial caps removed; protected symbols / Demo-only / Live-denied /
+>   duplicate-prevention / ambiguous-fail-closed / no-retry all retained).
+> - **Challenger gating (BLOCKER 2):** with the local 2/30 day-0 sample the scorecard is `NEEDS_MORE_DATA`
+>   and **`challenger_hypotheses.emitted_count = 0`**; structural observations are recorded only under
+>   `future_research_candidates` (NOT selected hypotheses). Challengers may be selected only after the full
+>   VPS 30-day dataset passes coverage + consistency + min-sample + comparable primary/shadow. Kelly/overlay
+>   gates are never preselected; an overlay gate is never labelled a regime hypothesis (no canonical regime def).
+> - **Manifest semantics (BLOCKER 3):** the committed
+>   `docs/research/strategy_selection/V1_BASELINE_MANIFEST.json` separates the STABLE `baseline_identity`
+>   (environment-independent fingerprint) from `local_evidence_snapshot` (`PARTIAL`, 2/30, non-authoritative
+>   fingerprints) and uses the truthful status
+>   `FROZEN_BASELINE_IDENTITY_PENDING_FULL30_ARTIFACT_FINALIZATION`. The full-30 manifest is generated only
+>   under the VPS runtime output root and never overwrites the committed identity manifest; a deterministic
+>   `v1_baseline_review_packet.json` is exported for later explicit review/commit.
+> - **VPS readiness (BLOCKER 4):** the CLI distinguishes `analysis_status=ANALYSIS_SUCCESS` from
+>   `evidence_outcome` (a valid `NEEDS_MORE_DATA` is not a crash) and reports coverage, pyarrow availability,
+>   primary/shadow comparability, scorecard, challenger count, report paths and workbook sheets.
+> - Active V1 unchanged; challengers remain unselected until the full 30-day VPS analysis; Live unauthorized.
+>
+> Validation (offline): py_compile PASS; focused strategy_selection + native 101 passed; combined regression
+> 1268 passed, 7830 deselected; 0 real HTTP, 0 Bybit calls, 0 orders.
+>
+> Exact full-30 VPS analysis command:
+> ```
+> python scripts/analyze_forward30_strategy_selection.py --input-root outputs/forward_record --run-key prev3y_crypto --shadow-run-key prev3y_crypto_shadow_a_roll12 --output-root outputs/research/strategy_selection/TASK-014BY --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+> ```
+> Inspect coverage/scorecard/challenger count from the result JSON keys:
+> `coverage`, `evidence_outcome`, `challengers_emitted`, `pyarrow_parquet_engine_available`, `primary_shadow_comparable`.
+
+---
+
 > README shared status updated by TASK-014BY_STRATEGY_SELECTION (2026-06-22).
 > **`ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
 > Offline, deterministic 30-day Forward strategy-diagnostic + challenger-selection foundation.

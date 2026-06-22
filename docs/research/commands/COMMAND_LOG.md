@@ -21,6 +21,20 @@ Notes:
 
 ---
 
+### 2026-06-22 (TASK-014BY_FIX -- align Demo V1 sizing and defer challengers to full evidence)
+
+Agent: Claude Opus 4.8
+Command source: Rick explicit chat authorization (continue from fd71ab4)
+Task: TASK-014BY_FIX_V1_BASELINE_ALIGNMENT_AND_FULL30_HANDOFF
+Status before: TASK-014BY_STRATEGY_SELECTION COMPLETE/PASS (4 review blockers)
+Status after: COMPLETE / PASS -- Demo V1 sizing aligned to frozen baseline (no Kelly in active path); send refuses until verified; challengers deferred to full 30-day evidence; manifest identity separated from incomplete local snapshot; Pilot RUNNING 0/7; no strategy Demo order sent
+Files changed: src/demo_strategy_pilot_action_planner.py (active V1 = target-weight execution translation; no Kelly import/call; V1_BASELINE_SIZING_UNVERIFIED fail-closed), scripts/run_demo_strategy_pilot_native_daily.py (send path pre-verifies V1 sizing and refuses when unverified; EXIT_V1_SIZING_UNVERIFIED), src/strategy_selection/strategy_scorecard.py (challenger gating: 0 unless full evidence + future_research_candidates; manifest identity/local-snapshot separation + PENDING status), scripts/analyze_forward30_strategy_selection.py (analysis_status vs evidence_outcome; coverage/pyarrow/comparability; review packet), docs/research/strategy_selection/V1_BASELINE_MANIFEST.json (regenerated: identity + PARTIAL local snapshot + PENDING status), tests/demo_trading/test_demo_strategy_pilot_native_fix.py, tests/strategy_selection/test_strategy_scorecard.py, tests/strategy_selection/test_v1_sizing_alignment.py (new), README.md, docs/research/commands/NEXT_ACTION.md, docs/research/commands/COMMAND_LOG.md
+Validation: py_compile PASS; focused strategy_selection + native 101 passed; combined regression 1268 passed, 7830 deselected; offline (Windows 11 / .venv Python 3.13); CLI read-only on sources (bytes unchanged); COMMAND_LOG byte-safe (net diff small, LF/EOL parity)
+Outputs: runtime analysis under outputs/research/strategy_selection/TASK-014BY/ (gitignored, NOT committed); committed identity manifest docs/research/strategy_selection/V1_BASELINE_MANIFEST.json; Bybit network 0; order POSTs 0; orders sent 0; real HTTP 0; Notion/Discord 0
+Notes: Proven canonical V1 sizing = target-weight translation (position_usd = weight * initial_nav_usd), NOT 0.4 fractional Kelly. Active Demo V1 planner reproduces the frozen V1 target portfolio (symbol/direction/target weights/gross~1.0/net~0/OPEN-ADD-REDUCE-CLOSE-reversal) as execution translation; the 0.4-Kelly sizer (src/demo_portfolio_risk.compute_demo_portfolio_sizing) is neither imported nor called in the active path and remains available only for offline/shadow Challenger work. Parity tests: 25L/25S +/-0.02 -> long +0.5, short -0.5, gross 1.0, net 0; quantity = weight*equity/price floored to qty step (sub-step drift only); Kelly call count 0; multi-symbol not filtered by removed caps; send path refuses while V1_BASELINE_SIZING_UNVERIFIED. Challenger gating: local 2/30 day-0 -> emitted_count 0, structural items under future_research_candidates only; selection requires full-30 coverage + consistency + min sample + comparable primary/shadow; no preselected Kelly/overlay; overlay not labelled regime without canonical regime def. Manifest: stable baseline_identity (env-independent fingerprint) separated from PARTIAL non-authoritative local_evidence_snapshot; status FROZEN_BASELINE_IDENTITY_PENDING_FULL30_ARTIFACT_FINALIZATION; full-30 manifest only under VPS runtime root, never overwrites committed identity; deterministic v1_baseline_review_packet.json exported. CLI distinguishes ANALYSIS_SUCCESS from evidence_outcome (NEEDS_MORE_DATA != crash). PILOT RUNNING 0/7 / NO STRATEGY DEMO ORDER SENT / FIRST EXECUTION BLOCKED UNTIL V1 SIZING PARITY VERIFIED / LIVE TRADING NOT AUTHORIZED. One new fix commit on fd71ab4; not amended; not pushed.
+
+---
+
 ### 2026-06-22 (TASK-014BY_STRATEGY_SELECTION -- 30-day Forward diagnostics + challenger design; V1 frozen)
 
 Agent: Claude Opus 4.8

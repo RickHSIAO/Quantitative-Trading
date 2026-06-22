@@ -81,13 +81,31 @@ def test_scorecard_deterministic(tmp_path):
 # --- V1 baseline manifest --------------------------------------------------
 
 
-def test_manifest_fingerprint_stable_and_frozen(tmp_path):
+def test_manifest_identity_stable_and_pending_on_partial(tmp_path):
     d = diagnostics_for(tmp_path, 2)
     m1 = sc.build_v1_baseline_manifest(code_commit="c" * 40, pilot_id="P", diagnostics=d)
     m2 = sc.build_v1_baseline_manifest(code_commit="c" * 40, pilot_id="P", diagnostics=d)
     assert m1["manifest_fingerprint"] == m2["manifest_fingerprint"]
-    assert m1["status"] == sc.FROZEN_ACTIVE_BASELINE
-    assert m1["exclusions"] == list(sc.EXCLUSIONS)
+    # Incomplete local snapshot -> truthful PENDING status, not FROZEN_ACTIVE_BASELINE.
+    assert m1["status"] == sc.FROZEN_BASELINE_IDENTITY_PENDING
+    assert m1["baseline_identity"]["exclusions"] == list(sc.EXCLUSIONS)
+    assert m1["local_evidence_snapshot"]["local_snapshot_status"] == diag.PARTIAL
+    assert m1["local_evidence_snapshot"]["authoritative"] is False
+
+
+def test_manifest_full_coverage_is_frozen_active(tmp_path):
+    d = diagnostics_for(tmp_path, 30, returns=[0.1] * 30)
+    m = sc.build_v1_baseline_manifest(code_commit="c" * 40, pilot_id="P", diagnostics=d)
+    assert m["status"] == sc.FROZEN_ACTIVE_BASELINE
+    assert m["local_evidence_snapshot"]["authoritative"] is True
+
+
+def test_incomplete_manifest_cannot_claim_full30_finalization(tmp_path):
+    d = diagnostics_for(tmp_path, 2)
+    m = sc.build_v1_baseline_manifest(code_commit="c" * 40, pilot_id="P", diagnostics=d)
+    assert m["status"] != sc.FROZEN_ACTIVE_BASELINE
+    assert m["local_evidence_snapshot"]["present_date_count"] == 2
+    assert m["local_evidence_snapshot"]["expected_date_count"] == 30
 
 
 def test_manifest_fingerprint_changes_with_commit(tmp_path):
@@ -97,44 +115,62 @@ def test_manifest_fingerprint_changes_with_commit(tmp_path):
     assert m1["manifest_fingerprint"] != m2["manifest_fingerprint"]
 
 
-def test_committed_v1_manifest_is_frozen():
+def test_committed_v1_manifest_identity_pending_full30():
     p = ROOT / "docs" / "research" / "strategy_selection" / "V1_BASELINE_MANIFEST.json"
     data = json.loads(p.read_text(encoding="utf-8"))
-    assert data["status"] == "FROZEN_ACTIVE_BASELINE"
-    assert data["strategy_id"] == diag.EXPECTED_STRATEGY_NAME
+    # Committed manifest freezes IDENTITY but truthfully marks the full-30 evidence pending.
+    assert data["status"] == sc.FROZEN_BASELINE_IDENTITY_PENDING
+    assert data["baseline_identity"]["strategy_id"] == diag.EXPECTED_STRATEGY_NAME
+    assert data["local_evidence_snapshot"]["local_snapshot_status"] == diag.PARTIAL
+    assert data["local_evidence_snapshot"]["authoritative"] is False
     assert data["manifest_fingerprint"] == sc.manifest_fingerprint(data)
 
 
 # --- Challenger hypotheses -------------------------------------------------
 
 
-def test_at_most_two_challengers(tmp_path):
+def test_insufficient_2_of_30_emits_zero_challengers(tmp_path):
+    # Even with all capabilities confirmed, a 2/30 day-0 sample selects ZERO challengers.
     d = diagnostics_for(tmp_path, 2)
     caps = {"canonical_regime_gate": True, "overlay_gate_machinery": True,
             "volatility_adjusted_sizing": True, "existing_exit_rule_variants": True}
     ch = sc.generate_challenger_hypotheses(d, caps)
-    assert ch["emitted_count"] <= sc.MAX_CHALLENGERS
+    assert ch["emitted_count"] == 0
+    assert ch["evidence_strength"] == "INSUFFICIENT_SAMPLE_NO_SELECTION"
     assert ch["promotion_status"] == "NONE_PROMOTED"
+    # Structural observations live under future_research_candidates, not as hypotheses.
+    assert len(ch["future_research_candidates"]) >= 1
+
+
+def test_full_sufficient_emits_at_most_two_evidence_backed(tmp_path):
+    # 30 comparable dates + a comparable shadow -> challengers may be selected (<=2).
+    make_run(tmp_path, "prev3y_crypto", days(30), returns=[0.1] * 30)
+    make_run(tmp_path, "prev3y_crypto_shadow_a_roll12", days(30), returns=[0.1] * 30, strategy="shadow_x")
+    primary = diag.load_forward_run(tmp_path, "prev3y_crypto")
+    shadow = diag.load_forward_run(tmp_path, "prev3y_crypto_shadow_a_roll12")
+    d = diag.run_all_diagnostics(primary, [shadow])
+    caps = {"canonical_regime_gate": False, "overlay_gate_machinery": True,
+            "volatility_adjusted_sizing": True, "existing_exit_rule_variants": True}
+    ch = sc.generate_challenger_hypotheses(d, caps)
+    assert ch["emitted_count"] <= sc.MAX_CHALLENGERS
+    assert ch["evidence_gate"]["sufficient"] is True
     for h in ch["hypotheses"]:
-        # Each is a single change touching exactly one strategy dimension family.
+        assert h["status"] == "EVIDENCE_BACKED"
         changed = [k for k, v in h["changes"].items() if v]
         assert len(changed) >= 1
-        assert h["status"] in ("PROVISIONAL", "EVIDENCE_BACKED")
 
 
-def test_no_challenger_without_capability(tmp_path):
-    d = diagnostics_for(tmp_path, 2)
-    caps = {"canonical_regime_gate": False, "overlay_gate_machinery": False,
+def test_overlay_gate_not_labelled_regime_without_canonical_def(tmp_path):
+    make_run(tmp_path, "prev3y_crypto", days(30), returns=[0.1] * 30)
+    make_run(tmp_path, "prev3y_crypto_shadow_a_roll12", days(30), returns=[0.1] * 30, strategy="shadow_x")
+    primary = diag.load_forward_run(tmp_path, "prev3y_crypto")
+    shadow = diag.load_forward_run(tmp_path, "prev3y_crypto_shadow_a_roll12")
+    d = diag.run_all_diagnostics(primary, [shadow])
+    caps = {"canonical_regime_gate": False, "overlay_gate_machinery": True,
             "volatility_adjusted_sizing": False, "existing_exit_rule_variants": False}
     ch = sc.generate_challenger_hypotheses(d, caps)
-    assert ch["emitted_count"] == 0  # no confirmed capability -> no hypothesis invented
-
-
-def test_challenger_provisional_on_insufficient_sample(tmp_path):
-    d = diagnostics_for(tmp_path, 2)
-    caps = sc.discover_capabilities()
-    ch = sc.generate_challenger_hypotheses(d, caps)
-    assert ch["evidence_strength"] == "STRUCTURAL_ONLY_REQUIRES_FULL_30D_SAMPLE"
+    overlay = [h for h in ch["hypotheses"] if "overlay" in h["id"]]
+    assert overlay and overlay[0]["changes"]["regime_filter"] is False
 
 
 # --- Demo comparison scaffold ----------------------------------------------

@@ -64,6 +64,7 @@ EXIT_INVALID = 2
 EXIT_INPUT_FAILURE = 3
 EXIT_PLANNER_UNAVAILABLE = 5
 EXIT_AMBIGUOUS = 6
+EXIT_V1_SIZING_UNVERIFIED = 7
 
 
 # ---------------------------------------------------------------------------
@@ -191,16 +192,21 @@ def orchestrate_native_daily(
     notion_sync: Any = None,
     discord_notify: Any = None,
     workbook_builder: Any = None,
+    plan: Any = None,
 ) -> dict[str, Any]:
     """Plan -> execute -> (on unambiguous) finalize reporting -> advance once.
 
     Pure orchestration over injected planner inputs / transport / reporting deps
     so it is fully testable offline. Advancement happens AT MOST once and only
-    after the day is unambiguous AND Excel built OK."""
-    plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
-    if not plan.available:
+    after the day is unambiguous AND Excel built OK. Refuses to execute unless V1
+    baseline sizing is verified."""
+    if plan is None:
+        plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
+    # Fail closed: never execute while V1 baseline sizing is unproven.
+    if not plan.available or not plan.sizing_verification.get("verified", False):
         return {"status": plan.status, "pilot_id": pilot_id, "date": date,
                 "detail": plan.detail, "planner": plan.to_dict(),
+                "send_refused": plan.status == planner.STATUS_V1_BASELINE_SIZING_UNVERIFIED,
                 "live_trading_authorized": False}
 
     result = nx.execute_daily_native(pilot_id=pilot_id, date=date, actions=plan.actions,
@@ -310,13 +316,32 @@ def main(argv: list[str] | None = None) -> int:
                          ensure_ascii=False, indent=2, sort_keys=True))
         return EXIT_BLOCKED
     provider = _build_production_provider()
+
+    # Pre-verify V1 baseline sizing BEFORE constructing the order transport. The
+    # send path REFUSES while V1 baseline sizing parity is unverified.
+    plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
+    if plan.status == planner.STATUS_V1_BASELINE_SIZING_UNVERIFIED \
+            or not plan.sizing_verification.get("verified", False):
+        print(json.dumps({"status": planner.STATUS_V1_BASELINE_SIZING_UNVERIFIED,
+                          "pilot_id": args.pilot_id, "date": args.date, "send_refused": True,
+                          "detail": "first Demo execution blocked until V1 baseline sizing parity is "
+                                    "verified; no order sent", "planner": plan.to_dict(),
+                          "live_trading_authorized": False},
+                         ensure_ascii=False, indent=2, sort_keys=True))
+        return EXIT_V1_SIZING_UNVERIFIED
+    if not plan.available:
+        print(json.dumps({"status": plan.status, "detail": plan.detail, "planner": plan.to_dict(),
+                          "live_trading_authorized": False}, ensure_ascii=False, indent=2, sort_keys=True))
+        return EXIT_PLANNER_UNAVAILABLE
+
     transport = RealDemoOrderTransport(api_key=os.environ.get("BYBIT_DEMO_API_KEY", ""),
                                        api_secret=os.environ.get("BYBIT_DEMO_API_SECRET", ""),
                                        recv_window=creds.recv_window)
     out = orchestrate_native_daily(
         pilot_id=args.pilot_id, date=args.date, forward_result=forward_result, provider=provider,
         transport=transport, output_root=output_root, advance_on_success=args.advance_on_success,
-        allow_notion_network=args.allow_notion_network, allow_discord_network=args.allow_discord_network)
+        allow_notion_network=args.allow_notion_network, allow_discord_network=args.allow_discord_network,
+        plan=plan)
     print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
     if out.get("status") == planner.STATUS_PLANNER_UNAVAILABLE:
         return EXIT_PLANNER_UNAVAILABLE

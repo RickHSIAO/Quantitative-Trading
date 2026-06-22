@@ -17,7 +17,39 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BY_STRATEGY_SELECTION 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014BY_FIX 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014BY_FIX_V1_BASELINE_ALIGNMENT_AND_FULL30_HANDOFF**（2026-06-22, Opus 4.8 / 修正四項 review blocker）
+> **`PILOT RUNNING 0/7 / NO STRATEGY DEMO ORDER SENT / FIRST EXECUTION BLOCKED UNTIL V1 SIZING PARITY VERIFIED / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **Pilot 仍 RUNNING 但 0/7；** 未送任何策略 Demo 單；無已接受 Pilot 日。
+> - **V1 sizing 對齊（BLOCKER 1）：** 由權威 Forward Record 證明 V1 語意
+>   （`apps/forward_record/primary.py`：`position_usd = weight × paper_config.initial_nav_usd`；
+>   `paper_portfolio/state.json` 驗證 `position_usd/weight == initial_nav_usd`）。Active Demo V1 planner 改為以
+>   **target-weight 執行轉換** 重現凍結的 30 天 V1 目標組合（`target_notional = 目標權重 × equity`；
+>   `qty = |notional| / price` 向下取整到交易所 step），保留 symbol/方向/目標權重/gross≈1.0/net≈0/轉換。
+>   **Active V1 路徑不使用也不 import 0.4-Kelly**（Kelly 僅保留給離線/shadow Challenger）。無法證明時 fail closed
+>   `V1_BASELINE_SIZING_UNVERIFIED`，且 **`--send-orders-to-demo` 在未驗證前拒絕送單**（未移除任何硬安全：保護幣 /
+>   Demo-only / Live 禁止 / 去重 / 模糊 fail-closed / 無自動 retry 全保留）。
+> - **Challenger gating（BLOCKER 2）：** 本機 2/30 day-0 樣本 → scorecard `NEEDS_MORE_DATA`、
+>   **`challenger_hypotheses.emitted_count = 0`**；結構觀察僅記於 `future_research_candidates`（非選定假說）。
+>   需完整 VPS 30 天資料通過 coverage + 一致性 + 最小樣本 + primary/shadow 可比 後才可選 Challenger；
+>   不預選 Kelly/overlay；無 canonical regime 定義時不把 overlay 標為 regime 假說。
+> - **Manifest 語意（BLOCKER 3）：** committed `docs/research/strategy_selection/V1_BASELINE_MANIFEST.json` 將
+>   穩定 `baseline_identity`（環境無關 fingerprint）與 `local_evidence_snapshot`（`PARTIAL`、2/30、非權威）分離，
+>   狀態改為誠實的 `FROZEN_BASELINE_IDENTITY_PENDING_FULL30_ARTIFACT_FINALIZATION`。完整 30 天 manifest 只在 VPS
+>   runtime 輸出根產生、不覆寫 committed identity manifest；另輸出 `v1_baseline_review_packet.json` 供日後明確審查/commit。
+> - **VPS readiness（BLOCKER 4）：** CLI 區分 `analysis_status=ANALYSIS_SUCCESS` 與 `evidence_outcome`
+>   （合法的 `NEEDS_MORE_DATA` 不等於崩潰），並回報 coverage、pyarrow 可用性、primary/shadow 可比性、scorecard、
+>   challenger 數、報告路徑與 workbook 分頁。
+> - Active V1 未變；Challenger 在完整 30 天 VPS 分析前維持未選；Live 未授權。
+>
+> 驗證（offline）：py_compile PASS；focused 101 passed；combined 1268 passed, 7830 deselected；0 real HTTP / 0 Bybit / 0 orders。新 fix commit 於 fd71ab4（未 amend、未 push）。
+>
+> 完整 30 天 VPS 指令：
+> ```
+> python scripts/analyze_forward30_strategy_selection.py --input-root outputs/forward_record --run-key prev3y_crypto --shadow-run-key prev3y_crypto_shadow_a_roll12 --output-root outputs/research/strategy_selection/TASK-014BY --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --json-only
+> ```
 
 > **TASK-014BY_FORWARD30_STRATEGY_DIAGNOSTIC_AND_CHALLENGER_DESIGN**（2026-06-22, Opus 4.8 / 離線唯讀 30 天 Forward 診斷 + Challenger 設計）
 > **`ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**

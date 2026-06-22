@@ -92,9 +92,10 @@ def build_report_md(*, audit, integrity, overall, contribution, drawdown, cost, 
     L.append("")
     L.append("**ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED.**")
     L.append("")
+    ident = manifest["baseline_identity"]
     L.append("## Executive Summary")
-    L.append(f"- Baseline: **V1** = `{manifest['strategy_id']}` (run_key `{manifest['source_run_key']}`), "
-             f"code_commit `{manifest['code_commit']}`, status **{manifest['status']}** (OBSERVED FACT).")
+    L.append(f"- Baseline: **V1** = `{ident['strategy_id']}` (run_key `{ident['source_run_key']}`), "
+             f"code_commit `{ident['code_commit']}`, status **{manifest['status']}** (OBSERVED FACT).")
     L.append(f"- Forward coverage: **{integrity['present_date_count']} of "
              f"{integrity['expected_date_count']}** day(s) present; dates "
              f"{integrity['covered_dates']} (OBSERVED FACT).")
@@ -141,6 +142,15 @@ def build_report_md(*, audit, integrity, overall, contribution, drawdown, cost, 
     L.append(f"- ranking_status: `{primary_shadow['ranking_status']}`.")
     L.append("")
     L.append("## Challenger Scorecard (offline/shadow-only; NOT promoted)")
+    L.append(f"- emitted_count: **{challengers['emitted_count']} of {challengers['max_allowed']}**; "
+             f"evidence_strength: `{challengers['evidence_strength']}` (RECOMMENDATION).")
+    if challengers["emitted_count"] == 0:
+        L.append("- **No Challenger hypotheses selected** — evidence insufficient "
+                 f"(gate: {challengers.get('evidence_gate')}). Structural observations are recorded as "
+                 "future_research_candidates only, NOT as selected hypotheses:")
+        for frc in challengers.get("future_research_candidates", []):
+            L.append(f"  - `{frc['id']}` ({frc['dimension']}): {frc['structural_observation']} "
+                     f"[requires: {frc['requires']}]")
     for h in challengers["hypotheses"]:
         L.append(f"### {h['id']} ({h['status']}, evidence={h['evidence_strength']})")
         L.append(f"- observed problem: {h['observed_problem']}")
@@ -337,11 +347,38 @@ def main(argv: list[str] | None = None) -> int:
         primary_shadow=primary_shadow, scorecard=scorecard, challengers=challengers,
         demo_scaffold=demo_scaffold)
 
-    result = {
-        "task_id": diag.TASK_ID, "status": "OK", "output_root": str(out_dir).replace("\\", "/"),
+    # Small review packet for later EXPLICIT human review and commit (deterministic).
+    review_packet = {
+        "task_id": diag.TASK_ID, "baseline_identity": manifest["baseline_identity"],
+        "manifest_fingerprint": manifest["manifest_fingerprint"], "manifest_status": manifest["status"],
+        "coverage": {"present_date_count": integrity["present_date_count"],
+                     "expected_date_count": integrity["expected_date_count"],
+                     "local_snapshot_status": manifest["local_evidence_snapshot"]["local_snapshot_status"]},
         "scorecard_label": scorecard["label"], "challengers_emitted": challengers["emitted_count"],
-        "present_dates": integrity["present_date_count"], "expected_dates": integrity["expected_date_count"],
+    }
+    _write_json(out_dir / "v1_baseline_review_packet.json", review_packet)
+
+    present = integrity["present_date_count"]
+    expected = integrity["expected_date_count"]
+    full_coverage = present >= expected and present > 0
+    result = {
+        "task_id": diag.TASK_ID,
+        # Analysis EXECUTION succeeded regardless of the evidence verdict; a valid
+        # NEEDS_MORE_DATA analysis is NOT a crash.
+        "analysis_status": "ANALYSIS_SUCCESS",
+        "evidence_outcome": scorecard["label"],
+        "output_root": str(out_dir).replace("\\", "/"),
+        "coverage": f"{present}/{expected}", "full_coverage": full_coverage,
+        "pyarrow_parquet_engine_available": audit["positions_parquet_engine_available"],
+        "primary_shadow_comparable": primary_shadow["ranking_status"] == "RANKED",
+        "scorecard_label": scorecard["label"], "challengers_emitted": challengers["emitted_count"],
+        "present_dates": present, "expected_dates": expected,
         "workbook_written": xlsx_ok, "workbook_sheets": WORKBOOK_SHEETS,
+        "report_paths": {
+            "markdown": str((out_dir / "strategy_selection_report.md")).replace("\\", "/"),
+            "workbook": str((out_dir / "strategy_selection_report.xlsx")).replace("\\", "/"),
+            "review_packet": str((out_dir / "v1_baseline_review_packet.json")).replace("\\", "/"),
+        },
         "baseline_status": manifest["status"], "manifest_fingerprint": manifest["manifest_fingerprint"],
         "network_calls": 0, "bybit_calls": 0, "orders_sent": 0,
         "banner": "ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED",
@@ -349,9 +386,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.json_only:
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     else:
-        print(f"TASK-014BY analysis -> {out_dir}")
-        print(f"  scorecard_label: {scorecard['label']}; challengers: {challengers['emitted_count']}")
-        print(f"  present_dates: {integrity['present_date_count']}/{integrity['expected_date_count']}")
+        print(f"TASK-014BY analysis -> {out_dir}  [analysis_status=ANALYSIS_SUCCESS]")
+        print(f"  evidence_outcome: {scorecard['label']}; challengers: {challengers['emitted_count']}; "
+              f"coverage: {present}/{expected}")
         print(f"  {result['banner']}")
     return 0
 

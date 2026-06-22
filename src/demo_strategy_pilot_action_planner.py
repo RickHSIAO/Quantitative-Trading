@@ -1,72 +1,71 @@
-"""TASK-014BX_FIX -- canonical strategy-native action planner for the Demo Pilot.
+"""TASK-014BX_FIX (+ TASK-014BY_FIX) -- canonical strategy-native action planner.
 
-Derives the strategy's OWN desired Bybit Demo actions for a Pilot date by reusing
-the existing canonical sizing / portfolio / position-transition logic already in
-this repository. It does NOT invent a weight-to-quantity formula:
+ACTIVE V1 EXECUTION PATH = exact V1 baseline target-weight translation.
 
-    * signals come from the authoritative Primary Forward Record source
-      (TASK-014BS adapter: src/demo_strategy_pilot_forward_source.py);
-    * per-signal entry/stop prices use the existing TASK-014P stop model
-      (src/demo_new_entry_candidate_builder.DEFAULT_*_STOP_PCT) anchored to the
-      realtime market price and rounded to the instrument tick;
-    * position sizing uses the existing canonical 0.4 fractional-Kelly portfolio
-      sizer (src/demo_portfolio_risk.compute_demo_portfolio_sizing), whose own
-      portfolio limits (<=10 positions, gross/net/single-position caps) are the
-      STRATEGY's risk logic -- NOT the removed artificial Pilot caps;
-    * quantities are floored to the instrument qty step
-      (src/demo_instrument_rules.round_qty_down).
+Proven canonical V1 sizing semantics (audited from the authoritative Primary
+Forward Record implementation):
 
-Target positions are then compared against the CURRENT Bybit Demo positions to
-produce OPEN / ADD / REDUCE / CLOSE actions (the canonical target-vs-current
-position transition). Multiple orders, notionals above 10 USDT, multiple
-positions, additions, reductions and partial closes are all preserved.
+    apps/forward_record/primary.py:
+        frame["position_usd"] = frame["weight"] * config.paper_config.initial_nav_usd
 
-Account / market / instrument data is read through an injected provider
-(``PilotAccountMarketProvider``). In production the provider is built from the
-existing read-only Demo client + market-price guard; in tests a fake provider
-supplies fixtures. If a usable planner cannot run (no provider, or required
-account/market inputs unavailable) it FAILS CLOSED with
-``STRATEGY_NATIVE_ACTION_PLANNER_UNAVAILABLE`` and does not pretend the Pilot is
-ready.
+    paper_portfolio/state.json confirms position_usd / weight == initial_nav_usd
+    for every position (equal-weight 25 long / 25 short, +/-0.02, long_weight_sum
+    = +0.5, short_weight_sum = -0.5, gross_exposure = 1.0, net_exposure ~ 0).
 
-This module performs no network I/O itself, sends no order, and imports neither
-``main``, ``src.risk`` nor the live ``BybitExecutor``.
+V1 therefore sizes by the strategy's TARGET WEIGHT, NOT by 0.4 fractional Kelly.
+This planner reproduces V1 exactly as an EXECUTION TRANSLATION (not a new sizing
+strategy):
+
+    target_weight   <- authoritative Forward positions artifact (signed)
+    target_notional <- target_weight * canonical account equity base
+    target_qty      <- |target_notional| / current Demo price, floored to qty step
+    transitions     <- compare target vs current Demo positions -> OPEN/ADD/REDUCE/CLOSE
+
+The 0.4 fractional-Kelly sizer (src/demo_portfolio_risk.compute_demo_portfolio_sizing)
+is DELIBERATELY NOT imported or called here; it remains available only for
+OFFLINE / SHADOW Challenger experiments. If exact V1 sizing semantics cannot be
+proven from the supplied artifacts, the planner fails closed with
+``V1_BASELINE_SIZING_UNVERIFIED`` and the production --send-orders-to-demo path
+must refuse.
+
+No artificial Pilot order/notional/position caps are applied. Protected symbols
+are rejected; Demo-only endpoint and Live-denied guards are enforced downstream.
+This module performs no network I/O, sends no order, and imports neither main,
+src.risk nor the live BybitExecutor.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Mapping, Protocol, Sequence
 
 from src import demo_strategy_pilot_native_execution as nx
-from src.demo_new_entry_candidate_builder import (
-    DEFAULT_LONG_STOP_PCT,
-    DEFAULT_SHORT_STOP_PCT,
-)
-from src.demo_instrument_rules import InstrumentRules, round_price_to_tick, round_qty_down
-from src.demo_portfolio_risk import (
-    DemoOpenPosition,
-    DemoSignalCandidate,
-    compute_demo_portfolio_sizing,
-)
+from src.demo_instrument_rules import InstrumentRules, round_qty_down
+from src.demo_portfolio_risk import DemoOpenPosition  # type only (NOT the Kelly sizer)
 
-TASK_ID = "TASK-014BX_FIX"
+TASK_ID = "TASK-014BY_FIX"
 
-# Canonical full-Kelly fraction: with the repo's KELLY_MULTIPLIER=0.40 this makes
-# the portfolio risk budget equity * 1.0 * 0.40 == equity * 0.40, exactly the
-# canonical demo budget (apps/demo_trading/kelly_sizer total_risk_budget). This
-# is the existing sizing, not an invented value.
-CANONICAL_FULL_KELLY_FRACTION = 1.0
+# Proof references for the active V1 sizing semantics.
+V1_SIZING_MODE = "V1_BASELINE_TARGET_WEIGHT_TRANSLATION"
+V1_SIZING_PROOF = (
+    "apps/forward_record/primary.py: position_usd = weight * paper_config.initial_nav_usd; "
+    "paper_portfolio/state.json: position_usd/weight == initial_nav_usd for all positions"
+)
 
 PROTECTED_SYMBOLS = frozenset(nx.PROTECTED_SYMBOLS)
 
 STATUS_PLANNED = "STRATEGY_NATIVE_ACTIONS_PLANNED"
 STATUS_PLANNER_UNAVAILABLE = "STRATEGY_NATIVE_ACTION_PLANNER_UNAVAILABLE"
+STATUS_V1_BASELINE_SIZING_UNVERIFIED = "V1_BASELINE_SIZING_UNVERIFIED"
+
+# Parity tolerance for verifying the strategy target survives translation.
+_GROSS_NET_TOLERANCE = 1e-6
 
 
 class PilotAccountMarketProvider(Protocol):
-    """Read-only account / market data needed by the canonical sizer.
+    """Read-only account / market data needed for V1 target-weight translation.
 
     Production implementations read Bybit DEMO (read-only). Test implementations
     return fixtures. Any method raising / returning unusable data makes the
@@ -86,7 +85,7 @@ class PlannerResult:
     target_positions: list[dict[str, Any]]
     current_positions: list[dict[str, Any]]
     rejected_signals: list[dict[str, Any]]
-    sizing: Mapping[str, Any] | None
+    sizing_verification: Mapping[str, Any]
     detail: str = ""
 
     @property
@@ -95,13 +94,13 @@ class PlannerResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "task_id": TASK_ID, "status": self.status,
+            "task_id": TASK_ID, "status": self.status, "sizing_mode": V1_SIZING_MODE,
             "action_count": len(self.actions),
             "actions": [a.to_dict() for a in self.actions],
             "target_positions": self.target_positions,
             "current_positions": self.current_positions,
             "rejected_signals": self.rejected_signals,
-            "sizing": dict(self.sizing) if self.sizing else None,
+            "sizing_verification": dict(self.sizing_verification),
             "detail": self.detail,
         }
 
@@ -120,50 +119,61 @@ def _open_side(long_short: str) -> str:
 
 
 def _close_side(long_short: str) -> str:
-    # Reduce/close uses the opposite side of the held position.
     return "Sell" if long_short == "long" else "Buy"
 
 
 def _qty_str(value: float) -> str:
-    # Deterministic, non-scientific decimal string.
     return format(Decimal(str(value)).normalize(), "f")
+
+
+def _signed_weight(side_ls: str, score: Any) -> float | None:
+    """Signed target weight = (+ for long, - for short) * |weight| (score)."""
+    try:
+        mag = abs(float(score))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(mag):
+        return None
+    return mag if side_ls == "long" else -mag
 
 
 def plan_strategy_native_actions(
     *,
     forward_result: Any,
     provider: PilotAccountMarketProvider | None,
-    full_kelly_fraction: float | None = None,
+    full_kelly_fraction: float | None = None,  # accepted for back-compat; IGNORED (V1 != Kelly)
 ) -> PlannerResult:
-    """Produce strategy-native actions for a date from the canonical pipeline.
+    """Produce V1-baseline strategy-native actions for a date.
 
-    ``forward_result`` is the TASK-014BS ``ForwardStrategySourceResult`` (or any
-    object exposing ``normalized_signals``). Returns a ``PlannerResult``; on any
-    missing provider / unusable account data it fails closed with
-    ``STRATEGY_NATIVE_ACTION_PLANNER_UNAVAILABLE``.
+    Reproduces the frozen V1 target-weight portfolio exactly via execution
+    translation. Fails closed STRATEGY_NATIVE_ACTION_PLANNER_UNAVAILABLE on
+    missing provider / account data, and V1_BASELINE_SIZING_UNVERIFIED when a
+    signed target weight cannot be proven for an eligible signal.
     """
+    empty_verif = {"verified": False, "sizing_mode": V1_SIZING_MODE, "kelly_used": False,
+                   "proof": V1_SIZING_PROOF}
     if provider is None:
-        return PlannerResult(STATUS_PLANNER_UNAVAILABLE, [], [], [], [], None,
+        return PlannerResult(STATUS_PLANNER_UNAVAILABLE, [], [], [], [], empty_verif,
                              "no account/market provider available")
 
     signals = list(getattr(forward_result, "normalized_signals", None)
                    or (forward_result.get("signals") if isinstance(forward_result, Mapping) else []))
 
-    # 1. Read canonical account state (fail closed on any read problem).
     try:
         equity = float(provider.equity_usd())
-        balance = float(provider.available_balance_usd())
         open_positions = list(provider.open_positions())
     except Exception as exc:  # noqa: BLE001
-        return PlannerResult(STATUS_PLANNER_UNAVAILABLE, [], [], [], [], None,
+        return PlannerResult(STATUS_PLANNER_UNAVAILABLE, [], [], [], [], empty_verif,
                              f"account read failed: {exc}")
     if not (equity > 0):
-        return PlannerResult(STATUS_PLANNER_UNAVAILABLE, [], [], [], [], None,
+        return PlannerResult(STATUS_PLANNER_UNAVAILABLE, [], [], [], [], empty_verif,
                              "equity unavailable / non-positive")
 
-    # 2. Build canonical candidates (entry/stop via the existing TASK-014P model).
-    candidates: list[DemoSignalCandidate] = []
+    targets: dict[str, dict[str, Any]] = {}
     rejected: list[dict[str, Any]] = []
+    weight_unverifiable = False
+    long_exp = short_exp = gross_exp = net_exp = 0.0
+
     for sig in signals:
         symbol = str(sig.get("symbol", "")).strip().upper()
         ls = _side_to_long_short(sig.get("side"))
@@ -173,82 +183,89 @@ def plan_strategy_native_actions(
         if symbol in PROTECTED_SYMBOLS:
             rejected.append({"symbol": symbol, "reason": "protected_symbol"})
             continue
+        # V1 sizing PROOF requirement: an explicit signed target weight must exist.
+        if "score" not in sig and "weight" not in sig:
+            weight_unverifiable = True
+            rejected.append({"symbol": symbol, "reason": "target_weight_unverifiable"})
+            continue
+        raw_w = sig.get("weight", sig.get("score"))
+        weight = _signed_weight(ls, raw_w)
+        if weight is None:
+            weight_unverifiable = True
+            rejected.append({"symbol": symbol, "reason": "target_weight_unparseable"})
+            continue
+
         price = provider.market_price(symbol)
         rule = provider.instrument_rule(symbol)
         if price is None or not (float(price) > 0) or rule is None:
             rejected.append({"symbol": symbol, "reason": "no_market_price_or_instrument_rule"})
             continue
-        entry = round_price_to_tick(float(price), rule.tick_size)
-        stop_pct = DEFAULT_LONG_STOP_PCT if ls == "long" else DEFAULT_SHORT_STOP_PCT
-        raw_stop = entry * (1.0 - stop_pct) if ls == "long" else entry * (1.0 + stop_pct)
-        stop = round_price_to_tick(raw_stop, rule.tick_size)
-        if stop <= 0 or entry <= 0 or (ls == "long" and not stop < entry) \
-                or (ls == "short" and not stop > entry):
-            rejected.append({"symbol": symbol, "reason": "invalid_stop_distance"})
-            continue
-        score = 0.0
-        try:
-            score = abs(float(sig.get("score", 0) or 0))
-        except (TypeError, ValueError):
-            score = 0.0
-        candidates.append(DemoSignalCandidate(symbol=symbol, side=ls, entry_price=entry,
-                                              stop_price=stop, score=score))
 
-    fk = CANONICAL_FULL_KELLY_FRACTION if full_kelly_fraction is None else float(full_kelly_fraction)
-
-    # 3. Canonical 0.4 fractional-Kelly portfolio sizing (strategy risk logic).
-    sizing = compute_demo_portfolio_sizing(
-        equity_usd=equity, available_balance_usd=balance,
-        full_kelly_fraction=fk, open_positions=list(open_positions),
-        candidates=candidates, demo_environment_expected=True)
-
-    # 4. Build target positions (accepted proposals), snapped to qty step.
-    rule_by_symbol = {c.symbol: provider.instrument_rule(c.symbol) for c in candidates}
-    targets: dict[str, dict[str, Any]] = {}
-    for p in sizing.proposals:
-        if not p.accepted:
+        # EXECUTION TRANSLATION (NOT a new sizing strategy):
+        #   target_notional = target_weight * equity ; qty = |notional| / price (floored).
+        target_notional = weight * equity
+        target_qty = round_qty_down(abs(target_notional) / float(price), rule.qty_step)
+        long_exp += weight if weight > 0 else 0.0
+        short_exp += weight if weight < 0 else 0.0
+        gross_exp += abs(weight)
+        net_exp += weight
+        if target_qty <= 0:
+            rejected.append({"symbol": symbol, "reason": "qty_floored_to_zero",
+                             "target_weight": weight})
             continue
-        rule = rule_by_symbol.get(p.symbol)
-        qty = round_qty_down(float(p.quantity), rule.qty_step) if rule else float(p.quantity)
-        if qty <= 0:
-            rejected.append({"symbol": p.symbol, "reason": "qty_floored_to_zero"})
-            continue
-        targets[p.symbol] = {"symbol": p.symbol, "side": p.side, "qty": qty,
-                             "entry_price": p.entry_price, "notional": p.proposed_notional_usd}
+        targets[symbol] = {"symbol": symbol, "side": ls, "qty": target_qty,
+                           "target_weight": weight, "target_notional": target_notional,
+                           "price": float(price)}
+
+    verified = (len(targets) > 0) and not weight_unverifiable
+    sizing_verification = {
+        "verified": verified,
+        "sizing_mode": V1_SIZING_MODE,
+        "kelly_used": False,
+        "proof": V1_SIZING_PROOF,
+        "weight_source": "forward_positions_artifact_signed_weight",
+        "equity_base_usd": equity,
+        "long_target_exposure": long_exp,
+        "short_target_exposure": short_exp,
+        "gross_target_exposure": gross_exp,
+        "net_target_exposure": net_exp,
+        "target_symbol_count": len(targets),
+    }
+
+    if not verified:
+        return PlannerResult(
+            STATUS_V1_BASELINE_SIZING_UNVERIFIED, [], list(targets.values()),
+            [_pos_dict(p) for p in open_positions], rejected, sizing_verification,
+            "V1 baseline sizing could not be proven for all eligible signals; send path must refuse"
+            if weight_unverifiable else "no usable V1 target weights")
 
     current = {pos.symbol: pos for pos in open_positions}
-
-    # 5. Canonical target-vs-current position transition.
     actions = _diff_positions(targets, current)
-
     return PlannerResult(
-        STATUS_PLANNED, actions,
-        target_positions=list(targets.values()),
-        current_positions=[{"symbol": p.symbol, "side": p.side,
-                            "qty": float(p.quantity), "entry_price": float(p.entry_price)}
-                           for p in open_positions],
-        rejected_signals=rejected, sizing=sizing.to_dict(),
-        detail="strategy-native actions planned via canonical sizer")
+        STATUS_PLANNED, actions, list(targets.values()),
+        [_pos_dict(p) for p in open_positions], rejected, sizing_verification,
+        "V1 baseline target-weight translation (no Kelly); strategy target preserved")
+
+
+def _pos_dict(p: Any) -> dict[str, Any]:
+    return {"symbol": p.symbol, "side": p.side, "qty": float(p.quantity),
+            "entry_price": float(p.entry_price)}
 
 
 def _diff_positions(targets: Mapping[str, Mapping[str, Any]],
                     current: Mapping[str, Any]) -> list[nx.StrategyNativeAction]:
-    """Compare strategy target positions to current Demo positions.
-
-    Produces OPEN / ADD / REDUCE / CLOSE (and CLOSE+OPEN for a side flip),
-    preserving the strategy-produced quantity and direction. No removed Pilot
-    cap is applied here."""
+    """Compare strategy target positions to current Demo positions -> OPEN / ADD /
+    REDUCE / CLOSE (and CLOSE+OPEN for a side reversal). Preserves the strategy
+    target quantity/direction; no removed Pilot cap is applied."""
     actions: list[nx.StrategyNativeAction] = []
     seq = 0
-    symbols = sorted(set(targets) | set(current))
-    for symbol in symbols:
+    for symbol in sorted(set(targets) | set(current)):
         tgt = targets.get(symbol)
         cur = current.get(symbol)
         cur_side = _side_to_long_short(getattr(cur, "side", "")) if cur is not None else ""
         cur_qty = float(getattr(cur, "quantity", 0) or 0) if cur is not None else 0.0
 
         if tgt is None:
-            # Held but no longer a target -> full close (reduce-only).
             if cur_qty > 0:
                 actions.append(nx.StrategyNativeAction(
                     symbol=symbol, side=_close_side(cur_side), qty=_qty_str(cur_qty),
@@ -262,7 +279,7 @@ def _diff_positions(targets: Mapping[str, Mapping[str, Any]],
             actions.append(nx.StrategyNativeAction(
                 symbol=symbol, side=_open_side(tgt_side), qty=_qty_str(tgt_qty),
                 intent=nx.INTENT_OPEN, reduce_only=False,
-                notional_usdt=_qty_str(tgt.get("notional", 0)), action_seq=seq,
+                notional_usdt=_qty_str(abs(tgt.get("target_notional", 0))), action_seq=seq,
                 source_reference="target_open")); seq += 1
             continue
 
@@ -278,10 +295,8 @@ def _diff_positions(targets: Mapping[str, Mapping[str, Any]],
                     symbol=symbol, side=_close_side(tgt_side), qty=_qty_str(abs(delta)),
                     intent=nx.INTENT_REDUCE, reduce_only=True, action_seq=seq,
                     source_reference="target_reduce")); seq += 1
-            # delta == 0: position already at target; no action.
             continue
 
-        # Opposite side -> close current, then open target.
         actions.append(nx.StrategyNativeAction(
             symbol=symbol, side=_close_side(cur_side), qty=_qty_str(cur_qty),
             intent=nx.INTENT_CLOSE, reduce_only=True, action_seq=seq,
@@ -294,12 +309,7 @@ def _diff_positions(targets: Mapping[str, Mapping[str, Any]],
 
 
 __all__ = [
-    "CANONICAL_FULL_KELLY_FRACTION",
-    "PROTECTED_SYMBOLS",
-    "PilotAccountMarketProvider",
-    "PlannerResult",
-    "STATUS_PLANNED",
-    "STATUS_PLANNER_UNAVAILABLE",
-    "TASK_ID",
-    "plan_strategy_native_actions",
+    "PROTECTED_SYMBOLS", "PilotAccountMarketProvider", "PlannerResult", "STATUS_PLANNED",
+    "STATUS_PLANNER_UNAVAILABLE", "STATUS_V1_BASELINE_SIZING_UNVERIFIED", "TASK_ID",
+    "V1_SIZING_MODE", "V1_SIZING_PROOF", "plan_strategy_native_actions",
 ]
