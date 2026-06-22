@@ -1,5 +1,31 @@
 # Next Action
 
+> README shared status updated by TASK-014CB (2026-06-23).
+> **`FULL V1 PLAN PRESERVED / RAW MULTI-ACTION SEND FORBIDDEN / SINGLE TINY EXECUTION REQUIRES EXPLICIT AUTHORIZATION / PROTECTED POSITIONS UNCHANGED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 009c633 hardening the Demo send path with a single-tiny-order execution gate.
+>
+> - The 50 x 200-USDT full V1 actions are PLANNING OUTPUT ONLY. The raw multi-action plan can never be
+>   submitted by `--send-orders-to-demo`. A new fail-closed execution gate
+>   (`src/demo_strategy_pilot_execution_gate.py`) separates planning from execution.
+> - Single tiny execution requires an explicit stable action fingerprint (run date / pilot / symbol /
+>   side / intent / reduce_only / canonical qty / notional / source ref / forward fingerprint) AND the
+>   exact authorization marker. Selection by list position / action_seq is impossible. Without both, zero POST.
+> - Effective policy = strictest approved source (per-order/daily cap 5 USDT, max 1 simultaneous position,
+>   max 1 new-opening/day, averaging forbidden); irreconcilable -> POLICY_CONFLICT_REQUIRES_REVIEW.
+> - Two protected open positions (EDUUSDT short, POLYXUSDT short) block new opening because policy does not
+>   define whether protected legacy positions count toward the simultaneous limit -> real VPS result is
+>   NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS. Protected positions remain byte-identical.
+> - Audit corrected: matched_instrument_rule_count = requested-target matches (50), instrument_rule_cache_count
+>   = full catalog (690) reported separately. Real public/private GET counts; order/amend/cancel/live = 0.
+> - Canonical Decimal qty (exact qty_step multiple, floored); no binary-float artifact in payload/JSON.
+> - Plan-only stays PLAN_ONLY_READ_ONLY_DEMO_NETWORK but now emits plan_valid=true, execution_authorized=false,
+>   execution_ready=false, send_path_refused=true.
+>
+> VPS Plan-only verification (no send command provided this task):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
+
+---
+
 > README shared status updated by TASK-014CA (2026-06-23).
 > **`PUBLIC INSTRUMENT RULES WIRED / V1 FIXED-CAPITAL SIZING UNCHANGED / PLAN-ONLY READ-ONLY NETWORK / PROTECTED POSITIONS UNCHANGED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 939853c wiring public instrument rules into the Demo plan-only provider.

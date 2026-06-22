@@ -17,7 +17,35 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CA 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CB 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CB_DEMO_SEND_PATH_SINGLE_TINY_ORDER_GATE_AND_PLAN_AUDIT_HARDENING**（2026-06-23, Opus 4.8 / 單筆微量送單閘 + 稽核硬化）
+> **`FULL V1 PLAN PRESERVED / RAW MULTI-ACTION SEND FORBIDDEN / SINGLE TINY EXECUTION REQUIRES EXPLICIT AUTHORIZATION / PROTECTED POSITIONS UNCHANGED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **公共 instrument-rule wiring（TASK-014CA）已通過。** 50 × 200-USDT 完整 V1 動作清單僅為「規劃輸出」，
+>   絕不可被 `--send-orders-to-demo` 直接逐筆送出。規劃（完整 V1 組合）與執行（最多一筆顯式授權的微量探針）已分離。
+> - **新增 fail-closed 執行閘** `src/demo_strategy_pilot_execution_gate.py`：原始多動作清單永不被迭代送出。
+>   未提供「顯式單一動作 fingerprint + 授權 marker」時回傳 `EXECUTION_NOT_AUTHORIZED_MULTI_ACTION_PLAN`，
+>   `order_post_count=0`。動作只能以穩定 fingerprint（run date / pilot / symbol / side / intent / reduce_only /
+>   canonical qty / notional / source ref / forward fingerprint）選取，不可用清單位置 / action_seq。
+> - **有效安全政策＝各來源最嚴格值**（SAFETY_POLICY 10 USDT vs 微量 adapter 5 USDT → 取 5；單筆/單日上限 5、
+>   同時持倉 1、單日新開 1、禁止加碼）。無法調和則 fail closed `POLICY_CONFLICT_REQUIRES_REVIEW`。
+> - **既有兩筆受保護持倉（EDUUSDT short ~827、POLYXUSDT short ~1404）阻擋新開倉。** 政策未定義受保護
+>   legacy 持倉是否計入同時持倉上限 → 真實 VPS 結果 `NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS`，零送單，
+>   受保護持倉 byte-for-byte 不動；受保護 symbol 永不成為執行候選或 CLOSE/REDUCE 標的。
+> - **目標與執行名目分離：** `strategy_target_notional_usdt=200`、`execution_authorized_notional_usdt=null`（未授權）、
+>   `tiny_execution_cap_usdt=5`、`cap_compliance_status=TARGET_EXCEEDS_TINY_CAP`；V1 權重不重整以偽裝合規。
+> - **canonical Decimal 數量序列化：** 以 qtyStep 取整（只向下），輸出 `110.6` 而非 `110.60000000000001`；
+>   payload/JSON 無 binary-float 殘渣；planner qty 序列化亦修正。
+> - **稽核修正：** `matched_instrument_rule_count` = 請求目標中具有效規則者（VPS=50），`instrument_rule_cache_count`
+>   = 完整型錄（690）分開回報。真實網路計數：`instrument_metadata_public_get_count` / `ticker_public_get_count` /
+>   `wallet_private_read_only_get_count` / `positions_private_read_only_get_count`，order/amend/cancel POST 與 live 皆 0。
+> - **狀態語意：** Plan-only 仍可為 `PLAN_ONLY_READ_ONLY_DEMO_NETWORK`，但新增 `plan_valid=true`、
+>   `execution_authorized=false`、`execution_ready=false`、`send_path_refused=true`，明確表示「非送單就緒」。
+> - 驗證：focused 38 passed；demo regression 9114 passed（1 個既有無關失敗）；tiny adapter 安全測試全通過。
+>
+> VPS Plan-only（僅此命令，不提供送單命令）：
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CA_DEMO_PLAN_ONLY_PUBLIC_INSTRUMENT_RULE_PROVIDER_WIRING**（2026-06-23, Sonnet 4.6 / 公共 instrument rules 接通）
 > **`PUBLIC INSTRUMENT RULES WIRED / V1 FIXED-CAPITAL SIZING UNCHANGED / PLAN-ONLY READ-ONLY NETWORK / PROTECTED POSITIONS UNCHANGED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

@@ -46,7 +46,7 @@ import json as _json
 import math
 import pathlib as _pathlib
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN, InvalidOperation
 from typing import Any, Mapping, Protocol, Sequence
 
 from src import demo_strategy_pilot_native_execution as nx
@@ -140,6 +140,25 @@ def _close_side(long_short: str) -> str:
 
 def _qty_str(value: float) -> str:
     return format(Decimal(str(value)).normalize(), "f")
+
+
+def _canon_qty_str(value: float, qty_step: float | None = None) -> str:
+    """Canonical fixed-point qty string. When a positive ``qty_step`` is known,
+    the value is floored to an exact ``qty_step`` multiple using pure Decimal so
+    no binary-float artifact (e.g. ``2744.6000000000004``) can reach a payload.
+    The numeric VALUE is unchanged -- only the serialization is canonicalized."""
+    try:
+        v = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return "0"
+    if qty_step and qty_step > 0:
+        step = Decimal(str(qty_step))
+        steps = (v / step).to_integral_value(rounding=ROUND_DOWN)
+        v = steps * step
+    v = v.normalize()
+    if v == v.to_integral_value():
+        v = v.quantize(Decimal("1"))
+    return format(v, "f")
 
 
 def resolve_v1_capital_base_evidence(
@@ -385,7 +404,7 @@ def plan_strategy_native_actions(
             continue
         targets[symbol] = {"symbol": symbol, "side": ls, "qty": target_qty,
                            "target_weight": weight, "target_notional": target_notional,
-                           "price": float(price)}
+                           "price": float(price), "qty_step": float(rule.qty_step)}
 
     verified = (len(targets) > 0) and not weight_unverifiable
     sizing_verification = {
@@ -448,9 +467,10 @@ def _diff_positions(targets: Mapping[str, Mapping[str, Any]],
 
         tgt_side = tgt["side"]
         tgt_qty = float(tgt["qty"])
+        step = tgt.get("qty_step")
         if cur is None or cur_qty <= 0:
             actions.append(nx.StrategyNativeAction(
-                symbol=symbol, side=_open_side(tgt_side), qty=_qty_str(tgt_qty),
+                symbol=symbol, side=_open_side(tgt_side), qty=_canon_qty_str(tgt_qty, step),
                 intent=nx.INTENT_OPEN, reduce_only=False,
                 notional_usdt=_qty_str(abs(tgt.get("target_notional", 0))), action_seq=seq,
                 source_reference="target_open")); seq += 1
@@ -460,12 +480,12 @@ def _diff_positions(targets: Mapping[str, Mapping[str, Any]],
             delta = round(tgt_qty - cur_qty, 12)
             if delta > 0:
                 actions.append(nx.StrategyNativeAction(
-                    symbol=symbol, side=_open_side(tgt_side), qty=_qty_str(delta),
+                    symbol=symbol, side=_open_side(tgt_side), qty=_canon_qty_str(delta, step),
                     intent=nx.INTENT_ADD, reduce_only=False, action_seq=seq,
                     source_reference="target_add")); seq += 1
             elif delta < 0:
                 actions.append(nx.StrategyNativeAction(
-                    symbol=symbol, side=_close_side(tgt_side), qty=_qty_str(abs(delta)),
+                    symbol=symbol, side=_close_side(tgt_side), qty=_canon_qty_str(abs(delta), step),
                     intent=nx.INTENT_REDUCE, reduce_only=True, action_seq=seq,
                     source_reference="target_reduce")); seq += 1
             continue
@@ -475,7 +495,7 @@ def _diff_positions(targets: Mapping[str, Mapping[str, Any]],
             intent=nx.INTENT_CLOSE, reduce_only=True, action_seq=seq,
             source_reference="target_flip_close")); seq += 1
         actions.append(nx.StrategyNativeAction(
-            symbol=symbol, side=_open_side(tgt_side), qty=_qty_str(tgt_qty),
+            symbol=symbol, side=_open_side(tgt_side), qty=_canon_qty_str(tgt_qty, step),
             intent=nx.INTENT_OPEN, reduce_only=False, action_seq=seq,
             source_reference="target_flip_open")); seq += 1
     return actions

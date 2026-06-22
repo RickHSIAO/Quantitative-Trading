@@ -9755,3 +9755,71 @@ Files changed (committed):
   MOD  README.md                                            (TASK-014CA shared status)
   MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CA block)
   MOD  docs/research/commands/COMMAND_LOG.md                (this entry)
+
+---
+
+### TASK-014CB_DEMO_SEND_PATH_SINGLE_TINY_ORDER_GATE_AND_PLAN_AUDIT_HARDENING
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** 009c633
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  The V1 planner legitimately emits the full 50-target portfolio (50 OPEN actions
+  at 200 USDT each) as research/translation output. The prior send path called
+  orchestrate_native_daily -> execute_daily_native(actions=plan.actions), which
+  iterated and POSTed every action. This task forbids that: planning and execution
+  are now separated by an explicit fail-closed execution gate.
+
+  New src/demo_strategy_pilot_execution_gate.py: the raw multi-action plan can never
+  be iterated/submitted. Execution requires exactly one explicitly fingerprinted
+  (run date / pilot / symbol / side / intent / reduce_only / canonical qty / notional
+  / source ref / forward fingerprint) + marker-authorized, cap-compliant, non-protected
+  NEW-opening candidate, with no blocking protected legacy positions and a resolvable
+  strictest policy. Selection by list position / action_seq is impossible.
+
+  Effective policy = strictest approved source: SAFETY_POLICY (10 USDT) vs tiny adapter
+  (5 USDT) -> 5; per-order/daily cap 5, max 1 simultaneous position, max 1 new-opening/
+  day, averaging forbidden. Irreconcilable -> POLICY_CONFLICT_REQUIRES_REVIEW.
+
+  Two protected open positions (EDUUSDT short, POLYXUSDT short) block new opening:
+  policy does not define whether protected legacy positions count toward the
+  simultaneous limit -> real VPS result NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_
+  POSITIONS. Protected positions untouched; protected symbols never become candidates
+  or CLOSE/REDUCE targets.
+
+  Target vs execution notional separated: strategy_target_notional_usdt=200,
+  execution_authorized_notional_usdt=null (unauthorized), tiny_execution_cap_usdt=5,
+  cap_compliance_status=TARGET_EXCEEDS_TINY_CAP. V1 weight never renormalized.
+
+  Canonical Decimal qty (exact qty_step multiple, floored): emits 110.6 not
+  110.60000000000001; no binary-float artifact reaches payload/JSON. Planner qty
+  serialization also canonicalized via qty_step (value unchanged).
+
+  Audit corrected: matched_instrument_rule_count = requested-target matches (VPS 50),
+  instrument_rule_cache_count = full catalog (690) reported separately. Real network
+  accounting: instrument_metadata_public_get_count, ticker_public_get_count (one per
+  distinct symbol, cached), wallet/positions private GET counts; order/amend/cancel
+  POST and live endpoint all zero.
+
+  Status taxonomy: plan-only stays PLAN_ONLY_READ_ONLY_DEMO_NETWORK but emits
+  plan_valid=true, execution_authorized=false, execution_ready=false,
+  send_path_refused=true. No status implies a raw plan is safe to execute as-is.
+
+  Tests: focused 38 passed (new gate file); demo regression 9114 passed (1 pre-existing
+  unrelated emergency_close failure); existing one-shot tiny adapter safety tests pass.
+  0 order/amend/cancel POST, 0 live endpoint, 0 Demo order sent, 0 Pilot advancement.
+
+VPS Plan-only verification (no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py \r
+    --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  NEW  src/demo_strategy_pilot_execution_gate.py            (fail-closed single-tiny-order gate)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py      (orchestrate_gated_send + audit fixes)
+  MOD  src/demo_strategy_pilot_action_planner.py            (canonical Decimal qty serialization)
+  NEW  tests/demo_trading/test_demo_strategy_pilot_execution_gate.py (38 tests)
+  MOD  README.md                                            (TASK-014CB shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CB block)
+  MOD  docs/research/commands/COMMAND_LOG.md                (this entry)
