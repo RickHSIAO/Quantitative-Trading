@@ -66,6 +66,7 @@ EXIT_PLANNER_UNAVAILABLE = 5
 EXIT_AMBIGUOUS = 6
 EXIT_V1_SIZING_UNVERIFIED = 7
 EXIT_V1_CAPITAL_BASE_UNVERIFIED = 8
+EXIT_V1_CAPITAL_BASE_CONFLICT = 9
 
 
 # ---------------------------------------------------------------------------
@@ -204,11 +205,13 @@ def orchestrate_native_daily(
     if plan is None:
         plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
     # Fail closed: never execute while V1 baseline sizing or capital base is unproven.
+    _refuse_statuses = (planner.STATUS_V1_BASELINE_SIZING_UNVERIFIED,
+                        planner.STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED,
+                        planner.STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT)
     if not plan.available or not plan.sizing_verification.get("verified", False):
         return {"status": plan.status, "pilot_id": pilot_id, "date": date,
                 "detail": plan.detail, "planner": plan.to_dict(),
-                "send_refused": plan.status in (planner.STATUS_V1_BASELINE_SIZING_UNVERIFIED,
-                                                planner.STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED),
+                "send_refused": plan.status in _refuse_statuses,
                 "live_trading_authorized": False}
 
     result = nx.execute_daily_native(pilot_id=pilot_id, date=date, actions=plan.actions,
@@ -303,14 +306,22 @@ def main(argv: list[str] | None = None) -> int:
     # Plan-only (default): derive + classify, send nothing.
     if not args.send_orders_to_demo:
         provider = _build_production_provider()
+        provider_built = provider is not None
         plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
-        plan_label = ("PLAN_ONLY_READ_ONLY_DEMO" if provider is not None
-                      else "PLAN_ONLY_NO_NETWORK")
+        plan_label = ("PLAN_ONLY_READ_ONLY_DEMO_NETWORK" if provider_built
+                      else plan.status)
         out = {"status": plan_label if plan.available else plan.status,
                "pilot_id": args.pilot_id, "date": args.date, "planner": plan.to_dict(),
                "detail": "plan preview only; pass --send-orders-to-demo to execute on Bybit Demo",
+               "network_attempted": provider_built,
+               "read_only_network": provider_built,
+               "order_endpoint_called": False,
+               "order_post_count": 0,
+               "live_endpoint_called": False,
                "live_trading_authorized": False}
         print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
+        if plan.status == planner.STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT:
+            return EXIT_V1_CAPITAL_BASE_CONFLICT
         if plan.status == planner.STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED:
             return EXIT_V1_CAPITAL_BASE_UNVERIFIED
         return EXIT_OK if plan.available else EXIT_PLANNER_UNAVAILABLE
@@ -324,8 +335,15 @@ def main(argv: list[str] | None = None) -> int:
     provider = _build_production_provider()
 
     # Pre-verify V1 baseline sizing + capital base BEFORE constructing the order
-    # transport. The send path REFUSES while either is unverified.
+    # transport. The send path REFUSES while either is unverified or conflicting.
     plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
+    if plan.status == planner.STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT:
+        print(json.dumps({"status": planner.STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT,
+                          "pilot_id": args.pilot_id, "date": args.date, "send_refused": True,
+                          "detail": "V1 capital base sources disagree; no order sent",
+                          "planner": plan.to_dict(), "live_trading_authorized": False},
+                         ensure_ascii=False, indent=2, sort_keys=True))
+        return EXIT_V1_CAPITAL_BASE_CONFLICT
     if plan.status == planner.STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED:
         print(json.dumps({"status": planner.STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED,
                           "pilot_id": args.pilot_id, "date": args.date, "send_refused": True,

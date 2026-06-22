@@ -1,4 +1,4 @@
-"""TASK-014BX_FIX / TASK-014BY_FIX / TASK-014BY_FIX2 -- canonical action planner.
+"""TASK-014BX_FIX / BY_FIX / BY_FIX2 / BY_FIX3 -- canonical action planner.
 
 ACTIVE V1 EXECUTION PATH = exact V1 baseline target-weight translation.
 
@@ -13,21 +13,25 @@ Forward Record implementation):
     = +0.5, short_weight_sum = -0.5, gross_exposure = 1.0, net_exposure ~ 0).
 
 V1 sizes by the strategy's TARGET WEIGHT against a FROZEN CAPITAL BASE (10,000
-USDT from ``PaperTradingConfig.initial_nav_usd``), NOT by 0.4 fractional Kelly
-and NOT by Demo wallet equity. This planner reproduces V1 exactly as an
-EXECUTION TRANSLATION (not a new sizing strategy):
+USDT), cross-validated from TWO independent authoritative sources:
+
+    Source A: PaperTradingConfig.initial_nav_usd  (frozen config default)
+    Source B: paper_portfolio/state.json  paper_equity_init  (runtime artifact)
+
+Both must be readable, valid (>0, finite), and must agree exactly. A mismatch
+fails closed ``V1_BASELINE_CAPITAL_BASE_CONFLICT``; a missing or unreadable
+source fails closed ``V1_BASELINE_CAPITAL_BASE_UNVERIFIED``. Demo wallet equity
+never participates in resolving the capital base.
 
     target_weight   <- authoritative Forward positions artifact (signed)
-    capital_base    <- PaperTradingConfig.initial_nav_usd (frozen; NOT wallet equity)
+    capital_base    <- cross-validated evidence (NOT wallet equity)
     target_notional <- target_weight * capital_base
     target_qty      <- |target_notional| / current Demo price, floored to qty step
     transitions     <- compare target vs current Demo positions -> OPEN/ADD/REDUCE/CLOSE
 
 The 0.4 fractional-Kelly sizer (src/demo_portfolio_risk.compute_demo_portfolio_sizing)
 is DELIBERATELY NOT imported or called here; it remains available only for
-OFFLINE / SHADOW Challenger experiments. If V1 sizing semantics or capital base
-cannot be proven, the planner fails closed (``V1_BASELINE_SIZING_UNVERIFIED`` /
-``V1_BASELINE_CAPITAL_BASE_UNVERIFIED``) and the send path must refuse.
+OFFLINE / SHADOW Challenger experiments.
 
 No artificial Pilot order/notional/position caps are applied. Protected symbols
 are rejected; Demo-only endpoint and Live-denied guards are enforced downstream.
@@ -37,7 +41,10 @@ src.risk nor the live BybitExecutor.
 
 from __future__ import annotations
 
+import hashlib
+import json as _json
 import math
+import pathlib as _pathlib
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Mapping, Protocol, Sequence
@@ -46,17 +53,20 @@ from src import demo_strategy_pilot_native_execution as nx
 from src.demo_instrument_rules import InstrumentRules, round_qty_down
 from src.demo_portfolio_risk import DemoOpenPosition  # type only (NOT the Kelly sizer)
 
-TASK_ID = "TASK-014BY_FIX2"
+TASK_ID = "TASK-014BY_FIX3"
 
 # Proof references for the active V1 sizing semantics.
 V1_SIZING_MODE = "V1_BASELINE_TARGET_WEIGHT_TRANSLATION"
 V1_SIZING_PROOF = (
     "apps/forward_record/primary.py: position_usd = weight * paper_config.initial_nav_usd; "
-    "paper_portfolio/state.json: position_usd/weight == initial_nav_usd for all positions"
+    "paper_portfolio/state.json: paper_equity_init cross-validated against config"
 )
-V1_CAPITAL_BASE_SOURCE = (
-    "apps.paper_trading.config.PaperTradingConfig.initial_nav_usd (frozen default)"
+
+_MODULE_ROOT = _pathlib.Path(__file__).resolve().parents[1]
+DEFAULT_STATE_ARTIFACT_PATH = str(
+    _MODULE_ROOT / "outputs" / "forward_record" / "paper_portfolio" / "state.json"
 )
+_CONFIG_SOURCE_IDENTITY = "apps.paper_trading.config.PaperTradingConfig.initial_nav_usd"
 
 PROTECTED_SYMBOLS = frozenset(nx.PROTECTED_SYMBOLS)
 
@@ -64,6 +74,7 @@ STATUS_PLANNED = "STRATEGY_NATIVE_ACTIONS_PLANNED"
 STATUS_PLANNER_UNAVAILABLE = "STRATEGY_NATIVE_ACTION_PLANNER_UNAVAILABLE"
 STATUS_V1_BASELINE_SIZING_UNVERIFIED = "V1_BASELINE_SIZING_UNVERIFIED"
 STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED = "V1_BASELINE_CAPITAL_BASE_UNVERIFIED"
+STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT = "V1_BASELINE_CAPITAL_BASE_CONFLICT"
 
 # Parity tolerance for verifying the strategy target survives translation.
 _GROSS_NET_TOLERANCE = 1e-6
@@ -131,18 +142,105 @@ def _qty_str(value: float) -> str:
     return format(Decimal(str(value)).normalize(), "f")
 
 
-def resolve_v1_capital_base() -> tuple[float, str] | None:
-    """Resolve the frozen V1 strategy capital base from the authoritative Forward config.
+def resolve_v1_capital_base_evidence(
+    *,
+    state_artifact_path: str | None = None,
+    config_value_override: float | None = None,
+    state_value_override: float | None = None,
+) -> dict[str, Any]:
+    """Cross-validate V1 capital base from config + state artifact.
 
-    Returns ``(capital_base_usd, source_description)`` or ``None`` (fail closed)."""
-    try:
-        from apps.paper_trading.config import PaperTradingConfig
-        base = float(PaperTradingConfig().initial_nav_usd)
-        if base > 0 and math.isfinite(base):
-            return (base, V1_CAPITAL_BASE_SOURCE)
-    except Exception:  # noqa: BLE001
-        pass
-    return None
+    Production: both sources must be readable, valid (>0, finite), and agree
+    exactly. A mismatch sets ``sources_agree=False`` (CONFLICT). A missing or
+    unreadable source leaves ``capital_base_verified=False`` (UNVERIFIED).
+    Tests may inject overrides via ``config_value_override`` / ``state_value_override``.
+    """
+    if state_artifact_path is None:
+        state_artifact_path = DEFAULT_STATE_ARTIFACT_PATH
+
+    evidence: dict[str, Any] = {
+        "capital_base_usd": None,
+        "capital_base_verified": False,
+        "capital_base_source_count": 0,
+        "capital_base_sources": [],
+        "config_source_identity": _CONFIG_SOURCE_IDENTITY,
+        "config_source_fingerprint": None,
+        "config_value_usd": None,
+        "state_artifact_path": state_artifact_path,
+        "state_artifact_fingerprint": None,
+        "state_value_usd": None,
+        "evidence_bundle_fingerprint": None,
+        "sources_agree": False,
+        "wallet_used_for_target_sizing": False,
+        "kelly_used": False,
+    }
+
+    # Source A: PaperTradingConfig.initial_nav_usd
+    config_value = config_value_override
+    if config_value is None:
+        try:
+            from apps.paper_trading.config import PaperTradingConfig
+            config_value = float(PaperTradingConfig().initial_nav_usd)
+        except Exception:  # noqa: BLE001
+            pass
+    if config_value is not None:
+        config_repr = f"{_CONFIG_SOURCE_IDENTITY}={config_value!r}"
+        evidence["config_source_fingerprint"] = "sha256:" + hashlib.sha256(
+            config_repr.encode("utf-8")).hexdigest()
+        evidence["config_value_usd"] = config_value
+
+    # Source B: state.json paper_equity_init
+    state_value = state_value_override
+    if state_value is None:
+        try:
+            state_bytes = _pathlib.Path(state_artifact_path).read_bytes()
+            evidence["state_artifact_fingerprint"] = "sha256:" + hashlib.sha256(
+                state_bytes).hexdigest()
+            state_data = _json.loads(state_bytes)
+            state_value = float(state_data["paper_equity_init"])
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        synthetic_repr = f"paper_equity_init={state_value!r}"
+        evidence["state_artifact_fingerprint"] = "sha256:" + hashlib.sha256(
+            synthetic_repr.encode("utf-8")).hexdigest()
+    if state_value is not None:
+        evidence["state_value_usd"] = state_value
+
+    # Count valid sources
+    sources: list[str] = []
+    config_valid = (config_value is not None and config_value > 0
+                    and math.isfinite(config_value))
+    state_valid = (state_value is not None and state_value > 0
+                   and math.isfinite(state_value))
+    if config_valid:
+        sources.append("config")
+    if state_valid:
+        sources.append("state_artifact")
+    evidence["capital_base_source_count"] = len(sources)
+    evidence["capital_base_sources"] = sources
+
+    # Cross-validate: both must be readable, valid, and agree
+    if config_valid and state_valid:
+        if config_value == state_value:
+            evidence["sources_agree"] = True
+            evidence["capital_base_usd"] = config_value
+            evidence["capital_base_verified"] = True
+        else:
+            evidence["sources_agree"] = False
+
+    # Deterministic evidence_bundle_fingerprint
+    fp_input = _json.dumps({
+        "config_source_identity": evidence["config_source_identity"],
+        "config_source_fingerprint": evidence["config_source_fingerprint"],
+        "config_value_usd": evidence["config_value_usd"],
+        "state_artifact_fingerprint": evidence["state_artifact_fingerprint"],
+        "state_value_usd": evidence["state_value_usd"],
+    }, sort_keys=True, separators=(",", ":"))
+    evidence["evidence_bundle_fingerprint"] = "sha256:" + hashlib.sha256(
+        fp_input.encode("utf-8")).hexdigest()
+
+    return evidence
 
 
 def _signed_weight(side_ls: str, score: Any) -> float | None:
@@ -160,45 +258,71 @@ def plan_strategy_native_actions(
     *,
     forward_result: Any,
     provider: PilotAccountMarketProvider | None,
+    capital_base_evidence: dict[str, Any] | None = None,
     v1_capital_base_usd: float | None = None,
     full_kelly_fraction: float | None = None,  # accepted for back-compat; IGNORED (V1 != Kelly)
 ) -> PlannerResult:
     """Produce V1-baseline strategy-native actions for a date.
 
-    Target sizing uses the frozen V1 strategy capital base (resolved from the
-    authoritative Forward config, NOT the Demo wallet equity).  Demo wallet
-    equity is read for reference only and is never used to scale target
-    positions.
+    Target sizing uses the frozen V1 strategy capital base, cross-validated from
+    two independent authoritative sources. Demo wallet equity is read for
+    reference only and is never used to scale target positions.
 
-    Fails closed STRATEGY_NATIVE_ACTION_PLANNER_UNAVAILABLE on missing provider,
-    V1_BASELINE_CAPITAL_BASE_UNVERIFIED when the capital base cannot be resolved,
-    and V1_BASELINE_SIZING_UNVERIFIED when a signed target weight cannot be proven.
+    Fails closed with CAPITAL_BASE_UNVERIFIED when a source is missing/invalid,
+    CAPITAL_BASE_CONFLICT when sources disagree, SIZING_UNVERIFIED when target
+    weights cannot be proven, PLANNER_UNAVAILABLE on missing provider.
     """
-    empty_verif = {"verified": False, "sizing_mode": V1_SIZING_MODE, "kelly_used": False,
-                   "proof": V1_SIZING_PROOF, "wallet_used_for_target_sizing": False}
+    empty_verif: dict[str, Any] = {
+        "verified": False, "sizing_mode": V1_SIZING_MODE, "kelly_used": False,
+        "proof": V1_SIZING_PROOF, "wallet_used_for_target_sizing": False}
     if provider is None:
         return PlannerResult(STATUS_PLANNER_UNAVAILABLE, [], [], [], [], empty_verif,
                              "no account/market provider available")
 
-    # Resolve V1 capital base (frozen strategy capital, NOT Demo wallet).
-    if v1_capital_base_usd is not None:
+    # Resolve V1 capital base evidence (frozen strategy capital, NOT Demo wallet).
+    if v1_capital_base_usd is not None and capital_base_evidence is None:
         if not (v1_capital_base_usd > 0 and math.isfinite(v1_capital_base_usd)):
             return PlannerResult(STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED, [], [], [], [],
                                  empty_verif, "explicit v1_capital_base_usd invalid")
-        capital_source = "explicit_parameter"
-    else:
-        resolved = resolve_v1_capital_base()
-        if resolved is None:
-            return PlannerResult(STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED, [], [], [], [],
-                                 empty_verif,
-                                 "V1 capital base unresolvable from Forward config; send path must refuse")
-        v1_capital_base_usd, capital_source = resolved
+        capital_base_evidence = {
+            "capital_base_usd": v1_capital_base_usd,
+            "capital_base_verified": True,
+            "capital_base_source_count": 1,
+            "capital_base_sources": ["explicit_parameter"],
+            "config_source_identity": "explicit_parameter",
+            "config_source_fingerprint": None,
+            "config_value_usd": v1_capital_base_usd,
+            "state_artifact_path": None,
+            "state_artifact_fingerprint": None,
+            "state_value_usd": None,
+            "evidence_bundle_fingerprint": None,
+            "sources_agree": True,
+            "wallet_used_for_target_sizing": False,
+            "kelly_used": False,
+        }
+    elif capital_base_evidence is None:
+        capital_base_evidence = resolve_v1_capital_base_evidence()
+
+    if not capital_base_evidence.get("capital_base_verified"):
+        src_count = capital_base_evidence.get("capital_base_source_count", 0)
+        if src_count >= 2 and not capital_base_evidence.get("sources_agree"):
+            status = STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT
+            detail = (f"V1 capital base sources disagree: config={capital_base_evidence.get('config_value_usd')}"
+                      f" vs state={capital_base_evidence.get('state_value_usd')}; send path must refuse")
+        else:
+            status = STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED
+            detail = "V1 capital base cannot be verified from authoritative sources; send path must refuse"
+        return PlannerResult(status, [], [], [], [],
+                             {**empty_verif, **capital_base_evidence}, detail)
+
+    v1_capital_base_usd = capital_base_evidence["capital_base_usd"]
 
     signals = list(getattr(forward_result, "normalized_signals", None)
                    or (forward_result.get("signals") if isinstance(forward_result, Mapping) else []))
 
     try:
         wallet_equity = float(provider.equity_usd())
+        wallet_available = float(provider.available_balance_usd())
         open_positions = list(provider.open_positions())
     except Exception as exc:  # noqa: BLE001
         return PlannerResult(STATUS_PLANNER_UNAVAILABLE, [], [], [], [], empty_verif,
@@ -259,13 +383,11 @@ def plan_strategy_native_actions(
     sizing_verification = {
         "verified": verified,
         "sizing_mode": V1_SIZING_MODE,
-        "kelly_used": False,
         "proof": V1_SIZING_PROOF,
         "weight_source": "forward_positions_artifact_signed_weight",
-        "capital_base_usd": v1_capital_base_usd,
-        "capital_base_source": capital_source,
-        "wallet_used_for_target_sizing": False,
+        **capital_base_evidence,
         "demo_wallet_equity_usd": wallet_equity,
+        "demo_available_balance_usd": wallet_available,
         "long_target_exposure": long_exp,
         "short_target_exposure": short_exp,
         "gross_target_exposure": gross_exp,
@@ -350,9 +472,10 @@ def _diff_positions(targets: Mapping[str, Mapping[str, Any]],
 
 
 __all__ = [
-    "PROTECTED_SYMBOLS", "PilotAccountMarketProvider", "PlannerResult", "STATUS_PLANNED",
-    "STATUS_PLANNER_UNAVAILABLE", "STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED",
-    "STATUS_V1_BASELINE_SIZING_UNVERIFIED", "TASK_ID", "V1_CAPITAL_BASE_SOURCE",
+    "DEFAULT_STATE_ARTIFACT_PATH", "PROTECTED_SYMBOLS", "PilotAccountMarketProvider",
+    "PlannerResult", "STATUS_PLANNED", "STATUS_PLANNER_UNAVAILABLE",
+    "STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT", "STATUS_V1_BASELINE_CAPITAL_BASE_UNVERIFIED",
+    "STATUS_V1_BASELINE_SIZING_UNVERIFIED", "TASK_ID",
     "V1_SIZING_MODE", "V1_SIZING_PROOF", "plan_strategy_native_actions",
-    "resolve_v1_capital_base",
+    "resolve_v1_capital_base_evidence",
 ]

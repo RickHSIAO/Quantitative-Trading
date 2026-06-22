@@ -1,28 +1,21 @@
 # Next Action
 
-> README shared status updated by TASK-014BY_FIX2 (2026-06-22).
-> **`PILOT RUNNING 0/7 / NO STRATEGY DEMO ORDER SENT / FIRST EXECUTION BLOCKED UNTIL V1 SIZING PARITY VERIFIED / LIVE TRADING NOT AUTHORIZED`**
-> Fix commit on 0990bd1 separating V1 strategy capital base from Demo wallet equity.
+> README shared status updated by TASK-014BY_FIX3 (2026-06-22).
+> **`PILOT RUNNING 0/7 / V1 CAPITAL BASE VERIFIED BY MATCHING AUTHORITATIVE SOURCES / DEMO WALLET DOES NOT SCALE TARGETS / NO STRATEGY DEMO ORDER SENT / LIVE TRADING NOT AUTHORIZED`**
+> Fix commit on top of ddff19a adding cross-validated V1 capital base evidence and plan-only network audit fields.
 >
-> - **Pilot remains RUNNING but 0/7;** no strategy Demo order has been sent; no accepted Pilot date.
-> - **V1 capital base separated from Demo wallet equity:** the planner now sizes targets using the FROZEN
->   strategy capital base `PaperTradingConfig.initial_nav_usd = 10,000 USDT` (resolved via
->   `resolve_v1_capital_base()`), NOT the Bybit Demo wallet equity. Demo wallet equity is recorded for
->   reference only (`sizing_verification.demo_wallet_equity_usd`) and is NEVER used to scale target positions.
->   `target_notional = target_weight × capital_base` (not wallet equity).
-> - **Fail-closed capital base gate:** new status `V1_BASELINE_CAPITAL_BASE_UNVERIFIED` (EXIT code 8) blocks
->   the send path when the capital base cannot be resolved from the Forward config. The send path now
->   refuses on EITHER `V1_BASELINE_SIZING_UNVERIFIED` OR `V1_BASELINE_CAPITAL_BASE_UNVERIFIED`.
-> - **Sizing verification provenance:** `capital_base_usd`, `capital_base_source`,
->   `wallet_used_for_target_sizing: false`, `demo_wallet_equity_usd` in every plan result.
-> - **Plan-only network label fix:** plan-only status is now `PLAN_ONLY_READ_ONLY_DEMO` when the provider
->   is built (real Demo reads), or `PLAN_ONLY_NO_NETWORK` when provider construction fails.
-> - **Wallet independence tests:** parametrized (100K/20K/50K/1M wallet equity) prove notional is always
->   `weight × 10,000` regardless of wallet balance; capital provenance fields verified; invalid/zero/negative/
->   inf capital base → fail closed; orchestrator refuses send on capital base unverified.
+> - **Pilot remains RUNNING but 0/7;** no strategy Demo order sent; no accepted Pilot date.
+> - **Cross-validated capital base evidence:** `resolve_v1_capital_base_evidence()` reads TWO independent
+>   authoritative sources: (A) `PaperTradingConfig.initial_nav_usd`, (B) `state.json` `paper_equity_init`.
+>   Both must be readable, valid (>0, finite), and agree exactly. Disagreement → CONFLICT (EXIT 9);
+>   missing/unreadable → UNVERIFIED (EXIT 8). Evidence bundle includes SHA-256 fingerprints of both sources
+>   and a deterministic `evidence_bundle_fingerprint`.
+> - **Plan-only audit fields:** `PLAN_ONLY_READ_ONLY_DEMO_NETWORK`, `network_attempted`, `read_only_network`,
+>   `order_endpoint_called: false`, `order_post_count: 0`, `live_endpoint_called: false`,
+>   `live_trading_authorized: false`. Provider failure reported truthfully (no fabricated NO_NETWORK).
 > - Active V1 unchanged; Kelly not in active path; challengers unselected; Live unauthorized.
 >
-> Validation (offline): py_compile PASS; focused strategy_selection + native 81 passed; 0 real HTTP, 0 Bybit, 0 orders.
+> Validation (offline): py_compile PASS; focused strategy_selection + native 111 passed; 0 real HTTP, 0 Bybit, 0 orders.
 
 ---
 

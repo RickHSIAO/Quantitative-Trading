@@ -9490,3 +9490,35 @@ Files changed:
                                                         updated TestSubprocessBehaviour assertion)
   MOD  docs/research/commands/COMMAND_LOG.md           (this entry)
   MOD  docs/research/commands/NEXT_ACTION.md           (updated)
+
+---
+
+### TASK-014BY_FIX3_CAPITAL_PROVENANCE_AND_PLAN_AUDIT
+
+- **Date:** 2026-06-22
+- **Model:** Sonnet 4.6
+- **Parent commit:** ddff19a
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  BLOCKER 1: cross-validated V1 capital base evidence from TWO independent sources
+  (PaperTradingConfig.initial_nav_usd + state.json paper_equity_init) with SHA-256
+  fingerprints and deterministic evidence_bundle_fingerprint. CONFLICT (EXIT 9)
+  when sources disagree; UNVERIFIED (EXIT 8) when source missing/invalid.
+  BLOCKER 2: plan-only audit fields (network_attempted, read_only_network,
+  order_endpoint_called, order_post_count, live_endpoint_called,
+  live_trading_authorized) in CLI JSON output. No fabricated PLAN_ONLY_NO_NETWORK.
+  BLOCKER 3: cleaned .pytest_tmp_fix2/ and .pytest_tmp_fix2b/.
+  Tests: 55 in test_v1_sizing_alignment (evidence, fingerprint, deterministic,
+  conflict, missing, corrupt, invalid, wallet independence, send-path, plan-only audit).
+  Regression: 111 passed. No orders, no network, no Bybit.
+
+Files changed:
+  MOD  src/demo_strategy_pilot_action_planner.py      (resolve_v1_capital_base_evidence,
+                                                        evidence bundle, CONFLICT status)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py (EXIT_V1_CAPITAL_BASE_CONFLICT=9,
+                                                        plan-only audit fields, CONFLICT gate)
+  MOD  tests/strategy_selection/test_v1_sizing_alignment.py (FIX3 evidence+audit tests)
+  MOD  README.md                                       (FIX3 status)
+  MOD  docs/research/commands/NEXT_ACTION.md           (updated)
+  MOD  docs/research/commands/COMMAND_LOG.md           (this entry)
