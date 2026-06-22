@@ -1,4 +1,4 @@
-"""TASK-014BZ_FIX -- holding-period vs fresh-daily-risk metrics + corrected scorecard.
+"""TASK-014BZ_FIX2 -- holding-period vs fresh-daily-risk metrics + corrected scorecard.
 
 Keeps two scopes strictly separate:
   * Holding-period: the +6.077668% 30-calendar-day cumulative return and end NAV
@@ -21,7 +21,7 @@ from src.strategy_selection import paper_portfolio_performance as pp
 from src.strategy_selection import price_freshness as pf
 from src.strategy_selection import ledger_fix_semantics as lfs
 
-TASK_ID = "TASK-014BZ_FIX"
+TASK_ID = "TASK-014BZ_FIX2"
 
 # Corrected overall labels.
 KEEP_BASELINE_PROVISIONAL = "KEEP_BASELINE_PROVISIONAL"
@@ -46,6 +46,10 @@ SUPERSEDED = [
      "reason": "scored zero-valued Forward dry-run snapshot JSON"},
     {"task": "TASK-014BZ", "invalid_label": "REJECT_DATA_INCOMPLETE",
      "reason": "false-positive from the wrong prior-NAV compounding continuity check"},
+    {"task": "TASK-014BZ_FIX",
+     "invalid_interpretation": "20260605 treated as a single-row replacement rather than "
+                               "an incremental same-date chain",
+     "superseded_by": "TASK-014BZ_FIX2"},
 ]
 
 
@@ -58,9 +62,9 @@ def compute_holding_period_metrics(
     official_rows: Sequence[pp.PerformanceRow], *, paper_equity_init: float,
 ) -> dict[str, Any]:
     if not official_rows:
-        return {"calendar_days": 0, "cumulative_return_decimal": None, "end_nav_usd": None,
-                "observed_mark_drawdown_decimal": None, "drawdown_status": OBSERVED_MARK_DRAWDOWN,
-                "note": "no official rows"}
+        return {"task_id": TASK_ID, "calendar_days": 0, "cumulative_return_decimal": None,
+                "end_nav_usd": None, "observed_mark_drawdown_decimal": None,
+                "drawdown_status": OBSERVED_MARK_DRAWDOWN, "note": "no official rows"}
     last = official_rows[-1]
     peak = -math.inf
     max_dd = 0.0
@@ -69,6 +73,7 @@ def compute_holding_period_metrics(
         if peak > 0:
             max_dd = min(max_dd, r.nav_usd / peak - 1.0)
     return {
+        "task_id": TASK_ID,
         "scope": "CALENDAR_HOLDING_PERIOD",
         "calendar_days": len(official_rows),
         "start_date": pp._iso(official_rows[0].date),
@@ -99,6 +104,7 @@ def compute_fresh_daily_risk(
     fresh_rows = [r for r in official_rows if r.date in fresh_dates]
     count = len(fresh_rows)
     base = {
+        "task_id": TASK_ID,
         "scope": "FRESH_ONE_DAY_RISK",
         "fresh_daily_observation_count": count,
         "min_fresh_daily_observations": min_fresh,
@@ -174,13 +180,15 @@ def compute_extension_metrics(
     freshness: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not extension_rows:
-        return {"extension_count": 0, "extension_latest_cumulative_return_from_initial": None,
+        return {"task_id": TASK_ID, "extension_count": 0,
+                "extension_latest_cumulative_return_from_initial": None,
                 "extension_period_return": None, "fresh_daily_observation_count": 0, "robust": False}
     last = extension_rows[-1]
     fresh_dates = set((freshness or {}).get("fresh_daily_dates", []))
     fresh_in_ext = sum(1 for r in extension_rows if r.date in fresh_dates)
     period_ret = (last.nav_usd / official_end_nav - 1.0) if official_end_nav else None
     return {
+        "task_id": TASK_ID,
         "extension_start": pp._iso(extension_rows[0].date),
         "extension_end": pp._iso(last.date),
         "extension_count": len(extension_rows),

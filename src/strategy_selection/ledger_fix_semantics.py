@@ -1,4 +1,4 @@
-"""TASK-014BZ_FIX / FIX2 -- fixed-capital additive ledger semantics + duplicate
+"""TASK-014BZ_FIX2 -- fixed-capital additive ledger semantics + duplicate
 canonicalization.
 
 The authoritative Paper Portfolio ledger is additive on FIXED initial capital, not
@@ -27,7 +27,7 @@ from typing import Any, Sequence
 
 from src.strategy_selection import paper_portfolio_performance as pp
 
-TASK_ID = "TASK-014BZ_FIX"
+TASK_ID = "TASK-014BZ_FIX2"
 
 # --- Additive fixed-capital semantic statuses ------------------------------
 ADDITIVE_NAV_VALID = "ADDITIVE_NAV_VALID"

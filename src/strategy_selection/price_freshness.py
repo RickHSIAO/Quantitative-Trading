@@ -1,4 +1,4 @@
-"""TASK-014BZ_FIX -- stale-cache vs fresh-mark vs multi-day catch-up classification.
+"""TASK-014BZ_FIX2 -- stale-cache vs fresh-mark vs multi-day catch-up classification.
 
 Daily mark freshness is derived from the STRUCTURAL positions artifacts
 (``prev3y_crypto/<date>_positions.parquet`` -> a deterministic price-vector
@@ -23,7 +23,7 @@ import json
 import pathlib
 from typing import Any, Mapping, Sequence
 
-TASK_ID = "TASK-014BZ_FIX"
+TASK_ID = "TASK-014BZ_FIX2"
 
 ENTRY_PRICE_ANCHOR = "ENTRY_PRICE_ANCHOR"
 STALE_CACHE_NO_PRICE_CHANGE = "STALE_CACHE_NO_PRICE_CHANGE"

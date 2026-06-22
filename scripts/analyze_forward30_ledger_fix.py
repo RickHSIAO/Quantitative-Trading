@@ -1,16 +1,15 @@
-"""TASK-014BZ_FIX -- corrected ledger-semantics + stale-mark strategy analysis.
+"""TASK-014BZ_FIX2 -- corrected ledger-semantics + stale-mark strategy analysis.
 
-Supersedes TASK-014BY (zero-return dry-run analysis) and TASK-014BZ (false
-REJECT_DATA_INCOMPLETE from the wrong prior-NAV compounding continuity check).
-Reads the raw append-only Paper Portfolio ledger, canonicalizes duplicate dates
-(without mutating the raw file), validates the additive fixed-capital semantics,
-classifies daily-mark freshness, and reports two separate scopes (calendar
-holding-period vs fresh one-day risk). Read-only; offline; no Bybit / network /
-order; no Pilot or V1 mutation.
+Supersedes TASK-014BY, TASK-014BZ and TASK-014BZ_FIX. Reads the raw append-only
+Paper Portfolio ledger, canonicalizes duplicate dates (including same-date
+incremental rerun chains, without mutating the raw file), validates the additive
+fixed-capital semantics, classifies daily-mark freshness, and reports two
+separate scopes (calendar holding-period vs fresh one-day risk). Read-only;
+offline; no Bybit / network / order; no Pilot or V1 mutation.
 
     python scripts/analyze_forward30_ledger_fix.py \
         --input-root outputs/forward_record --run-key prev3y_crypto \
-        --output-root outputs/research/strategy_selection/TASK-014BZ_FIX --json-only
+        --output-root outputs/research/strategy_selection/TASK-014BZ_FIX2 --json-only
 """
 
 from __future__ import annotations
@@ -92,15 +91,14 @@ def build_report_md(*, semantics, duplicate_report, freshness, holding, fresh_ri
                     scorecard, challengers, comparability, hold, raw_count, canonical_count,
                     official_count, sufficient) -> str:
     L: list[str] = []
-    L.append("# TASK-014BZ_FIX Corrected Ledger-Semantics & Stale-Mark Strategy Report")
+    L.append(f"# {lfsc.TASK_ID} Corrected Ledger-Semantics & Stale-Mark Strategy Report")
     L.append("")
     L.append("> **ADDITIVE LEDGER VERIFIED / 20260605 CANONICAL RERUN RESOLVED / 30-CALENDAR-DAY HOLDING "
              "RETURN +6.077668% / DAILY RISK METRICS PROVISIONAL / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS "
              "NOT PROMOTED / LIVE TRADING NOT AUTHORIZED.**")
     L.append("")
-    L.append("Supersedes TASK-014BY (`REJECT_INSUFFICIENT_EDGE`, zero-return dry-run) and TASK-014BZ "
-             "(`REJECT_DATA_INCOMPLETE`, false-positive from the wrong prior-NAV compounding continuity "
-             "check). Both prior runtime outputs are RETAINED, not deleted.")
+    sup_lines = "; ".join(f"TASK {s['task']}" for s in lfsc.SUPERSEDED)
+    L.append(f"Supersedes {sup_lines}. All prior runtime outputs are RETAINED, not deleted.")
     L.append("")
     L.append("## Canonical Ledger Semantics (additive on fixed initial capital)")
     L.append("Relations validated: `nav_t = nav_(t-1) + daily_pnl_usd`; "
@@ -163,8 +161,8 @@ def build_report_md(*, semantics, duplicate_report, freshness, holding, fresh_ri
     L.append(f"- label: **`{scorecard['label']}`** — {scorecard['label_rationale']}")
     for g in scorecard["gates"]:
         L.append(f"  - `{g['gate']}`: **{g['status']}** ({g['detail']})")
-    L.append("- Never `REJECT_DATA_INCOMPLETE` after additive validation. Prior TASK-014BY "
-             "`REJECT_INSUFFICIENT_EDGE` and TASK-014BZ `REJECT_DATA_INCOMPLETE` are superseded.")
+    L.append("- Never `REJECT_DATA_INCOMPLETE` after additive validation. Prior TASK-014BY, "
+             "TASK-014BZ, and TASK-014BZ_FIX are superseded.")
     L.append("")
     L.append("## Primary vs Shadow / Challengers / Hold")
     L.append(f"- primary_shadow_comparable: `{comparability['primary_shadow_comparable']}` — "
@@ -196,7 +194,7 @@ def build_workbook(path, *, semantics, duplicate_report, freshness, holding, fre
             ws.cell(row=r, column=2, value=str(v))
 
     kv(sh["Executive Summary"], [
-        ("task", "TASK-014BZ_FIX"), ("supersedes", "TASK-014BY + TASK-014BZ"),
+        ("task", lfsc.TASK_ID), ("supersedes", " + ".join(s["task"] for s in lfsc.SUPERSEDED)),
         ("ledger_semantics", semantics["overall_status"]),
         ("consistency_failure_count", semantics["consistency_failure_count"]),
         ("scorecard_label", scorecard["label"]),
@@ -356,7 +354,7 @@ def run_analysis(*, input_root: str, run_key: str, output_root: str, pilot_id: s
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="analyze_forward30_ledger_fix.py",
-                                description="TASK-014BZ_FIX corrected ledger-semantics analysis.")
+                                description="TASK-014BZ_FIX2 corrected ledger-semantics analysis.")
     p.add_argument("--input-root", default="outputs/forward_record")
     p.add_argument("--run-key", default="prev3y_crypto")
     p.add_argument("--output-root", required=True)
@@ -372,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.json_only:
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True, default=str))
     else:
-        print(f"TASK-014BZ_FIX -> {result['output_root']}  "
+        print(f"{lfsc.TASK_ID} -> {result['output_root']}  "
               f"[semantics={result['ledger_semantics_status']}, "
               f"failures={result['consistency_failure_count']}]")
         print(f"  canonical rows={result['canonical_performance_row_count']} "

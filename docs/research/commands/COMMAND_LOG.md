@@ -9666,3 +9666,37 @@ Files changed (committed):
   MOD  README.md                                               (TASK-014BZ_FIX2 shared status)
   MOD  docs/research/commands/NEXT_ACTION.md                   (TASK-014BZ_FIX2 block)
   MOD  docs/research/commands/COMMAND_LOG.md                   (this entry)
+
+---
+
+### TASK-014BZ_FIX2A_AUDIT_ID_AND_COMMAND_LOG_VERIFICATION
+
+- **Date:** 2026-06-23
+- **Model:** Sonnet 4.6
+- **Parent commit:** ed91ff1
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Aligned the authoritative task identifier to TASK-014BZ_FIX2 across all
+  generated artifacts. Prior code emitted task_id=TASK-014BZ_FIX even when
+  the output root was TASK-014BZ_FIX2/. Updated TASK_ID constants in
+  ledger_fix_semantics.py, price_freshness.py, and ledger_fix_scorecard.py.
+  Added task_id to holding-period, fresh-daily-risk, and extension metric
+  dicts. Added TASK-014BZ_FIX to the superseded lineage (it treated 20260605
+  as a single-row replacement instead of an incremental same-date chain).
+  Fixed hardcoded strings in CLI markdown report title, executive summary
+  workbook, and console output. Added 5 audit tests proving all JSON artifacts
+  use TASK-014BZ_FIX2, none use the stale ID, superseded lineage is complete,
+  and canonical 20260605 arithmetic is unchanged (-34.4038).
+  Tests: focused 34 passed; strategy_selection + demo 170 passed.
+  0 network calls, 0 Bybit calls, 0 orders sent.
+  COMMAND_LOG verified: parent bytes are exact prefix; suffix has no trailing
+  spaces/tabs; git -c core.whitespace=cr-at-eol diff --check is clean.
+
+Files changed (committed):
+  MOD  src/strategy_selection/ledger_fix_semantics.py      (TASK_ID -> TASK-014BZ_FIX2)
+  MOD  src/strategy_selection/ledger_fix_scorecard.py      (TASK_ID + superseded + task_id in metrics)
+  MOD  src/strategy_selection/price_freshness.py           (TASK_ID -> TASK-014BZ_FIX2)
+  MOD  scripts/analyze_forward30_ledger_fix.py             (hardcoded strings -> lfsc.TASK_ID)
+  MOD  tests/strategy_selection/test_ledger_fix_semantics.py (34 tests, +5 FIX2A audit)
+  MOD  docs/research/commands/COMMAND_LOG.md               (this entry)

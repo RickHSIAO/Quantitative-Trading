@@ -410,7 +410,7 @@ def test_scorecard_supersedes_prior_labels(tmp_path):
     sc = lfsc.score_corrected(semantics=sem, canonicalization_status=canon.status, holding=holding,
                               fresh_risk=risk, official_sufficient=True)
     tasks = {s["task"] for s in sc["supersedes"]}
-    assert tasks == {"TASK-014BY", "TASK-014BZ"}
+    assert tasks == {"TASK-014BY", "TASK-014BZ", "TASK-014BZ_FIX"}
 
 
 def test_zero_challengers_promoted():
@@ -556,3 +556,83 @@ def test_cli_zero_network_and_orders(tmp_path):
     assert result["same_date_incremental_rerun_chain_count"] == 1
     assert result["true_replacement_rerun_count"] == 0
     assert result["extension_period_return"] is not None
+
+
+# ===========================================================================
+# FIX2A — audit identity alignment
+# ===========================================================================
+
+_FIX2_TASK_ID = "TASK-014BZ_FIX2"
+_STALE_TASK_ID = "TASK-014BZ_FIX"
+
+_JSON_ARTIFACTS = [
+    "ledger_semantics.json", "duplicate_resolution.json", "price_freshness.json",
+    "official_holding_period_metrics.json", "fresh_daily_risk_observations.json",
+    "post_validation_extension.json", "corrected_strategy_scorecard.json",
+    "corrected_challenger_hypotheses.json", "primary_shadow_comparability.json",
+    "static_hold_behavior.json", "superseded_notice.json",
+]
+
+
+def _run_cli_and_collect(tmp_path):
+    write_real_shaped_ledger(tmp_path / "fwd" / "paper_portfolio")
+    out = tmp_path / "out"
+    result = cli.run_analysis(input_root=str(tmp_path / "fwd"), run_key="prev3y_crypto",
+                              output_root=str(out), pilot_id="TEST_PILOT")
+    artifacts = {}
+    for name in _JSON_ARTIFACTS:
+        p = out / name
+        if p.exists():
+            artifacts[name] = json.loads(p.read_text(encoding="utf-8"))
+    return result, artifacts, out
+
+
+def test_all_json_artifacts_use_fix2_task_id(tmp_path):
+    """Every generated JSON artifact must contain task_id=TASK-014BZ_FIX2."""
+    result, artifacts, _ = _run_cli_and_collect(tmp_path)
+    assert result["task_id"] == _FIX2_TASK_ID
+    for name, obj in artifacts.items():
+        assert obj.get("task_id") == _FIX2_TASK_ID, f"{name} has wrong task_id: {obj.get('task_id')}"
+
+
+def test_no_artifact_uses_stale_task_id(tmp_path):
+    """No generated artifact should incorrectly use TASK-014BZ_FIX as task_id."""
+    result, artifacts, out = _run_cli_and_collect(tmp_path)
+    assert result["task_id"] != _STALE_TASK_ID
+    for name, obj in artifacts.items():
+        assert obj.get("task_id") != _STALE_TASK_ID, f"{name} still uses stale task_id"
+    md = (out / "corrected_strategy_selection_report.md").read_text(encoding="utf-8")
+    first_line = md.split("\n")[0]
+    assert _FIX2_TASK_ID in first_line, f"report title must use FIX2 task ID: {first_line}"
+
+
+def test_superseded_lineage_contains_fix(tmp_path):
+    """The superseded lineage must include TASK-014BZ_FIX."""
+    result, artifacts, _ = _run_cli_and_collect(tmp_path)
+    superseded_tasks = [s["task"] for s in result["supersedes"]]
+    assert "TASK-014BZ_FIX" in superseded_tasks
+    assert "TASK-014BY" in superseded_tasks
+    assert "TASK-014BZ" in superseded_tasks
+    notice = artifacts["superseded_notice.json"]
+    notice_tasks = [s["task"] for s in notice["supersedes"]]
+    assert "TASK-014BZ_FIX" in notice_tasks
+
+
+def test_output_root_is_fix2(tmp_path):
+    """Output root in the result dict must point to TASK-014BZ_FIX2."""
+    result, _, _ = _run_cli_and_collect(tmp_path)
+    assert "TASK-014BZ_FIX2" in result["output_root"] or result["output_root"].endswith("out")
+
+
+def test_canonical_20260605_unchanged_after_fix2a(tmp_path):
+    """FIX2A must not change the canonical 20260605 arithmetic."""
+    write_real_shaped_ledger(tmp_path / "pp")
+    _, canon = load_canonical(tmp_path / "pp")
+    by_date = {r.date: r for r in canon.canonical_rows}
+    r = by_date["20260605"]
+    assert r.daily_pnl_usd == pytest.approx(-34.4038, abs=1e-4)
+    assert r.nav_usd == pytest.approx(10445.8930, abs=1e-4)
+    assert r.daily_pnl_pct == pytest.approx(-0.344038, abs=1e-6)
+    sem = lfs.validate_ledger_semantics(canon.canonical_rows, INIT)
+    assert sem["overall_status"] == lfs.LEDGER_SEMANTICS_VALID
+    assert sem["consistency_failure_count"] == 0
