@@ -355,6 +355,76 @@ def load_authoritative_performance(
         state=state, state_conflicts=state_conflicts)
 
 
+@dataclass
+class RawLedger:
+    """ALL parsed ledger rows in file (append) order, duplicates KEPT, with NO
+    continuity check and NO deduplication. Used by TASK-014BZ_FIX for canonical
+    duplicate resolution and additive fixed-capital semantic validation."""
+    paper_dir: str
+    performance_source: str
+    performance_source_fingerprint: str
+    state_fingerprint: str
+    paper_equity_init: float
+    rows: list[PerformanceRow]
+    rejected: list[dict[str, Any]]
+    state: dict[str, Any]
+    source_present: bool
+
+
+def load_raw_performance_rows(
+    paper_dir: str | pathlib.Path, *, paper_equity_init: float | None = None,
+) -> RawLedger:
+    """Read-only load of EVERY valid ledger row (duplicates preserved, file order
+    preserved). Unlike :func:`load_authoritative_performance`, this does NOT apply
+    the (compounding) continuity check or first-wins dedup; duplicate resolution
+    and additive semantic validation are performed downstream."""
+    d = pathlib.Path(paper_dir)
+    csv_path = d / "daily_pnl.csv"
+    state_path = d / "state.json"
+
+    state: dict[str, Any] = {}
+    state_fp = ""
+    if state_path.exists():
+        try:
+            raw = state_path.read_bytes()
+            state_fp = _sha256_bytes(raw)
+            state = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            state = {"_error": str(exc)}
+
+    init = (float(paper_equity_init) if paper_equity_init is not None
+            else float(state.get("paper_equity_init", PAPER_EQUITY_INIT_DEFAULT) or PAPER_EQUITY_INIT_DEFAULT))
+    if not (_finite(init) and init > 0):
+        init = PAPER_EQUITY_INIT_DEFAULT
+
+    if not csv_path.exists():
+        return RawLedger(
+            paper_dir=str(d).replace("\\", "/"), performance_source="paper_portfolio/daily_pnl.csv",
+            performance_source_fingerprint="", state_fingerprint=state_fp, paper_equity_init=init,
+            rows=[], rejected=[], state=state, source_present=False)
+
+    raw_bytes = csv_path.read_bytes()
+    source_fp = _sha256_bytes(raw_bytes)
+    text = raw_bytes.decode("utf-8", errors="replace")
+    rows: list[PerformanceRow] = []
+    rejected: list[dict[str, Any]] = []
+    for values in csv.reader(text.splitlines()):
+        if not values or all(not str(v).strip() for v in values):
+            continue
+        first = str(values[0]).strip()
+        if first.lower() in ("date", "day") or not first[:1].isdigit():
+            continue
+        row, st = _parse_row(values)
+        if row is None:
+            rejected.append({"raw": list(values), "reason": st})
+        else:
+            rows.append(row)
+    return RawLedger(
+        paper_dir=str(d).replace("\\", "/"), performance_source="paper_portfolio/daily_pnl.csv",
+        performance_source_fingerprint=source_fp, state_fingerprint=state_fp,
+        paper_equity_init=init, rows=rows, rejected=rejected, state=state, source_present=True)
+
+
 def _rel_close(a: float, b: float, rel: float) -> bool:
     if b == 0.0:
         return abs(a) <= rel
@@ -524,7 +594,7 @@ __all__ = [
     "INSUFFICIENT_VALID_PERFORMANCE_DAYS", "INVALID_DRY_RUN_PLACEHOLDER",
     "NAV_CONTINUITY_FAILURE", "NAV_CONTINUITY_REL_TOLERANCE", "OFFICIAL_VALIDATION_DAYS",
     "PERFORMANCE_SOURCE_CONFLICT", "PERFORMANCE_SOURCE_MISSING", "PerformanceRow",
-    "TASK_ID", "VALID_AUTHORITATIVE_PERFORMANCE", "ValidationWindow",
+    "RawLedger", "TASK_ID", "VALID_AUTHORITATIVE_PERFORMANCE", "ValidationWindow",
     "compute_window_metrics", "derive_validation_window", "is_dry_run_placeholder",
-    "load_authoritative_performance", "scan_dry_run_snapshots",
+    "load_authoritative_performance", "load_raw_performance_rows", "scan_dry_run_snapshots",
 ]

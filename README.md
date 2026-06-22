@@ -17,7 +17,39 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014BZ 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014BZ_FIX 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014BZ_FIX_LEDGER_SEMANTICS_DUPLICATE_CANONICALIZATION_AND_STALE_MARK_CLASSIFICATION**（2026-06-22, Opus 4.8 / 修正帳本加法語意、重複日正規化、stale-mark 風險分類）
+> **`ADDITIVE LEDGER VERIFIED / 20260605 CANONICAL RERUN RESOLVED / 30-CALENDAR-DAY HOLDING RETURN +6.077668% / DAILY RISK METRICS PROVISIONAL / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **取代 TASK-014BY（`REJECT_INSUFFICIENT_EDGE`）與 TASK-014BZ（`REJECT_DATA_INCOMPLETE`）。** 後者為「以前一日 NAV
+>   複利」錯誤連續性檢查造成的偽陽性。兩者 runtime 輸出保留不刪。
+> - **加法固定資本帳本語意（BLOCKER 1）：** 帳本是對**固定初始資本的加法**，非複利。正確三式：
+>   `nav_t = nav_(t-1) + daily_pnl_usd`、`daily_pnl_pct = daily_pnl_usd / paper_equity_init × 100`、
+>   `cumulative_pnl_pct = (nav_t / paper_equity_init − 1) × 100`。狀態 `ADDITIVE_NAV_VALID` /
+>   `DAILY_PCT_FIXED_CAPITAL_VALID` / `CUMULATIVE_PCT_VALID` / `LEDGER_SEMANTICS_VALID`。真實 VPS 帳本
+>   正規化後 `consistency_failure_count = 0`。**不再把 daily_pnl_pct 當成對前日 NAV 的複利報酬。**
+> - **重複日正規化（BLOCKER 2，原始 append-only 帳本不變更）：** `IDENTICAL_DUPLICATE`（安全去重）/
+>   `SUPERSEDED_RERUN`（唯一候選能加法續接下一個唯一日列）/ `AMBIGUOUS_DUPLICATE_CONFLICT`（fail-closed，
+>   不採 first/last-wins）。**20260605**：第二列 `nav 10445.8930` 為 `CANONICAL_RERUN_FINAL`（唯一加法續接
+>   20260606 `10597.4148`）；第一列 `nav 10419.2555` 為 `SUPERSEDED_RERUN`。
+> - **stale/catch-up/fresh 分類（BLOCKER 3）：** 由 `positions.parquet` 價格向量指紋 + `pnl.json data_source` 推導：
+>   `20260518 ENTRY_PRICE_ANCHOR`、`20260519–20260527 STALE_CACHE_NO_PRICE_CHANGE`（10 個 flat 日 = 1 anchor + 9 stale）、
+>   `20260528 FRESH_MULTI_DAY_CATCHUP_MARK`（多日 catch-up，非單日報酬）、`20260529–20260622 FRESH_DAILY_MARK`。
+> - **雙範圍：** (A) 日曆持有期 `20260518→20260616` 30 日 **+6.077668%**、end NAV **10607.7668** 仍為有效持有期結果；
+>   (B) fresh 單日風險僅用 FRESH_DAILY_MARK（官方 19 個：20260529–20260616）。19 < 門檻 20 →
+>   日 Sharpe/Sortino 狀態 `INSUFFICIENT_FRESH_DAILY_OBSERVATIONS`（**不公布 Sharpe 3.67 / Sortino 10.37**）。
+>   回撤僅報為 `OBSERVED_MARK_DRAWDOWN` 並警告 stale 區間 intra-period 路徑未知。
+> - **延伸（20260617–20260622）：** `extension_latest_cumulative_return_from_initial = +0.04954855`；
+>   相對 20260616 NAV 的 period return；fresh 6 日，不視為穩健。
+> - **修正評分（BLOCKER 4）：** 加法帳本通過後不再 `REJECT_DATA_INCOMPLETE`；正持有期報酬 → `KEEP_BASELINE_PROVISIONAL`。
+>   trade-level PF / 成本-資金費-滑點 / OOS / regime 皆 UNAVAILABLE。Primary/Shadow 不可比；**0 Challenger promote**。
+> - Active V1、目標權重、資金基底、執行 sizing 與 Pilot 全部未變；未送任何 Demo 單；Live 未授權。
+>
+> 驗證（offline）：py_compile PASS；focused 25 passed；strategy_selection + demo 161 passed；0 real HTTP / 0 Bybit / 0 orders。
+> Runtime 報表於 `outputs/research/strategy_selection/TASK-014BZ_FIX/`（gitignored；VPS 重生），TASK-014BY/ 與 TASK-014BZ/ 保留。
+> 新 commit 於 399e461 之上（未 amend、未 push）。
+> VPS 重生指令：`python scripts/analyze_forward30_ledger_fix.py --input-root outputs/forward_record --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BZ_FIX --json-only`
 
 > **TASK-014BZ_FORWARD30_AUTHORITATIVE_PERFORMANCE_SOURCE_AND_REANALYSIS**（2026-06-22, Opus 4.8 / 修正策略績效來源血統）
 > **`PRIOR ZERO-RETURN ANALYSIS SUPERSEDED / AUTHORITATIVE PAPER PORTFOLIO PERFORMANCE RESTORED / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**

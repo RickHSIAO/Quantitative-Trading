@@ -1,5 +1,35 @@
 # Next Action
 
+> README shared status updated by TASK-014BZ_FIX (2026-06-22).
+> **`ADDITIVE LEDGER VERIFIED / 20260605 CANONICAL RERUN RESOLVED / 30-CALENDAR-DAY HOLDING RETURN +6.077668% / DAILY RISK METRICS PROVISIONAL / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 399e461 correcting ledger semantics, duplicate canonicalization and stale-mark risk scoping.
+>
+> - **Supersedes TASK-014BY (`REJECT_INSUFFICIENT_EDGE`) and TASK-014BZ (`REJECT_DATA_INCOMPLETE`).** The latter
+>   was a false-positive from the wrong prior-NAV compounding continuity check. Both runtime outputs retained.
+> - **Additive fixed-capital semantics:** `nav_t = nav_(t-1) + daily_pnl_usd`;
+>   `daily_pnl_pct = daily_pnl_usd / paper_equity_init * 100`; `cumulative_pnl_pct = (nav_t/paper_equity_init-1)*100`.
+>   Statuses ADDITIVE_NAV_VALID / DAILY_PCT_FIXED_CAPITAL_VALID / CUMULATIVE_PCT_VALID / LEDGER_SEMANTICS_VALID;
+>   real VPS ledger `consistency_failure_count=0`. daily_pnl_pct is NOT a compounded prior-day-NAV return.
+> - **Duplicate canonicalization (raw ledger byte-identical):** IDENTICAL_DUPLICATE / SUPERSEDED_RERUN /
+>   AMBIGUOUS_DUPLICATE_CONFLICT (fail closed, no first/last-wins). 20260605 → second row (nav 10445.8930) is
+>   CANONICAL_RERUN_FINAL (only it continues additively into 20260606 10597.4148); first row (10419.2555) superseded.
+> - **Freshness:** 20260518 ENTRY_PRICE_ANCHOR; 20260519–20260527 STALE_CACHE_NO_PRICE_CHANGE (10 flat = 1 anchor + 9
+>   stale); 20260528 FRESH_MULTI_DAY_CATCHUP_MARK; 20260529–20260622 FRESH_DAILY_MARK.
+> - **Two scopes:** (A) calendar holding-period 20260518→20260616 = +6.077668%, end NAV 10607.7668 (valid);
+>   (B) fresh one-day risk uses only FRESH_DAILY_MARK (19 official). 19 < 20 → daily Sharpe/Sortino status
+>   INSUFFICIENT_FRESH_DAILY_OBSERVATIONS (Sharpe 3.67 / Sortino 10.37 NOT published). Drawdown only as
+>   OBSERVED_MARK_DRAWDOWN with stale-path warning. Extension latest +4.954855% reported separately.
+> - **Corrected scorecard:** never REJECT_DATA_INCOMPLETE after additive validation; positive holding-period
+>   return → KEEP_BASELINE_PROVISIONAL. Zero challengers promoted; Primary/Shadow non-comparable.
+> - Active V1, target weights, capital base, execution sizing and the Pilot are unchanged; no Demo order sent.
+>
+> Validation (offline): py_compile PASS; focused 25 passed; strategy_selection + demo 161 passed; 0 real HTTP,
+> 0 Bybit, 0 orders. Runtime reports under `outputs/research/strategy_selection/TASK-014BZ_FIX/` (gitignored;
+> regenerated on the VPS); TASK-014BY/ and TASK-014BZ/ retained.
+> VPS regenerate: `python scripts/analyze_forward30_ledger_fix.py --input-root outputs/forward_record --run-key prev3y_crypto --output-root outputs/research/strategy_selection/TASK-014BZ_FIX --json-only`
+
+---
+
 > README shared status updated by TASK-014BZ (2026-06-22).
 > **`PRIOR ZERO-RETURN ANALYSIS SUPERSEDED / AUTHORITATIVE PAPER PORTFOLIO PERFORMANCE RESTORED / ACTIVE V1 PILOT UNCHANGED / CHALLENGERS NOT PROMOTED / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 473733f correcting the strategy-performance source lineage.
