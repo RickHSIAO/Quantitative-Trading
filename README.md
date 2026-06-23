@@ -17,7 +17,40 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CB_FIX2 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CC 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CC_STRATEGY_NATIVE_DEMO_POLICY_ALIGNMENT_AND_PORTFOLIO_RECONCILIATION**（2026-06-23, Opus 4.8 / Demo 對齊 production-shaped V1 + 組合 reconciliation）
+> **`DEMO FOLLOWS PRODUCTION-SHAPED STRATEGY-NATIVE V1 / OBSOLETE ONE-POSITION AND TINY-ORDER LIMITS ARE NOT ACTIVE POLICY / LEGACY PROTECTED POSITIONS REMAIN UNTOUCHED BUT DO NOT BLOCK V1 PLANNING / EXECUTION BATCH NOT AUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **使用者政策決定：** Demo 主動實作改採 production-shaped Strategy-native 組合邏輯（V1
+>   prev3y_crypto_combined_paper_safe_variant：50 標的、25 多 / 25 空、±0.02 權重、固定 10000-USDT 資本、
+>   ±200-USDT 名目、gross 1.0、net≈0）。**過時限制不再是 active V1 政策：** 單一同時持倉、單日單筆開倉、
+>   TINY 5/10-USDT cap、SOLUSDT-only one-shot tiny order。新增明確政策分類欄位 `active_policy=`
+>   `ACTIVE_STRATEGY_NATIVE_V1_POLICY`、`LEGACY_INACTIVE_READINESS_POLICY`、`ISOLATED_ONE_SHOT_TEST_POLICY`，
+>   one-shot 模組保留為隔離測試工具（非 authoritative）。
+> - **完整 50 組合保留：** Plan-only 持續輸出 50 標的、50 strategy actions（帳戶無 strategy-managed V1 持倉時）、
+>   25 多 / 25 空、±200 名目、gross 1.0、net≈0。不縮成單一 symbol、不重整權重、不變成 tiny-order probe。
+> - **strategy-managed 與 legacy 分離：** EDUUSDT short / POLYXUSDT short = `LEGACY_PROTECTED_EXTERNAL_POSITIONS`，
+>   永不被觸碰、永不產生 CLOSE/REDUCE/RESIZE/REVERSE/ADD、不計入 strategy-managed、**不再單因其存在而阻擋 V1 規劃**
+>   （移除 `NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS` 阻擋）；但仍計入帳戶總曝險 / 保證金 / 風險可行性。
+>   新增欄位 strategy_managed_open_position_count / legacy_protected_position_count /
+>   total_account_open_position_count / strategy_target_gross_notional_usdt / legacy_gross_notional_usdt /
+>   total_projected_account_gross_notional_usdt / available_balance_usdt / wallet_equity_usdt /
+>   projected_margin_feasibility_status。
+> - **production-shaped reconciliation + 批次：** 確定性比對 current strategy-managed / V1 target / legacy →
+>   OPEN/HOLD/INCREASE/REDUCE/CLOSE/REVERSE；protected → LEGACY_PROTECTED_UNMANAGED（無可執行動作）。
+>   多 symbol execution batch（batch_id、artifact fingerprint、ordered action fingerprints、每動作 idempotency key、
+>   canonical Decimal qty/qty_step/price snapshot/target notional/delta、instrument-rule fingerprint），
+>   重跑身分穩定；`sender_reachable=false`，**不恢復「iterate all & POST」**。
+> - **可行性 / 風險：** 含 legacy 曝險計算總帳戶 gross；leverage / initial-margin 無法 authoritative 讀取時 fail closed
+>   `STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED`（不臆測 leverage），但完整 50 標的計畫仍可見。
+> - **授權：** plan_valid=true、strategy_native_policy_active=true、execution_batch_present=true、
+>   execution_batch_authorized=false、execution_ready=false、sender_reachable=false、order/amend/cancel POST=0、live=false。
+>   不重用 SOLUSDT one-shot marker，不建立真實授權 marker；人工授權與分階段 Demo 批次執行協定留待後續任務。
+> - 驗證：focused 32 passed；demo+strategy_selection regression 9301 passed（1 個既有無關失敗）；canonical one-shot 測試維持隔離且通過。
+>
+> VPS Plan-only（僅此命令）：
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CB_FIX2_AUDIT_SCHEMA_MARKER_REDACTION_AND_DECIMAL_OUTPUT**（2026-06-23, Opus 4.8 / 稽核 schema 修正 + marker 遮蔽 + Decimal 輸出）
 > **`CORE SAFETY ARCHITECTURE UNCHANGED / CANDIDATE COUNTS CORRECTED / DISPATCH CALL COUNTS EXPLICIT / DECIMAL AUDIT OUTPUT CANONICAL / AUTHORIZATION MARKER VALUES REDACTED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

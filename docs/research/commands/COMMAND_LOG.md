@@ -9956,3 +9956,68 @@ Files changed (committed):
   MOD  README.md                                           (TASK-014CB_FIX2 shared status)
   MOD  docs/research/commands/NEXT_ACTION.md               (TASK-014CB_FIX2 block)
   MOD  docs/research/commands/COMMAND_LOG.md               (this entry)
+
+---
+
+### TASK-014CC_STRATEGY_NATIVE_DEMO_POLICY_ALIGNMENT_AND_PORTFOLIO_RECONCILIATION
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** f261489
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  User policy decision: the active Demo implementation now follows the production-
+  shaped Strategy-native V1 portfolio logic (prev3y_crypto_combined_paper_safe_variant:
+  50 targets, 25 long / 25 short, +/-0.02 weights, fixed 10000-USDT capital, +/-200-USDT
+  notionals, gross 1.0, net ~ 0). The obsolete readiness/one-shot limits are NOT the
+  active V1 policy and remain isolated test utilities: max 1 simultaneous position,
+  max 1 opening order/day, TINY 5/10-USDT cap, SOLUSDT-only one-shot tiny order.
+
+  New ACTIVE policy module src/demo_strategy_native_v1_portfolio.py provides:
+   - explicit policy classification (ACTIVE_STRATEGY_NATIVE_V1_POLICY /
+     LEGACY_INACTIVE_READINESS_POLICY / ISOLATED_ONE_SHOT_TEST_POLICY), visible in JSON;
+   - position separation: strategy-managed vs LEGACY_PROTECTED_EXTERNAL_POSITIONS
+     (EDUUSDT/POLYXUSDT). Legacy positions are untouched, generate no actions, are not
+     strategy-managed, and NO LONGER block V1 planning (the
+     NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS block is removed from the active
+     path). They still count toward total account gross notional / margin / feasibility;
+   - deterministic reconciliation (OPEN/HOLD/INCREASE/REDUCE/CLOSE/REVERSE; protected ->
+     LEGACY_PROTECTED_UNMANAGED, no executable action);
+   - a production-shaped multi-symbol execution BATCH (batch_id, strategy_run_date,
+     strategy_artifact_fingerprint, pre-execution account snapshot fingerprint, ordered
+     action fingerprints, per-action idempotency key, canonical Decimal qty from real
+     InstrumentRules, qty_step, price snapshot, target/delta notional, instrument-rule
+     fingerprint). Built but NEVER sent; sender_reachable=false. Deterministic across
+     reruns. The unrestricted iterate-all-and-POST behavior is NOT restored;
+   - account-level feasibility including legacy exposure. Leverage / initial-margin are
+     never assumed; when unavailable the status fails closed
+     STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED while the full 50-target plan stays
+     visible (also FEASIBLE / INSUFFICIENT_AVAILABLE_MARGIN / RULE_REJECTION).
+
+  The native plan-only and --send-orders-to-demo surfaces now emit the active
+  strategy_native_review (active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY) with the full
+  multi-symbol plan + batch; the one-shot SOLUSDT delegation gate is retained ONLY as a
+  non-authoritative isolated_one_shot_review. execution_batch_authorized=false,
+  execution_ready=false, sender_reachable=false, order/amend/cancel POST=0, live=false.
+  No SOLUSDT one-shot marker reuse; no real authorization marker created (a future task
+  defines human authorization + staged Demo batch execution).
+
+  No strategy/sizing change; Pilot and Forward source byte-identical; no Demo order sent;
+  no Live authorization.
+
+  Tests: focused 32 passed (new module); demo+strategy_selection regression 9301 passed
+  (1 pre-existing unrelated emergency_close failure); canonical one-shot/tiny adapter and
+  TASK-014CB_FIX2 tests remain isolated and passing.
+
+VPS Plan-only verification (no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py \r
+    --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  NEW  src/demo_strategy_native_v1_portfolio.py            (ACTIVE V1 policy + reconciliation + batch)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py     (active review wiring + account snapshot)
+  NEW  tests/demo_trading/test_demo_strategy_native_v1_portfolio.py (32 tests)
+  MOD  README.md                                           (TASK-014CC shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md               (TASK-014CC block)
+  MOD  docs/research/commands/COMMAND_LOG.md               (this entry)

@@ -48,7 +48,8 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from src import demo_strategy_pilot_action_planner as planner  # noqa: E402
-from src import demo_strategy_pilot_execution_gate as gate  # noqa: E402
+from src import demo_strategy_pilot_execution_gate as gate  # noqa: E402 (ISOLATED one-shot test utility)
+from src import demo_strategy_native_v1_portfolio as v1  # noqa: E402 (ACTIVE V1 policy)
 from src import demo_strategy_pilot_forward_source as fs  # noqa: E402
 from src import demo_strategy_pilot_native_execution as nx  # noqa: E402
 from src import demo_strategy_pilot_native_reporting as nrep  # noqa: E402
@@ -201,6 +202,23 @@ def _build_production_provider(_client=None, _guard=None):
                                      entry_price=float(p.entry_price), stop_price=float(p.stop_price))
                     for p in self._positions]
 
+        def account_risk_snapshot(self) -> dict:
+            """Read-only account snapshot for portfolio feasibility. Per-position
+            leverage may be reported, but the per-symbol INITIAL-MARGIN requirement
+            (margin tiers) is NOT authoritatively readable from the read-only Demo
+            metadata, so initial_margin_authoritative is False -> feasibility fails
+            closed rather than assuming leverage."""
+            return {
+                "wallet_equity_usd": float(self._wallet.equity_usd),
+                "available_balance_usd": float(self._wallet.available_balance_usd),
+                "positions": [{"symbol": p.symbol, "side": p.side,
+                               "quantity": float(p.quantity), "entry_price": float(p.entry_price),
+                               "leverage": float(getattr(p, "leverage", 0) or 0)}
+                              for p in self._positions],
+                "leverage_authoritative": False,
+                "initial_margin_authoritative": False,
+            }
+
         def market_price(self, symbol: str):
             # Cache per distinct symbol so each ticker GET is counted exactly once.
             if symbol in self._price_cache:
@@ -318,6 +336,49 @@ def _forward_fingerprint_of(plan: Any) -> str | None:
     return (sv.get("evidence_bundle_fingerprint")
             or sv.get("state_artifact_fingerprint")
             or sv.get("config_source_fingerprint"))
+
+
+def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str) -> dict[str, Any]:
+    """Assemble the ACTIVE Strategy-native V1 portfolio review (Plan-only,
+    non-dispatching) from the read-only provider + planner. Authoritative
+    instrument-rule evidence and the account-risk snapshot come from the provider;
+    nothing is inferred and nothing is sent."""
+    try:
+        open_positions = list(provider.open_positions()) if provider is not None else []
+    except Exception:  # noqa: BLE001
+        open_positions = []
+
+    acct = provider.account_risk_snapshot() if hasattr(provider, "account_risk_snapshot") else {}
+    wallet_equity = acct.get("wallet_equity_usd",
+                             provider.equity_usd() if hasattr(provider, "equity_usd") else 0.0)
+    available_balance = acct.get("available_balance_usd",
+                                 provider.available_balance_usd()
+                                 if hasattr(provider, "available_balance_usd") else 0.0)
+
+    rule_evidence_by_symbol: dict[str, Any] = {}
+    price_by_symbol: dict[str, Any] = {}
+    for tp in getattr(plan, "target_positions", []) or []:
+        sym = str(tp.get("symbol", "")).strip().upper()
+        if not sym:
+            continue
+        if hasattr(provider, "instrument_rule_evidence"):
+            try:
+                rule_evidence_by_symbol[sym] = provider.instrument_rule_evidence(sym)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            price_by_symbol[sym] = provider.market_price(sym)
+        except Exception:  # noqa: BLE001
+            pass
+
+    return v1.build_strategy_native_review(
+        plan=plan, open_positions=open_positions, pilot_id=pilot_id, run_date=date,
+        artifact_fingerprint=_forward_fingerprint_of(plan),
+        wallet_equity=wallet_equity, available_balance=available_balance,
+        rule_evidence_by_symbol=rule_evidence_by_symbol, price_by_symbol=price_by_symbol,
+        leverage_authoritative=bool(acct.get("leverage_authoritative", False)),
+        initial_margin_authoritative=bool(acct.get("initial_margin_authoritative", False)),
+        assumed_leverage=acct.get("assumed_leverage"))
 
 
 def orchestrate_gated_send(
@@ -550,31 +611,42 @@ def main(argv: list[str] | None = None) -> int:
                             "matched_instrument_rule_count": 0, "missing_instrument_rule_count": 0,
                             "non_trading_instrument_count": 0, "malformed_instrument_rule_count": 0}
 
-        # Build the execution REVIEW gate so plan-only TRUTHFULLY shows the plan is
-        # planning output only and that real execution is delegated to the canonical
-        # one-shot adapter. qtyStep evidence comes from the authoritative provider.
+        # ACTIVE policy: Strategy-native V1 portfolio review (production-shaped,
+        # multi-symbol, non-dispatching). Legacy protected positions are separated
+        # and never block planning. The one-shot tiny gate is retained ONLY as an
+        # isolated, non-authoritative review for visibility.
+        strategy_native_review = (build_active_v1_review(
+            provider=provider, plan=plan, pilot_id=args.pilot_id, date=args.date)
+            if provider_built else None)
         try:
             open_positions = list(provider.open_positions()) if provider_built else []
         except Exception:  # noqa: BLE001
             open_positions = []
-        gate_result = gate.evaluate_execution_gate(
+        isolated_one_shot_review = gate.evaluate_execution_gate(
             plan=plan, open_positions=open_positions, pilot_id=args.pilot_id, date=args.date,
-            forward_fingerprint=_forward_fingerprint_of(plan), rule_provider=provider)
+            forward_fingerprint=_forward_fingerprint_of(plan), rule_provider=provider).to_dict()
 
         out = {"status": plan_label if plan.available else plan.status,
                "pilot_id": args.pilot_id, "date": args.date, "planner": plan.to_dict(),
-               "execution_gate": gate_result.to_dict(),
+               "active_policy": v1.POLICY_ACTIVE_STRATEGY_NATIVE_V1,
+               "strategy_native_policy_active": True,
+               "strategy_native_review": strategy_native_review,
+               # The one-shot SOLUSDT delegation gate is an ISOLATED test utility,
+               # NOT the active V1 policy. Retained for visibility only.
+               "isolated_one_shot_review": isolated_one_shot_review,
+               "isolated_one_shot_review_is_authoritative": False,
                "plan_valid": plan.available and bool(plan.sizing_verification.get("verified", False)),
+               "execution_batch_present": bool(strategy_native_review),
+               "execution_batch_authorized": False,
                "execution_authorized": False,
                "execution_ready": False,
                "sender_reachable": False,
-               "canonical_one_shot_adapter_required": True,
-               "canonical_execution_packet_present": False,
                "native_dispatch_disabled": True,
                "send_path_refused": True,
-               "detail": "plan preview only; the full V1 plan is planning output. Real Demo execution "
-                         "is delegated to the canonical one-shot tiny adapter. The native surface never "
-                         "dispatches an order.",
+               "detail": "plan preview only; the ACTIVE Strategy-native V1 portfolio review preserves the "
+                         "full multi-symbol plan. Legacy protected positions are untouched and never block "
+                         "V1 planning but count toward account-level feasibility. No order is dispatched "
+                         "and no execution batch is authorized in this task.",
                "network_attempted": provider_built,
                "read_only_network": provider_built,
                "market_price_source": provider_audit.get("market_price_source", "unavailable"),
@@ -615,11 +687,12 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_V1_CAPITAL_BASE_UNVERIFIED
         return EXIT_OK if plan.available else EXIT_PLANNER_UNAVAILABLE
 
-    # --send-orders-to-demo: NON-dispatching. TASK-014CB_FIX.
-    # The native surface produces the full Plan-only execution review and then
-    # FAILS CLOSED, delegating real Demo execution to the canonical one-shot tiny
-    # adapter. It constructs NO order transport, calls NO execute_daily_native, and
-    # never converts a generic StrategyNativeAction into an order payload.
+    # --send-orders-to-demo: NON-dispatching. TASK-014CC.
+    # The native surface produces the ACTIVE Strategy-native V1 portfolio review +
+    # a production-shaped (multi-symbol) execution BATCH, then FAILS CLOSED: the
+    # batch is NOT authorized in this task. It constructs NO order transport, calls
+    # NO execute_daily_native, and dispatches nothing. A future task defines the
+    # human authorization + staged Demo batch execution protocol.
     provider = _build_production_provider()
     plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
     if plan.status == planner.STATUS_V1_BASELINE_CAPITAL_BASE_CONFLICT:
@@ -637,12 +710,38 @@ def main(argv: list[str] | None = None) -> int:
                          ensure_ascii=False, indent=2, sort_keys=True))
         return EXIT_V1_CAPITAL_BASE_UNVERIFIED
 
-    # NON-dispatching delegation review (zero transport, zero execute_daily_native).
-    out = orchestrate_gated_send(
-        pilot_id=args.pilot_id, date=args.date, forward_result=forward_result, provider=provider,
-        transport=None, output_root=output_root, plan=plan)
+    review = build_active_v1_review(provider=provider, plan=plan,
+                                    pilot_id=args.pilot_id, date=args.date)
+    out = {
+        "status": "STRATEGY_NATIVE_V1_EXECUTION_BATCH_NOT_AUTHORIZED",
+        "pilot_id": args.pilot_id, "date": args.date,
+        "active_policy": v1.POLICY_ACTIVE_STRATEGY_NATIVE_V1,
+        "strategy_native_policy_active": True,
+        "planner": plan.to_dict(),
+        "strategy_native_review": review,
+        "plan_valid": review["plan_valid"],
+        "execution_batch_present": True,
+        "execution_batch_authorized": False,
+        "execution_authorized": False,
+        "execution_ready": False,
+        "sender_reachable": False,
+        "native_dispatch_disabled": True,
+        "send_path_refused": True,
+        "execute_daily_native_called": False,
+        "execute_daily_native_call_count": 0,
+        "transport_sender_call_count": 0,
+        "order_endpoint_called": False,
+        "order_post_count": 0,
+        "amend_post_count": 0,
+        "cancel_post_count": 0,
+        "live_endpoint_called": False,
+        "live_trading_authorized": False,
+        "detail": ("ACTIVE Strategy-native V1 portfolio: a production-shaped multi-symbol execution "
+                   "batch was built for review but is NOT authorized in this task. No order dispatched; "
+                   "no transport constructed; Live denied."),
+    }
     print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
-    return EXIT_BLOCKED  # native surface never dispatches; execution is delegated
+    return EXIT_BLOCKED  # batch not authorized; native surface dispatches nothing
 
 
 if __name__ == "__main__":

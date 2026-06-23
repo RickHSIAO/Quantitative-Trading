@@ -1,5 +1,33 @@
 # Next Action
 
+> README shared status updated by TASK-014CC (2026-06-23).
+> **`DEMO FOLLOWS PRODUCTION-SHAPED STRATEGY-NATIVE V1 / OBSOLETE ONE-POSITION AND TINY-ORDER LIMITS ARE NOT ACTIVE POLICY / LEGACY PROTECTED POSITIONS REMAIN UNTOUCHED BUT DO NOT BLOCK V1 PLANNING / EXECUTION BATCH NOT AUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of f261489 aligning the active Demo policy with the production-shaped Strategy-native V1 portfolio.
+>
+> - User policy decision: the active Demo policy is the production-shaped Strategy-native V1 portfolio
+>   (prev3y_crypto_combined_paper_safe_variant: 50 targets, 25 long / 25 short, +/-0.02, fixed 10000-USDT
+>   capital, gross 1.0, net ~ 0). New module src/demo_strategy_native_v1_portfolio.py is the ACTIVE policy.
+> - Obsolete limits are NOT active V1 policy: max 1 simultaneous position, max 1 opening order/day, tiny
+>   5/10-USDT cap, SOLUSDT-only one-shot tiny order. They remain ISOLATED one-shot/readiness test utilities.
+>   Explicit policy classification: ACTIVE_STRATEGY_NATIVE_V1_POLICY / LEGACY_INACTIVE_READINESS_POLICY /
+>   ISOLATED_ONE_SHOT_TEST_POLICY, visible in JSON.
+> - Legacy protected positions (EDUUSDT/POLYXUSDT) are separated as LEGACY_PROTECTED_EXTERNAL_POSITIONS:
+>   untouched, never generate actions, NOT strategy-managed, and no longer block V1 planning (the
+>   NO_EXECUTION_CANDIDATE_EXISTING_PROTECTED_POSITIONS block is gone from the active path). They still count
+>   toward account-level exposure / margin / feasibility.
+> - Production-shaped portfolio reconciliation (OPEN/HOLD/INCREASE/REDUCE/CLOSE/REVERSE; protected ->
+>   LEGACY_PROTECTED_UNMANAGED) and a deterministic multi-symbol execution BATCH (batch_id, ordered action
+>   fingerprints, per-action idempotency key, canonical Decimal qty from real InstrumentRules) built but NOT
+>   sent; sender_reachable=false. The unrestricted "iterate all and POST" behavior is NOT restored.
+> - Feasibility includes legacy exposure; unavailable leverage/initial-margin fails closed
+>   STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED (no assumed leverage) while the full 50-target plan stays
+>   visible. execution_batch_authorized=false; order/amend/cancel POST=0; Live denied. No real auth marker created.
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
+
+---
+
 > README shared status updated by TASK-014CB_FIX2 (2026-06-23).
 > **`CORE SAFETY ARCHITECTURE UNCHANGED / CANDIDATE COUNTS CORRECTED / DISPATCH CALL COUNTS EXPLICIT / DECIMAL AUDIT OUTPUT CANONICAL / AUTHORIZATION MARKER VALUES REDACTED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 092c1a7 correcting the audit schema only (no strategy/sizing/Pilot/execution change).
