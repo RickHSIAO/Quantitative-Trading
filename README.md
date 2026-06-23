@@ -17,7 +17,52 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CE_FIX1 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CE_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CE_VPS_CLOSEOUT**（2026-06-23, Sonnet 4.6 / VPS 驗證結案 — 文件更新僅此）
+>
+> **Status: TASK-014CE / FIX1 → DONE / VPS VERIFIED**
+>
+> **`TASK-014CE / FIX1 DONE AND VPS VERIFIED / REGULAR MARGIN AND 50 APPLICABLE RISK TIERS VERIFIED / PROJECTED STRATEGY MARGIN COMPLETE / OBSERVED ACCOUNT SNAPSHOT REMAINS NON-ATOMIC / CANONICAL NETWORK AUDIT VERIFIED AT 105 PUBLIC AND 3 PRIVATE READ-ONLY GETS / PER-SYMBOL EXCHANGE QUOTE TIMESTAMP STILL UNAVAILABLE / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> Documentation-only closeout on top of 2179b53. No Python source or test files modified.
+> Records the successful real VPS Plan-only verification of TASK-014CE and TASK-014CE_FIX1.
+>
+> - **V1 core（VPS 驗證通過）：** plan_exit=0、active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY、plan_valid=true、
+>   50 targets、25 long / 25 short、50 canonical batch actions、50 non-null InstrumentRule fingerprints、
+>   50 RULE_VALIDATION_PASS、batch_float_artifact_count=0。
+> - **帳戶模式（VPS 驗證通過）：** account_mode_evidence_status=ACCOUNT_MODE_EVIDENCE_AUTHORITATIVE、
+>   margin_mode=REGULAR_MARGIN、unified_margin_status=3、spot_hedging_status=OFF、account-info private GET=1。
+> - **保證金狀態（VPS 驗證通過）：** observed_margin_snapshot_model_status=AUTHORITATIVE_MARGIN_MODEL_PARTIAL
+>   （非原子 wallet+position 快照，仍分開表達）；projected_margin_model_status=AUTHORITATIVE_MARGIN_MODEL_COMPLETE；
+>   canonical margin_model_status=AUTHORITATIVE_MARGIN_MODEL_COMPLETE；top-level 與 nested 一致。
+> - **投影保證金（VPS 驗證通過）：** account_margin_mode=REGULAR_MARGIN、available_balance_usdt=9609.23632594、
+>   projected_strategy_initial_margin_usdt=295.9（精確 50-action Decimal 加總=295.90、IM sum matches=true）、
+>   projected_strategy_maintenance_margin_usdt=151.04（獨立 Decimal 驗證 MM sum=151.04、mm_sum_matches=true）、
+>   observed_legacy_position_initial_margin_sum_usdt=1793.89524202、
+>   projected_total_initial_margin_usdt=2089.79524202、account_im_rate_used_for_projection=false、
+>   projected margin blockers=[]。MM exact_sum_matches 欄位未序列化（null），但獨立 Decimal 驗證確認 MM 精確；
+>   此為非阻塞性診斷 schema 不對稱，非保證金計算錯誤，不需要另一個 FIX 任務。
+> - **readiness blockers（VPS 驗證通過）：** 已移除 AUTHORITATIVE_MARGIN_MODEL_PARTIAL /
+>   ACCOUNT_MARGIN_MODE_UNAVAILABLE / APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE。剩餘：
+>   PRICE_FRESHNESS_EVIDENCE_PARTIAL、NON_ATOMIC_MARGIN_SNAPSHOT、
+>   PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE、EXCHANGE_CLOCK_BRACKET_ONLY、
+>   EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK（永遠最後）。
+> - **規範網路稽核（VPS 驗證通過）：** account_info=1、wallet=1、positions=1、server_time=2、risk_limit=50、
+>   risk_limit_page=50、instrument_metadata=1、ticker HTTP=52、requested=152、unique=52、cache=100、
+>   total_private=3、total_public=105、NETWORK_AUDIT_CONSISTENT；top-level 全部鏡像 nested；
+>   account_network_audit 精確等於 network_audit；ticker-only 計數維持明確命名 ticker_price_network_audit。
+> - **交易所時鐘（VPS 驗證通過）：** exchange_clock_evidence_status=EXCHANGE_CLOCK_BRACKET_AVAILABLE、
+>   clock_offset_evidence_status=CLOCK_OFFSET_AVAILABLE、before=0.006980473s、after=0.006701109s、
+>   conservative=0.006840791s、bracket duration=9.159222436s、per_symbol_exchange_quote_timestamp_available=false、
+>   execution_grade_freshness_complete=false、PRICE_FRESHNESS_EVIDENCE_PARTIAL。Server time 與 REST envelope time
+>   未標為 quote timestamp。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、
+>   execute_daily_native_call_count=0、transport_sender_call_count=0、order/amend/cancel/live=0；
+>   無 Demo 下單、無 Live 授權、無 auth marker。Pilot 未進階。50-action 批次不可送出。
+>
+> **下一工程里程碑：** public read-only WebSocket ticker timestamp 證據任務（per-symbol exchange quote timestamp），
+> 以及 human-authorization + staged Demo batch execution protocol。本任務不提供送單命令。
 
 > **TASK-014CE_FIX1_CANONICAL_MARGIN_NETWORK_AND_BLOCKER_RECONCILIATION**（2026-06-23, Opus 4.8 / 規範保證金狀態 + 網路稽核 + blocker 調和）
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / REGULAR MARGIN AND 50 APPLICABLE RISK TIERS VERIFIED / PROJECTED STRATEGY MARGIN COMPLETE / OBSERVED ACCOUNT SNAPSHOT REMAINS NON-ATOMIC / CANONICAL NETWORK AUDIT RECONCILED TO 105 PUBLIC AND 3 PRIVATE READ-ONLY GETS / EXCHANGE QUOTE TIMESTAMP STILL UNAVAILABLE / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
