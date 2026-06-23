@@ -1,5 +1,35 @@
 # Next Action
 
+> **TASK-014CD_VPS_CLOSEOUT** (2026-06-23, Sonnet 4.6 — documentation-only VPS verification closeout)
+>
+> **Status: TASK-014CD / FIX1 / FIX2 → DONE / VPS VERIFIED**
+>
+> **`TASK-014CD / FIX1 / FIX2 DONE AND VPS VERIFIED / STRATEGY-NATIVE V1 PRESERVED / FRESHNESS AND NETWORK SCHEMA PARITY VERIFIED / NON-ATOMIC MARGIN SEMANTICS VERIFIED / EXECUTION READINESS STILL BLOCKED / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> Documentation-only closeout on top of a7163ad. No Python source or test files modified.
+>
+> **Authoritative VPS observations recorded (chain summary):**
+> - TASK-014CD (a41e901): margin evidence layer + price freshness + network audit. 57 tests pass.
+> - TASK-014CD_FIX1 (1bb387e): non-atomic margin comparison semantics (wallet 1803.74 vs pos-sum
+>   1805.96 → DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE, not CONFLICT); per-action freshness
+>   wiring; batch identity semantics; account_type. 40+59 tests pass.
+> - TASK-014CD_FIX2 (a7163ad): aggregate freshness (batch/review/top = PARTIAL); feasibility
+>   evidence/execution-grade distinction; canonical network schema (52/152/52/100/52/CONSISTENT);
+>   monotonic sub-ms snapshot timing; legacy freshness parity. 17+40+59 tests pass.
+>
+> **Execution readiness is NOT complete.** Blockers remain:
+> 1. ACCOUNT_MARGIN_MODE_UNAVAILABLE — /v5/account/info not in allowed read-only paths
+> 2. APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE — cannot project strategy IM without authoritative rate
+> 3. EXCHANGE_TIMESTAMP_UNAVAILABLE — read-only ticker path lacks authoritative exchange time
+> 4. PRICE_FRESHNESS_EVIDENCE_PARTIAL — consequence of (3); local observation only
+> 5. NON_ATOMIC_MARGIN_SNAPSHOT — wallet + position are separate HTTP responses
+> 6. EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK — permanent per-task blocker
+>
+> **Next milestone:** resolve (1) + (2) for authoritative margin projection, and (3) for
+> execution-grade freshness. No Demo order sent; no Live authorization; no auth marker.
+
+---
+
 > README shared status updated by TASK-014CD_FIX2 (2026-06-23).
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AGGREGATE PRICE FRESHNESS CONSISTENT AT ACTION BATCH REVIEW AND TOP LEVEL / FEASIBILITY REPORTS PARTIAL EVIDENCE ACCURATELY / NETWORK AUDIT COUNTERS HAVE ONE CANONICAL MEANING / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 1bb387e resolving aggregate-freshness and network-counter schema parity only.

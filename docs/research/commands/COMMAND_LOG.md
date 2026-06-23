@@ -10301,3 +10301,87 @@ Files changed (committed):
   MOD  README.md                                            (TASK-014CD_FIX2 shared status)
   MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CD_FIX2 block)
   MOD  docs/research/commands/COMMAND_LOG.md                (this entry)
+---
+
+### TASK-014CD_VPS_CLOSEOUT
+
+- **Date:** 2026-06-23
+- **Model:** Sonnet 4.6
+- **Parent commit:** a7163ad
+- **Status:** DONE / VPS VERIFIED (documentation-only closeout)
+
+Summary:
+  Documentation-only VPS verification closeout for the TASK-014CD evidence-layer chain.
+  No Python source or test files modified. Marks TASK-014CD / FIX1 / FIX2 as DONE / VPS VERIFIED.
+
+  **Authoritative VPS observations (complete chain):**
+
+  TASK-014CD (a41e901 on 67ff08c):
+  - Authoritative margin evidence captured from wallet/position responses: equity, available,
+    total IM/MM, account IM/MM rate, per-position leverage/IM/MM/position-value/liq-price.
+    margin_evidence_snapshot_fingerprint present. account_margin_mode reported unavailable
+    (/v5/account/info not in allowed read-only paths).
+  - Price observation/freshness: local request-start, response-received, elapsed_ms, price_age;
+    exchange_timestamp null (read-only path lacks it); status EVIDENCE_PARTIAL/EVIDENCE_UNAVAILABLE.
+    30s review threshold configured (does not authorize).
+  - Network audit: 52 unique symbols (50 strategy + 2 legacy), ticker HTTP/requested/unique/cache
+    counts consistent, NETWORK_AUDIT_CONSISTENT.
+  - Projected margin model: AUTHORITATIVE_MARGIN_MODEL_PARTIAL (missing applicable IM rate).
+  - 57 focused tests passed; demo_trading regression passed.
+
+  TASK-014CD_FIX1 (1bb387e on a41e901):
+  - Non-atomic margin snapshot semantics: wallet reported total_initial_margin = 1803.74307135,
+    position-sum = 1805.95898302, difference ~2.22 USDT (~0.12%). Correctly classified as
+    INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE (not CONFLICT).
+    MARGIN_EVIDENCE_CONFLICT reserved for atomic + scope-proven + exceeds both tolerance thresholds.
+  - Snapshot provenance: wallet/position request+response timestamps, snapshot_time_delta_ms,
+    margin_snapshot_atomic=false, comparison_scope_status.
+  - Observed vs projected schema corrected: observed_legacy_position_initial_margin_sum_usdt
+    + reported_account_total_initial_margin_usdt; projected_legacy only when genuinely projected.
+    accountIMRate NOT applied to 50-position strategy without authoritative applicability.
+  - Per-action freshness wiring: 50 actions x freshness record (price_observed_at, request times,
+    elapsed, age, exchange_timestamp=null, status=PRICE_FRESHNESS_EVIDENCE_PARTIAL).
+  - Batch identity: fingerprint/batch_id bound to price+snapshot identity; timing not identity-bound.
+  - account_type emitted from /v5/account/wallet-balance result.list[0].accountType.
+  - 40+59 tests passed; demo_trading regression passed.
+
+  TASK-014CD_FIX2 (a7163ad on 1bb387e):
+  - Aggregate freshness: batch price_freshness_status DERIVED from 50 action statuses via
+    deterministic fail-closed priority (STALE > UNAVAILABLE > PARTIAL > PASS). VPS yields
+    PRICE_FRESHNESS_EVIDENCE_PARTIAL at batch, review, and top level (no residual UNAVAILABLE).
+  - Feasibility: price_freshness_evidence_available=true, local_observation_time_available=true,
+    exchange_timestamp_available=false, execution_grade_freshness_complete=false,
+    price_freshness_status=PARTIAL. Reasons use PARTIAL + EXCHANGE_TIMESTAMP_UNAVAILABLE
+    (not UNAVAILABLE). Result stays STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED.
+  - Network schema parity: one canonical complete-account schema. Top-level mirrors
+    review.network_audit (52 HTTP / 152 requested / 52 unique / 100 cache / 52 priced /
+    NETWORK_AUDIT_CONSISTENT). Planner-only counters renamed planner_ticker_*.
+    total_public_get_count = 1 instrument-metadata + 52 ticker HTTP = 53.
+  - Snapshot timing: monotonic (perf_counter) sub-ms precision; margin_snapshot_atomic=false;
+    atomicity never inferred from equal rounded UTC strings.
+  - Legacy parity: EDU/POLYX carry mark_price_observed_at / mark_price_age_seconds /
+    mark_price_evidence_fingerprint / mark_price_freshness_status.
+  - 17+40+59 tests passed; demo_trading regression passed.
+
+  **Execution readiness NOT complete. Remaining blockers (deterministic):**
+  - PRICE_FRESHNESS_EVIDENCE_PARTIAL (exchange timestamp unavailable)
+  - NON_ATOMIC_MARGIN_SNAPSHOT (wallet + position = separate HTTP responses)
+  - APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE (cannot project strategy IM)
+  - ACCOUNT_MARGIN_MODE_UNAVAILABLE (/v5/account/info not allowed read-only)
+  - EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK (permanent per-task)
+
+  execution_batch_authorized=false; execution_ready=false; sender_reachable=false;
+  order/amend/cancel/live POST=0. No Demo order sent; no Live authorization; no auth marker.
+  Pilot and Forward source byte-identical across all three commits.
+
+  **Next milestone:** resolve authoritative account-margin-mode + applicable initial-margin
+  rate evidence (unblock margin projection), and authoritative exchange timestamp evidence
+  (unblock execution-grade freshness from PARTIAL to PASS).
+
+  Pre-existing unrelated failure: test_demo_emergency_close_sender.py::test_dry_run_cli_writes_report
+  (Windows temp-dir environmental issue, identical on all parent commits, not caused by any 014CD change).
+
+Files changed (committed):
+  MOD  README.md                                            (VPS CLOSEOUT shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CD closeout block, DONE/VPS VERIFIED)
+  MOD  docs/research/commands/COMMAND_LOG.md                (this entry)

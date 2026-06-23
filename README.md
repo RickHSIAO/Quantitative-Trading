@@ -17,7 +17,42 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CD_FIX2 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CD_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CD_VPS_CLOSEOUT**（2026-06-23, Sonnet 4.6 / VPS 驗證結案 — 文件更新僅此）
+> **`TASK-014CD / FIX1 / FIX2 DONE AND VPS VERIFIED / STRATEGY-NATIVE V1 PRESERVED / FRESHNESS AND NETWORK SCHEMA PARITY VERIFIED / NON-ATOMIC MARGIN SEMANTICS VERIFIED / EXECUTION READINESS STILL BLOCKED / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 純文件 closeout commit（a7163ad 之上），不修改任何 Python source 或 test。
+>
+> **VPS 驗證總結（TASK-014CD → FIX1 → FIX2，全部 DONE / VPS VERIFIED）：**
+> - **核心不變：** active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY；50 標的、25 多 / 25 空；固定 10000-USDT；
+>   50 批次動作全帶非空 InstrumentRules + RULE_VALIDATION_PASS；batch_float_artifact_count=0；
+>   EDUUSDT/POLYXUSDT 未觸碰且以 current mark 估值。
+> - **保證金證據（TASK-014CD + FIX1）：** 權威 wallet/position 欄位成功擷取（equity、available、total IM/MM、
+>   account IM/MM rate、per-position leverage/IM/MM/value/liq price）。非原子快照語意正確分類：
+>   wallet reported 1803.74 vs position sum 1805.96（~2.22 USDT / ~0.12%）→
+>   INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE →
+>   margin_model_status=AUTHORITATIVE_MARGIN_MODEL_PARTIAL。不再誤標 MARGIN_EVIDENCE_CONFLICT。
+>   account_margin_mode 因 /v5/account/info 非允許唯讀路徑 → ACCOUNT_MARGIN_MODE_UNAVAILABLE。
+>   accountIMRate 在無權威適用性證據下不套用於 50 倉策略投影。
+> - **價格新鮮度證據（TASK-014CD + FIX1 + FIX2）：** 50 動作各掛對應 symbol 新鮮度紀錄
+>   （price_observed_at / request times / elapsed / age / exchange_timestamp=null / status=PARTIAL）。
+>   彙總以確定性 fail-closed 優先序（STALE > UNAVAILABLE > PARTIAL > PASS）→ batch / review / top-level
+>   三層皆 PRICE_FRESHNESS_EVIDENCE_PARTIAL。feasibility 正確報告 evidence_available=true、
+>   local_observation_time_available=true、exchange_timestamp_available=false、
+>   execution_grade_freshness_complete=false。monotonic (perf_counter) 次毫秒精度快照時間。
+> - **網路稽核（TASK-014CD + FIX2）：** 52 HTTP / 152 requested / 52 unique / 100 cache / 52 priced /
+>   NETWORK_AUDIT_CONSISTENT。top-level 鏡像 review.network_audit；planner-only 計數改名 planner_ticker_*；
+>   total_public_get_count = 1 instrument-metadata + 52 ticker HTTP = 53。
+> - **execution readiness blockers（確定性）：** PRICE_FRESHNESS_EVIDENCE_PARTIAL /
+>   NON_ATOMIC_MARGIN_SNAPSHOT / APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE /
+>   ACCOUNT_MARGIN_MODE_UNAVAILABLE / EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK。
+> - **執行就緒尚未完成。** execution_batch_authorized=false；execution_ready=false；
+>   sender_reachable=false；order/amend/cancel/live=0；無 Demo 下單；無 Live 授權；無 auth marker。
+>
+> **下一里程碑：**
+> 1. 取得權威 account-margin-mode 與 applicable initial-margin rate 證據（解除
+>    ACCOUNT_MARGIN_MODE_UNAVAILABLE + APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE blocker）。
+> 2. 取得權威 exchange timestamp 證據（解除 EXCHANGE_TIMESTAMP_UNAVAILABLE、使新鮮度從 PARTIAL 升至 PASS）。
 
 > **TASK-014CD_FIX2_AGGREGATE_FRESHNESS_AND_NETWORK_SCHEMA_PARITY**（2026-06-23, Opus 4.8 / 彙總新鮮度 + 網路計數 schema 一致性）
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AGGREGATE PRICE FRESHNESS CONSISTENT AT ACTION BATCH REVIEW AND TOP LEVEL / FEASIBILITY REPORTS PARTIAL EVIDENCE ACCURATELY / NETWORK AUDIT COUNTERS HAVE ONE CANONICAL MEANING / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
