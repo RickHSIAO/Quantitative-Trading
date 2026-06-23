@@ -17,7 +17,56 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CD_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CE 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CE_AUTHORITATIVE_ACCOUNT_MODE_MARGIN_TIER_AND_EXCHANGE_CLOCK_EVIDENCE**（2026-06-23, Opus 4.8 / 權威帳戶模式 + 保證金分層 + 交易所時鐘證據）
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AUTHORITATIVE ACCOUNT MODE CAPTURED / RISK-TIER APPLICABILITY FAILS CLOSED / ACCOUNT IM RATE NOT REUSED / EXCHANGE SERVER-TIME BRACKET IS NOT MISLABELLED AS QUOTE TIMESTAMP / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 cd15e54 之上新增一筆 commit，只加唯讀證據層（帳戶模式 / 保證金分層 / 交易所時鐘），不更動策略目標、權重、資本基數、planner、批次身分或 legacy 持倉。
+>
+> - **核心維持不變：** active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY、50 標的、25/25、±0.02、固定 10000-USDT、
+>   ±200-USDT 名目、50 批次動作全帶非空 InstrumentRules + RULE_VALIDATION_PASS、batch_float_artifact_count=0、
+>   EDUUSDT/POLYXUSDT 受保護未觸碰且 executable=false。
+> - **帳戶模式證據（GET /v5/account/info，新增至窄唯讀 allowlist）：** 擷取 marginMode / unifiedMarginStatus /
+>   updatedTime（+ isMasterTrader / spotHedgingStatus 若有），驗證 marginMode ∈ {ISOLATED_MARGIN, REGULAR_MARGIN,
+>   PORTFOLIO_MARGIN}；未知值 → MALFORMED；無回應 → UNAVAILABLE；account_info_evidence_fingerprint 確定性。
+>   **不可能授權** POST /v5/account/set-margin-mode、任何 order / position-mutation / Live host（client 只發 GET，
+>   set-margin-mode 不在 allowlist 且列入 _FORBIDDEN_WRITE_PATHS）。
+> - **公共風險上限證據（GET /v5/market/risk-limit）：** 每個策略符號 symbol-specific GET（1 HTTP = 1 page，最易稽核），
+>   tiers 以 riskLimitValue 升序排序後 FAIL-CLOSED 選層：僅當 combined（projected + existing same-symbol）曝險證實落入
+>   tier 的 riskLimitValue 內才選；超過所有 tier → RISK_TIER_EXPOSURE_OUTSIDE_RETRIEVED_LIMITS；缺 initialMargin →
+>   RISK_TIER_EVIDENCE_MISSING。**不以 maxLeverage 推 IM、不用 1/maxLeverage、不重用 accountIMRate、不因 isLowestRisk=1
+>   就選最低層。** 每動作輸出 projected/existing/combined 曝險、applicable tier id/limit/IM rate/MM rate/maxLeverage、
+>   risk_tier_selection_status、risk_tier_evidence_fingerprint。
+> - **margin-mode 分支：** REGULAR_MARGIN + 每動作 tier 適用 → projected_action_IM = projected_notional × initialMargin_rate、
+>   status PROJECTED_MARGIN_EVIDENCE_COMPLETE；ISOLATED_MARGIN 不繼承帳戶級假設 → PARTIAL；PORTFOLIO_MARGIN 靜態每符號
+>   rate 非完整組合保證金模型 → PARTIAL + PORTFOLIO_MARGIN_STATIC_RATE_NOT_APPLICABLE。projected Strategy 總額僅在 50
+>   動作全 COMPLETE 時計算且 = 50 個 canonical per-action 值的精確 Decimal 加總；observed legacy IM 維持 observed（不重分類）。
+>   不因 /v5/account/info 回傳 margin mode 就強制 COMPLETE。
+> - **交易所時鐘證據（GET /v5/market/time）：** 以兩個 server-time 觀測 BRACKET 價格收集視窗（收集前 / 收集後），
+>   解析 timeSecond/timeNano、記錄 local UTC + monotonic、bracket 時長與順序、確定性 clock offset。明確區分
+>   exchange_server_time / REST_response_envelope_time / local_observation_time / per_symbol_exchange_quote_timestamp。
+>   **REST envelope time 不稱為 quote timestamp、不偽造每符號交易所時間。** 結果：
+>   per_symbol_exchange_quote_timestamp_available=false、exchange_clock_bracket_available=true、
+>   execution_grade_freshness_complete=false、PRICE_FRESHNESS_EVIDENCE_PARTIAL。**不從 server-time bracket 或 REST
+>   envelope time 將新鮮度升為 PASS。**
+> - **交易所時間來源結論：** 目前 REST ticker 路徑無法提供真正的每符號交易所 quote timestamp；execution-grade 時間證據需
+>   公共/認證 WebSocket ticker `ts`；**本任務不引入 WebSocket 執行相依**，列為獨立 follow-up。
+> - **readiness blockers（依證據解除/替換）：** 權威 marginMode → 解除 ACCOUNT_MARGIN_MODE_UNAVAILABLE；REGULAR 且模型
+>   COMPLETE → 解除 APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE；其餘以精確 blocker 表示
+>   （PORTFOLIO_MARGIN_STATIC_RATE_NOT_APPLICABLE / ISOLATED_MARGIN_PER_SYMBOL_SCOPE_NOT_PROVEN /
+>   RISK_TIER_EVIDENCE_INCOMPLETE / PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE / EXCHANGE_CLOCK_BRACKET_ONLY）；
+>   EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK 永遠在列且永遠最後。
+> - **網路稽核（擴充）：** account_info / wallet / positions 私有唯讀 GET、server_time / risk_limit 公共 GET、
+>   risk_limit_page_count、ticker HTTP/requested/unique/cache 各自獨立語意，total 重算且不一致即 fail closed；top-level
+>   與 nested 對齊。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、
+>   execute_daily_native_call_count=0、transport_sender_call_count=0、order/amend/cancel/live=0；無 Demo 下單、
+>   無 Live 授權、無 auth marker。Pilot 與 Forward source byte-identical。
+> - 驗證：focused 52 passed（test_demo_strategy_native_ce_account_mode_risk_tier.py）；demo_trading regression 9285 passed
+>   （1 個既有無關 emergency_close CLI 失敗，與本任務無關）。
+>
+> VPS 唯讀 / Plan-only verification（無送單命令）：
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CD_VPS_CLOSEOUT**（2026-06-23, Sonnet 4.6 / VPS 驗證結案 — 文件更新僅此）
 > **`TASK-014CD / FIX1 / FIX2 DONE AND VPS VERIFIED / STRATEGY-NATIVE V1 PRESERVED / FRESHNESS AND NETWORK SCHEMA PARITY VERIFIED / NON-ATOMIC MARGIN SEMANTICS VERIFIED / EXECUTION READINESS STILL BLOCKED / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

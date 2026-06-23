@@ -24,10 +24,15 @@ Allowed read-only endpoint paths (_ALLOWED_PATHS):
   /v5/position/list
   /v5/market/instruments-info
   /v5/user/query-api
+  /v5/account/info        (TASK-014CE: read-only account marginMode evidence)
+  /v5/market/time         (TASK-014CE: public exchange server-clock evidence)
+  /v5/market/risk-limit   (TASK-014CE: public margin-tier evidence)
 
 Forbidden operations (never called; verified by source scan in tests):
   Order placement / creation / submission / cancellation, private order posting,
   leverage changes, trading-stop changes, balance transfers, withdrawals, deposits.
+  In particular POST /v5/account/set-margin-mode is NEVER referenced: this client
+  only ever issues GET requests, and set-margin-mode is not in _ALLOWED_PATHS.
 """
 from __future__ import annotations
 
@@ -51,13 +56,32 @@ DEMO_BASE_URL  = "https://api-demo.bybit.com"
 _LIVE_HOSTNAME = "api.bybit.com"    # sentinel only — never used as a request target
 
 # Allowed read-only endpoint paths
-_EP_WALLET      = "/v5/account/wallet-balance"
-_EP_POSITIONS   = "/v5/position/list"
-_EP_INSTRUMENTS = "/v5/market/instruments-info"
-_EP_QUERY_API   = "/v5/user/query-api"
+_EP_WALLET       = "/v5/account/wallet-balance"
+_EP_POSITIONS    = "/v5/position/list"
+_EP_INSTRUMENTS  = "/v5/market/instruments-info"
+_EP_QUERY_API    = "/v5/user/query-api"
+_EP_ACCOUNT_INFO = "/v5/account/info"        # TASK-014CE: read-only account marginMode
+_EP_MARKET_TIME  = "/v5/market/time"         # TASK-014CE: public exchange server time
+_EP_RISK_LIMIT   = "/v5/market/risk-limit"   # TASK-014CE: public margin-tier evidence
 
 _ALLOWED_PATHS: frozenset[str] = frozenset({
     _EP_WALLET, _EP_POSITIONS, _EP_INSTRUMENTS, _EP_QUERY_API,
+    _EP_ACCOUNT_INFO, _EP_MARKET_TIME, _EP_RISK_LIMIT,
+})
+
+# Explicitly forbidden write/mutation paths. These are NEVER added to _ALLOWED_PATHS
+# and this client only ever issues GET. Declared as named sentinels so tests can prove
+# they are denied (no generic "allow all account endpoints" rule exists).
+_FORBIDDEN_WRITE_PATHS: frozenset[str] = frozenset({
+    "/v5/account/set-margin-mode",
+    "/v5/order/create",
+    "/v5/order/create-batch",
+    "/v5/order/amend",
+    "/v5/order/cancel",
+    "/v5/order/cancel-all",
+    "/v5/position/set-leverage",
+    "/v5/position/switch-isolated",
+    "/v5/position/set-risk-limit",
 })
 
 
@@ -122,6 +146,37 @@ class InstrumentSnapshot:
     price_precision: int
     qty_precision:   int
     status:          str = "Trading"  # Bybit instrument status
+
+
+@dataclass
+class AccountInfoSnapshot:
+    """TASK-014CE: read-only account-mode evidence from /v5/account/info.
+    Absent fields stay None (never assumed). ``response_present`` is False when no
+    usable response was returned (retCode != 0 / network error)."""
+    margin_mode:           str | None = None
+    unified_margin_status: Any        = None
+    updated_time:          str | None = None
+    is_master_trader:      Any        = None
+    spot_hedging_status:   str | None = None
+    response_envelope_time: str | None = None
+    request_started_at_utc:  str | None = None
+    response_received_at_utc: str | None = None
+    request_elapsed_ms:     float | None = None
+    response_present:       bool        = False
+
+
+@dataclass
+class ServerTimeSnapshot:
+    """TASK-014CE: public exchange server-clock evidence from /v5/market/time.
+    timeSecond / timeNano are the EXCHANGE server time (not a per-symbol quote time)."""
+    time_second:            str | None = None
+    time_nano:              str | None = None
+    response_envelope_time: str | None = None
+    request_started_at_utc:  str | None = None
+    response_received_at_utc: str | None = None
+    request_started_monotonic: float | None = None
+    response_received_monotonic: float | None = None
+    response_present:        bool       = False
 
 
 @dataclass
@@ -280,6 +335,30 @@ class DemoReadOnlyClient:
                 api_secret_present=self._secret_present,
             )
         return self._proof_real()
+
+    def get_account_info(self) -> AccountInfoSnapshot:
+        """TASK-014CE: read-only account-mode evidence (signed GET /v5/account/info).
+        Fixture mode returns an explicit all-None UNAVAILABLE snapshot (no I/O)."""
+        if not self._allow_real:
+            return AccountInfoSnapshot(response_present=False)
+        return self._account_info_real()
+
+    def get_server_time(self) -> ServerTimeSnapshot:
+        """TASK-014CE: public exchange server-clock evidence (unsigned GET
+        /v5/market/time). Fixture mode returns an explicit empty snapshot (no I/O)."""
+        if not self._allow_real:
+            return ServerTimeSnapshot(response_present=False)
+        return self._server_time_real()
+
+    def get_risk_limit(
+        self, symbol: str | None = None, category: str = "linear",
+    ) -> dict[str, list[dict[str, Any]]]:
+        """TASK-014CE: public margin-tier evidence (unsigned GET /v5/market/risk-limit).
+        Returns ``{symbol: [raw tier dicts]}`` exactly as returned by Bybit (paginated).
+        Fixture mode returns an empty map (no I/O)."""
+        if not self._allow_real:
+            return {}
+        return self._risk_limit_real(symbol=symbol, category=category)
 
     # ------------------------------------------------------------------
     # Real-mode internals (only reached when allow_real_network=True)
@@ -550,10 +629,105 @@ class DemoReadOnlyClient:
             proof_strength=proof_strength,
         )
 
+    def _account_info_real(self) -> AccountInfoSnapshot:
+        """Signed GET /v5/account/info. Parses marginMode / unifiedMarginStatus /
+        updatedTime (+ optional isMasterTrader / spotHedgingStatus). Captures local
+        request/response timing. Never writes; secret never returned/printed."""
+        started = _utc_now_iso()
+        t0 = time.perf_counter()
+        data = self._get(_EP_ACCOUNT_INFO, {}, signed=True)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        received = _utc_now_iso()
+        ret_code = data.get("retCode", -1)
+        result = data.get("result", {}) or {}
+        if ret_code != 0 or not result:
+            return AccountInfoSnapshot(
+                request_started_at_utc=started, response_received_at_utc=received,
+                request_elapsed_ms=round(elapsed_ms, 3), response_present=False)
+        return AccountInfoSnapshot(
+            margin_mode=(str(result.get("marginMode")) if result.get("marginMode") is not None else None),
+            unified_margin_status=result.get("unifiedMarginStatus"),
+            updated_time=(str(result.get("updatedTime")) if result.get("updatedTime") is not None else None),
+            is_master_trader=result.get("isMasterTrader"),
+            spot_hedging_status=(str(result.get("spotHedgingStatus"))
+                                 if result.get("spotHedgingStatus") is not None else None),
+            response_envelope_time=(str(data.get("time")) if data.get("time") is not None else None),
+            request_started_at_utc=started, response_received_at_utc=received,
+            request_elapsed_ms=round(elapsed_ms, 3), response_present=True)
+
+    def _server_time_real(self) -> ServerTimeSnapshot:
+        """Unsigned GET /v5/market/time. Parses timeSecond / timeNano (exchange server
+        time). Captures local UTC + monotonic request/response timing for bracketing."""
+        started = _utc_now_iso()
+        mono_start = time.perf_counter()
+        data = self._get(_EP_MARKET_TIME, {}, signed=False)
+        mono_end = time.perf_counter()
+        received = _utc_now_iso()
+        ret_code = data.get("retCode", -1)
+        result = data.get("result", {}) or {}
+        if ret_code != 0 or not result:
+            return ServerTimeSnapshot(
+                request_started_at_utc=started, response_received_at_utc=received,
+                request_started_monotonic=mono_start, response_received_monotonic=mono_end,
+                response_present=False)
+        return ServerTimeSnapshot(
+            time_second=(str(result.get("timeSecond")) if result.get("timeSecond") is not None else None),
+            time_nano=(str(result.get("timeNano")) if result.get("timeNano") is not None else None),
+            response_envelope_time=(str(data.get("time")) if data.get("time") is not None else None),
+            request_started_at_utc=started, response_received_at_utc=received,
+            request_started_monotonic=mono_start, response_received_monotonic=mono_end,
+            response_present=True)
+
+    def _risk_limit_real(
+        self, *, symbol: str | None, category: str,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Unsigned GET /v5/market/risk-limit (paginated). Collects every tier row for
+        each symbol verbatim (Bybit returns ascending tiers). Symbol-specific lookup is
+        used when ``symbol`` is given; otherwise the full linear catalog is paginated."""
+        out: dict[str, list[dict[str, Any]]] = {}
+        page_count = 0
+        get_count = 0
+        next_cursor = ""
+        seen_cursors: set[str] = set()
+        max_pages = 50
+        while page_count < max_pages:
+            params: dict[str, str] = {"category": category}
+            if symbol:
+                params["symbol"] = symbol
+            if next_cursor:
+                params["cursor"] = next_cursor
+            data = self._get(_EP_RISK_LIMIT, params, signed=False)
+            page_count += 1
+            get_count += 1
+            try:
+                rows = (data.get("result", {}) or {}).get("list", []) or []
+                for row in rows:
+                    sym = str(row.get("symbol", "") or "")
+                    if not sym:
+                        continue
+                    out.setdefault(sym, []).append(dict(row))
+                next_cursor = (data.get("result", {}) or {}).get("nextPageCursor", "") or ""
+                if not next_cursor or next_cursor in seen_cursors:
+                    break
+                seen_cursors.add(next_cursor)
+            except (KeyError, TypeError, ValueError):
+                break
+            # Symbol-specific lookups return all tiers on one page.
+            if symbol:
+                break
+        out["__page_count__"] = page_count  # provenance; popped by callers
+        out["__get_count__"] = get_count
+        return out
+
 
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
+def _utc_now_iso() -> str:
+    """LOCAL UTC ISO-8601 request/response time (never an exchange/server timestamp)."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()))
+
 
 def _decimal_places(v: float) -> int:
     """Infer decimal precision from a step/tick size value."""

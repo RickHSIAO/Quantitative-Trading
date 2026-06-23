@@ -1,5 +1,43 @@
 # Next Action
 
+> **TASK-014CE_AUTHORITATIVE_ACCOUNT_MODE_MARGIN_TIER_AND_EXCHANGE_CLOCK_EVIDENCE** (2026-06-23, Opus 4.8)
+>
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AUTHORITATIVE ACCOUNT MODE CAPTURED / RISK-TIER APPLICABILITY FAILS CLOSED / ACCOUNT IM RATE NOT REUSED / EXCHANGE SERVER-TIME BRACKET IS NOT MISLABELLED AS QUOTE TIMESTAMP / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> New commit on top of cd15e54 adding a read-only account-mode / margin-tier / exchange-clock
+> evidence layer. No Strategy targets / weights / capital / planner / batch identity / legacy change.
+>
+> - Account-mode evidence: GET /v5/account/info added to the NARROW read-only allowlist. marginMode
+>   validated (REGULAR/ISOLATED/PORTFOLIO); malformed -> MALFORMED; absent -> UNAVAILABLE. POST
+>   /v5/account/set-margin-mode + all order/position-mutation/Live paths denied (client only issues
+>   GET; set-margin-mode is in _FORBIDDEN_WRITE_PATHS, never _ALLOWED_PATHS).
+> - Risk-limit evidence: GET /v5/market/risk-limit, symbol-specific (1 HTTP = 1 page). Fail-closed
+>   tier selection on COMBINED (projected + existing same-symbol) exposure; exposure beyond all tiers
+>   or missing initialMargin fails closed. Never infers from maxLeverage, never 1/maxLeverage, never
+>   reuses accountIMRate, never picks lowest tier merely on isLowestRisk.
+> - Margin-mode branching: REGULAR + all-applicable -> projected_action_IM = notional * initialMargin
+>   rate, model COMPLETE = exact Decimal sum of 50 actions; ISOLATED -> PARTIAL; PORTFOLIO -> PARTIAL +
+>   PORTFOLIO_MARGIN_STATIC_RATE_NOT_APPLICABLE. Observed legacy IM stays observed. COMPLETE never
+>   forced merely because a margin mode was returned.
+> - Exchange-clock evidence: GET /v5/market/time brackets the price-collection window (before/after).
+>   timeSecond/timeNano parsed; server-time / REST-envelope / local-observation / per-symbol-quote
+>   times are distinct. REST envelope time is NOT a quote timestamp. per_symbol quote timestamp
+>   unavailable; freshness stays PARTIAL (never PASS from a bracket). Verdict: a WebSocket ticker `ts`
+>   would be required for execution-grade per-symbol timestamps; deferred to a separate follow-up.
+> - Blockers: ACCOUNT_MARGIN_MODE_UNAVAILABLE resolved when marginMode authoritative;
+>   APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE resolved when the REGULAR model is COMPLETE; precise CE
+>   blockers merged; EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK always present and always last.
+> - execution_batch_authorized=false; execution_ready=false; sender_reachable=false;
+>   order/amend/cancel/live=0. No Demo order; no Live; no auth marker. Pilot + Forward byte-identical.
+> - Tests: 52 focused (test_demo_strategy_native_ce_account_mode_risk_tier.py); demo_trading regression
+>   9285 passed (1 pre-existing unrelated emergency_close CLI failure).
+>
+> Next milestone: a separate follow-up evaluating a public/authenticated WebSocket ticker `ts` source
+> for execution-grade per-symbol quote timestamps, and the human-authorization + staged Demo batch
+> execution protocol. No send command provided this task.
+
+---
+
 > **TASK-014CD_VPS_CLOSEOUT** (2026-06-23, Sonnet 4.6 — documentation-only VPS verification closeout)
 >
 > **Status: TASK-014CD / FIX1 / FIX2 → DONE / VPS VERIFIED**

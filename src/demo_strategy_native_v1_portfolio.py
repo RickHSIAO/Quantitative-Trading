@@ -39,6 +39,7 @@ from typing import Any, Mapping, Sequence
 
 from src import demo_strategy_pilot_readiness as rd
 from src import demo_strategy_native_margin_freshness_audit as md
+from src import demo_strategy_native_account_mode_risk_tier_audit as ce
 
 TASK_ID = "TASK-014CC"
 
@@ -838,6 +839,14 @@ def build_strategy_native_review(
     applicable_initial_margin_rate: Any = None,
     price_freshness_evidence: Mapping[str, Any] | None = None,
     network_audit: Mapping[str, Any] | None = None,
+    # TASK-014CE authoritative account-mode / risk-tier / exchange-clock evidence
+    # (Plan-only; never authorizes execution). Each defaults to None so the accepted
+    # TASK-014CD behavior is byte-identical when no CE evidence is supplied.
+    account_mode_evidence: Mapping[str, Any] | None = None,
+    risk_limit_evidence: Mapping[str, Any] | None = None,
+    exchange_clock_evidence: Mapping[str, Any] | None = None,
+    account_margin_model: Mapping[str, Any] | None = None,
+    account_network_audit: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Full ACTIVE V1 Strategy-native Plan-only review. Non-dispatching: builds a
     multi-symbol execution batch but authorizes and sends nothing.
@@ -944,6 +953,20 @@ def build_strategy_native_review(
         margin_model_blockers=margin_model.get("margin_model_blockers"),
         network_audit_status=network_audit_status)
 
+    # --- TASK-014CE: refine blockers with authoritative account-mode / risk-tier /
+    # exchange-clock evidence. ACCOUNT_MARGIN_MODE_UNAVAILABLE and
+    # APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE are resolved ONLY when the evidence
+    # actually permits; precise CE blockers (PORTFOLIO/ISOLATED/tier/quote-timestamp)
+    # are merged. The per-task authorization blocker always remains last. When no CE
+    # evidence is supplied, the blocker list is unchanged (accepted CD behavior).
+    if (account_mode_evidence is not None or account_margin_model is not None
+            or exchange_clock_evidence is not None):
+        execution_readiness_blockers = ce.reconcile_readiness_blockers(
+            base_blockers=execution_readiness_blockers,
+            account_mode_evidence=account_mode_evidence,
+            account_margin_model=account_margin_model,
+            exchange_clock_evidence=exchange_clock_evidence)
+
     longs = sum(1 for t in targets if _norm_side(t.get("side")) == "long")
     shorts = sum(1 for t in targets if _norm_side(t.get("side")) == "short")
 
@@ -991,6 +1014,20 @@ def build_strategy_native_review(
                                      if price_freshness_evidence is not None else None),
         "network_audit": (dict(network_audit) if network_audit is not None else None),
         "network_audit_status": network_audit_status,
+        # TASK-014CE authoritative account-mode / risk-tier / exchange-clock evidence
+        # (Plan-only; authorizes nothing). Null when not supplied (accepted CD output).
+        "account_mode_evidence": (dict(account_mode_evidence)
+                                  if account_mode_evidence is not None else None),
+        "risk_limit_evidence": (dict(risk_limit_evidence)
+                                if risk_limit_evidence is not None else None),
+        "exchange_clock_evidence": (dict(exchange_clock_evidence)
+                                    if exchange_clock_evidence is not None else None),
+        "projected_margin_model": (dict(account_margin_model)
+                                   if account_margin_model is not None else None),
+        "projected_margin_model_status": ((account_margin_model or {}).get("margin_model_status")
+                                          if account_margin_model is not None else None),
+        "account_network_audit": (dict(account_network_audit)
+                                  if account_network_audit is not None else None),
         "execution_readiness_blockers": execution_readiness_blockers,
         # Authorization / dispatch invariants (Plan-only).
         "execution_batch_present": True,

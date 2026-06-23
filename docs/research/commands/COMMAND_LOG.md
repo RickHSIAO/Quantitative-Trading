@@ -10385,3 +10385,88 @@ Files changed (committed):
   MOD  README.md                                            (VPS CLOSEOUT shared status)
   MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CD closeout block, DONE/VPS VERIFIED)
   MOD  docs/research/commands/COMMAND_LOG.md                (this entry)
+---
+
+### TASK-014CE_AUTHORITATIVE_ACCOUNT_MODE_MARGIN_TIER_AND_EXCHANGE_CLOCK_EVIDENCE
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** cd15e54
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Read-only account-mode / margin-tier / exchange-clock evidence layer on top of the
+  TASK-014CD chain. No Strategy targets / weights / capital base / planner / batch identity
+  / legacy positions changed. Plan-only; authorises and sends nothing.
+
+  Core preserved: active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY; 50 targets, 25 long /
+  25 short; +/-0.02; fixed 10000-USDT; +/-200-USDT notionals; 50 batch actions all non-null
+  InstrumentRules + RULE_VALIDATION_PASS; batch_float_artifact_count=0; EDUUSDT/POLYXUSDT
+  protected, untouched, executable=false.
+
+  - Account-mode evidence (GET /v5/account/info, added to the narrow read-only allowlist):
+    marginMode / unifiedMarginStatus / updatedTime (+ isMasterTrader / spotHedgingStatus when
+    returned) captured; marginMode validated against {ISOLATED_MARGIN, REGULAR_MARGIN,
+    PORTFOLIO_MARGIN}; unknown -> ACCOUNT_MODE_EVIDENCE_MALFORMED; absent -> UNAVAILABLE;
+    account_info_evidence_fingerprint deterministic. POST /v5/account/set-margin-mode and all
+    order / position-mutation / Live paths are denied: the client only ever issues GET, and
+    set-margin-mode is in _FORBIDDEN_WRITE_PATHS (never _ALLOWED_PATHS). No generic 'allow all
+    account GET' rule exists.
+  - Risk-limit evidence (GET /v5/market/risk-limit, symbol-specific; 1 HTTP == 1 page): tiers
+    sorted ascending by riskLimitValue, fail-closed selection on the COMBINED projected +
+    existing same-symbol exposure. Exposure beyond all retrieved tiers ->
+    RISK_TIER_EXPOSURE_OUTSIDE_RETRIEVED_LIMITS; missing/empty tiers or missing initialMargin ->
+    RISK_TIER_EVIDENCE_MISSING. Never infers a rate from maxLeverage, never 1/maxLeverage, never
+    reuses accountIMRate, never selects the lowest tier merely on isLowestRisk=1. Per action:
+    projected/existing/combined exposure, applicable tier id/limit/IM rate/MM rate/maxLeverage,
+    risk_tier_selection_status, risk_tier_evidence_fingerprint.
+  - Margin-mode branching: REGULAR_MARGIN + per-action applicable tier -> projected_action_IM =
+    projected_notional * initialMargin_rate (Decimal), status PROJECTED_MARGIN_EVIDENCE_COMPLETE;
+    ISOLATED_MARGIN -> PARTIAL (per-symbol isolated applicability not proven); PORTFOLIO_MARGIN ->
+    PARTIAL + PORTFOLIO_MARGIN_STATIC_RATE_NOT_APPLICABLE. Projected Strategy total computed ONLY
+    when all 50 actions COMPLETE and equals the EXACT Decimal sum of the 50 per-action values.
+    Observed legacy IM stays observed (never reclassified projected). COMPLETE never forced
+    merely because /v5/account/info returned a margin mode.
+  - Exchange-clock evidence (GET /v5/market/time): two server-time observations bracket the price
+    collection window (before/after). timeSecond/timeNano parsed; exchange_server_time,
+    REST_response_envelope_time, local_observation_time and per_symbol_exchange_quote_timestamp
+    are distinct. REST envelope time is NOT labelled a quote timestamp; no per-symbol exchange
+    time is invented. Result: per_symbol_exchange_quote_timestamp_available=false,
+    exchange_clock_bracket_available=true, execution_grade_freshness_complete=false,
+    PRICE_FRESHNESS_EVIDENCE_PARTIAL. Freshness is never promoted to PASS from a server-time
+    bracket or a REST envelope time. Verdict: REST cannot provide a true per-symbol quote
+    timestamp; a WebSocket ticker `ts` would be required; deferred to a separate follow-up (no
+    WebSocket execution dependency introduced here).
+  - Network audit extended with distinct counters: account_info / wallet / positions private
+    read-only GET, server_time / risk_limit public GET, risk_limit_page_count, ticker
+    HTTP/requested/unique/cache. Totals recomputed; inconsistency -> NETWORK_AUDIT_COUNTER_MISMATCH
+    (fail closed). Top-level mirrors nested.
+  - Readiness blockers: ACCOUNT_MARGIN_MODE_UNAVAILABLE resolved when marginMode authoritative;
+    APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE resolved when the REGULAR model is COMPLETE; precise
+    CE blockers merged (PORTFOLIO_MARGIN_STATIC_RATE_NOT_APPLICABLE /
+    ISOLATED_MARGIN_PER_SYMBOL_SCOPE_NOT_PROVEN / RISK_TIER_EVIDENCE_INCOMPLETE /
+    PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE / EXCHANGE_CLOCK_BRACKET_ONLY).
+    EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK always present, always last.
+
+  execution_batch_authorized=false; execution_ready=false; sender_reachable=false;
+  execute_daily_native_call_count=0; transport_sender_call_count=0; order/amend/cancel/live
+  POST=0. No Demo order sent; no Live authorization; no auth marker. Pilot and Forward source
+  byte-identical.
+
+  Tests: 52 focused (test_demo_strategy_native_ce_account_mode_risk_tier.py); demo_trading
+  regression 9285 passed (1 pre-existing unrelated emergency_close CLI failure, identical on
+  parent cd15e54).
+
+VPS read-only readiness + Plan-only verification (no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py     --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  NEW  src/demo_strategy_native_account_mode_risk_tier_audit.py  (account-mode/risk-tier/clock evidence)
+  MOD  src/demo_readonly_client.py                              (account-info/server-time/risk-limit GET + guard)
+  MOD  src/demo_strategy_native_v1_portfolio.py                 (attach CE evidence; reconcile blockers)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py          (provider CE evidence + review wiring)
+  NEW  tests/demo_trading/test_demo_strategy_native_ce_account_mode_risk_tier.py (52 tests)
+  MOD  README.md                                                (TASK-014CE shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                    (TASK-014CE block)
+  MOD  docs/research/commands/COMMAND_LOG.md                    (this entry)
+

@@ -51,6 +51,7 @@ from src import demo_strategy_pilot_action_planner as planner  # noqa: E402
 from src import demo_strategy_pilot_execution_gate as gate  # noqa: E402 (ISOLATED one-shot test utility)
 from src import demo_strategy_native_v1_portfolio as v1  # noqa: E402 (ACTIVE V1 policy)
 from src import demo_strategy_native_margin_freshness_audit as md  # noqa: E402 (TASK-014CD evidence)
+from src import demo_strategy_native_account_mode_risk_tier_audit as ce  # noqa: E402 (TASK-014CE evidence)
 from src import demo_strategy_pilot_forward_source as fs  # noqa: E402
 from src import demo_strategy_pilot_native_execution as nx  # noqa: E402
 from src import demo_strategy_pilot_native_reporting as nrep  # noqa: E402
@@ -214,6 +215,19 @@ def _build_production_provider(_client=None, _guard=None):
             # One public batch instrument-metadata GET (category=linear, paginated).
             self._raw_instruments = self._client.get_instruments_info()
             self._instrument_metadata_get_count = 1
+            # TASK-014CE: authoritative account-mode evidence (one private read-only
+            # GET /v5/account/info) + the BEFORE server-time bracket point (one public
+            # GET /v5/market/time) captured immediately before any price collection.
+            self._account_info = self._client.get_account_info()
+            self._account_info_get_count = 1
+            self._server_time_before = self._client.get_server_time()
+            self._server_time_after = None
+            self._server_time_get_count = 1
+            # Risk-limit (margin-tier) evidence is fetched lazily per symbol (symbol-
+            # specific GET; one HTTP request == one page, easiest to audit) and cached.
+            self._risk_limit_cache: dict[str, list[dict[str, Any]]] = {}
+            self._risk_limit_get_count = 0
+            self._risk_limit_page_count = 0
             # Ticker GETs are counted lazily, once per distinct symbol (cached).
             self._price_cache: dict[str, float | None] = {}
             self._ticker_get_count = 0
@@ -359,6 +373,69 @@ def _build_production_provider(_client=None, _guard=None):
                 position_snapshot_response_received_monotonic=self._position_snapshot_received_monotonic,
                 # Two separate HTTP responses -> never atomic; scope not proven.
                 margin_snapshot_atomic=False, scope_proven_comparable=False)
+
+        def account_mode_evidence(self) -> dict:
+            """TASK-014CE: authoritative read-only account-mode evidence from the
+            already-fetched /v5/account/info response. Absent fields stay None."""
+            ai = self._account_info
+            return ce.normalize_account_mode_evidence(
+                margin_mode=getattr(ai, "margin_mode", None),
+                unified_margin_status=getattr(ai, "unified_margin_status", None),
+                updated_time=getattr(ai, "updated_time", None),
+                is_master_trader=getattr(ai, "is_master_trader", None),
+                spot_hedging_status=getattr(ai, "spot_hedging_status", None),
+                request_started_at_utc=getattr(ai, "request_started_at_utc", None),
+                response_received_at_utc=getattr(ai, "response_received_at_utc", None),
+                request_elapsed_ms=getattr(ai, "request_elapsed_ms", None),
+                response_envelope_time=getattr(ai, "response_envelope_time", None),
+                response_present=getattr(ai, "response_present", False))
+
+        def risk_limit_tiers(self, symbol: str) -> list[dict]:
+            """TASK-014CE: authoritative public risk-limit tiers for one symbol
+            (symbol-specific GET /v5/market/risk-limit, cached). One HTTP GET == one
+            page for a symbol-specific lookup (easiest to audit)."""
+            if symbol in self._risk_limit_cache:
+                return self._risk_limit_cache[symbol]
+            raw = self._client.get_risk_limit(symbol=symbol, category="linear")
+            self._risk_limit_page_count += int(raw.pop("__page_count__", 1) or 1)
+            self._risk_limit_get_count += int(raw.pop("__get_count__", 1) or 1)
+            tiers = raw.get(symbol, [])
+            self._risk_limit_cache[symbol] = tiers
+            return tiers
+
+        def exchange_clock_evidence(self, **window) -> dict:
+            """TASK-014CE: capture the AFTER server-time bracket point now and build the
+            exchange-clock evidence bracketing the price-collection window. The Bybit
+            server time is NEVER labelled a per-symbol quote timestamp."""
+            after = self._client.get_server_time()
+            self._server_time_after = after
+            self._server_time_get_count += 1
+            before = self._server_time_before
+            return ce.build_exchange_clock_evidence(
+                before_time_second=getattr(before, "time_second", None),
+                before_time_nano=getattr(before, "time_nano", None),
+                before_local_request_started_at_utc=getattr(before, "request_started_at_utc", None),
+                before_local_response_received_at_utc=getattr(before, "response_received_at_utc", None),
+                before_local_monotonic_start=getattr(before, "request_started_monotonic", None),
+                before_local_monotonic_end=getattr(before, "response_received_monotonic", None),
+                before_response_envelope_time=getattr(before, "response_envelope_time", None),
+                after_time_second=getattr(after, "time_second", None),
+                after_time_nano=getattr(after, "time_nano", None),
+                after_local_request_started_at_utc=getattr(after, "request_started_at_utc", None),
+                after_local_response_received_at_utc=getattr(after, "response_received_at_utc", None),
+                after_local_monotonic_start=getattr(after, "request_started_monotonic", None),
+                after_local_monotonic_end=getattr(after, "response_received_monotonic", None),
+                after_response_envelope_time=getattr(after, "response_envelope_time", None),
+                **window)
+
+        def account_network_counters(self) -> dict:
+            """TASK-014CE: the new private/public read-only GET counters."""
+            return {
+                "account_info_private_read_only_get_count": self._account_info_get_count,
+                "server_time_public_get_count": self._server_time_get_count,
+                "risk_limit_public_get_count": self._risk_limit_get_count,
+                "risk_limit_page_count": self._risk_limit_page_count,
+            }
 
         def instrument_rule(self, symbol: str):
             return self._instruments.get(symbol)
@@ -554,6 +631,93 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
             strategy_target_priced_symbol_count=strat_priced,
             legacy_mark_priced_symbol_count=legacy_priced)
 
+    # --- TASK-014CE authoritative account-mode / risk-tier / exchange-clock ----
+    # Account margin mode from /v5/account/info (read-only). Per-action margin tiers
+    # from /v5/market/risk-limit selected fail-closed on COMBINED projected exposure.
+    account_mode_evidence = (provider.account_mode_evidence()
+                             if hasattr(provider, "account_mode_evidence") else None)
+    margin_mode = (account_mode_evidence or {}).get("margin_mode")
+
+    # Existing same-symbol notional from strategy-managed (non-protected) positions.
+    managed_same_symbol_notional: dict[str, float] = {}
+    for p in open_positions:
+        sym = str(getattr(p, "symbol", "")).strip().upper()
+        if sym and sym not in v1.PROTECTED_SYMBOLS:
+            try:
+                managed_same_symbol_notional[sym] = abs(float(getattr(p, "quantity", 0) or 0)
+                                                         * float(getattr(p, "entry_price", 0) or 0))
+            except (TypeError, ValueError):
+                pass
+
+    per_action_projections: list[dict[str, Any]] = []
+    risk_tier_status_counts: dict[str, int] = {}
+    if hasattr(provider, "risk_limit_tiers"):
+        for tp in getattr(plan, "target_positions", []) or []:
+            sym = str(tp.get("symbol", "")).strip().upper()
+            if not sym:
+                continue
+            try:
+                tiers = provider.risk_limit_tiers(sym)
+            except Exception:  # noqa: BLE001
+                tiers = []
+            proj = ce.project_action_margin(
+                symbol=sym,
+                projected_symbol_notional_usdt=abs(float(tp.get("target_notional", 0) or 0)),
+                existing_same_symbol_notional_usdt=managed_same_symbol_notional.get(sym, 0),
+                tiers=tiers, margin_mode=margin_mode)
+            per_action_projections.append(proj)
+            st = proj["risk_tier_selection_status"]
+            risk_tier_status_counts[st] = risk_tier_status_counts.get(st, 0) + 1
+
+    account_margin_model = ce.build_account_margin_model(
+        account_mode_evidence=account_mode_evidence or ce.unavailable_account_mode_evidence(),
+        per_action_projections=per_action_projections,
+        observed_legacy_position_initial_margin_sum_usdt=(
+            (margin_evidence or {}).get("observed_legacy_position_initial_margin_sum_usdt")),
+        available_balance=available_balance) if per_action_projections or account_mode_evidence else None
+
+    risk_limit_evidence = ({
+        "source_endpoint": ce.EP_RISK_LIMIT,
+        "environment": "bybit_demo",
+        "margin_mode": margin_mode,
+        "symbol_count": len(per_action_projections),
+        "risk_tier_selection_status_counts": risk_tier_status_counts,
+        "per_action_projections": per_action_projections,
+    } if per_action_projections else None)
+
+    # Exchange-clock evidence bracketing the (already completed) price collection.
+    exchange_clock_evidence = None
+    if hasattr(provider, "exchange_clock_evidence"):
+        snaps_sorted = sorted(freshness_snaps, key=lambda s: str(s.get("symbol")))
+        first = snaps_sorted[0] if snaps_sorted else {}
+        last = snaps_sorted[-1] if snaps_sorted else {}
+        exchange_clock_evidence = provider.exchange_clock_evidence(
+            collection_window_started_at_utc=getattr(
+                getattr(provider, "_server_time_before", None), "response_received_at_utc", None),
+            collection_window_ended_at_utc=_utc_iso(batch_built_at),
+            first_ticker_symbol=first.get("symbol"),
+            first_ticker_observed_at_utc=first.get("local_observed_at_utc"),
+            last_ticker_symbol=last.get("symbol"),
+            last_ticker_observed_at_utc=last.get("local_observed_at_utc"))
+
+    # Complete-account extended network audit (distinct counter semantics).
+    account_network_audit = None
+    if hasattr(provider, "account_network_counters") and network_audit is not None:
+        acct_ctr = provider.account_network_counters()
+        prov_aud = provider.audit() if hasattr(provider, "audit") else {}
+        account_network_audit = ce.build_account_network_audit(
+            instrument_metadata_public_get_count=prov_aud.get("instrument_metadata_public_get_count", 0),
+            ticker_http_request_count=network_audit["ticker_http_request_count"],
+            ticker_requested_symbol_count=network_audit["ticker_requested_symbol_count"],
+            ticker_unique_symbol_count=network_audit["ticker_unique_symbol_count"],
+            ticker_cache_hit_count=network_audit["ticker_cache_hit_count"],
+            server_time_public_get_count=acct_ctr["server_time_public_get_count"],
+            risk_limit_public_get_count=acct_ctr["risk_limit_public_get_count"],
+            risk_limit_page_count=acct_ctr["risk_limit_page_count"],
+            account_info_private_read_only_get_count=acct_ctr["account_info_private_read_only_get_count"],
+            wallet_private_read_only_get_count=prov_aud.get("wallet_private_read_only_get_count", 0),
+            positions_private_read_only_get_count=prov_aud.get("positions_private_read_only_get_count", 0))
+
     return v1.build_strategy_native_review(
         plan=plan, open_positions=open_positions, pilot_id=pilot_id, run_date=date,
         artifact_fingerprint=_forward_fingerprint_of(plan),
@@ -570,7 +734,12 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
         price_freshness_status=v1.PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE,
         margin_evidence=margin_evidence,
         price_freshness_evidence=price_freshness_evidence,
-        network_audit=network_audit)
+        network_audit=network_audit,
+        account_mode_evidence=account_mode_evidence,
+        risk_limit_evidence=risk_limit_evidence,
+        exchange_clock_evidence=exchange_clock_evidence,
+        account_margin_model=account_margin_model,
+        account_network_audit=account_network_audit)
 
 
 def orchestrate_gated_send(
@@ -841,6 +1010,20 @@ def main(argv: list[str] | None = None) -> int:
                "margin_model_status": (strategy_native_review or {}).get("margin_model_status"),
                "network_audit_status": (strategy_native_review or {}).get("network_audit_status"),
                "price_freshness_status": (strategy_native_review or {}).get("price_freshness_status"),
+               # TASK-014CE explicit top-level account-mode / risk-tier / clock statuses.
+               "account_margin_mode":
+                   ((strategy_native_review or {}).get("account_mode_evidence") or {}).get("margin_mode"),
+               "account_mode_evidence_status":
+                   ((strategy_native_review or {}).get("account_mode_evidence") or {})
+                   .get("account_mode_evidence_status"),
+               "projected_margin_model_status":
+                   (strategy_native_review or {}).get("projected_margin_model_status"),
+               "exchange_clock_bracket_available":
+                   ((strategy_native_review or {}).get("exchange_clock_evidence") or {})
+                   .get("exchange_clock_bracket_available"),
+               "per_symbol_exchange_quote_timestamp_available":
+                   ((strategy_native_review or {}).get("exchange_clock_evidence") or {})
+                   .get("per_symbol_exchange_quote_timestamp_available"),
                "execution_readiness_blockers":
                    (strategy_native_review or {}).get("execution_readiness_blockers"),
                "plan_valid": plan.available and bool(plan.sizing_verification.get("verified", False)),
