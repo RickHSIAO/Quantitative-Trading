@@ -17,7 +17,50 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CE_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CF 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CF_PUBLIC_WEBSOCKET_TICKER_TIMESTAMP_EVIDENCE**（2026-06-23, Opus 4.8 / 公共唯讀 WebSocket ticker 時間戳證據）
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / MAINNET PUBLIC LINEAR WEBSOCKET USED FOR DEMO PUBLIC MARKET DATA / PUBLIC TICKER STREAM REQUIRES NO AUTHENTICATION / SYSTEM-GENERATED TICKER TS CAPTURED WITHOUT MISLABELLING IT AS TRADE TIME / SNAPSHOT-DELTA PRICE TIMESTAMP BINDING FAILS CLOSED / REST PRICES NOT REPLACED IN THIS TASK / EXECUTION FRESHNESS REMAINS PARTIAL PENDING SAME-MESSAGE PRICE INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 f448ad1 之上新增一筆 commit，新增獨立的公共唯讀 WebSocket ticker 證據蒐集器與稽核產物；
+> 不整合進 Strategy planner、不取代 REST 價格源、不移除任何新鮮度 blocker、不更動策略目標 / 權重 /
+> 固定 10000-USDT 資本 / sizing / 批次身分 / 受保護 legacy 持倉 / Pilot。
+>
+> - **官方語意：** 公共線性端點 wss://stream.bybit.com/v5/public/linear；Demo 公共行情與 Mainnet 公共行情相同
+>   （stream-demo 僅支援私有流），故以 Mainnet 公共流作為 Demo 公共行情的唯讀來源；topic=tickers.{symbol}；
+>   公共 topic 不需認證；訊息分 snapshot / delta，delta 缺欄位代表未變動；top-level ts 是 Bybit「產生資料」的
+>   毫秒時間戳（標準標籤 exchange_data_generated_ts_ms），**絕不**標為成交 / 撮合 / fill 時間；top-level cs 為 cross sequence。
+> - **新增檔案（僅三個，未改任何既有 source/test）：** src/demo_public_ws_ticker_evidence.py（純邏輯，可離線測試）、
+>   scripts/collect_public_ws_ticker_evidence.py（單一連線薄傳輸 + CLI）、
+>   tests/demo_trading/test_demo_public_ws_ticker_evidence_cf.py（61 focused tests）。
+> - **端點 / topic / 認證守門：** 僅允許該一個公共線性端點；stream-demo / stream-testnet / /v5/private /
+>   /v5/trade 一律 fail closed；只能訂閱 tickers.{symbol}；無法組出 auth / api_key / secret / sign 任何欄位；
+>   訂閱訊息與最終產物皆通過 assert_no_credentials（key 與已知 secret value 雙重掃描）。蒐集器不讀取憑證即可運作。
+> - **符號宇宙（權威來源推導，不硬編）：** 50 個 Strategy-native V1 目標符號取自 Primary Forward Record
+>   （fs.load_primary_forward_strategy_result，讀本地 artifact、不需憑證）+ 觀察到的受保護 legacy 符號
+>   （EDUUSDT、POLYXUSDT，對 PROTECTED_SYMBOLS allowlist 驗證）= 52 unique 線性符號；對重複 / 空 / 非線性 /
+>   與 V1 目標不符 / 與受保護 legacy 不符 fail closed；附 symbol_universe_fingerprint。
+> - **價格欄位：** planner_price_field=lastPrice（來源 src/demo_market_price_guard.py 的公共 /v5/market/tickers
+>   row['lastPrice']）；WebSocket ticker 選同一 lastPrice；snapshot 先於 delta（delta-before-snapshot fail closed）；
+>   delta 僅在「該訊息確實帶 lastPrice」時才刷新價格時間戳（僅 ts/cs 變動或無關欄位變動不刷新）；Decimal 字串原樣保留。
+> - **時間戳 / 排序 / replay 防護：** 記錄 exchange_data_generated_ts_ms、local epoch/monotonic 接收時間、
+>   以接受的 CE clock offset 計算 estimated_transport_delay_ms 與 evidence_age；ts/cs 不可解析、未來不合理、
+>   負延遲超容差、過舊、local timing 或 clock-offset provenance 不可用、cs/ts 倒退、topic 與 data.symbol 衝突、
+>   snapshot 未到、世代衝突 → 全部 fail closed。
+> - **覆蓋語意：** 52/52 全通過才 WS_TICKER_EVIDENCE_COMPLETE；51/52 維持 PARTIAL；無覆蓋 UNAVAILABLE；
+>   衝突 CONFLICT。COMPLETE 也**不**提升執行就緒：execution_grade_freshness_complete=false、不取代 REST 價格、
+>   保留 PRICE_FRESHNESS_EVIDENCE_PARTIAL 與 PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE，並新增整合待辦
+>   blocker WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS；EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK 永遠最後。
+> - **網路稽核分離：** ws_* 計數（connection/subscription/snapshot/delta/ping/pong/malformed/duplicate/
+>   out_of_order/required/covered/complete）獨立，**不**併入 total_public_get_count / ticker_http_request_count /
+>   任何 REST 計數。
+> - **依賴決策：** 使用既有已接受相依 pybit 的傳遞相依 websocket-client（lazy import，離線路徑零 I/O）；未新增 pybit、
+>   未新增任何相依、未自製 WebSocket 實作。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、order/amend/cancel/live=0；
+>   無 Demo 下單、無 Live 授權、無 auth marker、Pilot 未進階、Pilot 與 Forward source byte-identical。
+> - 驗證：focused 61 passed；demo_trading regression 9367 passed（1 個既有無關 emergency_close CLI 失敗）。
+>
+> 下一里程碑：將每個 planner action 價格綁定到帶有 selected price / symbol / ts / cs / local receive timing 的
+> 同一 WebSocket 訊息（同訊息整合任務），以及 human-authorization + staged Demo batch execution protocol。本任務不提供送單命令。
 
 > **TASK-014CE_VPS_CLOSEOUT**（2026-06-23, Sonnet 4.6 / VPS 驗證結案 — 文件更新僅此）
 >

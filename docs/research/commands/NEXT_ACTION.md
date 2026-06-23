@@ -1,5 +1,53 @@
 # Next Action
 
+> **TASK-014CF_PUBLIC_WEBSOCKET_TICKER_TIMESTAMP_EVIDENCE** (2026-06-23, Opus 4.8)
+>
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / MAINNET PUBLIC LINEAR WEBSOCKET USED FOR DEMO PUBLIC MARKET DATA / PUBLIC TICKER STREAM REQUIRES NO AUTHENTICATION / SYSTEM-GENERATED TICKER TS CAPTURED WITHOUT MISLABELLING IT AS TRADE TIME / SNAPSHOT-DELTA PRICE TIMESTAMP BINDING FAILS CLOSED / REST PRICES NOT REPLACED IN THIS TASK / EXECUTION FRESHNESS REMAINS PARTIAL PENDING SAME-MESSAGE PRICE INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> New commit on top of f448ad1 adding a STANDALONE public read-only WebSocket
+> ticker timestamp evidence collector + canonical artifact. Not integrated into
+> the planner; REST price source unchanged; freshness blockers retained. No
+> Strategy targets / weights / capital / sizing / batch identity / legacy / Pilot change.
+>
+> - Official semantics: wss://stream.bybit.com/v5/public/linear; Demo public data
+>   == Mainnet public data (stream-demo is private-only), so the Mainnet public
+>   stream is the correct read-only Demo public source; topic tickers.{symbol};
+>   public topics need no auth; snapshot/delta (absent delta field = unchanged);
+>   top-level ts = exchange_data_generated_ts_ms (NEVER a trade/fill time); cs = cross sequence.
+> - Three new files only (no existing source/test modified):
+>   src/demo_public_ws_ticker_evidence.py (pure logic),
+>   scripts/collect_public_ws_ticker_evidence.py (one-connection thin transport + CLI),
+>   tests/demo_trading/test_demo_public_ws_ticker_evidence_cf.py (61 focused tests).
+> - Guards: only the one public linear endpoint allowed; stream-demo / stream-testnet /
+>   /v5/private / /v5/trade denied; only tickers.{symbol} topics; no auth/api_key/secret/sign
+>   field constructible; subscription + artifact pass assert_no_credentials (key + value scan);
+>   collector runs without loading credentials.
+> - Symbol universe (authoritative, not hard-coded): 50 V1 targets from the Primary
+>   Forward Record + observed protected legacy (EDUUSDT, POLYXUSDT validated against
+>   PROTECTED_SYMBOLS) = 52 unique linear symbols; fails closed on dup/empty/non-linear/
+>   V1-mismatch/legacy-mismatch; symbol_universe_fingerprint emitted.
+> - Price field: planner_price_field=lastPrice (demo_market_price_guard public tickers);
+>   snapshot-before-delta enforced; a delta refreshes the price timestamp ONLY when it
+>   actually carries lastPrice; Decimal strings preserved; ts/cs/topic-mismatch/regression/
+>   generation-conflict all fail closed; transport delay via accepted CE clock offset.
+> - Coverage: 52/52 -> WS_TICKER_EVIDENCE_COMPLETE; 51/52 stays PARTIAL; never promotes
+>   execution readiness (execution_grade_freshness_complete=false, REST prices not replaced,
+>   PRICE_FRESHNESS_EVIDENCE_PARTIAL + PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE kept,
+>   new WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS, EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK last).
+> - WS counters scoped separately (ws_*); not conflated with REST counters.
+> - Dependency: reuses websocket-client (transitive via the accepted pybit dep); lazy import;
+>   no new dependency; no vendored socket; pybit not added for one socket.
+> - execution_batch_authorized=false; order/amend/cancel/live=0; no Demo order; no Live;
+>   no auth marker; Pilot + Forward source byte-identical.
+> - Tests: 61 focused; demo_trading regression 9367 passed (1 pre-existing unrelated
+>   emergency_close CLI failure).
+>
+> Next milestone: a same-message integration task binding each planner action price to the
+> exact WebSocket message (selected price + symbol + ts + cs + local receive timing), then the
+> human-authorization + staged Demo batch execution protocol. No send command provided this task.
+
+---
+
 > **TASK-014CE_VPS_CLOSEOUT** (2026-06-23, Sonnet 4.6 — documentation-only VPS verification closeout)
 >
 > **Status: TASK-014CE / FIX1 → DONE / VPS VERIFIED**

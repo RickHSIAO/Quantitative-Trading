@@ -10580,3 +10580,48 @@ No Python source or test files modified.
 **Files modified:** README.md, NEXT_ACTION.md, COMMAND_LOG.md (documentation only)
 **Commit:** on top of 2179b53, no amend, no push
 **Next milestone:** public read-only WebSocket ticker timestamp evidence task
+
+---
+
+### TASK-014CF_PUBLIC_WEBSOCKET_TICKER_TIMESTAMP_EVIDENCE (2026-06-23, Opus 4.8)
+
+New commit on top of f448ad1. Standalone public read-only WebSocket ticker
+timestamp evidence collector + canonical artifact. Not integrated into the
+planner; REST price source unchanged; freshness blockers retained.
+
+**New files (three only; no existing source/test modified):**
+- src/demo_public_ws_ticker_evidence.py (pure, offline-testable logic)
+- scripts/collect_public_ws_ticker_evidence.py (one-connection thin transport + CLI)
+- tests/demo_trading/test_demo_public_ws_ticker_evidence_cf.py (61 focused tests)
+
+**Evidence + guards:**
+- Endpoint allowlist = wss://stream.bybit.com/v5/public/linear only; stream-demo,
+  stream-testnet, /v5/private, /v5/trade all fail closed.
+- Only tickers.{symbol} public topics; no auth/api_key/secret/sign field constructible;
+  subscription + artifact pass assert_no_credentials; collector loads no credentials.
+- Symbol universe (authoritative, not hard-coded): 50 V1 targets from Primary Forward
+  Record + observed protected legacy EDUUSDT/POLYXUSDT = 52 unique linear symbols;
+  fails closed on dup/empty/non-linear/V1-mismatch/legacy-mismatch; fingerprint emitted.
+- planner_price_field=lastPrice (demo_market_price_guard public tickers); snapshot before
+  delta; delta refreshes price timestamp only when it carries lastPrice; Decimal strings
+  preserved; ts/cs/topic-mismatch/regression/generation-conflict fail closed.
+- top-level ts captured as exchange_data_generated_ts_ms, never labelled a trade/fill time;
+  transport delay via accepted CE clock offset.
+- Coverage: 52/52 -> WS_TICKER_EVIDENCE_COMPLETE; 51/52 stays PARTIAL.
+
+**No execution promotion:**
+- execution_grade_freshness_complete=false; REST prices not replaced;
+  PRICE_FRESHNESS_EVIDENCE_PARTIAL + PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE kept;
+  new WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS; EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK last.
+- ws_* counters scoped separately; not conflated with REST counters.
+- execution_batch_authorized=false; order/amend/cancel/live=0; no Demo order; no Live;
+  no auth marker; Pilot + Forward source byte-identical.
+
+**Dependency:** reuses websocket-client (transitive via accepted pybit dep); lazy import;
+no new dependency; no vendored socket.
+
+**Tests:** 61 focused; demo_trading regression 9367 passed (1 pre-existing unrelated
+emergency_close CLI failure).
+
+**VPS read-only collection (no API keys; no send command; single logical line):**
+  python scripts/collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --legacy-symbol EDUUSDT --legacy-symbol POLYXUSDT --allow-real-network --clock-offset-seconds 0.006840791 --clock-offset-status CLOCK_OFFSET_AVAILABLE --out outputs/ws_ticker_evidence_20260622.json --verify-no-credential-leak --json-only
