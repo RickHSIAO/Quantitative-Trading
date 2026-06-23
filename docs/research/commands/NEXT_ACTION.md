@@ -1,5 +1,43 @@
 # Next Action
 
+> README shared status updated by TASK-014CD_FIX2 (2026-06-23).
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AGGREGATE PRICE FRESHNESS CONSISTENT AT ACTION BATCH REVIEW AND TOP LEVEL / FEASIBILITY REPORTS PARTIAL EVIDENCE ACCURATELY / NETWORK AUDIT COUNTERS HAVE ONE CANONICAL MEANING / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 1bb387e resolving aggregate-freshness and network-counter schema parity only.
+> TASK-014CD_FIX1 core VPS behavior passed. No Strategy or sizing change.
+>
+> - Core preserved: active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY; 50 targets, 25/25; fixed 10000-USDT; 50
+>   batch actions all non-null InstrumentRules + RULE_VALIDATION_PASS; batch_float_artifact_count=0; 50 action
+>   freshness PARTIAL with non-null price_observed_at + price_age_seconds; exchange_timestamp null;
+>   margin_model_status=AUTHORITATIVE_MARGIN_MODEL_PARTIAL; comparison=
+>   INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE; accountIMRate non-applicable; EDU/POLYX
+>   untouched.
+> - Aggregate freshness: execution_batch.price_freshness_status is now DERIVED from the 50 action statuses via a
+>   deterministic fail-closed priority (STALE > UNAVAILABLE > PARTIAL > PASS). The VPS case yields PARTIAL at the
+>   batch, strategy_native_review and top level (no residual UNAVAILABLE). Any stale action -> STALE; any
+>   unavailable action -> UNAVAILABLE.
+> - Feasibility freshness semantics: no longer calls all freshness evidence unavailable. Adds
+>   price_freshness_evidence_available=true, local_observation_time_available=true,
+>   exchange_timestamp_available=false, execution_grade_freshness_complete=false,
+>   price_freshness_status=PARTIAL; account_risk_review_reasons use PRICE_FRESHNESS_EVIDENCE_PARTIAL +
+>   EXCHANGE_TIMESTAMP_UNAVAILABLE (not PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE). Result stays
+>   STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED; execution_batch_authorized=false; execution_ready=false.
+> - Network schema parity: one canonical complete-account schema. Top-level ticker counters mirror
+>   strategy_native_review.network_audit (52 HTTP / 152 requested / 52 unique / 100 cache / 52 priced /
+>   NETWORK_AUDIT_CONSISTENT). The old planner-only 50 counters are renamed planner_ticker_*; no field carries
+>   two meanings. total_public_get_count recomputed canonically (1 instrument-metadata GET + 52 ticker HTTP = 53).
+> - Snapshot timing precision: wallet/position are separate non-atomic GETs; second-resolution UTC strings
+>   produced snapshot_time_delta_ms=0.0. Now uses monotonic (perf_counter) sub-ms precision;
+>   margin_snapshot_atomic stays false; atomicity is never inferred from equal rounded UTC strings.
+> - Legacy parity: EDU/POLYX carry mark_price_observed_at / mark_price_age_seconds /
+>   mark_price_evidence_fingerprint / mark_price_freshness_status where evidence exists (positions unmodified).
+> - execution_batch_authorized=false; execution_ready=false; sender_reachable=false; order/amend/cancel/live=0;
+>   no Demo order sent; no Live authorization; no auth marker. Pilot and Forward source byte-identical.
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
+
+---
+
 > README shared status updated by TASK-014CD_FIX1 (2026-06-23).
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / NON-ATOMIC MARGIN SNAPSHOT SKEW NO LONGER MISLABELLED AS CONFLICT / PRICE FRESHNESS EVIDENCE WIRED INTO ALL BATCH ACTIONS / NETWORK AUDIT REMAINS CONSISTENT / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of a41e901 correcting margin snapshot semantics and wiring price-freshness evidence into

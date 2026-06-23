@@ -233,6 +233,8 @@ def normalize_margin_evidence(
     wallet_snapshot_response_received_at_utc: Any = None,
     position_snapshot_request_started_at_utc: Any = None,
     position_snapshot_response_received_at_utc: Any = None,
+    wallet_snapshot_response_received_monotonic: float | None = None,
+    position_snapshot_response_received_monotonic: float | None = None,
     margin_snapshot_atomic: bool = False,
     scope_proven_comparable: bool = False,
 ) -> dict[str, Any]:
@@ -287,10 +289,19 @@ def normalize_margin_evidence(
             observed_im_sum = None
 
     # --- Snapshot provenance (wallet + positions are separate, non-atomic GETs).
-    w_resp = _parse_epoch(wallet_snapshot_response_received_at_utc)
-    p_resp = _parse_epoch(position_snapshot_response_received_at_utc)
-    snapshot_delta_ms = (abs(p_resp - w_resp) * 1000.0
-                         if (w_resp is not None and p_resp is not None) else None)
+    # Prefer high-resolution monotonic timestamps for the measured separation so the
+    # delta is not collapsed to 0.0 by second-resolution UTC display strings.
+    # margin_snapshot_atomic stays an explicit input; it is NEVER inferred from equal
+    # rounded UTC strings.
+    if (wallet_snapshot_response_received_monotonic is not None
+            and position_snapshot_response_received_monotonic is not None):
+        snapshot_delta_ms = abs(position_snapshot_response_received_monotonic
+                                - wallet_snapshot_response_received_monotonic) * 1000.0
+    else:
+        w_resp = _parse_epoch(wallet_snapshot_response_received_at_utc)
+        p_resp = _parse_epoch(position_snapshot_response_received_at_utc)
+        snapshot_delta_ms = (abs(p_resp - w_resp) * 1000.0
+                             if (w_resp is not None and p_resp is not None) else None)
     comparison_scope_status = (COMPARISON_SCOPE_PROVEN_COMPARABLE
                                if (margin_snapshot_atomic and scope_proven_comparable)
                                else COMPARISON_SCOPE_NOT_PROVEN_COMPARABLE)
@@ -321,7 +332,7 @@ def normalize_margin_evidence(
         "wallet_snapshot_response_received_at_utc": wallet_snapshot_response_received_at_utc,
         "position_snapshot_request_started_at_utc": position_snapshot_request_started_at_utc,
         "position_snapshot_response_received_at_utc": position_snapshot_response_received_at_utc,
-        "snapshot_time_delta_ms": (round(snapshot_delta_ms, 3) if snapshot_delta_ms is not None else None),
+        "snapshot_time_delta_ms": (round(snapshot_delta_ms, 6) if snapshot_delta_ms is not None else None),
         "margin_snapshot_atomic": bool(margin_snapshot_atomic),
         "comparison_scope_status": comparison_scope_status,
         "initial_margin_difference_usdt": comparison["initial_margin_difference_usdt"],
@@ -514,19 +525,40 @@ def build_price_freshness_snapshot(
     }
 
 
+# Canonical fail-closed aggregation priority for price-freshness statuses. The most
+# unsafe status wins so the aggregate can never look fresher than its worst input:
+#   1. PRICE_FRESHNESS_STALE                   (a stale snapshot is the worst case)
+#   2. PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE    (no evidence at all)
+#   3. PRICE_FRESHNESS_EVIDENCE_PARTIAL        (local-only, no exchange timestamp)
+#   4. PRICE_FRESHNESS_PASS                    (fully fresh, exchange-timestamped)
+PRICE_FRESHNESS_AGGREGATION_PRIORITY = (
+    PRICE_FRESHNESS_STALE,
+    PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE,
+    PRICE_FRESHNESS_EVIDENCE_PARTIAL,
+    PRICE_FRESHNESS_PASS,
+)
+
+
+def aggregate_freshness_statuses(statuses: Sequence[str]) -> str:
+    """Deterministic fail-closed aggregate of per-item price-freshness statuses using
+    PRICE_FRESHNESS_AGGREGATION_PRIORITY. An empty input fails closed to UNAVAILABLE.
+    ANY stale -> STALE; else ANY unavailable -> UNAVAILABLE; else ANY partial ->
+    PARTIAL; else (all pass) -> PASS."""
+    present = {str(s) for s in statuses}
+    if not present:
+        return PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE
+    for status in PRICE_FRESHNESS_AGGREGATION_PRIORITY:
+        if status in present:
+            return status
+    # Any unrecognised status fails closed.
+    return PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE
+
+
 def summarize_price_freshness(snapshots: Sequence[Mapping[str, Any]]) -> str:
-    """Aggregate per-snapshot freshness into a single review status (fail-closed
-    precedence: STALE > all-UNAVAILABLE > PARTIAL/mixed > PASS)."""
-    statuses = [str(s.get("price_freshness_status")) for s in snapshots]
-    if not statuses:
-        return PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE
-    if any(s == PRICE_FRESHNESS_STALE for s in statuses):
-        return PRICE_FRESHNESS_STALE
-    if all(s == PRICE_FRESHNESS_PASS for s in statuses):
-        return PRICE_FRESHNESS_PASS
-    if all(s == PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE for s in statuses):
-        return PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE
-    return PRICE_FRESHNESS_EVIDENCE_PARTIAL
+    """Aggregate per-snapshot freshness into a single status via the canonical
+    fail-closed priority (see PRICE_FRESHNESS_AGGREGATION_PRIORITY)."""
+    return aggregate_freshness_statuses(
+        [str(s.get("price_freshness_status")) for s in snapshots])
 
 
 def build_price_freshness_evidence(
@@ -648,6 +680,7 @@ __all__ = [
     "compare_initial_margin",
     "normalize_margin_evidence", "unavailable_margin_evidence",
     "build_projected_margin_model", "build_price_freshness_snapshot",
-    "summarize_price_freshness", "build_price_freshness_evidence",
+    "summarize_price_freshness", "aggregate_freshness_statuses",
+    "PRICE_FRESHNESS_AGGREGATION_PRIORITY", "build_price_freshness_evidence",
     "build_network_audit", "build_execution_readiness_blockers",
 ]

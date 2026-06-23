@@ -127,6 +127,37 @@ def _utc_iso(epoch: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
 
 
+def _canonical_network_top_level(*, review, planner_phase_audit, instrument_metadata_get_count):
+    """One canonical complete-account network-audit schema for the top level
+    (TASK-014CD_FIX2). The canonical ticker counters MIRROR
+    ``strategy_native_review.network_audit`` (complete account: strategy + legacy).
+    The pre-review planner-phase ticker counts are exposed under explicit
+    ``planner_ticker_*`` names so no field carries two different meanings.
+    ``total_public_get_count`` is recomputed from the canonical ticker HTTP count."""
+    na = (review or {}).get("network_audit") or {}
+    http = int(na.get("ticker_http_request_count", 0) or 0)
+    return {
+        # Canonical complete-account counters (mirror the nested network_audit).
+        "ticker_http_request_count": http,
+        "ticker_requested_symbol_count": int(na.get("ticker_requested_symbol_count", 0) or 0),
+        "ticker_unique_symbol_count": int(na.get("ticker_unique_symbol_count", 0) or 0),
+        "ticker_cache_hit_count": int(na.get("ticker_cache_hit_count", 0) or 0),
+        "ticker_public_get_count": http,  # == HTTP requests (one GET per HTTP request)
+        "total_priced_symbol_count": int(na.get("total_priced_symbol_count", 0) or 0),
+        "network_audit_status": na.get("network_audit_status"),
+        "total_public_get_count": int(instrument_metadata_get_count or 0) + http,
+        # Planner-only INITIAL Strategy pricing phase (explicitly named; not canonical).
+        "planner_ticker_http_request_count":
+            int((planner_phase_audit or {}).get("ticker_http_request_count", 0) or 0),
+        "planner_ticker_requested_symbol_count":
+            int((planner_phase_audit or {}).get("ticker_requested_symbol_count", 0) or 0),
+        "planner_ticker_unique_symbol_count":
+            int((planner_phase_audit or {}).get("ticker_unique_symbol_count", 0) or 0),
+        "planner_ticker_cache_hit_count":
+            int((planner_phase_audit or {}).get("ticker_cache_hit_count", 0) or 0),
+    }
+
+
 def _build_production_provider(_client=None, _guard=None):
     """Build the canonical account/market provider from the existing read-only
     Demo client + market guard + instrument rules. Fails closed (returns None) if
@@ -162,13 +193,15 @@ def _build_production_provider(_client=None, _guard=None):
             # TASK-014CD_FIX1: capture each snapshot's request/response time so the
             # non-atomic skew between the two separate responses is provable, never
             # silently treated as a contradiction.
-            _ws = time.time()
+            # Wall-clock (UTC ISO, display) + monotonic (perf_counter, sub-ms) so the
+            # measured separation is not collapsed to 0.0 by second-resolution strings.
+            _ws, _wsm = time.time(), time.perf_counter()
             self._wallet = self._client.get_wallet_balance()
-            _wr = time.time()
+            _wr, _wrm = time.time(), time.perf_counter()
             self._wallet_get_count = 1
-            _ps = time.time()
+            _ps, _psm = time.time(), time.perf_counter()
             self._positions = self._client.get_open_positions()
-            _pr = time.time()
+            _pr, _prm = time.time(), time.perf_counter()
             self._positions_get_count = 1
             self._wallet_snapshot_started_at = _utc_iso(_ws)
             self._wallet_snapshot_received_at = _utc_iso(_wr)
@@ -176,6 +209,8 @@ def _build_production_provider(_client=None, _guard=None):
             self._position_snapshot_received_at = _utc_iso(_pr)
             self._wallet_snapshot_received_epoch = _wr
             self._position_snapshot_received_epoch = _pr
+            self._wallet_snapshot_received_monotonic = _wrm
+            self._position_snapshot_received_monotonic = _prm
             # One public batch instrument-metadata GET (category=linear, paginated).
             self._raw_instruments = self._client.get_instruments_info()
             self._instrument_metadata_get_count = 1
@@ -320,6 +355,8 @@ def _build_production_provider(_client=None, _guard=None):
                 wallet_snapshot_response_received_at_utc=self._wallet_snapshot_received_at,
                 position_snapshot_request_started_at_utc=self._position_snapshot_started_at,
                 position_snapshot_response_received_at_utc=self._position_snapshot_received_at,
+                wallet_snapshot_response_received_monotonic=self._wallet_snapshot_received_monotonic,
+                position_snapshot_response_received_monotonic=self._position_snapshot_received_monotonic,
                 # Two separate HTTP responses -> never atomic; scope not proven.
                 margin_snapshot_atomic=False, scope_proven_comparable=False)
 
@@ -750,7 +787,10 @@ def main(argv: list[str] | None = None) -> int:
             reason = r.get("reason", "unknown")
             rejected_reasons[reason] = rejected_reasons.get(reason, 0) + 1
 
-        provider_audit = provider.audit() if hasattr(provider, "audit") else {}
+        # Planner-phase audit snapshot (BEFORE the review prices legacy marks +
+        # re-reads rule evidence). Its ticker counts reflect ONLY the initial Strategy
+        # planner pricing; they are exposed as planner_ticker_* (TASK-014CD_FIX2).
+        planner_phase_audit = provider.audit() if hasattr(provider, "audit") else {}
 
         # CORRECTED audit semantics: matched/missing/non-trading/malformed are
         # computed over the REQUESTED target symbols, NOT the full catalog cache.
@@ -773,6 +813,13 @@ def main(argv: list[str] | None = None) -> int:
         strategy_native_review = (build_active_v1_review(
             provider=provider, plan=plan, pilot_id=args.pilot_id, date=args.date)
             if provider_built else None)
+        # Post-review audit: stable fields are unchanged; the ticker counts now reflect
+        # the COMPLETE account pricing (strategy + legacy). The canonical top-level
+        # network counters are mirrored from strategy_native_review.network_audit.
+        provider_audit = provider.audit() if hasattr(provider, "audit") else {}
+        network_top = _canonical_network_top_level(
+            review=strategy_native_review, planner_phase_audit=planner_phase_audit,
+            instrument_metadata_get_count=provider_audit.get("instrument_metadata_public_get_count", 0))
         try:
             open_positions = list(provider.open_positions()) if provider_built else []
         except Exception:  # noqa: BLE001
@@ -823,13 +870,10 @@ def main(argv: list[str] | None = None) -> int:
                # Real network accounting (actual calls, not expected).
                "instrument_metadata_public_get_count":
                    provider_audit.get("instrument_metadata_public_get_count", 0),
-               "ticker_public_get_count": provider_audit.get("ticker_public_get_count", 0),
-               # TASK-014CD: request count distinct from symbol/cache counts.
-               "ticker_http_request_count": provider_audit.get("ticker_http_request_count", 0),
-               "ticker_requested_symbol_count": provider_audit.get("ticker_requested_symbol_count", 0),
-               "ticker_unique_symbol_count": provider_audit.get("ticker_unique_symbol_count", 0),
-               "ticker_cache_hit_count": provider_audit.get("ticker_cache_hit_count", 0),
-               "total_public_get_count": provider_audit.get("total_public_get_count", 0),
+               # TASK-014CD_FIX2: ONE canonical complete-account network schema. The
+               # top-level ticker counters mirror strategy_native_review.network_audit
+               # (strategy + legacy); the planner-only phase is planner_ticker_*.
+               **network_top,
                "wallet_private_read_only_get_count":
                    provider_audit.get("wallet_private_read_only_get_count", 0),
                "positions_private_read_only_get_count":

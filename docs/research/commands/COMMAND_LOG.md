@@ -10235,3 +10235,69 @@ Files changed (committed):
   MOD  README.md                                            (TASK-014CD_FIX1 shared status)
   MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CD_FIX1 block)
   MOD  docs/research/commands/COMMAND_LOG.md                (this entry)
+---
+
+### TASK-014CD_FIX2_AGGREGATE_FRESHNESS_AND_NETWORK_SCHEMA_PARITY
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** 1bb387e
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Schema-parity follow-up on top of the VPS-run TASK-014CD_FIX1 review. FIX1 core VPS
+  behavior passed; this task ONLY resolves aggregate-freshness and network-counter
+  schema inconsistencies. No Strategy / sizing / batch-policy change.
+
+  Core preserved: active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY; 50 targets, 25 long /
+  25 short; fixed 10000-USDT capital; 50 batch actions all non-null InstrumentRules +
+  RULE_VALIDATION_PASS; batch_float_artifact_count=0; 50 action freshness PARTIAL with
+  non-null price_observed_at + price_age_seconds; exchange_timestamp null;
+  margin_model_status=AUTHORITATIVE_MARGIN_MODEL_PARTIAL; comparison=
+  INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE; accountIMRate
+  non-applicable; EDUUSDT/POLYXUSDT untouched.
+
+  - A (aggregate freshness): execution_batch.price_freshness_status is now DERIVED from
+    the 50 action statuses via a deterministic fail-closed priority
+    (STALE > UNAVAILABLE > PARTIAL > PASS, PRICE_FRESHNESS_AGGREGATION_PRIORITY). The VPS
+    case yields PRICE_FRESHNESS_EVIDENCE_PARTIAL at the batch, strategy_native_review and
+    top level (no residual UNAVAILABLE). Any stale action -> STALE; any unavailable -> UNAVAILABLE.
+  - B (feasibility): no longer reports all freshness evidence unavailable. Adds explicit
+    price_freshness_evidence_available / local_observation_time_available /
+    exchange_timestamp_available / execution_grade_freshness_complete / price_freshness_status.
+    account_risk_review_reasons use PRICE_FRESHNESS_EVIDENCE_PARTIAL + EXCHANGE_TIMESTAMP_UNAVAILABLE
+    (NOT PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE). Result stays
+    STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED; execution_batch_authorized=false; execution_ready=false.
+  - C (network schema parity): one canonical complete-account schema. Top-level ticker
+    counters mirror strategy_native_review.network_audit (52 HTTP / 152 requested / 52 unique
+    / 100 cache / 52 priced / NETWORK_AUDIT_CONSISTENT). The old planner-only 50 counters are
+    renamed planner_ticker_* (no field carries two meanings). total_public_get_count recomputed
+    canonically (1 instrument-metadata GET + 52 ticker HTTP = 53) via _canonical_network_top_level().
+  - D (snapshot timing precision): wallet/position are separate non-atomic GETs; second-resolution
+    UTC strings produced snapshot_time_delta_ms=0.0. Now uses monotonic (perf_counter) sub-ms
+    precision; margin_snapshot_atomic stays false; atomicity is never inferred from equal rounded
+    UTC strings.
+  - E (legacy parity): EDUUSDT/POLYXUSDT carry mark_price_observed_at / mark_price_age_seconds /
+    mark_price_evidence_fingerprint / mark_price_freshness_status where evidence exists; positions
+    are NOT modified.
+
+  execution_batch_authorized=false; execution_ready=false; sender_reachable=false;
+  execute_daily_native_call_count=0; transport_sender_call_count=0; order/amend/cancel/live
+  POST=0. No Demo order sent; no Live authorization; no auth marker. Pilot and Forward source
+  byte-identical.
+
+  Tests: 17 new (test_demo_strategy_native_cd_fix2.py) + 40 FIX1/CD + 59 CC_FIX1 pass;
+  demo_trading regression passed (1 pre-existing unrelated emergency_close CLI failure
+  identical on parent 1bb387e).
+
+VPS Plan-only verification (no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py     --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  MOD  src/demo_strategy_native_margin_freshness_audit.py   (aggregate_freshness_statuses + monotonic snapshot delta)
+  MOD  src/demo_strategy_native_v1_portfolio.py             (batch aggregate freshness; feasibility partial semantics; legacy freshness)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py      (canonical top-level network schema + monotonic snapshot timing)
+  NEW  tests/demo_trading/test_demo_strategy_native_cd_fix2.py (17 tests)
+  MOD  README.md                                            (TASK-014CD_FIX2 shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CD_FIX2 block)
+  MOD  docs/research/commands/COMMAND_LOG.md                (this entry)

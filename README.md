@@ -17,7 +17,38 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CD_FIX1 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CD_FIX2 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CD_FIX2_AGGREGATE_FRESHNESS_AND_NETWORK_SCHEMA_PARITY**（2026-06-23, Opus 4.8 / 彙總新鮮度 + 網路計數 schema 一致性）
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AGGREGATE PRICE FRESHNESS CONSISTENT AT ACTION BATCH REVIEW AND TOP LEVEL / FEASIBILITY REPORTS PARTIAL EVIDENCE ACCURATELY / NETWORK AUDIT COUNTERS HAVE ONE CANONICAL MEANING / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 1bb387e 之上新增一筆 commit，只解決彙總/schema 一致性，不更動策略、sizing 或已接受的 FIX1 證據語意。
+>
+> - **核心維持不變：** active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY、50 標的、25/25、固定 10000-USDT、50 動作全帶
+>   非空 InstrumentRules + RULE_VALIDATION_PASS、batch_float_artifact_count=0、50 動作 PRICE_FRESHNESS_EVIDENCE_PARTIAL
+>   且 price_observed_at / price_age_seconds 非空、exchange_timestamp 維持 null、margin_model_status=
+>   AUTHORITATIVE_MARGIN_MODEL_PARTIAL、比較狀態=INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE、
+>   accountIMRate 仍不套用於投影策略、EDU/POLYX 未觸碰。
+> - **彙總價格新鮮度：** execution_batch.price_freshness_status 現由 50 個動作狀態以確定性 fail-closed 優先序彙總
+>   （STALE > UNAVAILABLE > PARTIAL > PASS）。VPS 案例 → batch / strategy_native_review / top-level 三層皆
+>   PRICE_FRESHNESS_EVIDENCE_PARTIAL（不再殘留 UNAVAILABLE）。任一動作 STALE → 彙總 STALE；任一 UNAVAILABLE → 彙總 UNAVAILABLE。
+> - **feasibility 新鮮度語意：** 不再把所有新鮮度證據標為 unavailable。新增 price_freshness_evidence_available=true /
+>   local_observation_time_available=true / exchange_timestamp_available=false /
+>   execution_grade_freshness_complete=false / price_freshness_status=PARTIAL；account_risk_review_reasons 改用
+>   PRICE_FRESHNESS_EVIDENCE_PARTIAL + EXCHANGE_TIMESTAMP_UNAVAILABLE（非 UNAVAILABLE）。結果仍
+>   STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED、execution_batch_authorized=false、execution_ready=false。
+> - **網路 schema 一致性：** 建立單一 canonical 完整帳戶網路稽核 schema。top-level ticker 計數鏡像
+>   strategy_native_review.network_audit（52 HTTP / 152 requested / 52 unique / 100 cache / 52 priced /
+>   NETWORK_AUDIT_CONSISTENT）；舊的只含 planner 初次定價的 50 計數改名為 planner_ticker_*，不再以同名表達兩種語意。
+>   total_public_get_count 依 canonical 重算（instrument metadata 1 + ticker HTTP 52 = 53）。
+> - **快照時間精度：** wallet 與 position 為兩個獨立非原子請求，先前秒級 UTC 字串導致 snapshot_time_delta_ms=0.0；
+>   改用 monotonic（perf_counter）次毫秒精度，margin_snapshot_atomic 維持 false，且不從相同四捨五入 UTC 字串推斷原子性。
+> - **legacy 價格證據對齊：** EDU/POLYX 在有 canonical 新鮮度證據時附 mark_price_observed_at / mark_price_age_seconds /
+>   mark_price_evidence_fingerprint / mark_price_freshness_status；不修改持倉。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、order/amend/cancel/live=0；
+>   無 Demo 下單、無 Live 授權、無 auth marker。Pilot 與 Forward source byte-identical。
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CD_FIX1_MARGIN_SNAPSHOT_SEMANTICS_AND_PRICE_EVIDENCE_WIRING**（2026-06-23, Opus 4.8 / 非原子保證金快照語意 + 動作層新鮮度接線）
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / NON-ATOMIC MARGIN SNAPSHOT SKEW NO LONGER MISLABELLED AS CONFLICT / PRICE FRESHNESS EVIDENCE WIRED INTO ALL BATCH ACTIONS / NETWORK AUDIT REMAINS CONSISTENT / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

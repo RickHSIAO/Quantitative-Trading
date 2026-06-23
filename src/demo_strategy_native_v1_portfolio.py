@@ -674,6 +674,11 @@ def build_execution_batch(
     batch_id = "batch:" + hashlib.sha256(batch_payload.encode("utf-8")).hexdigest()[:32]
 
     rule_rejection = bool(failures)
+    # The batch's aggregate freshness status is DERIVED from the per-action statuses
+    # via the canonical fail-closed priority (TASK-014CD_FIX2). When there are no
+    # actions, fall back to the supplied batch-level status.
+    aggregate_freshness = (md.aggregate_freshness_statuses(
+        [a["price_freshness_status"] for a in actions]) if actions else price_freshness_status)
     return ExecutionBatch(
         batch_id=batch_id, strategy_run_date=str(run_date),
         strategy_artifact_fingerprint=artifact_fingerprint,
@@ -685,7 +690,7 @@ def build_execution_batch(
         batch_execution_status=BATCH_EXECUTION_NOT_STARTED,
         rule_validation_passed=not rule_rejection, rule_rejection=rule_rejection,
         rule_validation_failures=failures, non_null_rule_fingerprint_count=non_null_rule_fp,
-        price_freshness_status=price_freshness_status, sender_reachable=False)
+        price_freshness_status=aggregate_freshness, sender_reachable=False)
 
 
 def _open_side(long_short: str) -> str:
@@ -703,7 +708,8 @@ def assess_feasibility(
     initial_margin_authoritative: bool, assumed_leverage: Any = None,
     instrument_rule_rejection: bool = False,
     legacy_mark_price_available: bool = True,
-    price_freshness_available: bool = True,
+    price_freshness_status: str = md.PRICE_FRESHNESS_PASS,
+    exchange_timestamp_available: bool = True,
 ) -> dict[str, Any]:
     """Account-level feasibility for the FULL strategy portfolio. Legacy protected
     exposure (valued at CURRENT MARK price) is included in total account gross notional
@@ -711,13 +717,25 @@ def assess_feasibility(
     authoritatively the result is ACCOUNT_RISK_REVIEW_REQUIRED (fail closed) while the
     full plan stays visible.
 
-    Fail-closed precedence: instrument-rule rejection > missing legacy mark price /
-    missing price-freshness evidence > unavailable leverage / initial margin."""
+    Price-freshness semantics (TASK-014CD_FIX2): local observation-time evidence is
+    distinguished from EXECUTION-GRADE freshness (which additionally needs an
+    authoritative exchange timestamp). PARTIAL evidence (local-only) is reported as
+    PARTIAL + EXCHANGE_TIMESTAMP_UNAVAILABLE, NOT globally UNAVAILABLE.
+
+    Fail-closed precedence: instrument-rule rejection > missing legacy mark price >
+    non-execution-grade price freshness > unavailable leverage / initial margin."""
     strat = _dec(strategy_gross_notional)
     legacy = _dec(legacy_gross_notional)
     total = strat + legacy
     equity = _dec(wallet_equity)
     avail = _dec(available_balance)
+
+    # Freshness evidence classification (canonical md vocabulary).
+    price_freshness_evidence_available = price_freshness_status in (
+        md.PRICE_FRESHNESS_EVIDENCE_PARTIAL, md.PRICE_FRESHNESS_PASS, md.PRICE_FRESHNESS_STALE)
+    local_observation_time_available = price_freshness_evidence_available
+    execution_grade_freshness_complete = (
+        price_freshness_status == md.PRICE_FRESHNESS_PASS and bool(exchange_timestamp_available))
 
     assumptions: list[str] = [
         "strategy sizing is NEVER reduced by wallet equity (feasibility is a check, not a resize)",
@@ -735,11 +753,25 @@ def assess_feasibility(
         account_risk_review_reasons.append(LEGACY_MARK_PRICE_UNAVAILABLE)
         assumptions.append("a current MARK price for a legacy protected position is UNAVAILABLE; "
                            "failing closed without any fallback to entry price for current risk")
-    elif not price_freshness_available:
+    elif not execution_grade_freshness_complete:
         status = STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED
-        account_risk_review_reasons.append(PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE)
-        assumptions.append("authoritative market-price observation time / freshness evidence is "
-                           "UNAVAILABLE from read-only Demo metadata; failing closed")
+        if price_freshness_status == md.PRICE_FRESHNESS_STALE:
+            account_risk_review_reasons.append(md.PRICE_FRESHNESS_STALE)
+            assumptions.append("a price snapshot is STALE versus the review freshness threshold; "
+                               "failing closed")
+        elif price_freshness_status == md.PRICE_FRESHNESS_EVIDENCE_PARTIAL:
+            account_risk_review_reasons.append(md.PRICE_FRESHNESS_EVIDENCE_PARTIAL)
+            account_risk_review_reasons.append("EXCHANGE_TIMESTAMP_UNAVAILABLE")
+            assumptions.append("local request/response/observed-time evidence is available, but the "
+                               "authoritative EXCHANGE timestamp is unavailable, so execution-grade "
+                               "freshness is incomplete -> PARTIAL (not globally unavailable)")
+        elif not price_freshness_evidence_available:
+            account_risk_review_reasons.append(PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE)
+            assumptions.append("no price-observation / freshness evidence is available; failing closed")
+        else:
+            account_risk_review_reasons.append("EXCHANGE_TIMESTAMP_UNAVAILABLE")
+            assumptions.append("authoritative exchange timestamp unavailable; execution-grade "
+                               "freshness incomplete; failing closed")
     elif not (leverage_authoritative and initial_margin_authoritative):
         status = STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED
         account_risk_review_reasons.append("LEVERAGE_OR_INITIAL_MARGIN_EVIDENCE_UNAVAILABLE")
@@ -772,7 +804,13 @@ def assess_feasibility(
         "leverage_authoritative": leverage_authoritative,
         "initial_margin_authoritative": initial_margin_authoritative,
         "legacy_mark_price_available": legacy_mark_price_available,
-        "price_freshness_available": price_freshness_available,
+        # Explicit freshness semantics (TASK-014CD_FIX2): evidence availability is
+        # distinguished from EXECUTION-GRADE completeness.
+        "price_freshness_status": price_freshness_status,
+        "price_freshness_evidence_available": price_freshness_evidence_available,
+        "local_observation_time_available": local_observation_time_available,
+        "exchange_timestamp_available": bool(exchange_timestamp_available),
+        "execution_grade_freshness_complete": execution_grade_freshness_complete,
         "account_risk_review_reasons": account_risk_review_reasons,
         "assumptions": assumptions,
     }
@@ -841,6 +879,17 @@ def build_strategy_native_review(
         str(s.get("symbol", "")).strip().upper(): s
         for s in ((price_freshness_evidence or {}).get("snapshots") or [])}
 
+    # TASK-014CD_FIX2 (E): where canonical freshness evidence exists for a legacy
+    # protected symbol, reference its mark-price observation/freshness (positions are
+    # NEVER modified; this is audit metadata only).
+    for rec in legacy_valued:
+        fe = freshness_evidence_by_symbol.get(str(rec.get("symbol", "")).strip().upper())
+        if fe:
+            rec["mark_price_observed_at"] = fe.get("local_observed_at_utc")
+            rec["mark_price_age_seconds"] = fe.get("price_age_seconds_at_batch_build")
+            rec["mark_price_evidence_fingerprint"] = fe.get("price_snapshot_fingerprint")
+            rec["mark_price_freshness_status"] = fe.get("price_freshness_status")
+
     batch = build_execution_batch(
         run_date=run_date, pilot_id=pilot_id, artifact_fingerprint=artifact_fingerprint,
         reconciliation=recon, targets_by_symbol=targets_by, managed_by_symbol=managed_by,
@@ -861,10 +910,17 @@ def build_strategy_native_review(
         legacy_gross_notional=legacy_mark_gross, available_balance=available_balance,
         applicable_initial_margin_rate=applicable_initial_margin_rate)
 
-    # The richer CD freshness evidence (when supplied) drives the headline status.
-    overall_freshness_status = (str(price_freshness_evidence.get("price_freshness_status"))
-                                if price_freshness_evidence is not None else price_freshness_status)
-    price_freshness_available = overall_freshness_status == md.PRICE_FRESHNESS_PASS
+    # CANONICAL aggregate freshness is DERIVED from the per-action statuses (the batch
+    # aggregate). The review-level and top-level status equal this aggregate so the
+    # whole document is consistent (TASK-014CD_FIX2). When no actions exist, fall back
+    # to the evidence-summary status.
+    overall_freshness_status = (batch.price_freshness_status if batch.actions
+                                else (str(price_freshness_evidence.get("price_freshness_status"))
+                                      if price_freshness_evidence is not None else price_freshness_status))
+    # Exchange-timestamp availability is read straight from the evidence (never invented).
+    exchange_timestamp_available = any(
+        s.get("exchange_timestamp") is not None
+        for s in ((price_freshness_evidence or {}).get("snapshots") or []))
 
     network_audit_status = (str(network_audit.get("network_audit_status"))
                             if network_audit is not None else md.NETWORK_AUDIT_CONSISTENT)
@@ -876,7 +932,8 @@ def build_strategy_native_review(
         initial_margin_authoritative=initial_margin_authoritative,
         assumed_leverage=assumed_leverage, instrument_rule_rejection=rule_rejection,
         legacy_mark_price_available=legacy_mark_price_available,
-        price_freshness_available=price_freshness_available)
+        price_freshness_status=overall_freshness_status,
+        exchange_timestamp_available=exchange_timestamp_available)
 
     batch_float_artifact_count = _batch_float_artifact_count(batch.actions)
     execution_readiness_blockers = md.build_execution_readiness_blockers(
