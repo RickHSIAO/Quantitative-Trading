@@ -51,6 +51,30 @@ PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE = "PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE"
 NETWORK_AUDIT_CONSISTENT = "NETWORK_AUDIT_CONSISTENT"
 NETWORK_AUDIT_COUNTER_MISMATCH = "NETWORK_AUDIT_COUNTER_MISMATCH"
 
+# --- Initial-margin comparison statuses (TASK-014CD_FIX1) -------------------
+# Wallet (account-level total IM) and position (per-position IM sum) come from
+# SEPARATE non-atomic HTTP responses with no proof of identical calculation scope.
+# A small skew is therefore NOT a contradiction; only a proven, comparable, large
+# difference is a true conflict.
+INITIAL_MARGIN_VALUES_MATCH_WITHIN_TOLERANCE = "INITIAL_MARGIN_VALUES_MATCH_WITHIN_TOLERANCE"
+INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE = \
+    "INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE"
+INITIAL_MARGIN_SCOPE_NOT_COMPARABLE = "INITIAL_MARGIN_SCOPE_NOT_COMPARABLE"
+INITIAL_MARGIN_TRUE_CONFLICT = "INITIAL_MARGIN_TRUE_CONFLICT"
+
+# --- Margin snapshot comparison scope ---------------------------------------
+COMPARISON_SCOPE_PROVEN_COMPARABLE = "COMPARISON_SCOPE_PROVEN_COMPARABLE"
+COMPARISON_SCOPE_NOT_PROVEN_COMPARABLE = "COMPARISON_SCOPE_NOT_PROVEN_COMPARABLE"
+
+# Exact-match tolerance (USDT). Within this, the two values are treated as equal.
+INITIAL_MARGIN_MATCH_TOLERANCE_USDT = Decimal("0.01")
+# Non-atomic snapshot skew tolerance: a difference within EITHER the absolute or
+# the relative bound is attributable to ordinary non-atomic snapshot skew (marks /
+# reserved margin / account-level adjustments moving between the two GETs), NOT a
+# contradiction. The observed VPS skew (~2.22 USDT / ~0.12%) is well inside this.
+NON_ATOMIC_SNAPSHOT_ABS_TOLERANCE_USDT = Decimal("25")
+NON_ATOMIC_SNAPSHOT_REL_TOLERANCE = Decimal("0.02")  # 2%
+
 # Configurable REVIEW freshness threshold (seconds). This is a review threshold
 # ONLY; it never authorises execution. 30s is chosen because the Bybit V5 public
 # linear ticker updates well within a second, so a 30s window is generous for a
@@ -150,9 +174,53 @@ def _parse_epoch(value: Any) -> float | None:
 # ---------------------------------------------------------------------------
 
 
+def compare_initial_margin(
+    *, reported_total: Decimal | None, observed_sum: Decimal | None,
+    snapshot_atomic: bool, scope_proven_comparable: bool,
+) -> dict[str, Any]:
+    """Compare the account-level reported total initial margin against the observed
+    per-position initial-margin sum. A small skew between two SEPARATE non-atomic
+    HTTP responses (marks / reserved margin / account-level adjustments moving
+    between calls) is NOT a contradiction. A TRUE conflict requires that the
+    snapshots are atomic, the calculation scope is proven comparable, AND the
+    difference exceeds BOTH an absolute and a relative tolerance."""
+    if reported_total is None or observed_sum is None:
+        return {
+            "reported_total_initial_margin_usdt": _opt_fmt(reported_total),
+            "observed_position_initial_margin_sum_usdt": _opt_fmt(observed_sum),
+            "initial_margin_difference_usdt": None,
+            "initial_margin_difference_ratio": None,
+            "initial_margin_comparison_status": None,
+        }
+    diff = (reported_total - observed_sum).copy_abs()
+    base = max(reported_total.copy_abs(), observed_sum.copy_abs(), Decimal("1"))
+    ratio = diff / base
+    if diff <= INITIAL_MARGIN_MATCH_TOLERANCE_USDT:
+        status = INITIAL_MARGIN_VALUES_MATCH_WITHIN_TOLERANCE
+    elif snapshot_atomic and scope_proven_comparable:
+        if diff > NON_ATOMIC_SNAPSHOT_ABS_TOLERANCE_USDT and ratio > NON_ATOMIC_SNAPSHOT_REL_TOLERANCE:
+            status = INITIAL_MARGIN_TRUE_CONFLICT
+        else:
+            status = INITIAL_MARGIN_VALUES_MATCH_WITHIN_TOLERANCE
+    elif diff <= NON_ATOMIC_SNAPSHOT_ABS_TOLERANCE_USDT or ratio <= NON_ATOMIC_SNAPSHOT_REL_TOLERANCE:
+        status = INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE
+    else:
+        # Large difference but NOT proven comparable (non-atomic / unknown scope):
+        # cannot assert a contradiction.
+        status = INITIAL_MARGIN_SCOPE_NOT_COMPARABLE
+    return {
+        "reported_total_initial_margin_usdt": _fmt(reported_total),
+        "observed_position_initial_margin_sum_usdt": _fmt(observed_sum),
+        "initial_margin_difference_usdt": _fmt(diff),
+        "initial_margin_difference_ratio": _fmt(ratio.quantize(Decimal("0.00000001"))),
+        "initial_margin_comparison_status": status,
+    }
+
+
 def normalize_margin_evidence(
     *,
     margin_evidence_source: str,
+    account_type: Any = None,
     account_margin_mode: Any = None,
     wallet_equity: Any = None,
     available_balance: Any = None,
@@ -161,13 +229,25 @@ def normalize_margin_evidence(
     account_initial_margin_rate: Any = None,
     account_maintenance_margin_rate: Any = None,
     per_position: Sequence[Mapping[str, Any]] | None = None,
+    wallet_snapshot_request_started_at_utc: Any = None,
+    wallet_snapshot_response_received_at_utc: Any = None,
+    position_snapshot_request_started_at_utc: Any = None,
+    position_snapshot_response_received_at_utc: Any = None,
+    margin_snapshot_atomic: bool = False,
+    scope_proven_comparable: bool = False,
 ) -> dict[str, Any]:
     """Normalise authoritative read-only margin evidence. Absent fields stay None
     (never fabricated). Leverage / initial-margin availability is reported as
-    AUTHORITATIVE / PARTIAL / UNAVAILABLE based purely on what the responses carry."""
+    AUTHORITATIVE / PARTIAL / UNAVAILABLE based purely on what the responses carry.
+
+    Wallet and position evidence come from SEPARATE non-atomic HTTP responses, so the
+    snapshot provenance (request/response timestamps, delta, atomicity, comparison
+    scope) is captured explicitly and the reported-total vs per-position-sum
+    comparison is classified WITHOUT calling ordinary snapshot skew a conflict."""
     per_in = list(per_position or [])
     per_out: list[dict[str, Any]] = []
     lev_present = im_present = 0
+    observed_im_sum: Decimal | None = Decimal("0")
     for p in per_in:
         lev = _opt_dec(p.get("leverage"))
         im = _opt_dec(p.get("initial_margin"))
@@ -192,37 +272,69 @@ def normalize_margin_evidence(
         leverage_status = EVIDENCE_UNAVAILABLE
         im_status = (EVIDENCE_AUTHORITATIVE if total_initial_margin is not None
                      else EVIDENCE_UNAVAILABLE)
+        observed_im_sum = Decimal("0") if not per_in else None
     else:
         leverage_status = (EVIDENCE_AUTHORITATIVE if lev_present == n
                            else EVIDENCE_PARTIAL if lev_present > 0 else EVIDENCE_UNAVAILABLE)
         if im_present == n:
             im_status = EVIDENCE_AUTHORITATIVE
+            observed_im_sum = sum((_dec(r["initial_margin_usdt"]) for r in per_out), Decimal("0"))
         elif im_present > 0 or total_initial_margin is not None:
             im_status = EVIDENCE_PARTIAL
+            observed_im_sum = None
         else:
             im_status = EVIDENCE_UNAVAILABLE
+            observed_im_sum = None
+
+    # --- Snapshot provenance (wallet + positions are separate, non-atomic GETs).
+    w_resp = _parse_epoch(wallet_snapshot_response_received_at_utc)
+    p_resp = _parse_epoch(position_snapshot_response_received_at_utc)
+    snapshot_delta_ms = (abs(p_resp - w_resp) * 1000.0
+                         if (w_resp is not None and p_resp is not None) else None)
+    comparison_scope_status = (COMPARISON_SCOPE_PROVEN_COMPARABLE
+                               if (margin_snapshot_atomic and scope_proven_comparable)
+                               else COMPARISON_SCOPE_NOT_PROVEN_COMPARABLE)
+
+    reported_total_dec = _opt_dec(total_initial_margin)
+    comparison = compare_initial_margin(
+        reported_total=reported_total_dec, observed_sum=observed_im_sum,
+        snapshot_atomic=margin_snapshot_atomic, scope_proven_comparable=scope_proven_comparable)
 
     evidence = {
         "margin_evidence_source": margin_evidence_source,
         "margin_field_paths": dict(MARGIN_FIELD_PATHS),
+        "account_type": account_type,
         "account_margin_mode": account_margin_mode,
         "wallet_equity_usdt": _opt_fmt(wallet_equity),
         "available_balance_usdt": _opt_fmt(available_balance),
         "reported_total_initial_margin_usdt": _opt_fmt(total_initial_margin),
+        "reported_account_total_initial_margin_usdt": _opt_fmt(total_initial_margin),
+        "observed_legacy_position_initial_margin_sum_usdt": _opt_fmt(observed_im_sum),
         "reported_total_maintenance_margin_usdt": _opt_fmt(total_maintenance_margin),
         "account_initial_margin_rate": _opt_fmt(account_initial_margin_rate),
         "account_maintenance_margin_rate": _opt_fmt(account_maintenance_margin_rate),
         "per_position_margin_evidence": per_out,
         "leverage_evidence_status": leverage_status,
         "initial_margin_evidence_status": im_status,
+        # --- Snapshot provenance / comparison (non-atomic, fail-safe) ---------
+        "wallet_snapshot_request_started_at_utc": wallet_snapshot_request_started_at_utc,
+        "wallet_snapshot_response_received_at_utc": wallet_snapshot_response_received_at_utc,
+        "position_snapshot_request_started_at_utc": position_snapshot_request_started_at_utc,
+        "position_snapshot_response_received_at_utc": position_snapshot_response_received_at_utc,
+        "snapshot_time_delta_ms": (round(snapshot_delta_ms, 3) if snapshot_delta_ms is not None else None),
+        "margin_snapshot_atomic": bool(margin_snapshot_atomic),
+        "comparison_scope_status": comparison_scope_status,
+        "initial_margin_difference_usdt": comparison["initial_margin_difference_usdt"],
+        "initial_margin_difference_ratio": comparison["initial_margin_difference_ratio"],
+        "initial_margin_comparison_status": comparison["initial_margin_comparison_status"],
     }
     evidence["margin_evidence_snapshot_fingerprint"] = _sha([
-        margin_evidence_source, account_margin_mode,
+        margin_evidence_source, account_type, account_margin_mode,
         evidence["wallet_equity_usdt"], evidence["available_balance_usdt"],
         evidence["reported_total_initial_margin_usdt"],
         evidence["reported_total_maintenance_margin_usdt"],
         evidence["account_initial_margin_rate"], evidence["account_maintenance_margin_rate"],
-        leverage_status, im_status,
+        leverage_status, im_status, evidence["initial_margin_comparison_status"],
         tuple((r["symbol"], r["leverage"], r["initial_margin_usdt"],
                r["maintenance_margin_usdt"]) for r in per_out),
     ])
@@ -249,8 +361,14 @@ def build_projected_margin_model(
 ) -> dict[str, Any]:
     """Projected required-initial-margin model. The projected STRATEGY initial margin
     is computed ONLY when an AUTHORITATIVE applicable initial-margin rate is supplied
-    (never silently selected). Legacy projected initial margin uses reported per-
-    position initial margin. Partial / unavailable / conflicting evidence fails closed."""
+    (never silently selected; accountIMRate is NOT applied to the 50-position strategy
+    without proven applicability). The legacy contribution is the OBSERVED current
+    per-position initial-margin sum (carried forward), never a projected value.
+
+    A non-atomic snapshot skew between the reported account total and the observed
+    per-position sum is NOT a conflict: MARGIN_EVIDENCE_CONFLICT is emitted only when
+    the comparison proves an INITIAL_MARGIN_TRUE_CONFLICT. Partial / unavailable
+    evidence fails closed."""
     strat = _dec(strategy_gross_notional)
     avail = _dec(available_balance)
     blockers: list[str] = []
@@ -258,22 +376,25 @@ def build_projected_margin_model(
     per = list(margin_evidence.get("per_position_margin_evidence") or [])
     reported_total_im = _opt_dec(margin_evidence.get("reported_total_initial_margin_usdt"))
 
-    # Legacy projected IM from reported per-position IM (authoritative reported).
+    # OBSERVED current per-position IM sum (NOT a projected value).
     if not per:
-        legacy_im: Decimal | None = Decimal("0")
+        observed_legacy_im: Decimal | None = Decimal("0")
     elif all(p.get("initial_margin_usdt") is not None for p in per):
-        legacy_im = sum((_dec(p["initial_margin_usdt"]) for p in per), Decimal("0"))
+        observed_legacy_im = sum((_dec(p["initial_margin_usdt"]) for p in per), Decimal("0"))
     else:
-        legacy_im = None
+        observed_legacy_im = None
         blockers.append("PER_POSITION_INITIAL_MARGIN_UNAVAILABLE")
 
-    # Conflict: reported account total IM must agree with the per-position sum when
-    # both are present (the demo account currently holds only legacy positions).
-    conflict = False
-    if reported_total_im is not None and legacy_im is not None and per:
-        if (legacy_im - reported_total_im).copy_abs() > _MARGIN_TOLERANCE:
-            conflict = True
-            blockers.append("REPORTED_TOTAL_IM_CONFLICTS_WITH_PER_POSITION_SUM")
+    # Reported-total vs observed-sum comparison status drives conflict (not raw skew).
+    comparison_status = margin_evidence.get("initial_margin_comparison_status")
+    true_conflict = comparison_status == INITIAL_MARGIN_TRUE_CONFLICT
+    if true_conflict:
+        blockers.append("REPORTED_TOTAL_IM_CONFLICTS_WITH_PER_POSITION_SUM")
+
+    if not margin_evidence.get("margin_snapshot_atomic", False):
+        blockers.append("NON_ATOMIC_MARGIN_SNAPSHOT")
+    if margin_evidence.get("account_margin_mode") is None:
+        blockers.append("ACCOUNT_MARGIN_MODE_UNAVAILABLE")
 
     rate = _opt_dec(applicable_initial_margin_rate)
     if rate is None or rate <= 0:
@@ -283,13 +404,17 @@ def build_projected_margin_model(
     if margin_evidence.get("leverage_evidence_status") == EVIDENCE_UNAVAILABLE:
         blockers.append("LEVERAGE_EVIDENCE_UNAVAILABLE")
 
+    # Projected STRATEGY IM requires an AUTHORITATIVE applicable rate (never assumed).
     strat_im = (strat * rate) if (rate is not None and rate > 0) else None
 
     projected_total = projected_avail_after = headroom = None
-    if conflict:
+    projected_legacy_im: Decimal | None = None
+    if true_conflict:
         status = MARGIN_EVIDENCE_CONFLICT
-    elif strat_im is not None and legacy_im is not None:
-        projected_total = strat_im + legacy_im
+    elif strat_im is not None and observed_legacy_im is not None:
+        # A genuine projection: carry the observed legacy IM forward + projected strat IM.
+        projected_legacy_im = observed_legacy_im
+        projected_total = strat_im + observed_legacy_im
         projected_avail_after = avail - projected_total
         if projected_total > 0:
             headroom = avail / projected_total
@@ -298,7 +423,7 @@ def build_projected_margin_model(
         else:
             status = AUTHORITATIVE_MARGIN_MODEL_COMPLETE
     else:
-        has_any = (legacy_im not in (None,) and (per or reported_total_im is not None)) \
+        has_any = (observed_legacy_im is not None and (per or reported_total_im is not None)) \
             or reported_total_im is not None \
             or margin_evidence.get("leverage_evidence_status") != EVIDENCE_UNAVAILABLE
         status = AUTHORITATIVE_MARGIN_MODEL_PARTIAL if has_any else MARGIN_EVIDENCE_UNAVAILABLE
@@ -309,11 +434,16 @@ def build_projected_margin_model(
 
     return {
         "projected_strategy_initial_margin_usdt": _opt_fmt(strat_im),
-        "projected_legacy_initial_margin_usdt": _opt_fmt(legacy_im),
+        # OBSERVED current per-position IM sum (clearly NOT projected).
+        "observed_legacy_position_initial_margin_sum_usdt": _opt_fmt(observed_legacy_im),
+        "reported_account_total_initial_margin_usdt": _opt_fmt(reported_total_im),
+        # Genuine projected legacy IM only when a projection is actually computed.
+        "projected_legacy_initial_margin_usdt": _opt_fmt(projected_legacy_im),
         "projected_total_initial_margin_usdt": _opt_fmt(projected_total),
         "projected_available_margin_after_execution_usdt": _opt_fmt(projected_avail_after),
         "margin_headroom_ratio": _opt_fmt(headroom),
         "applicable_initial_margin_rate": _opt_fmt(rate),
+        "initial_margin_comparison_status": comparison_status,
         "margin_model_status": status,
         "margin_model_blockers": blockers,
     }
@@ -471,9 +601,13 @@ def build_execution_readiness_blockers(
     price_freshness_status: str,
     margin_model_status: str,
     network_audit_status: str,
+    margin_model_blockers: Sequence[str] | None = None,
 ) -> list[str]:
     """Deterministic, ordered list of the exact remaining blockers. The batch stays
-    unauthorised in this task regardless (the task-gate blocker is always present)."""
+    unauthorised in this task regardless (the task-gate blocker is always present).
+    The detailed margin_model_blockers (e.g. NON_ATOMIC_MARGIN_SNAPSHOT,
+    APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE, ACCOUNT_MARGIN_MODE_UNAVAILABLE) are
+    surfaced alongside the margin_model_status."""
     blockers: list[str] = []
     if rule_rejection:
         blockers.append("INSTRUMENT_RULE_REJECTION")
@@ -485,6 +619,8 @@ def build_execution_readiness_blockers(
         blockers.append(price_freshness_status)
     if margin_model_status != AUTHORITATIVE_MARGIN_MODEL_COMPLETE:
         blockers.append(margin_model_status)
+    for b in (margin_model_blockers or []):
+        blockers.append(b)
     if network_audit_status == NETWORK_AUDIT_COUNTER_MISMATCH:
         blockers.append(NETWORK_AUDIT_COUNTER_MISMATCH)
     # The batch is NEVER authorised in this task even if all evidence passes.
@@ -501,8 +637,15 @@ __all__ = [
     "PRICE_FRESHNESS_PASS", "PRICE_FRESHNESS_STALE",
     "PRICE_FRESHNESS_EVIDENCE_PARTIAL", "PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE",
     "NETWORK_AUDIT_CONSISTENT", "NETWORK_AUDIT_COUNTER_MISMATCH",
+    "INITIAL_MARGIN_VALUES_MATCH_WITHIN_TOLERANCE",
+    "INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE",
+    "INITIAL_MARGIN_SCOPE_NOT_COMPARABLE", "INITIAL_MARGIN_TRUE_CONFLICT",
+    "COMPARISON_SCOPE_PROVEN_COMPARABLE", "COMPARISON_SCOPE_NOT_PROVEN_COMPARABLE",
+    "INITIAL_MARGIN_MATCH_TOLERANCE_USDT", "NON_ATOMIC_SNAPSHOT_ABS_TOLERANCE_USDT",
+    "NON_ATOMIC_SNAPSHOT_REL_TOLERANCE",
     "DEFAULT_PRICE_FRESHNESS_THRESHOLD_SECONDS",
     "EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK", "MARGIN_FIELD_PATHS",
+    "compare_initial_margin",
     "normalize_margin_evidence", "unavailable_margin_evidence",
     "build_projected_margin_model", "build_price_freshness_snapshot",
     "summarize_price_freshness", "build_price_freshness_evidence",

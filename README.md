@@ -17,7 +17,41 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CD 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CD_FIX1 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CD_FIX1_MARGIN_SNAPSHOT_SEMANTICS_AND_PRICE_EVIDENCE_WIRING**（2026-06-23, Opus 4.8 / 非原子保證金快照語意 + 動作層新鮮度接線）
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / NON-ATOMIC MARGIN SNAPSHOT SKEW NO LONGER MISLABELLED AS CONFLICT / PRICE FRESHNESS EVIDENCE WIRED INTO ALL BATCH ACTIONS / NETWORK AUDIT REMAINS CONSISTENT / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 a41e901 之上新增一筆 commit，只修保證金快照語意與動作層新鮮度接線，不更動已接受的 TASK-014CD 證據擷取。
+>
+> - **核心維持不變：** active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY、50 標的、25 多 / 25 空、±0.02、固定 10000-USDT、
+>   50 個批次動作全帶權威 InstrumentRules 且 RULE_VALIDATION_PASS、batch_float_artifact_count=0、EDU/POLYX 未觸碰且
+>   current mark 估值、network audit 維持 52 unique / 152 requested / 100 cache / NETWORK_AUDIT_CONSISTENT。
+> - **非原子保證金快照語意（修假衝突）：** wallet 與 position 來自兩個獨立、非原子 HTTP 回應。新增 snapshot provenance
+>   （wallet/position request/response 時間、snapshot_time_delta_ms、margin_snapshot_atomic=false、comparison_scope_status）
+>   與顯式比較欄位（reported_total / observed_position_sum / difference / ratio / initial_margin_comparison_status）。
+>   VPS 觀測（1803.74 vs 1805.96，差 ~2.22 / ~0.12%）現分類為 INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE
+>   → margin_model_status=AUTHORITATIVE_MARGIN_MODEL_PARTIAL，blocker 含 NON_ATOMIC_MARGIN_SNAPSHOT +
+>   APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE（不再標 MARGIN_EVIDENCE_CONFLICT）。MARGIN_EVIDENCE_CONFLICT 僅在
+>   atomic + scope proven + 超過絕對與相對容差時（INITIAL_MARGIN_TRUE_CONFLICT）才出現。
+> - **觀測 vs 投影 schema 修正：** projected_legacy_initial_margin_usdt 原以當前 positionIM 填入屬誤導；改為
+>   observed_legacy_position_initial_margin_sum_usdt（當前觀測）+ reported_account_total_initial_margin_usdt；
+>   projected_legacy 僅在真正計算投影時才填。accountIMRate 在無權威適用性證據下不套用到 50 倉策略。
+> - **動作層新鮮度接線：** 50 個 Strategy 批次動作現在掛上對應 symbol 的新鮮度證據（price_observed_at /
+>   request_started/response_received / request_elapsed_ms / price_age_seconds / exchange_timestamp /
+>   freshness_threshold_seconds / price_freshness_status / price_evidence_fingerprint），動作層狀態 = 證據紀錄狀態
+>   （VPS = 50× PRICE_FRESHNESS_EVIDENCE_PARTIAL，observed/age 全非空，exchange_timestamp 維持 null 不偽造）。
+> - **批次身分語意：** 動作指紋 / batch_id 仍只綁定價格值與市場快照身分；request timing / 本機觀測審計 metadata 不納入
+>   指紋，故不會讓不同價格快照的 Plan-only 重跑誤判為相同可執行批次，也不削弱 idempotency。價格改變仍改變指紋與 batch_id。
+> - **account_type：** 自 /v5/account/wallet-balance result.list[0].accountType 解析後在 margin_evidence 直接輸出值
+>   （無則 null）。
+> - **readiness blockers：** PRICE_FRESHNESS_EVIDENCE_PARTIAL / NON_ATOMIC_MARGIN_SNAPSHOT /
+>   APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE / ACCOUNT_MARGIN_MODE_UNAVAILABLE /
+>   EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK，確定性且不再保留假 MARGIN_EVIDENCE_CONFLICT。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、order/amend/cancel/live=0；
+>   無 Demo 下單、無 Live 授權、無 auth marker。Pilot 與 Forward source byte-identical。
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CD_AUTHORITATIVE_MARGIN_PRICE_FRESHNESS_AND_NETWORK_AUDIT**（2026-06-23, Opus 4.8 / 權威保證金 + 價格新鮮度 + 網路稽核證據）
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AUTHORITATIVE MARGIN EVIDENCE EXPLICIT / PRICE FRESHNESS EVIDENCE EXPLICIT / NETWORK AUDIT COUNTS CONSISTENT / EXECUTION BATCH STILL UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

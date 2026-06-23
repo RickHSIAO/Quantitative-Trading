@@ -10159,3 +10159,79 @@ Files changed (committed):
   MOD  README.md                                            (TASK-014CD shared status)
   MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CD block)
   MOD  docs/research/commands/COMMAND_LOG.md                (this entry)
+---
+
+### TASK-014CD_FIX1_MARGIN_SNAPSHOT_SEMANTICS_AND_PRICE_EVIDENCE_WIRING
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** a41e901
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Follow-up correction on top of the VPS-run TASK-014CD evidence layer. The core
+  evidence capture (margin / freshness / network) is ACCEPTED and unchanged; this task
+  fixes two real VPS findings and wires freshness into batch actions. No strategy /
+  sizing / batch-policy change.
+
+  Core preserved: active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY; 50 targets, 25 long /
+  25 short; +/-0.02 weights; fixed 10000-USDT capital; 50 batch actions all with
+  authoritative InstrumentRules + RULE_VALIDATION_PASS; batch_float_artifact_count=0;
+  EDUUSDT/POLYXUSDT untouched + current-mark valued; network audit
+  ticker_http_request_count=52 / requested=152 / unique=52 / cache=100 / total_priced=52
+  / NETWORK_AUDIT_CONSISTENT.
+
+  - Finding 1 (false margin conflict): wallet and position evidence come from SEPARATE,
+    non-atomic HTTP responses. Added snapshot provenance (wallet/position request+response
+    timestamps, snapshot_time_delta_ms, margin_snapshot_atomic=false,
+    comparison_scope_status) and explicit comparison fields (reported_total /
+    observed_position_sum / difference / ratio / initial_margin_comparison_status). A small
+    skew is classified INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE
+    (statuses also MATCH_WITHIN_TOLERANCE / SCOPE_NOT_COMPARABLE / TRUE_CONFLICT). The
+    observed VPS case (1803.74307135 vs 1805.95898302, ~2.22 USDT / ~0.12%) is now
+    margin_model_status=AUTHORITATIVE_MARGIN_MODEL_PARTIAL with blockers
+    NON_ATOMIC_MARGIN_SNAPSHOT + APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE, NOT
+    MARGIN_EVIDENCE_CONFLICT. A true conflict requires atomic + proven-comparable scope +
+    difference beyond an absolute AND relative tolerance (INITIAL_MARGIN_TRUE_CONFLICT).
+  - Finding 2 (misleading projected field): projected_legacy_initial_margin_usdt was filled
+    from current positionIM (observed, not projected). Corrected schema:
+    observed_legacy_position_initial_margin_sum_usdt + reported_account_total_initial_margin_usdt;
+    projected_legacy_initial_margin_usdt only when a projection is genuinely computed.
+    accountIMRate is NOT applied to the 50-position strategy without authoritative applicability.
+  - Goal 3 (freshness wiring): each of the 50 Strategy batch actions now carries its matching
+    symbol freshness record (price_observed_at / request_started_at_utc / response_received_at_utc
+    / request_elapsed_ms / price_age_seconds / exchange_timestamp / freshness_threshold_seconds /
+    price_freshness_status / price_evidence_fingerprint). Action-level status EQUALS the
+    evidence-record status (VPS = 50x PRICE_FRESHNESS_EVIDENCE_PARTIAL; observed/age non-null;
+    exchange_timestamp null, never invented; no stale UNAVAILABLE fields).
+  - Goal 4 (batch identity): action fingerprint / batch_id stay bound to price value + market
+    snapshot identity; request timing / local observation audit metadata is NOT identity-bound.
+    A price change still changes the fingerprint and batch_id; timing-only changes do not, and
+    idempotency is not weakened.
+  - Goal 5 (account type): account_type value is emitted in margin_evidence (from
+    /v5/account/wallet-balance result.list[0].accountType), null when unavailable.
+
+  execution_readiness_blockers (deterministic): PRICE_FRESHNESS_EVIDENCE_PARTIAL,
+  NON_ATOMIC_MARGIN_SNAPSHOT, APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE,
+  ACCOUNT_MARGIN_MODE_UNAVAILABLE, EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK; no false
+  MARGIN_EVIDENCE_CONFLICT. execution_batch_authorized=false; execution_ready=false;
+  sender_reachable=false; execute_daily_native_call_count=0; transport_sender_call_count=0;
+  order/amend/cancel/live POST=0. No Demo order sent; no Live authorization; no auth marker.
+  Pilot and Forward source byte-identical.
+
+  Tests: focused ~40 (test_demo_strategy_native_margin_freshness_audit.py, incl. corrected
+  comparison-status tests + action freshness wiring + identity tests) + 59 FIX1 pass;
+  demo_trading regression 9216 passed (1 pre-existing unrelated emergency_close CLI failure
+  identical on parent a41e901).
+
+VPS Plan-only verification (no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py     --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  MOD  src/demo_strategy_native_margin_freshness_audit.py   (non-atomic comparison semantics + provenance + account_type + blockers)
+  MOD  src/demo_strategy_native_v1_portfolio.py             (wire per-action freshness; merge margin blockers)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py      (snapshot timestamps + account_type to margin evidence)
+  MOD  tests/demo_trading/test_demo_strategy_native_margin_freshness_audit.py (corrected + new tests)
+  MOD  README.md                                            (TASK-014CD_FIX1 shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CD_FIX1 block)
+  MOD  docs/research/commands/COMMAND_LOG.md                (this entry)

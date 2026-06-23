@@ -547,6 +547,7 @@ def build_execution_batch(
     separated: SeparatedPositions, wallet_equity: str, available_balance: str,
     price_observed_at_by_symbol: Mapping[str, Any] | None = None,
     price_freshness_status: str = PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE,
+    freshness_evidence_by_symbol: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> ExecutionBatch:
     """Deterministic production-shaped (multi-symbol) execution batch. NEVER sent;
     sender_reachable is always False. Actions are ordered by symbol so the batch
@@ -556,8 +557,16 @@ def build_execution_batch(
     fingerprint, qty_step / min_qty / max_qty / min_notional / tick_size, rule source,
     rule status) and built from CANONICAL Decimal strings (qty floored to qty_step via
     pure Decimal; no binary-float artifact). Each action is rule-validated; any failure
-    sets ``rule_rejection`` while the complete plan is preserved for audit."""
+    sets ``rule_rejection`` while the complete plan is preserved for audit.
+
+    When ``freshness_evidence_by_symbol`` is supplied, each action attaches the matching
+    symbol's price-observation / freshness evidence (observed/request/response times,
+    elapsed, price age, exchange timestamp, freshness status, evidence fingerprint). This
+    OBSERVATION/audit metadata is intentionally NOT part of the action fingerprint or
+    batch_id (identity stays bound to price value + market snapshot identity, so request
+    timing never creates accidental duplicate order identities)."""
     price_observed_at_by_symbol = dict(price_observed_at_by_symbol or {})
+    freshness_evidence_by_symbol = dict(freshness_evidence_by_symbol or {})
     actions: list[dict[str, Any]] = []
     opening = Decimal("0")
     reducing = Decimal("0")
@@ -606,9 +615,13 @@ def build_execution_batch(
         if rule_validation_status != RULE_VALIDATION_PASS:
             failures.append({"symbol": symbol, "rule_validation_status": rule_validation_status})
 
-        observed_at = price_observed_at_by_symbol.get(symbol)
-        action_freshness = (price_freshness_status if observed_at is not None
-                            else PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE)
+        # Attach the matching symbol's authoritative price-observation / freshness
+        # evidence record (TASK-014CD_FIX1). The action-level status EQUALS the
+        # evidence-record status; absent evidence stays explicitly UNAVAILABLE.
+        fe = freshness_evidence_by_symbol.get(symbol) or {}
+        action_freshness = fe.get("price_freshness_status",
+                                  price_freshness_status if fe else PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE)
+        observed_at = fe.get("local_observed_at_utc", price_observed_at_by_symbol.get(symbol))
 
         afp = action_fingerprint(run_date=run_date, pilot_id=pilot_id, symbol=symbol,
                                  side=side, intent=intent, reduce_only=reduce_only, qty=qty,
@@ -631,13 +644,23 @@ def build_execution_batch(
             "min_qty": rule.get("min_qty"), "max_qty": rule.get("max_qty"),
             "min_notional": rule.get("min_notional"), "tick_size": rule.get("tick_size"),
             "rule_validation_status": rule_validation_status,
-            # --- Market-price provenance + freshness ---------------------------
-            "price_source": rule.get("market_price_source"),
+            # --- Market-price provenance + freshness (audit metadata) ----------
+            # price_snapshot_fingerprint is the identity-bound market fingerprint
+            # (symbol|price|source, NO timestamp). price_evidence_fingerprint
+            # references the freshness evidence record (includes observation time)
+            # and is NOT part of the action identity.
+            "price_source": fe.get("price_source", rule.get("market_price_source")),
             "price_snapshot_fingerprint": (_price_fingerprint(symbol, price, rule.get("market_price_source"))
                                            if price is not None else None),
             "price_observed_at": observed_at,
-            "price_age_seconds": None,
+            "request_started_at_utc": fe.get("request_started_at_utc"),
+            "response_received_at_utc": fe.get("response_received_at_utc"),
+            "request_elapsed_ms": fe.get("request_elapsed_ms"),
+            "price_age_seconds": fe.get("price_age_seconds_at_batch_build"),
+            "exchange_timestamp": fe.get("exchange_timestamp"),
+            "freshness_threshold_seconds": fe.get("freshness_threshold_seconds"),
             "price_freshness_status": action_freshness,
+            "price_evidence_fingerprint": fe.get("price_snapshot_fingerprint"),
             "action_fingerprint": afp, "idempotency_key": ikey,
         }
         action["canonical_action_payload_fingerprint"] = canonical_action_payload_fingerprint(action)
@@ -811,13 +834,21 @@ def build_strategy_native_review(
         mark_price_observed_at_by_symbol=legacy_mark_price_observed_at_by_symbol)
     legacy_mark_price_available = legacy_marks_available or not separated.legacy_protected
 
+    # Per-symbol price-freshness evidence (TASK-014CD_FIX1): attach each action's
+    # matching observation/freshness record so action-level status equals the
+    # canonical evidence-record status (no stale UNAVAILABLE fields).
+    freshness_evidence_by_symbol = {
+        str(s.get("symbol", "")).strip().upper(): s
+        for s in ((price_freshness_evidence or {}).get("snapshots") or [])}
+
     batch = build_execution_batch(
         run_date=run_date, pilot_id=pilot_id, artifact_fingerprint=artifact_fingerprint,
         reconciliation=recon, targets_by_symbol=targets_by, managed_by_symbol=managed_by,
         rule_evidence_by_symbol=rule_evidence_by_symbol, price_by_symbol=price_by_symbol,
         separated=separated, wallet_equity=_fmt(wallet_equity), available_balance=_fmt(available_balance),
         price_observed_at_by_symbol=price_observed_at_by_symbol,
-        price_freshness_status=price_freshness_status)
+        price_freshness_status=price_freshness_status,
+        freshness_evidence_by_symbol=freshness_evidence_by_symbol)
 
     # Instrument-rule rejection is driven by AUTHORITATIVE per-action rule validation.
     rule_rejection = batch.rule_rejection
@@ -853,6 +884,7 @@ def build_strategy_native_review(
         legacy_mark_price_available=legacy_mark_price_available,
         price_freshness_status=overall_freshness_status,
         margin_model_status=margin_model["margin_model_status"],
+        margin_model_blockers=margin_model.get("margin_model_blockers"),
         network_audit_status=network_audit_status)
 
     longs = sum(1 for t in targets if _norm_side(t.get("side")) == "long")

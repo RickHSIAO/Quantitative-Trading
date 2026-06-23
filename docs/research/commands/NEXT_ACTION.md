@@ -1,5 +1,47 @@
 # Next Action
 
+> README shared status updated by TASK-014CD_FIX1 (2026-06-23).
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / NON-ATOMIC MARGIN SNAPSHOT SKEW NO LONGER MISLABELLED AS CONFLICT / PRICE FRESHNESS EVIDENCE WIRED INTO ALL BATCH ACTIONS / NETWORK AUDIT REMAINS CONSISTENT / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of a41e901 correcting margin snapshot semantics and wiring price-freshness evidence into
+> batch actions. TASK-014CD core evidence capture is accepted and unchanged. No strategy / sizing change.
+>
+> - Core preserved: active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY; 50 targets, 25/25; +/-0.02; 10000-USDT;
+>   50 batch actions all with authoritative InstrumentRules + RULE_VALIDATION_PASS; batch_float_artifact_count=0;
+>   EDUUSDT/POLYXUSDT untouched + current-mark valued; network audit ticker_http_request_count=52,
+>   requested=152, unique=52, cache=100, total_priced=52, NETWORK_AUDIT_CONSISTENT.
+> - Non-atomic margin snapshot semantics: wallet and position evidence come from SEPARATE non-atomic HTTP
+>   responses. Added snapshot provenance (wallet/position request+response times, snapshot_time_delta_ms,
+>   margin_snapshot_atomic=false, comparison_scope_status) and explicit comparison fields (reported_total /
+>   observed_position_sum / difference / ratio / initial_margin_comparison_status). The observed VPS skew
+>   (1803.74307135 vs 1805.95898302, ~2.22 USDT / ~0.12%) is now
+>   INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE -> margin_model_status=
+>   AUTHORITATIVE_MARGIN_MODEL_PARTIAL with blockers NON_ATOMIC_MARGIN_SNAPSHOT +
+>   APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE, NOT MARGIN_EVIDENCE_CONFLICT. A true conflict requires atomic +
+>   proven-comparable scope + difference beyond absolute AND relative tolerance (INITIAL_MARGIN_TRUE_CONFLICT).
+> - Observed vs projected schema: projected_legacy_initial_margin_usdt (previously filled from current
+>   positionIM) is corrected to observed_legacy_position_initial_margin_sum_usdt +
+>   reported_account_total_initial_margin_usdt; projected_legacy only when genuinely projected. accountIMRate is
+>   NOT applied to the 50-position strategy without authoritative applicability.
+> - Price-freshness wired into batch actions: each of the 50 Strategy actions carries its matching symbol
+>   freshness record (price_observed_at / request_started_at_utc / response_received_at_utc / request_elapsed_ms
+>   / price_age_seconds / exchange_timestamp / freshness_threshold_seconds / price_freshness_status /
+>   price_evidence_fingerprint). Action-level status EQUALS the evidence-record status (VPS = 50x
+>   PRICE_FRESHNESS_EVIDENCE_PARTIAL, observed/age non-null, exchange_timestamp null, no invented timestamps,
+>   no stale UNAVAILABLE fields).
+> - Batch identity: action fingerprint / batch_id stay bound to price value + market snapshot identity; request
+>   timing / local observation audit metadata is NOT identity-bound (a price change still changes the
+>   fingerprint and batch_id; timing changes do not). account_type value is emitted in margin_evidence.
+> - execution_readiness_blockers: PRICE_FRESHNESS_EVIDENCE_PARTIAL, NON_ATOMIC_MARGIN_SNAPSHOT,
+>   APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE, ACCOUNT_MARGIN_MODE_UNAVAILABLE,
+>   EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK (deterministic; no false MARGIN_EVIDENCE_CONFLICT).
+> - execution_batch_authorized=false; execution_ready=false; sender_reachable=false; order/amend/cancel/live=0;
+>   no Demo order sent; no Live authorization; no auth marker. Pilot and Forward source byte-identical.
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
+
+---
+
 > README shared status updated by TASK-014CD (2026-06-23).
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AUTHORITATIVE MARGIN EVIDENCE EXPLICIT / PRICE FRESHNESS EVIDENCE EXPLICIT / NETWORK AUDIT COUNTS CONSISTENT / EXECUTION BATCH STILL UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 67ff08c adding a Plan-only evidence layer (margin / price-freshness / network-count).

@@ -159,10 +159,23 @@ def _build_production_provider(_client=None, _guard=None):
             self._client = _client if _client is not None else DemoReadOnlyClient(allow_real_network=True)
             self._guard = _guard if _guard is not None else DemoMarketPriceGuard(allow_real_network=True)
             # Private read-only GETs (wallet + positions): counted as they happen.
+            # TASK-014CD_FIX1: capture each snapshot's request/response time so the
+            # non-atomic skew between the two separate responses is provable, never
+            # silently treated as a contradiction.
+            _ws = time.time()
             self._wallet = self._client.get_wallet_balance()
+            _wr = time.time()
             self._wallet_get_count = 1
+            _ps = time.time()
             self._positions = self._client.get_open_positions()
+            _pr = time.time()
             self._positions_get_count = 1
+            self._wallet_snapshot_started_at = _utc_iso(_ws)
+            self._wallet_snapshot_received_at = _utc_iso(_wr)
+            self._position_snapshot_started_at = _utc_iso(_ps)
+            self._position_snapshot_received_at = _utc_iso(_pr)
+            self._wallet_snapshot_received_epoch = _wr
+            self._position_snapshot_received_epoch = _pr
             # One public batch instrument-metadata GET (category=linear, paginated).
             self._raw_instruments = self._client.get_instruments_info()
             self._instrument_metadata_get_count = 1
@@ -294,6 +307,7 @@ def _build_production_provider(_client=None, _guard=None):
                 margin_evidence_source=(
                     "DemoReadOnlyClient.get_wallet_balance() -> /v5/account/wallet-balance + "
                     "get_open_positions() -> /v5/position/list (private read-only GET)"),
+                account_type=getattr(self._wallet, "account_type", None),
                 account_margin_mode=None,  # /v5/account/info not in allowed read-only paths
                 wallet_equity=self._wallet.equity_usd,
                 available_balance=self._wallet.available_balance_usd,
@@ -301,7 +315,13 @@ def _build_production_provider(_client=None, _guard=None):
                 total_maintenance_margin=getattr(self._wallet, "total_maintenance_margin_usd", None),
                 account_initial_margin_rate=getattr(self._wallet, "account_im_rate", None),
                 account_maintenance_margin_rate=getattr(self._wallet, "account_mm_rate", None),
-                per_position=per)
+                per_position=per,
+                wallet_snapshot_request_started_at_utc=self._wallet_snapshot_started_at,
+                wallet_snapshot_response_received_at_utc=self._wallet_snapshot_received_at,
+                position_snapshot_request_started_at_utc=self._position_snapshot_started_at,
+                position_snapshot_response_received_at_utc=self._position_snapshot_received_at,
+                # Two separate HTTP responses -> never atomic; scope not proven.
+                margin_snapshot_atomic=False, scope_proven_comparable=False)
 
         def instrument_rule(self, symbol: str):
             return self._instruments.get(symbol)

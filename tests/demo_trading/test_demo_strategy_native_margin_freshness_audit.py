@@ -228,17 +228,101 @@ def test_absent_margin_fields_remain_null_and_create_blockers():
     assert "APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE" in model["margin_model_blockers"]
 
 
-def test_conflicting_margin_evidence_fails_closed():
-    # reported total IM (200) disagrees with per-position sum (100+100=200 -> set 999 to conflict)
+def test_exact_equal_margin_evidence_is_match():
+    ev = md.normalize_margin_evidence(
+        margin_evidence_source="fixture", total_initial_margin=200.0,
+        per_position=[{"symbol": "EDUUSDT", "leverage": 10.0, "initial_margin": 100.0},
+                      {"symbol": "POLYXUSDT", "leverage": 10.0, "initial_margin": 100.0}])
+    assert ev["initial_margin_comparison_status"] == md.INITIAL_MARGIN_VALUES_MATCH_WITHIN_TOLERANCE
+    assert ev["observed_legacy_position_initial_margin_sum_usdt"] == "200"
+    assert ev["initial_margin_difference_usdt"] == "0"
+
+
+def test_small_non_atomic_difference_is_partial_not_conflict():
+    # The observed VPS skew: reported 1803.74307135 vs per-position sum 1805.95898302
+    # (abs ~2.216, rel ~0.12%). Non-atomic snapshots -> PARTIAL, never a conflict.
+    ev = md.normalize_margin_evidence(
+        margin_evidence_source="fixture", total_initial_margin=1803.74307135,
+        per_position=[{"symbol": "EDUUSDT", "leverage": 10.0, "initial_margin": 902.97949151},
+                      {"symbol": "POLYXUSDT", "leverage": 10.0, "initial_margin": 902.97949151}],
+        margin_snapshot_atomic=False, scope_proven_comparable=False)
+    assert ev["initial_margin_comparison_status"] == \
+        md.INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE
+    model = md.build_projected_margin_model(
+        margin_evidence=ev, strategy_gross_notional=10000, legacy_gross_notional=2677.68,
+        available_balance=8500)  # no authoritative rate -> not COMPLETE
+    assert model["margin_model_status"] == md.AUTHORITATIVE_MARGIN_MODEL_PARTIAL
+    assert model["margin_model_status"] != md.MARGIN_EVIDENCE_CONFLICT
+    assert "NON_ATOMIC_MARGIN_SNAPSHOT" in model["margin_model_blockers"]
+    assert "APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE" in model["margin_model_blockers"]
+
+
+def test_large_proven_comparable_difference_is_true_conflict():
     ev = md.normalize_margin_evidence(
         margin_evidence_source="fixture", total_initial_margin=999.0,
         per_position=[{"symbol": "EDUUSDT", "leverage": 10.0, "initial_margin": 100.0},
-                      {"symbol": "POLYXUSDT", "leverage": 10.0, "initial_margin": 100.0}])
+                      {"symbol": "POLYXUSDT", "leverage": 10.0, "initial_margin": 100.0}],
+        margin_snapshot_atomic=True, scope_proven_comparable=True)
+    assert ev["initial_margin_comparison_status"] == md.INITIAL_MARGIN_TRUE_CONFLICT
     model = md.build_projected_margin_model(
         margin_evidence=ev, strategy_gross_notional=10000, legacy_gross_notional=2677.68,
         available_balance=8500, applicable_initial_margin_rate=0.05)
     assert model["margin_model_status"] == md.MARGIN_EVIDENCE_CONFLICT
     assert "REPORTED_TOTAL_IM_CONFLICTS_WITH_PER_POSITION_SUM" in model["margin_model_blockers"]
+
+
+def test_incomparable_scope_large_difference_is_scope_not_comparable():
+    ev = md.normalize_margin_evidence(
+        margin_evidence_source="fixture", total_initial_margin=999.0,
+        per_position=[{"symbol": "EDUUSDT", "leverage": 10.0, "initial_margin": 100.0},
+                      {"symbol": "POLYXUSDT", "leverage": 10.0, "initial_margin": 100.0}],
+        margin_snapshot_atomic=False, scope_proven_comparable=False)
+    assert ev["initial_margin_comparison_status"] == md.INITIAL_MARGIN_SCOPE_NOT_COMPARABLE
+    model = md.build_projected_margin_model(
+        margin_evidence=ev, strategy_gross_notional=10000, legacy_gross_notional=2677.68,
+        available_balance=8500)
+    assert model["margin_model_status"] != md.MARGIN_EVIDENCE_CONFLICT
+
+
+def test_account_im_rate_not_applied_without_authoritative_applicability():
+    # accountIMRate is present in evidence, but the model must NOT apply it to the
+    # 50-position strategy without an explicit authoritative applicable rate.
+    ev = _authoritative_margin()  # carries account_initial_margin_rate=0.05
+    model = md.build_projected_margin_model(
+        margin_evidence=ev, strategy_gross_notional=10000, legacy_gross_notional=2677.68,
+        available_balance=8500)  # no applicable_initial_margin_rate passed
+    assert model["projected_strategy_initial_margin_usdt"] is None
+    assert model["margin_model_status"] != md.AUTHORITATIVE_MARGIN_MODEL_COMPLETE
+    assert "APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE" in model["margin_model_blockers"]
+
+
+def test_observed_per_position_sum_labelled_observed_not_projected():
+    ev = _authoritative_margin()
+    model = md.build_projected_margin_model(
+        margin_evidence=ev, strategy_gross_notional=10000, legacy_gross_notional=2677.68,
+        available_balance=8500)  # PARTIAL: no projection computed
+    assert model["observed_legacy_position_initial_margin_sum_usdt"] == "200"
+    assert model["reported_account_total_initial_margin_usdt"] == "200"
+    # No genuine projection -> projected_legacy stays null (not the observed value).
+    assert model["projected_legacy_initial_margin_usdt"] is None
+
+
+def test_account_type_emitted_in_margin_evidence():
+    ev = md.normalize_margin_evidence(margin_evidence_source="fixture", account_type="UNIFIED")
+    assert ev["account_type"] == "UNIFIED"
+    ev2 = md.unavailable_margin_evidence()
+    assert ev2["account_type"] is None
+
+
+def test_snapshot_provenance_non_atomic():
+    ev = md.normalize_margin_evidence(
+        margin_evidence_source="fixture", total_initial_margin=200.0,
+        per_position=[{"symbol": "EDUUSDT", "leverage": 10.0, "initial_margin": 200.0}],
+        wallet_snapshot_response_received_at_utc=1000.0,
+        position_snapshot_response_received_at_utc=1000.25)
+    assert ev["margin_snapshot_atomic"] is False
+    assert ev["comparison_scope_status"] == md.COMPARISON_SCOPE_NOT_PROVEN_COMPARABLE
+    assert ev["snapshot_time_delta_ms"] == 250.0
 
 
 def test_no_hardcoded_leverage_used():
@@ -375,20 +459,106 @@ def test_network_audit_counter_mismatch_fails_closed():
 # ===========================================================================
 
 
+def _partial_freshness_evidence(symbols, *, observed=1990.0, batch_built=2000.0):
+    snaps = [md.build_price_freshness_snapshot(
+        symbol=s, price=2.0, price_source="DemoMarketPriceGuard -> /v5/market/tickers (public GET)",
+        request_started_at_utc=observed, response_received_at_utc=observed,
+        request_elapsed_ms=1.0, batch_built_at_utc=batch_built) for s in symbols]
+    return md.build_price_freshness_evidence(snaps)
+
+
 def _review_with_evidence(*, margin_evidence=None, network_audit=None,
                           price_freshness_evidence=None, positions=None,
-                          applicable_initial_margin_rate=None):
+                          applicable_initial_margin_rate=None, price_by_symbol=None):
     plan, prov = _plan_and_provider(positions=positions)
     rule_ev = {s: prov.instrument_rule_evidence(s) for s in _50_symbols()}
     return v1.build_strategy_native_review(
         plan=plan, open_positions=positions if positions is not None else [], pilot_id=PILOT,
         run_date=DATE, artifact_fingerprint="sha256:fp", wallet_equity=INIT,
         available_balance=8_500.0, rule_evidence_by_symbol=rule_ev,
-        price_by_symbol={s: 2.0 for s in _50_symbols()},
+        price_by_symbol=price_by_symbol or {s: 2.0 for s in _50_symbols()},
         legacy_mark_price_by_symbol={"EDUUSDT": 0.6, "POLYXUSDT": 0.3},
         margin_evidence=margin_evidence, network_audit=network_audit,
         price_freshness_evidence=price_freshness_evidence,
         applicable_initial_margin_rate=applicable_initial_margin_rate)
+
+
+# ===========================================================================
+# 3/4. Action-level freshness wiring + batch identity semantics
+# ===========================================================================
+
+
+def test_all_50_actions_receive_matching_freshness_evidence():
+    pfe = _partial_freshness_evidence(_50_symbols())
+    review = _review_with_evidence(positions=_legacy_positions(), price_freshness_evidence=pfe)
+    actions = review["execution_batch"]["actions"]
+    assert len(actions) == 50
+    by_symbol = {s["symbol"]: s for s in pfe["snapshots"]}
+    partial_count = 0
+    for a in actions:
+        rec = by_symbol[a["symbol"]]
+        # action-level status EQUALS the canonical evidence-record status.
+        assert a["price_freshness_status"] == rec["price_freshness_status"]
+        assert a["price_freshness_status"] == md.PRICE_FRESHNESS_EVIDENCE_PARTIAL
+        assert a["price_observed_at"] is not None
+        assert a["price_age_seconds"] is not None
+        assert a["exchange_timestamp"] is None  # never invented
+        assert a["price_evidence_fingerprint"] == rec["price_snapshot_fingerprint"]
+        assert a["request_started_at_utc"] is not None
+        assert a["response_received_at_utc"] is not None
+        if a["price_freshness_status"] == md.PRICE_FRESHNESS_EVIDENCE_PARTIAL:
+            partial_count += 1
+    assert partial_count == 50
+    # No stale UNAVAILABLE fields remain.
+    assert not any(a["price_freshness_status"] == md.PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE
+                   for a in actions)
+
+
+def test_action_freshness_counts_no_missing_observed_or_age():
+    pfe = _partial_freshness_evidence(_50_symbols())
+    review = _review_with_evidence(positions=_legacy_positions(), price_freshness_evidence=pfe)
+    actions = review["execution_batch"]["actions"]
+    assert sum(1 for a in actions if a["price_freshness_status"] == md.PRICE_FRESHNESS_EVIDENCE_PARTIAL) == 50
+    assert sum(1 for a in actions if a["price_observed_at"] is None) == 0
+    assert sum(1 for a in actions if a["price_age_seconds"] is None) == 0
+
+
+def test_timing_metadata_does_not_change_action_identity():
+    # Same prices, DIFFERENT observation/timing metadata -> identical action
+    # fingerprints and batch_id (timing audit metadata is not identity-bound).
+    pfe1 = _partial_freshness_evidence(_50_symbols(), observed=1990.0, batch_built=2000.0)
+    pfe2 = _partial_freshness_evidence(_50_symbols(), observed=3990.0, batch_built=4000.0)
+    r1 = _review_with_evidence(price_freshness_evidence=pfe1)
+    r2 = _review_with_evidence(price_freshness_evidence=pfe2)
+    b1, b2 = r1["execution_batch"], r2["execution_batch"]
+    assert b1["batch_id"] == b2["batch_id"]
+    assert [a["action_fingerprint"] for a in b1["actions"]] == \
+        [a["action_fingerprint"] for a in b2["actions"]]
+    assert [a["idempotency_key"] for a in b1["actions"]] == \
+        [a["idempotency_key"] for a in b2["actions"]]
+    # But the attached audit metadata DID differ.
+    assert b1["actions"][0]["price_observed_at"] != b2["actions"][0]["price_observed_at"]
+
+
+def test_price_change_still_changes_action_fingerprint_and_batch_id():
+    base = _review_with_evidence(price_by_symbol={s: 2.0 for s in _50_symbols()})
+    changed = _review_with_evidence(
+        price_by_symbol={**{s: 2.0 for s in _50_symbols()}, "C0USDT": 2.5})
+    b0, c0 = base["execution_batch"], changed["execution_batch"]
+    assert b0["batch_id"] != c0["batch_id"]
+    a_base = [a for a in b0["actions"] if a["symbol"] == "C0USDT"][0]
+    a_chg = [a for a in c0["actions"] if a["symbol"] == "C0USDT"][0]
+    assert a_base["action_fingerprint"] != a_chg["action_fingerprint"]
+
+
+def test_price_evidence_fingerprint_stable_for_identical_evidence():
+    pfe = _partial_freshness_evidence(_50_symbols())
+    r1 = _review_with_evidence(price_freshness_evidence=pfe)
+    r2 = _review_with_evidence(price_freshness_evidence=pfe)
+    fp1 = [a["price_evidence_fingerprint"] for a in r1["execution_batch"]["actions"]]
+    fp2 = [a["price_evidence_fingerprint"] for a in r2["execution_batch"]["actions"]]
+    assert fp1 == fp2
+    assert all(fp is not None for fp in fp1)
 
 
 def test_full_50_plan_preserved_with_evidence():
@@ -439,6 +609,47 @@ def test_network_mismatch_blocker_in_review():
     review = _review_with_evidence(positions=_legacy_positions(), network_audit=na)
     assert review["network_audit_status"] == md.NETWORK_AUDIT_COUNTER_MISMATCH
     assert md.NETWORK_AUDIT_COUNTER_MISMATCH in review["execution_readiness_blockers"]
+
+
+def test_vps_shape_review_partial_margin_no_conflict_and_blockers():
+    # Reproduces the observed VPS shape: small non-atomic IM skew + PARTIAL freshness
+    # + consistent network (52 unique, 152 requested, 100 cache hits).
+    margin = md.normalize_margin_evidence(
+        margin_evidence_source="wallet+positions (private read-only GET)",
+        account_type="UNIFIED", account_margin_mode=None,
+        wallet_equity=10000, available_balance=8500,
+        total_initial_margin=1803.74307135,
+        per_position=[{"symbol": "EDUUSDT", "leverage": 10.0, "initial_margin": 902.97949151,
+                       "maintenance_margin": 60.0},
+                      {"symbol": "POLYXUSDT", "leverage": 10.0, "initial_margin": 902.97949151,
+                       "maintenance_margin": 60.0}],
+        margin_snapshot_atomic=False, scope_proven_comparable=False)
+    pfe = _partial_freshness_evidence(_50_symbols())
+    na = md.build_network_audit(
+        ticker_http_request_count=52, ticker_requested_symbol_count=152,
+        ticker_unique_symbol_count=52, ticker_cache_hit_count=100,
+        strategy_target_priced_symbol_count=50, legacy_mark_priced_symbol_count=2)
+    review = _review_with_evidence(positions=_legacy_positions(), margin_evidence=margin,
+                                   network_audit=na, price_freshness_evidence=pfe)
+    assert review["margin_model_status"] == md.AUTHORITATIVE_MARGIN_MODEL_PARTIAL
+    assert review["margin_evidence"]["initial_margin_comparison_status"] == \
+        md.INITIAL_MARGIN_VALUES_DIFFER_WITHIN_NON_ATOMIC_SNAPSHOT_TOLERANCE
+    assert review["network_audit_status"] == md.NETWORK_AUDIT_CONSISTENT
+    # All 50 actions carry PARTIAL freshness, not stale UNAVAILABLE.
+    actions = review["execution_batch"]["actions"]
+    assert sum(1 for a in actions
+               if a["price_freshness_status"] == md.PRICE_FRESHNESS_EVIDENCE_PARTIAL) == 50
+    blockers = review["execution_readiness_blockers"]
+    for expected in ("PRICE_FRESHNESS_EVIDENCE_PARTIAL", "NON_ATOMIC_MARGIN_SNAPSHOT",
+                     "APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE", "ACCOUNT_MARGIN_MODE_UNAVAILABLE",
+                     md.EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK):
+        assert expected in blockers
+    assert "MARGIN_EVIDENCE_CONFLICT" not in blockers
+    assert "REPORTED_TOTAL_IM_CONFLICTS_WITH_PER_POSITION_SUM" not in blockers
+    # Deterministic.
+    review2 = _review_with_evidence(positions=_legacy_positions(), margin_evidence=margin,
+                                    network_audit=na, price_freshness_evidence=pfe)
+    assert review["execution_readiness_blockers"] == review2["execution_readiness_blockers"]
 
 
 def test_review_execution_unauthorized_and_zero_counts():
