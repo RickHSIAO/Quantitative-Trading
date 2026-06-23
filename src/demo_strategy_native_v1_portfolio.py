@@ -847,6 +847,9 @@ def build_strategy_native_review(
     exchange_clock_evidence: Mapping[str, Any] | None = None,
     account_margin_model: Mapping[str, Any] | None = None,
     account_network_audit: Mapping[str, Any] | None = None,
+    # TASK-014CE_FIX1: the planner/ticker-only CD network audit, retained under an
+    # explicitly scoped name (NOT the canonical network_audit).
+    ticker_price_network_audit: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Full ACTIVE V1 Strategy-native Plan-only review. Non-dispatching: builds a
     multi-symbol execution batch but authorizes and sends nothing.
@@ -934,6 +937,17 @@ def build_strategy_native_review(
     network_audit_status = (str(network_audit.get("network_audit_status"))
                             if network_audit is not None else md.NETWORK_AUDIT_CONSISTENT)
 
+    # --- TASK-014CE_FIX1: canonical margin-model status semantics --------------
+    # observed_margin_snapshot_model_status: the CD/FIX1 NON-ATOMIC wallet+position
+    #   snapshot interpretation (may stay PARTIAL because the two GETs are non-atomic).
+    # projected_margin_model_status: the CE per-action risk-tier projection result.
+    # margin_model_status (canonical execution-planning meaning): the PROJECTED model
+    #   when CE evidence exists, else the observed snapshot model.
+    observed_margin_snapshot_model_status = margin_model["margin_model_status"]
+    canonical_margin_model_status = (str(account_margin_model.get("margin_model_status"))
+                                     if account_margin_model is not None
+                                     else observed_margin_snapshot_model_status)
+
     feasibility = assess_feasibility(
         wallet_equity=wallet_equity, available_balance=available_balance,
         strategy_gross_notional=strategy_gross, legacy_gross_notional=legacy_mark_gross,
@@ -945,11 +959,15 @@ def build_strategy_native_review(
         exchange_timestamp_available=exchange_timestamp_available)
 
     batch_float_artifact_count = _batch_float_artifact_count(batch.actions)
+    # The blocker list uses the CANONICAL (projected, when present) margin-model status,
+    # so AUTHORITATIVE_MARGIN_MODEL_PARTIAL is NOT emitted once all 50 projected actions
+    # are complete. The observed NON-ATOMIC snapshot concern is preserved via the CD
+    # margin_model_blockers (NON_ATOMIC_MARGIN_SNAPSHOT), which are passed through.
     execution_readiness_blockers = md.build_execution_readiness_blockers(
         rule_rejection=rule_rejection, batch_float_artifact_count=batch_float_artifact_count,
         legacy_mark_price_available=legacy_mark_price_available,
         price_freshness_status=overall_freshness_status,
-        margin_model_status=margin_model["margin_model_status"],
+        margin_model_status=canonical_margin_model_status,
         margin_model_blockers=margin_model.get("margin_model_blockers"),
         network_audit_status=network_audit_status)
 
@@ -1008,12 +1026,23 @@ def build_strategy_native_review(
         "price_freshness_status": overall_freshness_status,
         # TASK-014CD authoritative evidence (Plan-only; authorizes nothing).
         "margin_evidence": margin_ev,
+        # CD observed (non-atomic wallet+position) snapshot model, kept for audit.
         "margin_model": margin_model,
-        "margin_model_status": margin_model["margin_model_status"],
+        "observed_margin_snapshot_model": margin_model,
+        "observed_margin_snapshot_model_status": observed_margin_snapshot_model_status,
+        # Canonical execution-planning margin status = projected model when CE evidence
+        # exists (COMPLETE for the REGULAR_MARGIN VPS case), else the observed snapshot.
+        "margin_model_status": canonical_margin_model_status,
         "price_freshness_evidence": (dict(price_freshness_evidence)
                                      if price_freshness_evidence is not None else None),
+        # ONE canonical complete-account network audit (TASK-014CE_FIX1). When CE
+        # evidence is supplied this carries the full public/private GET counts; the
+        # planner/ticker-only CD counts live under the explicitly scoped
+        # ticker_price_network_audit (never the canonical network_audit name).
         "network_audit": (dict(network_audit) if network_audit is not None else None),
         "network_audit_status": network_audit_status,
+        "ticker_price_network_audit": (dict(ticker_price_network_audit)
+                                       if ticker_price_network_audit is not None else None),
         # TASK-014CE authoritative account-mode / risk-tier / exchange-clock evidence
         # (Plan-only; authorizes nothing). Null when not supplied (accepted CD output).
         "account_mode_evidence": (dict(account_mode_evidence)
@@ -1026,7 +1055,9 @@ def build_strategy_native_review(
                                    if account_margin_model is not None else None),
         "projected_margin_model_status": ((account_margin_model or {}).get("margin_model_status")
                                           if account_margin_model is not None else None),
-        "account_network_audit": (dict(account_network_audit)
+        # account_network_audit is retained ONLY as an exact alias of the canonical
+        # network_audit (proven value-equal) so no two blocks carry different counts.
+        "account_network_audit": (dict(network_audit)
                                   if account_network_audit is not None else None),
         "execution_readiness_blockers": execution_readiness_blockers,
         # Authorization / dispatch invariants (Plan-only).

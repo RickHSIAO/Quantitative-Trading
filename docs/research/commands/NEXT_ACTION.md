@@ -1,5 +1,38 @@
 # Next Action
 
+> **TASK-014CE_FIX1_CANONICAL_MARGIN_NETWORK_AND_BLOCKER_RECONCILIATION** (2026-06-23, Opus 4.8)
+>
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / REGULAR MARGIN AND 50 APPLICABLE RISK TIERS VERIFIED / PROJECTED STRATEGY MARGIN COMPLETE / OBSERVED ACCOUNT SNAPSHOT REMAINS NON-ATOMIC / CANONICAL NETWORK AUDIT RECONCILED TO 105 PUBLIC AND 3 PRIVATE READ-ONLY GETS / EXCHANGE QUOTE TIMESTAMP STILL UNAVAILABLE / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> New commit on top of 76558fd reconciling CE evidence schema only (margin-status semantics,
+> network counters, readiness blockers, clock offset). No Strategy / sizing / planner / batch
+> identity / InstrumentRules / legacy change. TASK-014CE core VPS evidence passed.
+>
+> - Canonical margin status: observed_margin_snapshot_model_status (CD non-atomic, stays PARTIAL)
+>   vs projected_margin_model_status (CE, COMPLETE) vs margin_model_status (canonical = projected =
+>   COMPLETE for the REGULAR_MARGIN VPS case). projected_margin_model now carries account_margin_mode=
+>   REGULAR_MARGIN, available_balance_usdt, projected strategy IM 295.9 (exact 50-action Decimal sum),
+>   MM 151.04, observed legacy IM 1795.55557102, projected total 2091.45557102. accountIMRate unused.
+> - Readiness blockers: AUTHORITATIVE_MARGIN_MODEL_PARTIAL / ACCOUNT_MARGIN_MODE_UNAVAILABLE /
+>   APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE removed once projected margin is complete; kept
+>   PRICE_FRESHNESS_EVIDENCE_PARTIAL, NON_ATOMIC_MARGIN_SNAPSHOT,
+>   PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE, EXCHANGE_CLOCK_BRACKET_ONLY,
+>   EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK (always last).
+> - One canonical network_audit: review.network_audit is the complete-account block (105 public /
+>   3 private), top-level mirrors it exactly, account_network_audit is an exact alias, and the
+>   ticker/planner-only counts are scoped (ticker_price_network_audit / planner_ticker_*).
+>   total_private = 1+1+1 = 3; total_public = 1+2+50+52 = 105.
+> - Exchange clock: exchange_clock_evidence_status=EXCHANGE_CLOCK_BRACKET_AVAILABLE; real field names
+>   retained; high-resolution offset = Bybit timeNano epoch - local midpoint epoch with explicit
+>   clock_offset_evidence_status (no silent null). Server time is not a quote timestamp; freshness
+>   stays PARTIAL (never PASS).
+> - execution_batch_authorized=false; execution_ready=false; sender_reachable=false;
+>   order/amend/cancel/live=0. No Demo order; no Live; no auth marker. Pilot + Forward byte-identical.
+> - Tests: 21 focused (test_demo_strategy_native_ce_fix1.py); demo_trading regression 9285 passed
+>   (1 pre-existing unrelated emergency_close CLI failure).
+
+---
+
 > **TASK-014CE_AUTHORITATIVE_ACCOUNT_MODE_MARGIN_TIER_AND_EXCHANGE_CLOCK_EVIDENCE** (2026-06-23, Opus 4.8)
 >
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AUTHORITATIVE ACCOUNT MODE CAPTURED / RISK-TIER APPLICABILITY FAILS CLOSED / ACCOUNT IM RATE NOT REUSED / EXCHANGE SERVER-TIME BRACKET IS NOT MISLABELLED AS QUOTE TIMESTAMP / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

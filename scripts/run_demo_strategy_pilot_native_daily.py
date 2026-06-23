@@ -129,15 +129,21 @@ def _utc_iso(epoch: float) -> str:
 
 
 def _canonical_network_top_level(*, review, planner_phase_audit, instrument_metadata_get_count):
-    """One canonical complete-account network-audit schema for the top level
-    (TASK-014CD_FIX2). The canonical ticker counters MIRROR
-    ``strategy_native_review.network_audit`` (complete account: strategy + legacy).
+    """ONE canonical complete-account network-audit schema for the top level. The
+    top-level counters MIRROR ``strategy_native_review.network_audit`` EXACTLY. When the
+    nested block is the complete-account CE audit (TASK-014CE), the top level mirrors all
+    public/private GET counters and uses the canonical ``total_public_get_count`` /
+    ``total_private_read_only_get_count`` (e.g. 105 / 3). When it is the older CD
+    ticker-only audit, the top level falls back to ``instrument_metadata + ticker_http``.
     The pre-review planner-phase ticker counts are exposed under explicit
-    ``planner_ticker_*`` names so no field carries two different meanings.
-    ``total_public_get_count`` is recomputed from the canonical ticker HTTP count."""
+    ``planner_ticker_*`` names so no field carries two different meanings."""
     na = (review or {}).get("network_audit") or {}
     http = int(na.get("ticker_http_request_count", 0) or 0)
-    return {
+    # The complete-account CE audit is identifiable by its CE-only counters.
+    is_complete_account = "server_time_public_get_count" in na
+    total_public = (int(na.get("total_public_get_count", 0) or 0) if is_complete_account
+                    else int(instrument_metadata_get_count or 0) + http)
+    out = {
         # Canonical complete-account counters (mirror the nested network_audit).
         "ticker_http_request_count": http,
         "ticker_requested_symbol_count": int(na.get("ticker_requested_symbol_count", 0) or 0),
@@ -146,7 +152,7 @@ def _canonical_network_top_level(*, review, planner_phase_audit, instrument_meta
         "ticker_public_get_count": http,  # == HTTP requests (one GET per HTTP request)
         "total_priced_symbol_count": int(na.get("total_priced_symbol_count", 0) or 0),
         "network_audit_status": na.get("network_audit_status"),
-        "total_public_get_count": int(instrument_metadata_get_count or 0) + http,
+        "total_public_get_count": total_public,
         # Planner-only INITIAL Strategy pricing phase (explicitly named; not canonical).
         "planner_ticker_http_request_count":
             int((planner_phase_audit or {}).get("ticker_http_request_count", 0) or 0),
@@ -157,6 +163,24 @@ def _canonical_network_top_level(*, review, planner_phase_audit, instrument_meta
         "planner_ticker_cache_hit_count":
             int((planner_phase_audit or {}).get("ticker_cache_hit_count", 0) or 0),
     }
+    if is_complete_account:
+        # Mirror the canonical complete-account public/private GET counters exactly.
+        out.update({
+            "instrument_metadata_public_get_count":
+                int(na.get("instrument_metadata_public_get_count", 0) or 0),
+            "server_time_public_get_count": int(na.get("server_time_public_get_count", 0) or 0),
+            "risk_limit_public_get_count": int(na.get("risk_limit_public_get_count", 0) or 0),
+            "risk_limit_page_count": int(na.get("risk_limit_page_count", 0) or 0),
+            "account_info_private_read_only_get_count":
+                int(na.get("account_info_private_read_only_get_count", 0) or 0),
+            "wallet_private_read_only_get_count":
+                int(na.get("wallet_private_read_only_get_count", 0) or 0),
+            "positions_private_read_only_get_count":
+                int(na.get("positions_private_read_only_get_count", 0) or 0),
+            "total_private_read_only_get_count":
+                int(na.get("total_private_read_only_get_count", 0) or 0),
+        })
+    return out
 
 
 def _build_production_provider(_client=None, _guard=None):
@@ -357,7 +381,9 @@ def _build_production_provider(_client=None, _guard=None):
                     "DemoReadOnlyClient.get_wallet_balance() -> /v5/account/wallet-balance + "
                     "get_open_positions() -> /v5/position/list (private read-only GET)"),
                 account_type=getattr(self._wallet, "account_type", None),
-                account_margin_mode=None,  # /v5/account/info not in allowed read-only paths
+                # TASK-014CE: authoritative account marginMode from /v5/account/info
+                # (now in the read-only allowlist). None when the response was absent.
+                account_margin_mode=getattr(self._account_info, "margin_mode", None),
                 wallet_equity=self._wallet.equity_usd,
                 available_balance=self._wallet.available_balance_usd,
                 total_initial_margin=getattr(self._wallet, "total_initial_margin_usd", None),
@@ -426,6 +452,11 @@ def _build_production_provider(_client=None, _guard=None):
                 after_local_monotonic_start=getattr(after, "request_started_monotonic", None),
                 after_local_monotonic_end=getattr(after, "response_received_monotonic", None),
                 after_response_envelope_time=getattr(after, "response_envelope_time", None),
+                # High-resolution local epochs for an auditable clock-offset estimate.
+                before_local_request_epoch=getattr(before, "request_started_epoch", None),
+                before_local_response_epoch=getattr(before, "response_received_epoch", None),
+                after_local_request_epoch=getattr(after, "request_started_epoch", None),
+                after_local_response_epoch=getattr(after, "response_received_epoch", None),
                 **window)
 
         def account_network_counters(self) -> dict:
@@ -616,14 +647,17 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
     price_freshness_evidence = md.build_price_freshness_evidence(freshness_snaps) \
         if freshness_snaps else None
 
-    # --- TASK-014CD network-audit counts (request vs symbol vs cache) ---------
-    network_audit = None
+    # --- TASK-014CD ticker-only network-audit (planner/ticker price phase) -----
+    # Retained under the explicitly scoped name ticker_price_network_audit; it is NOT
+    # the canonical network_audit (TASK-014CE_FIX1).
+    ticker_price_network_audit = None
+    strat_priced = legacy_priced = 0
     if hasattr(provider, "network_audit_counters"):
         ctr = provider.network_audit_counters()
         strat_priced = sum(1 for s in price_by_symbol if price_by_symbol.get(s) is not None)
         legacy_priced = sum(1 for s in legacy_symbols
                             if legacy_mark_price_by_symbol.get(s) is not None)
-        network_audit = md.build_network_audit(
+        ticker_price_network_audit = md.build_network_audit(
             ticker_http_request_count=ctr["ticker_http_request_count"],
             ticker_requested_symbol_count=ctr["ticker_requested_symbol_count"],
             ticker_unique_symbol_count=ctr["ticker_unique_symbol_count"],
@@ -700,23 +734,33 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
             last_ticker_symbol=last.get("symbol"),
             last_ticker_observed_at_utc=last.get("local_observed_at_utc"))
 
-    # Complete-account extended network audit (distinct counter semantics).
+    # ONE canonical complete-account network audit (distinct counter semantics). When
+    # CE counters are available this becomes the canonical network_audit (total public =
+    # instrument + ticker_http + server_time + risk_limit; total private = account_info +
+    # wallet + positions). Otherwise the canonical block falls back to the ticker-only CD
+    # audit (back-compatible).
     account_network_audit = None
-    if hasattr(provider, "account_network_counters") and network_audit is not None:
+    if hasattr(provider, "account_network_counters") and ticker_price_network_audit is not None:
         acct_ctr = provider.account_network_counters()
         prov_aud = provider.audit() if hasattr(provider, "audit") else {}
         account_network_audit = ce.build_account_network_audit(
             instrument_metadata_public_get_count=prov_aud.get("instrument_metadata_public_get_count", 0),
-            ticker_http_request_count=network_audit["ticker_http_request_count"],
-            ticker_requested_symbol_count=network_audit["ticker_requested_symbol_count"],
-            ticker_unique_symbol_count=network_audit["ticker_unique_symbol_count"],
-            ticker_cache_hit_count=network_audit["ticker_cache_hit_count"],
+            ticker_http_request_count=ticker_price_network_audit["ticker_http_request_count"],
+            ticker_requested_symbol_count=ticker_price_network_audit["ticker_requested_symbol_count"],
+            ticker_unique_symbol_count=ticker_price_network_audit["ticker_unique_symbol_count"],
+            ticker_cache_hit_count=ticker_price_network_audit["ticker_cache_hit_count"],
             server_time_public_get_count=acct_ctr["server_time_public_get_count"],
             risk_limit_public_get_count=acct_ctr["risk_limit_public_get_count"],
             risk_limit_page_count=acct_ctr["risk_limit_page_count"],
             account_info_private_read_only_get_count=acct_ctr["account_info_private_read_only_get_count"],
             wallet_private_read_only_get_count=prov_aud.get("wallet_private_read_only_get_count", 0),
-            positions_private_read_only_get_count=prov_aud.get("positions_private_read_only_get_count", 0))
+            positions_private_read_only_get_count=prov_aud.get("positions_private_read_only_get_count", 0),
+            strategy_target_priced_symbol_count=strat_priced,
+            legacy_mark_priced_symbol_count=legacy_priced)
+
+    # Canonical network_audit = complete-account CE block when present, else CD ticker.
+    canonical_network_audit = (account_network_audit if account_network_audit is not None
+                               else ticker_price_network_audit)
 
     return v1.build_strategy_native_review(
         plan=plan, open_positions=open_positions, pilot_id=pilot_id, run_date=date,
@@ -734,12 +778,13 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
         price_freshness_status=v1.PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE,
         margin_evidence=margin_evidence,
         price_freshness_evidence=price_freshness_evidence,
-        network_audit=network_audit,
+        network_audit=canonical_network_audit,
         account_mode_evidence=account_mode_evidence,
         risk_limit_evidence=risk_limit_evidence,
         exchange_clock_evidence=exchange_clock_evidence,
         account_margin_model=account_margin_model,
-        account_network_audit=account_network_audit)
+        account_network_audit=account_network_audit,
+        ticker_price_network_audit=ticker_price_network_audit)
 
 
 def orchestrate_gated_send(
@@ -1053,16 +1098,19 @@ def main(argv: list[str] | None = None) -> int:
                # Real network accounting (actual calls, not expected).
                "instrument_metadata_public_get_count":
                    provider_audit.get("instrument_metadata_public_get_count", 0),
-               # TASK-014CD_FIX2: ONE canonical complete-account network schema. The
-               # top-level ticker counters mirror strategy_native_review.network_audit
-               # (strategy + legacy); the planner-only phase is planner_ticker_*.
-               **network_top,
+               # CD-only private read-only fallbacks; the canonical complete-account
+               # counts in network_top (when present) override these (TASK-014CE_FIX1).
                "wallet_private_read_only_get_count":
                    provider_audit.get("wallet_private_read_only_get_count", 0),
                "positions_private_read_only_get_count":
                    provider_audit.get("positions_private_read_only_get_count", 0),
                "total_private_read_only_get_count":
                    provider_audit.get("total_private_read_only_get_count", 0),
+               # ONE canonical complete-account network schema. The top-level counters
+               # MIRROR strategy_native_review.network_audit (complete account: instrument
+               # + ticker + server-time + risk-limit public GETs; account-info + wallet +
+               # positions private GETs). The planner-only phase is planner_ticker_*.
+               **network_top,
                # Explicit dispatcher call counts from the non-dispatching architecture.
                "execute_daily_native_called": False,
                "execute_daily_native_call_count": 0,

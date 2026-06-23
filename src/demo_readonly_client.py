@@ -176,6 +176,9 @@ class ServerTimeSnapshot:
     response_received_at_utc: str | None = None
     request_started_monotonic: float | None = None
     response_received_monotonic: float | None = None
+    # High-resolution local EPOCH seconds (time.time()) for clock-offset estimation.
+    request_started_epoch:   float | None = None
+    response_received_epoch: float | None = None
     response_present:        bool       = False
 
 
@@ -659,9 +662,11 @@ class DemoReadOnlyClient:
         """Unsigned GET /v5/market/time. Parses timeSecond / timeNano (exchange server
         time). Captures local UTC + monotonic request/response timing for bracketing."""
         started = _utc_now_iso()
+        epoch_start = time.time()
         mono_start = time.perf_counter()
         data = self._get(_EP_MARKET_TIME, {}, signed=False)
         mono_end = time.perf_counter()
+        epoch_end = time.time()
         received = _utc_now_iso()
         ret_code = data.get("retCode", -1)
         result = data.get("result", {}) or {}
@@ -669,6 +674,7 @@ class DemoReadOnlyClient:
             return ServerTimeSnapshot(
                 request_started_at_utc=started, response_received_at_utc=received,
                 request_started_monotonic=mono_start, response_received_monotonic=mono_end,
+                request_started_epoch=epoch_start, response_received_epoch=epoch_end,
                 response_present=False)
         return ServerTimeSnapshot(
             time_second=(str(result.get("timeSecond")) if result.get("timeSecond") is not None else None),
@@ -676,6 +682,7 @@ class DemoReadOnlyClient:
             response_envelope_time=(str(data.get("time")) if data.get("time") is not None else None),
             request_started_at_utc=started, response_received_at_utc=received,
             request_started_monotonic=mono_start, response_received_monotonic=mono_end,
+            request_started_epoch=epoch_start, response_received_epoch=epoch_end,
             response_present=True)
 
     def _risk_limit_real(

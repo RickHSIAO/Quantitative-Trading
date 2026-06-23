@@ -17,7 +17,52 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CE 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CE_FIX1 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CE_FIX1_CANONICAL_MARGIN_NETWORK_AND_BLOCKER_RECONCILIATION**（2026-06-23, Opus 4.8 / 規範保證金狀態 + 網路稽核 + blocker 調和）
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / REGULAR MARGIN AND 50 APPLICABLE RISK TIERS VERIFIED / PROJECTED STRATEGY MARGIN COMPLETE / OBSERVED ACCOUNT SNAPSHOT REMAINS NON-ATOMIC / CANONICAL NETWORK AUDIT RECONCILED TO 105 PUBLIC AND 3 PRIVATE READ-ONLY GETS / EXCHANGE QUOTE TIMESTAMP STILL UNAVAILABLE / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 76558fd 之上新增一筆 commit，只調和 CE 證據 schema（保證金狀態語意、網路計數、blocker、時鐘 offset），
+> 不更動策略目標、權重、固定 10000-USDT 資本、planner、批次身分、InstrumentRules 或受保護 legacy 持倉。
+>
+> - **TASK-014CE 核心 VPS 證據通過：** plan_exit=0、active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY、plan_valid=true、
+>   50 標的、25/25、50 canonical 批次動作、50 非空 InstrumentRule fingerprint、50 RULE_VALIDATION_PASS、
+>   batch_float_artifact_count=0；account_mode_evidence_status=ACCOUNT_MODE_EVIDENCE_AUTHORITATIVE、
+>   margin_mode=REGULAR_MARGIN、unified_margin_status=3、spot_hedging_status=OFF；RISK_TIER_APPLICABLE=50、
+>   PROJECTED_MARGIN_EVIDENCE_COMPLETE=50。
+> - **規範保證金狀態（修不一致 1/2/3）：** 明確三個語意 — observed_margin_snapshot_model_status（CD/FIX1 非原子 wallet+
+>   position 快照，維持 AUTHORITATIVE_MARGIN_MODEL_PARTIAL）；projected_margin_model_status（CE 每動作分層投影，
+>   此 VPS=AUTHORITATIVE_MARGIN_MODEL_COMPLETE）；margin_model_status（規範執行規劃語意=投影模型=COMPLETE）。
+>   projected_margin_model 補齊 account_margin_mode=REGULAR_MARGIN、available_balance_usdt（來自規範帳戶快照）、
+>   projected_strategy_initial_margin_usdt=295.9（= 50 個 per-action 值精確 Decimal 加總）、
+>   projected_strategy_maintenance_margin_usdt=151.04、observed_legacy_position_initial_margin_sum_usdt=1795.55557102、
+>   projected_total_initial_margin_usdt=2091.45557102；accountIMRate 結構上不參與投影。
+> - **readiness blocker 調和（修不一致）：** 投影完成後移除 AUTHORITATIVE_MARGIN_MODEL_PARTIAL /
+>   ACCOUNT_MARGIN_MODE_UNAVAILABLE / APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE；保留仍為真者：
+>   PRICE_FRESHNESS_EVIDENCE_PARTIAL、NON_ATOMIC_MARGIN_SNAPSHOT、PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE、
+>   EXCHANGE_CLOCK_BRACKET_ONLY、EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK（永遠最後）。非原子顧慮以
+>   NON_ATOMIC_MARGIN_SNAPSHOT 表達，不以 AUTHORITATIVE_MARGIN_MODEL_PARTIAL 當 blocker。
+> - **單一規範網路稽核（修不一致 4/5）：** strategy_native_review.network_audit 現為完整帳戶區塊；top-level 精確鏡像：
+>   account_info 私有 GET=1、wallet=1、positions=1、server_time 公共 GET=2、risk_limit=50、risk_limit_page=50、
+>   instrument_metadata=1、ticker HTTP=52、requested=152、unique=52、cache=100、total_private=3、total_public=105、
+>   NETWORK_AUDIT_CONSISTENT。account_network_audit 僅作為 network_audit 的精確 alias（值相等）；舊 ticker/planner-only
+>   計數改置於明確命名 ticker_price_network_audit / planner_ticker_*，不再佔用 canonical network_audit 名稱。
+> - **total 計數語意：** total_private_read_only_get_count = account-info 1 + wallet 1 + positions 1 = 3；
+>   total_public_get_count = instrument 1 + server time 2 + risk limit 50 + ticker HTTP 52 = 105。邏輯 symbol 請求 /
+>   HTTP 請求 / cache hits / page 計數維持各自獨立。
+> - **交易所時鐘 schema（修不一致 6）：** 新增 exchange_clock_evidence_status=EXCHANGE_CLOCK_BRACKET_AVAILABLE；
+>   保留真實欄位名（exchange_server_time_before/after、first/last_ticker_observed_at_utc、
+>   rest_response_envelope_time_before/after）。clock offset 改以高解析 local epoch（請求前/後）對 Bybit timeNano 計算：
+>   offset = server epoch − local 中點 epoch，含 before/after/conservative/range 與 clock_offset_evidence_status；
+>   無 local timing → 顯式 CLOCK_OFFSET_LOCAL_TIMING_UNAVAILABLE + reason（不靜默 null）。server time / REST envelope
+>   time 仍不稱為 quote timestamp；新鮮度維持 PRICE_FRESHNESS_EVIDENCE_PARTIAL（不升 PASS）。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、
+>   execute_daily_native_call_count=0、transport_sender_call_count=0、order/amend/cancel/live=0；無 Demo 下單、
+>   無 Live 授權、無 auth marker。Pilot 與 Forward source byte-identical。
+> - 驗證：focused 21 passed（test_demo_strategy_native_ce_fix1.py）+ 全 CE/CD/FIX1/FIX2 + readonly client 204 passed；
+>   demo_trading regression 9285 passed（1 個既有無關 emergency_close CLI 失敗）。
+>
+> VPS Plan-only verification（讀規範 schema；無送單命令）：
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CE_AUTHORITATIVE_ACCOUNT_MODE_MARGIN_TIER_AND_EXCHANGE_CLOCK_EVIDENCE**（2026-06-23, Opus 4.8 / 權威帳戶模式 + 保證金分層 + 交易所時鐘證據）
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AUTHORITATIVE ACCOUNT MODE CAPTURED / RISK-TIER APPLICABILITY FAILS CLOSED / ACCOUNT IM RATE NOT REUSED / EXCHANGE SERVER-TIME BRACKET IS NOT MISLABELLED AS QUOTE TIMESTAMP / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

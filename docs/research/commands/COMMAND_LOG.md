@@ -10470,3 +10470,87 @@ Files changed (committed):
   MOD  docs/research/commands/NEXT_ACTION.md                    (TASK-014CE block)
   MOD  docs/research/commands/COMMAND_LOG.md                    (this entry)
 
+---
+
+### TASK-014CE_FIX1_CANONICAL_MARGIN_NETWORK_AND_BLOCKER_RECONCILIATION
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** 76558fd
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Narrow evidence-schema reconciliation on top of the VPS-run TASK-014CE review. No
+  Strategy targets / weights / fixed 10000-USDT capital / planner actions / batch identity
+  / InstrumentRules / protected legacy positions changed. Plan-only; authorises nothing.
+
+  TASK-014CE core VPS evidence passed: plan_exit=0; active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY;
+  plan_valid=true; 50 targets; 25 long / 25 short; 50 canonical batch actions; 50 non-null
+  InstrumentRule fingerprints; 50 RULE_VALIDATION_PASS; batch_float_artifact_count=0;
+  account_mode_evidence_status=ACCOUNT_MODE_EVIDENCE_AUTHORITATIVE; margin_mode=REGULAR_MARGIN;
+  unified_margin_status=3; spot_hedging_status=OFF; RISK_TIER_APPLICABLE=50;
+  PROJECTED_MARGIN_EVIDENCE_COMPLETE=50.
+
+  - A (canonical margin status): three explicit, unambiguous fields ->
+    observed_margin_snapshot_model_status (CD/FIX1 non-atomic wallet+position snapshot; stays
+    AUTHORITATIVE_MARGIN_MODEL_PARTIAL); projected_margin_model_status (CE per-action risk-tier
+    projection; AUTHORITATIVE_MARGIN_MODEL_COMPLETE for this VPS case); margin_model_status
+    (canonical execution-planning meaning = projected model = COMPLETE). The non-atomic concern
+    is preserved via the NON_ATOMIC_MARGIN_SNAPSHOT blocker, NOT via
+    AUTHORITATIVE_MARGIN_MODEL_PARTIAL.
+  - C (projected field wiring): projected_margin_model now carries account_margin_mode=
+    REGULAR_MARGIN, available_balance_usdt (evidence only; authorizes nothing),
+    projected_strategy_initial_margin_usdt=295.9 (exact Decimal sum of the 50 per-action IM
+    values; exact_sum_matches=true), projected_strategy_maintenance_margin_usdt=151.04,
+    observed_legacy_position_initial_margin_sum_usdt=1795.55557102 (observed, never reclassified),
+    projected_total_initial_margin_usdt=2091.45557102. accountIMRate is structurally not an input
+    (account_im_rate_used_for_projection=false).
+  - B (blocker reconciliation): once the projected model is COMPLETE, the readiness blockers drop
+    AUTHORITATIVE_MARGIN_MODEL_PARTIAL, ACCOUNT_MARGIN_MODE_UNAVAILABLE and
+    APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE, keeping only the still-true blockers:
+    PRICE_FRESHNESS_EVIDENCE_PARTIAL, NON_ATOMIC_MARGIN_SNAPSHOT,
+    PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE, EXCHANGE_CLOCK_BRACKET_ONLY, and
+    EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK (always present, always last).
+  - D/E (one canonical network audit): strategy_native_review.network_audit is now the complete-
+    account block and the top-level fields mirror it EXACTLY: account_info private GET=1, wallet=1,
+    positions=1, server_time public GET=2, risk_limit=50, risk_limit_page_count=50,
+    instrument_metadata=1, ticker HTTP=52, requested=152, unique=52, cache=100,
+    total_private_read_only_get_count=3, total_public_get_count=105, NETWORK_AUDIT_CONSISTENT.
+    account_network_audit is retained ONLY as an exact alias (value-equal) of network_audit. The
+    old ticker/planner-only counts are scoped (ticker_price_network_audit / planner_ticker_*) and
+    never use the canonical network_audit name. Logical symbol requests, HTTP requests, cache hits
+    and page counts remain distinct.
+  - F (exchange-clock schema): explicit exchange_clock_evidence_status=
+    EXCHANGE_CLOCK_BRACKET_AVAILABLE; real field names retained (exchange_server_time_before/after,
+    first/last_ticker_observed_at_utc, rest_response_envelope_time_before/after). Server time and
+    REST envelope time are never labelled a per-symbol quote timestamp; freshness stays
+    PRICE_FRESHNESS_EVIDENCE_PARTIAL (never PASS).
+  - G (clock offset): high-resolution local epoch timing captured around each /v5/market/time call;
+    offset = Bybit timeNano epoch - local midpoint epoch, with before/after/conservative/range and
+    an explicit clock_offset_evidence_status. Missing local timing emits
+    CLOCK_OFFSET_LOCAL_TIMING_UNAVAILABLE + reason instead of a silent null. Sub-second precision is
+    taken from epoch floats / timeNano, never from second-resolution ISO strings. Audit evidence
+    only; it never promotes freshness to PASS.
+
+  execution_batch_authorized=false; execution_ready=false; sender_reachable=false;
+  execute_daily_native_call_count=0; transport_sender_call_count=0; order/amend/cancel/live
+  POST=0. No Demo order sent; no Live authorization; no auth marker. Pilot and Forward source
+  byte-identical.
+
+  Tests: 21 focused (test_demo_strategy_native_ce_fix1.py) + all TASK-014CE / CD / FIX1 / FIX2 +
+  readonly client (204 focused) pass; demo_trading regression 9306 passed (1 pre-existing
+  unrelated emergency_close CLI failure, identical on parent 76558fd).
+
+VPS Plan-only verification (reads the canonical schema; no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py     --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  MOD  src/demo_strategy_native_account_mode_risk_tier_audit.py  (canonical margin/network/clock fields)
+  MOD  src/demo_readonly_client.py                              (server-time high-resolution local epochs)
+  MOD  src/demo_strategy_native_v1_portfolio.py                 (canonical margin status; one network_audit)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py          (canonical network wiring + clock epochs + margin mode)
+  NEW  tests/demo_trading/test_demo_strategy_native_ce_fix1.py  (21 tests)
+  MOD  README.md                                                (TASK-014CE_FIX1 shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                    (TASK-014CE_FIX1 block)
+  MOD  docs/research/commands/COMMAND_LOG.md                    (this entry)
+

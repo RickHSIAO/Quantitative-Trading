@@ -87,6 +87,18 @@ EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK = md.EXECUTION_AUTHORIZATION_NOT_G
 NETWORK_AUDIT_CONSISTENT = md.NETWORK_AUDIT_CONSISTENT
 NETWORK_AUDIT_COUNTER_MISMATCH = md.NETWORK_AUDIT_COUNTER_MISMATCH
 
+# --- Observed (non-atomic) snapshot blocker (preserved from TASK-014CD/FIX1) -
+NON_ATOMIC_MARGIN_SNAPSHOT = "NON_ATOMIC_MARGIN_SNAPSHOT"
+
+# --- Exchange-clock availability statuses -----------------------------------
+EXCHANGE_CLOCK_BRACKET_AVAILABLE = "EXCHANGE_CLOCK_BRACKET_AVAILABLE"
+EXCHANGE_CLOCK_UNAVAILABLE = "EXCHANGE_CLOCK_UNAVAILABLE"
+
+# --- Clock-offset evidence statuses -----------------------------------------
+CLOCK_OFFSET_AVAILABLE = "CLOCK_OFFSET_AVAILABLE"
+CLOCK_OFFSET_UNAVAILABLE = "CLOCK_OFFSET_UNAVAILABLE"
+CLOCK_OFFSET_LOCAL_TIMING_UNAVAILABLE = "CLOCK_OFFSET_LOCAL_TIMING_UNAVAILABLE"
+
 # Exact Bybit V5 read-only endpoint + field paths for the captured evidence.
 ACCOUNT_MODE_FIELD_PATHS: dict[str, str] = {
     "margin_mode": "/v5/account/info -> result.marginMode",
@@ -495,22 +507,41 @@ def build_account_margin_model(
         if projected_total_im > 0:
             headroom = avail / projected_total_im
 
+    # Deterministic exact-sum verification: the reported projected Strategy IM must equal
+    # the exact Decimal sum of the per-action projected IM values (always true here since
+    # it IS that sum, but emitted as explicit audit evidence). accountIMRate is NEVER an
+    # input to this model -> it cannot leak into the projection.
+    exact_im_sum: Decimal | None = None
+    exact_sum_matches = None
+    if projected_strategy_im is not None:
+        exact_im_sum = sum(
+            (_dec(p["projected_action_initial_margin_usdt"]) for p in projections), Decimal("0"))
+        exact_sum_matches = (exact_im_sum == projected_strategy_im)
+
     # De-duplicate while preserving deterministic order.
     seen: set[str] = set()
     blockers = [b for b in blockers if not (b in seen or seen.add(b))]
 
     return {
+        # Account margin mode is surfaced explicitly (never null when authoritative).
         "margin_mode": margin_mode,
+        "account_margin_mode": margin_mode,
         "account_mode_evidence_status": mode_status,
+        # Available balance is wired in as EVIDENCE ONLY; it authorizes nothing.
+        "available_balance_usdt": _opt_fmt(avail),
         "strategy_action_count": n,
         "projected_margin_complete_action_count": complete,
         "projected_margin_unavailable_action_count": unavailable,
         "projected_strategy_initial_margin_usdt": _opt_fmt(projected_strategy_im),
+        "projected_strategy_initial_margin_exact_sum_usdt": _opt_fmt(exact_im_sum),
+        "projected_strategy_initial_margin_exact_sum_matches": exact_sum_matches,
         "projected_strategy_maintenance_margin_usdt": _opt_fmt(projected_strategy_mm),
         "observed_legacy_position_initial_margin_sum_usdt": _opt_fmt(observed_legacy),
         "projected_total_initial_margin_usdt": _opt_fmt(projected_total_im),
         "projected_available_margin_after_execution_usdt": _opt_fmt(projected_avail_after),
         "margin_headroom_ratio": _opt_fmt(headroom),
+        # accountIMRate is structurally not an input to this model.
+        "account_im_rate_used_for_projection": False,
         "margin_model_status": status,
         "margin_model_blockers": blockers,
     }
@@ -522,12 +553,15 @@ def build_account_margin_model(
 
 
 def _server_epoch(time_second: Any, time_nano: Any) -> Decimal | None:
-    sec = _opt_dec(time_second)
-    if sec is not None and sec > 0:
-        return sec
+    """Bybit server epoch (seconds). timeNano (nanoseconds) is PREFERRED when present
+    because it carries sub-second precision; timeSecond is the integer-second fallback.
+    Sub-second precision is never derived from second-resolution ISO strings."""
     nano = _opt_dec(time_nano)
     if nano is not None and nano > 0:
         return nano / Decimal("1000000000")
+    sec = _opt_dec(time_second)
+    if sec is not None and sec > 0:
+        return sec
     return None
 
 
@@ -554,6 +588,12 @@ def build_exchange_clock_evidence(
     last_ticker_symbol: Any = None,
     last_ticker_observed_at_utc: Any = None,
     local_observation_epoch_for_offset: Any = None,
+    # High-resolution local EPOCH timing (seconds, sub-second float) captured around
+    # each /v5/market/time call so an auditable clock offset can be computed.
+    before_local_request_epoch: Any = None,
+    before_local_response_epoch: Any = None,
+    after_local_request_epoch: Any = None,
+    after_local_response_epoch: Any = None,
 ) -> dict[str, Any]:
     """Build exchange-clock evidence by BRACKETING the price-collection window with two
     Bybit server-time observations (one immediately before, one immediately after).
@@ -578,12 +618,57 @@ def build_exchange_clock_evidence(
         local_bracket_ms = round(
             abs(after_local_monotonic_end - before_local_monotonic_start) * 1000.0, 6)
 
-    # Estimated local-vs-Bybit clock offset (seconds): exchange server time minus the
-    # local observation time AT the same bracket point. Deterministic when both exist.
-    clock_offset_seconds = None
-    local_obs = _opt_dec(local_observation_epoch_for_offset)
-    if before_epoch is not None and local_obs is not None:
-        clock_offset_seconds = _fmt((before_epoch - local_obs))
+    # --- Auditable local-vs-exchange clock offset (high resolution) -----------
+    # For each /v5/market/time call: offset = Bybit server epoch - local midpoint epoch,
+    # where the local midpoint is the average of the local request-start and
+    # response-received EPOCH seconds (sub-second float, NOT a second-resolution ISO
+    # string). A conservative estimate (mean of the available per-call offsets) and the
+    # offset range are emitted. When local timing is missing, an explicit status/reason
+    # is emitted instead of a silent null.
+    def _midpoint(req: Any, resp: Any) -> Decimal | None:
+        rq = _opt_dec(req)
+        rs = _opt_dec(resp)
+        if rq is not None and rs is not None:
+            return (rq + rs) / Decimal("2")
+        return rq if rq is not None else rs
+
+    before_mid = _midpoint(before_local_request_epoch, before_local_response_epoch)
+    if before_mid is None:
+        before_mid = _opt_dec(local_observation_epoch_for_offset)
+    after_mid = _midpoint(after_local_request_epoch, after_local_response_epoch)
+
+    before_offset = ((before_epoch - before_mid)
+                     if (before_epoch is not None and before_mid is not None) else None)
+    after_offset = ((after_epoch - after_mid)
+                    if (after_epoch is not None and after_mid is not None) else None)
+    per_call_offsets = [o for o in (before_offset, after_offset) if o is not None]
+
+    if per_call_offsets:
+        conservative = sum(per_call_offsets, Decimal("0")) / Decimal(len(per_call_offsets))
+        clock_offset_seconds = _fmt(conservative)
+        clock_offset_range = [_fmt(min(per_call_offsets)), _fmt(max(per_call_offsets))]
+        clock_offset_status = CLOCK_OFFSET_AVAILABLE
+        clock_offset_reason = None
+    else:
+        clock_offset_seconds = None
+        clock_offset_range = None
+        if before_epoch is not None or after_epoch is not None:
+            clock_offset_status = CLOCK_OFFSET_LOCAL_TIMING_UNAVAILABLE
+            clock_offset_reason = ("local high-resolution request/response epoch timing was "
+                                   "not captured for any server-time call")
+        else:
+            clock_offset_status = CLOCK_OFFSET_UNAVAILABLE
+            clock_offset_reason = "no Bybit server-time observation available"
+
+    def _elapsed_ms(req: Any, resp: Any) -> str | None:
+        rq = _opt_dec(req)
+        rs = _opt_dec(resp)
+        if rq is None or rs is None:
+            return None
+        return _fmt((rs - rq) * Decimal("1000"))
+
+    before_elapsed_ms = _elapsed_ms(before_local_request_epoch, before_local_response_epoch)
+    after_elapsed_ms = _elapsed_ms(after_local_request_epoch, after_local_response_epoch)
 
     evidence: dict[str, Any] = {
         "source_endpoint": EP_MARKET_TIME,
@@ -611,7 +696,18 @@ def build_exchange_clock_evidence(
         "last_ticker_observed_at_utc": last_ticker_observed_at_utc,
         "server_time_bracket_duration_seconds": bracket_duration_s,
         "local_round_trip_bracket_ms": local_bracket_ms,
+        # Clock-offset evidence (explicit status; never a silent null).
         "estimated_local_vs_exchange_clock_offset_seconds": clock_offset_seconds,
+        "clock_offset_before_seconds": (_fmt(before_offset) if before_offset is not None else None),
+        "clock_offset_after_seconds": (_fmt(after_offset) if after_offset is not None else None),
+        "clock_offset_range_seconds": clock_offset_range,
+        "clock_offset_evidence_status": clock_offset_status,
+        "clock_offset_evidence_reason": clock_offset_reason,
+        "before_request_elapsed_ms": before_elapsed_ms,
+        "after_request_elapsed_ms": after_elapsed_ms,
+        # Explicit availability status for the whole clock-evidence block.
+        "exchange_clock_evidence_status": (EXCHANGE_CLOCK_BRACKET_AVAILABLE if bracket_ok
+                                           else EXCHANGE_CLOCK_UNAVAILABLE),
         # Capability conclusions (fail closed; never promote freshness to PASS here).
         "exchange_clock_bracket_available": bracket_ok,
         "server_time_bracket_ordered": bracket_ordered,
@@ -637,7 +733,7 @@ def build_exchange_clock_evidence(
         EP_MARKET_TIME,
         evidence["before_time_second"], evidence["before_time_nano"],
         evidence["after_time_second"], evidence["after_time_nano"],
-        bracket_duration_s, clock_offset_seconds, bracket_ordered,
+        bracket_duration_s, clock_offset_seconds, clock_offset_status, bracket_ordered,
     ])
     return evidence
 
@@ -660,11 +756,20 @@ def build_account_network_audit(
     account_info_private_read_only_get_count: int,
     wallet_private_read_only_get_count: int,
     positions_private_read_only_get_count: int,
+    strategy_target_priced_symbol_count: int | None = None,
+    legacy_mark_priced_symbol_count: int | None = None,
 ) -> dict[str, Any]:
-    """Complete-account network audit with DISTINCT counter semantics. Logical symbol
-    requests, HTTP requests, pagination and cache hits are never mixed. Totals are
-    recomputed (never hard-coded) and any internal inconsistency fails closed with
-    NETWORK_AUDIT_COUNTER_MISMATCH (execution stays unauthorised)."""
+    """ONE canonical complete-account network audit with DISTINCT counter semantics.
+    Logical symbol requests, HTTP requests, pagination and cache hits are never mixed.
+    Totals are recomputed (never hard-coded):
+
+      total_public_get_count  = instrument_metadata + ticker_http + server_time + risk_limit
+      total_private_read_only_get_count = account_info + wallet + positions
+
+    Any internal inconsistency fails closed with NETWORK_AUDIT_COUNTER_MISMATCH (execution
+    stays unauthorised). When the strategy/legacy priced-symbol counts are supplied, a
+    priced==unique check is added; otherwise priced fields are null and that check is
+    omitted (the ticker-only CD audit carries the priced proof separately)."""
     total_public = (int(instrument_metadata_public_get_count)
                     + int(ticker_http_request_count)
                     + int(server_time_public_get_count)
@@ -679,8 +784,7 @@ def build_account_network_audit(
         "one_ticker_http_request_per_unique_symbol":
             int(ticker_http_request_count) == int(ticker_unique_symbol_count),
         "risk_limit_pages_cover_http":
-            int(risk_limit_page_count) >= int(risk_limit_public_get_count)
-            or int(risk_limit_page_count) == int(risk_limit_public_get_count),
+            int(risk_limit_page_count) >= int(risk_limit_public_get_count),
         "non_negative":
             min(instrument_metadata_public_get_count, ticker_http_request_count,
                 ticker_requested_symbol_count, ticker_unique_symbol_count,
@@ -690,6 +794,10 @@ def build_account_network_audit(
                 wallet_private_read_only_get_count,
                 positions_private_read_only_get_count) >= 0,
     }
+    total_priced = None
+    if strategy_target_priced_symbol_count is not None and legacy_mark_priced_symbol_count is not None:
+        total_priced = int(strategy_target_priced_symbol_count) + int(legacy_mark_priced_symbol_count)
+        checks["total_priced_equals_unique"] = total_priced == int(ticker_unique_symbol_count)
     consistent = all(checks.values())
     return {
         "instrument_metadata_public_get_count": int(instrument_metadata_public_get_count),
@@ -703,6 +811,11 @@ def build_account_network_audit(
         "account_info_private_read_only_get_count": int(account_info_private_read_only_get_count),
         "wallet_private_read_only_get_count": int(wallet_private_read_only_get_count),
         "positions_private_read_only_get_count": int(positions_private_read_only_get_count),
+        "strategy_target_priced_symbol_count": (None if strategy_target_priced_symbol_count is None
+                                                else int(strategy_target_priced_symbol_count)),
+        "legacy_mark_priced_symbol_count": (None if legacy_mark_priced_symbol_count is None
+                                            else int(legacy_mark_priced_symbol_count)),
+        "total_priced_symbol_count": total_priced,
         "total_public_get_count": total_public,
         "total_private_read_only_get_count": total_private,
         "network_audit_checks": checks,
@@ -742,8 +855,12 @@ def reconcile_readiness_blockers(
 
     model_complete = bool(account_margin_model) and (
         account_margin_model.get("margin_model_status") == AUTHORITATIVE_MARGIN_MODEL_COMPLETE)
-    if model_complete and APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE in out:
-        out = [b for b in out if b != APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE]
+    if model_complete:
+        # The projected Strategy margin model is COMPLETE: the generic CD PARTIAL status
+        # and the applicable-rate blocker are no longer true. The NON-ATOMIC observed
+        # snapshot concern is preserved separately (it is NOT removed here).
+        out = [b for b in out if b not in (APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE,
+                                           AUTHORITATIVE_MARGIN_MODEL_PARTIAL)]
 
     # Merge the precise margin-model blockers (PORTFOLIO/ISOLATED/tier scope).
     for b in (account_margin_model or {}).get("margin_model_blockers", []) or []:
@@ -786,6 +903,10 @@ __all__ = [
     "RISK_TIER_EVIDENCE_INCOMPLETE", "RISK_TIER_SCOPE_NOT_PROVEN",
     "PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE", "EXCHANGE_CLOCK_BRACKET_ONLY",
     "EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK",
+    "NON_ATOMIC_MARGIN_SNAPSHOT",
+    "EXCHANGE_CLOCK_BRACKET_AVAILABLE", "EXCHANGE_CLOCK_UNAVAILABLE",
+    "CLOCK_OFFSET_AVAILABLE", "CLOCK_OFFSET_UNAVAILABLE",
+    "CLOCK_OFFSET_LOCAL_TIMING_UNAVAILABLE",
     "NETWORK_AUDIT_CONSISTENT", "NETWORK_AUDIT_COUNTER_MISMATCH",
     "normalize_account_mode_evidence", "unavailable_account_mode_evidence",
     "normalize_risk_tiers", "select_risk_tier", "project_action_margin",
