@@ -56,7 +56,8 @@ class FakeForward:
 
 class FakeProvider:
     def __init__(self, *, positions=None, prices=None, steps=None, symbols=None,
-                 rule_status=None, leverage_authoritative=False,
+                 rule_status=None, min_qty=None, max_qty=None, min_notional=None,
+                 leverage_authoritative=False,
                  initial_margin_authoritative=False, assumed_leverage=None,
                  equity=INIT, available=8_500.0):
         self._positions = positions or []
@@ -64,6 +65,9 @@ class FakeProvider:
         self._prices = prices or {s: 2.0 for s in self._symbols}
         self._steps = steps or {}
         self._rule_status = rule_status or {}
+        self._min_qty = min_qty or {}
+        self._max_qty = max_qty or {}
+        self._min_notional = min_notional or {}
         self._lev_auth = leverage_authoritative
         self._im_auth = initial_margin_authoritative
         self._assumed_leverage = assumed_leverage
@@ -82,13 +86,22 @@ class FakeProvider:
                                price_precision=2, qty_precision=1)
 
     def instrument_rule_evidence(self, symbol):
+        # Mirrors the REAL provider: numeric rule fields come only from the
+        # InstrumentRules snapshot; no fingerprint is synthesised by the provider
+        # (the module derives the authoritative fingerprint from these fields).
         status = self._rule_status.get(symbol, "TRADING")
         ev = {"symbol": symbol, "rule_status": status,
-              "instrument_rule_source": "fixture", "market_price_source": "fixture",
-              "market_price": self._prices.get(symbol),
-              "instrument_rule_fingerprint": "sha256:rule_" + symbol}
+              "instrument_rule_source":
+                  "DemoReadOnlyClient.get_instruments_info() -> /v5/market/instruments-info",
+              "market_price_source": "DemoMarketPriceGuard -> /v5/market/tickers (public GET)",
+              "market_price": self._prices.get(symbol)}
         if status == "TRADING":
-            ev["qty_step"] = self._steps.get(symbol, 0.1)
+            step = self._steps.get(symbol, 0.1)
+            ev["qty_step"] = step
+            ev["min_qty"] = self._min_qty.get(symbol, step)
+            ev["max_qty"] = self._max_qty.get(symbol, 0.0)
+            ev["min_notional"] = self._min_notional.get(symbol, 1.0)
+            ev["tick_size"] = 0.01
         return ev
 
     def account_risk_snapshot(self):
@@ -127,14 +140,27 @@ def _50_plan(positions=None):
     return plan, prov
 
 
-def _review_for_plan(plan, prov, positions=None):
-    rule_ev = {s: prov.instrument_rule_evidence(s) for s in _50_symbols()}
+# Current MARK prices for the legacy protected positions (distinct from entry).
+_LEGACY_MARKS = {"EDUUSDT": 0.6, "POLYXUSDT": 0.3}
+
+
+def _review_for_plan(plan, prov, positions=None, *, rule_ev=None, legacy_marks=None,
+                     price_freshness_status=None, leverage_authoritative=False,
+                     initial_margin_authoritative=False, assumed_leverage=None):
+    if rule_ev is None:
+        rule_ev = {s: prov.instrument_rule_evidence(s) for s in _50_symbols()}
+    kwargs = {}
+    if price_freshness_status is not None:
+        kwargs["price_freshness_status"] = price_freshness_status
     return v1.build_strategy_native_review(
         plan=plan, open_positions=positions if positions is not None else [], pilot_id=PILOT,
         run_date=DATE, artifact_fingerprint="sha256:fp", wallet_equity=INIT,
         available_balance=8_500.0, rule_evidence_by_symbol=rule_ev,
         price_by_symbol={s: 2.0 for s in _50_symbols()},
-        leverage_authoritative=False, initial_margin_authoritative=False)
+        legacy_mark_price_by_symbol=(legacy_marks if legacy_marks is not None else dict(_LEGACY_MARKS)),
+        leverage_authoritative=leverage_authoritative,
+        initial_margin_authoritative=initial_margin_authoritative,
+        assumed_leverage=assumed_leverage, **kwargs)
 
 
 def running_pilot(tmp_path, fwd_root):
@@ -496,3 +522,338 @@ def test_no_secret_in_review_output(tmp_path, fwd_root):
     text = json.dumps(review).lower()
     for sensitive in ("demokey", "demosecret", "bybit_demo_api_key", "bybit_demo_api_secret"):
         assert sensitive not in text
+
+
+# ===========================================================================
+# TASK-014CC_FIX1 -- rule provenance, canonical Decimal, legacy mark risk
+# ===========================================================================
+
+
+def _override_provider(*, steps=None, min_qty=None, max_qty=None, min_notional=None,
+                       rule_status=None, prices=None):
+    syms = _50_symbols()
+    return FakeProvider(symbols=syms, prices=prices or {s: 2.0 for s in syms},
+                        steps=steps or {}, min_qty=min_qty or {}, max_qty=max_qty or {},
+                        min_notional=min_notional or {}, rule_status=rule_status or {})
+
+
+def _direct_batch(*, symbol="AAAUSDT", qty=10.0, step=0.1, price=2.0, notional=200.0,
+                  side="long", rule_overrides=None):
+    targets_by = {symbol: {"symbol": symbol, "side": side, "qty": qty,
+                           "target_notional": notional, "qty_step": step, "price": price}}
+    recon = [{"symbol": symbol, "classification": v1.RECON_OPEN, "executable": True,
+              "target_present": True, "current_present": False}]
+    rule = {"symbol": symbol, "rule_status": "TRADING", "qty_step": step,
+            "min_qty": step, "max_qty": 0.0, "min_notional": 1.0, "tick_size": 0.01,
+            "instrument_rule_source": "fixture-instruments-info",
+            "market_price_source": "fixture-tickers"}
+    rule.update(rule_overrides or {})
+    return v1.build_execution_batch(
+        run_date=DATE, pilot_id=PILOT, artifact_fingerprint="sha256:fp", reconciliation=recon,
+        targets_by_symbol=targets_by, managed_by_symbol={}, rule_evidence_by_symbol={symbol: rule},
+        price_by_symbol={symbol: price}, separated=v1.separate_positions([]),
+        wallet_equity="10000", available_balance="8500")
+
+
+# --- A. Rule provenance bound to every action ------------------------------
+
+
+def test_all_50_actions_have_non_null_rule_fingerprint():
+    plan, prov = _50_plan()
+    review = _review_for_plan(plan, prov, positions=_legacy_positions())
+    batch = review["execution_batch"]
+    assert batch["expected_action_count"] == 50
+    assert all(a["instrument_rule_fingerprint"] is not None for a in batch["actions"])
+    assert batch["non_null_rule_fingerprint_count"] == 50
+    assert review["non_null_rule_fingerprint_count"] == 50
+
+
+def test_every_action_has_authoritative_rule_provenance():
+    plan, prov = _50_plan()
+    batch = _review_for_plan(plan, prov)["execution_batch"]
+    for a in batch["actions"]:
+        for field in ("instrument_rule_fingerprint", "instrument_rule_source",
+                      "instrument_rule_status", "qty_step", "min_qty", "max_qty",
+                      "min_notional", "tick_size", "rule_validation_status"):
+            assert field in a
+        assert a["instrument_rule_source"] is not None
+        assert a["instrument_rule_status"] == "TRADING"
+        assert a["rule_validation_status"] == v1.RULE_VALIDATION_PASS
+
+
+def test_missing_rule_produces_rule_rejection():
+    plan, _ = _50_plan()
+    prov = _override_provider()
+    rule_ev = {s: prov.instrument_rule_evidence(s) for s in _50_symbols()}
+    rule_ev["C0USDT"] = {"symbol": "C0USDT", "rule_status": "MISSING"}
+    review = _review_for_plan(plan, prov, rule_ev=rule_ev)
+    assert review["projected_margin_feasibility_status"] == v1.STRATEGY_PORTFOLIO_RULE_REJECTION
+    bad = [a for a in review["execution_batch"]["actions"] if a["symbol"] == "C0USDT"][0]
+    assert bad["instrument_rule_fingerprint"] is None
+    assert bad["rule_validation_status"] == v1.RULE_VALIDATION_MISSING
+
+
+def test_non_trading_rule_produces_rule_rejection():
+    plan, _ = _50_plan()
+    prov = _override_provider(rule_status={"C0USDT": "NON_TRADING"})
+    rule_ev = {s: prov.instrument_rule_evidence(s) for s in _50_symbols()}
+    review = _review_for_plan(plan, prov, rule_ev=rule_ev)
+    assert review["projected_margin_feasibility_status"] == v1.STRATEGY_PORTFOLIO_RULE_REJECTION
+    bad = [a for a in review["execution_batch"]["actions"] if a["symbol"] == "C0USDT"][0]
+    assert bad["rule_validation_status"] == v1.RULE_VALIDATION_NON_TRADING
+    assert bad["instrument_rule_fingerprint"] is None
+
+
+def test_malformed_rule_produces_rule_rejection():
+    plan, _ = _50_plan()
+    prov = _override_provider()
+    rule_ev = {s: prov.instrument_rule_evidence(s) for s in _50_symbols()}
+    rule_ev["C0USDT"] = {"symbol": "C0USDT", "rule_status": "MALFORMED"}
+    review = _review_for_plan(plan, prov, rule_ev=rule_ev)
+    assert review["projected_margin_feasibility_status"] == v1.STRATEGY_PORTFOLIO_RULE_REJECTION
+    bad = [a for a in review["execution_batch"]["actions"] if a["symbol"] == "C0USDT"][0]
+    assert bad["rule_validation_status"] == v1.RULE_VALIDATION_MALFORMED
+
+
+def test_invalid_qty_step_multiple_rejected():
+    rule = v1.normalize_rule_evidence("AAAUSDT", {"symbol": "AAAUSDT", "rule_status": "TRADING",
+                                                  "qty_step": 0.1, "min_qty": 0.1})
+    # 10.05 is not an exact 0.1 multiple.
+    assert v1.validate_action_rule(qty="10.05", price="2", rule=rule) == \
+        v1.RULE_VALIDATION_QTY_STEP_VIOLATION
+
+
+def test_min_qty_violation_rejected():
+    plan, _ = _50_plan()
+    prov = _override_provider(min_qty={"C0USDT": 1_000_000.0})
+    rule_ev = {s: prov.instrument_rule_evidence(s) for s in _50_symbols()}
+    review = _review_for_plan(plan, prov, rule_ev=rule_ev)
+    assert review["projected_margin_feasibility_status"] == v1.STRATEGY_PORTFOLIO_RULE_REJECTION
+    bad = [a for a in review["execution_batch"]["actions"] if a["symbol"] == "C0USDT"][0]
+    assert bad["rule_validation_status"] == v1.RULE_VALIDATION_MIN_QTY_VIOLATION
+
+
+def test_min_notional_violation_rejected():
+    plan, _ = _50_plan()
+    prov = _override_provider(min_notional={"C0USDT": 1_000_000.0})
+    rule_ev = {s: prov.instrument_rule_evidence(s) for s in _50_symbols()}
+    review = _review_for_plan(plan, prov, rule_ev=rule_ev)
+    assert review["projected_margin_feasibility_status"] == v1.STRATEGY_PORTFOLIO_RULE_REJECTION
+    bad = [a for a in review["execution_batch"]["actions"] if a["symbol"] == "C0USDT"][0]
+    assert bad["rule_validation_status"] == v1.RULE_VALIDATION_MIN_NOTIONAL_VIOLATION
+
+
+def test_max_qty_violation_rejected():
+    rule = v1.normalize_rule_evidence("AAAUSDT", {"symbol": "AAAUSDT", "rule_status": "TRADING",
+                                                  "qty_step": 0.1, "min_qty": 0.1, "max_qty": 5.0})
+    assert v1.validate_action_rule(qty="10", price="2", rule=rule) == \
+        v1.RULE_VALIDATION_MAX_QTY_VIOLATION
+
+
+# --- B. Canonical Decimal action representation ----------------------------
+
+
+def test_batch_float_artifact_count_zero():
+    plan, prov = _50_plan()
+    review = _review_for_plan(plan, prov, positions=_legacy_positions())
+    assert review["batch_float_artifact_count"] == 0
+
+
+def test_canonical_qty_has_no_float_artifact_from_planner_float():
+    # A planner float qty with a binary tail is canonicalised to an exact step multiple.
+    batch = _direct_batch(qty=1430.8000000000002, step=0.1, price=0.13989,
+                          notional=200.0).to_dict()
+    a = batch["actions"][0]
+    assert a["qty"] == "1430.8"
+    assert not v1.has_float_artifact(a["qty"])
+
+
+def test_action_fingerprint_uses_non_null_rule_fingerprint():
+    batch = _direct_batch().to_dict()
+    a = batch["actions"][0]
+    assert a["instrument_rule_fingerprint"] is not None
+    assert a["action_fingerprint"].startswith("sha256:")
+    assert a["canonical_action_payload_fingerprint"].startswith("sha256:")
+
+
+def test_canonical_action_fingerprints_stable_across_reruns():
+    plan, prov = _50_plan()
+    b1 = _review_for_plan(plan, prov, positions=_legacy_positions())["execution_batch"]
+    b2 = _review_for_plan(plan, prov, positions=_legacy_positions())["execution_batch"]
+    assert b1["batch_id"] == b2["batch_id"]
+    assert [a["action_fingerprint"] for a in b1["actions"]] == \
+        [a["action_fingerprint"] for a in b2["actions"]]
+    assert [a["canonical_action_payload_fingerprint"] for a in b1["actions"]] == \
+        [a["canonical_action_payload_fingerprint"] for a in b2["actions"]]
+
+
+def test_rule_change_changes_fingerprint_and_batch_id():
+    base = _direct_batch().to_dict()
+    changed = _direct_batch(rule_overrides={"min_notional": 2.0}).to_dict()
+    assert base["actions"][0]["instrument_rule_fingerprint"] != \
+        changed["actions"][0]["instrument_rule_fingerprint"]
+    assert base["actions"][0]["action_fingerprint"] != changed["actions"][0]["action_fingerprint"]
+    assert base["batch_id"] != changed["batch_id"]
+
+
+def test_qty_change_changes_fingerprint_and_batch_id():
+    base = _direct_batch(qty=10.0).to_dict()
+    changed = _direct_batch(qty=20.0).to_dict()
+    assert base["actions"][0]["qty"] != changed["actions"][0]["qty"]
+    assert base["actions"][0]["action_fingerprint"] != changed["actions"][0]["action_fingerprint"]
+    assert base["batch_id"] != changed["batch_id"]
+
+
+def test_price_snapshot_change_changes_fingerprint_and_batch_id():
+    base = _direct_batch(price=2.0).to_dict()
+    changed = _direct_batch(price=2.5).to_dict()
+    assert base["actions"][0]["price_snapshot"] != changed["actions"][0]["price_snapshot"]
+    assert base["actions"][0]["action_fingerprint"] != changed["actions"][0]["action_fingerprint"]
+    assert base["batch_id"] != changed["batch_id"]
+
+
+# --- C. Legacy exposure uses CURRENT MARK price ----------------------------
+
+
+def test_legacy_positions_untouched():
+    before = _legacy_positions()
+    snapshot = [(p.symbol, p.side, p.quantity, p.entry_price) for p in before]
+    plan, prov = _50_plan()
+    _review_for_plan(plan, prov, positions=before)
+    after = [(p.symbol, p.side, p.quantity, p.entry_price) for p in before]
+    assert after == snapshot
+
+
+def test_legacy_current_risk_uses_mark_not_entry():
+    plan, prov = _50_plan()
+    review = _review_for_plan(plan, prov, positions=_legacy_positions())
+    # mark: 1655*0.6 + 5615.6*0.3 ; entry: 1655*0.5 + 5615.6*0.25
+    mark = Decimal("1655") * Decimal("0.6") + Decimal("5615.6") * Decimal("0.3")
+    entry = Decimal("1655") * Decimal("0.5") + Decimal("5615.6") * Decimal("0.25")
+    assert Decimal(review["legacy_mark_gross_notional_usdt"]) == mark
+    assert Decimal(review["legacy_gross_notional_usdt"]) == mark
+    assert mark != entry
+    assert Decimal(review["legacy_entry_gross_notional_usdt_informational"]) == entry
+
+
+def test_legacy_entry_notional_informational_only():
+    plan, prov = _50_plan()
+    review = _review_for_plan(plan, prov, positions=_legacy_positions())
+    for pos in review["legacy_protected_positions"]:
+        assert pos["entry_notional_usdt_informational_only"] is True
+        assert pos["mark_notional_usdt"] is not None
+        assert pos["mark_price_status"] == v1.MARK_PRICE_AVAILABLE
+        assert pos["executable"] is False
+
+
+def test_missing_legacy_mark_fails_closed_no_entry_fallback():
+    plan, prov = _50_plan()
+    review = _review_for_plan(plan, prov, positions=_legacy_positions(), legacy_marks={})
+    assert review["legacy_mark_price_available"] is False
+    assert review["projected_margin_feasibility_status"] == \
+        v1.STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED
+    assert v1.LEGACY_MARK_PRICE_UNAVAILABLE in review["feasibility"]["account_risk_review_reasons"]
+    # No fallback: mark notional null and legacy mark gross is zero (NOT entry value).
+    assert Decimal(review["legacy_mark_gross_notional_usdt"]) == 0
+    for pos in review["legacy_protected_positions"]:
+        assert pos["mark_notional_usdt"] is None
+        assert pos["mark_price_status"] == v1.LEGACY_MARK_PRICE_UNAVAILABLE
+    # Full plan stays visible.
+    assert review["target_position_count"] == 50
+    assert review["execution_batch"]["expected_action_count"] == 50
+
+
+def test_legacy_mark_contributes_to_total_account_gross():
+    plan, prov = _50_plan()
+    review = _review_for_plan(plan, prov, positions=_legacy_positions())
+    total = Decimal(review["total_projected_account_gross_notional_usdt"])
+    strat = Decimal(review["strategy_target_gross_notional_usdt"])
+    mark = Decimal(review["legacy_mark_gross_notional_usdt"])
+    assert total == strat + mark
+    assert mark > 0
+
+
+# --- D. Market-price provenance and freshness ------------------------------
+
+
+def test_price_provenance_and_freshness_present_or_unavailable():
+    plan, prov = _50_plan()
+    review = _review_for_plan(plan, prov)
+    assert review["price_freshness_status"] == v1.PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE
+    for a in review["execution_batch"]["actions"]:
+        assert a["price_source"] is not None
+        assert a["price_snapshot_fingerprint"] is not None
+        assert a["price_freshness_status"] == v1.PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE
+        assert "price_observed_at" in a
+        assert "price_age_seconds" in a
+
+
+def test_freshness_unavailable_fails_closed_with_full_plan():
+    plan, prov = _50_plan()
+    # Rules valid + legacy marks available + leverage authoritative, but freshness
+    # evidence is unavailable -> account-risk review required (full plan visible).
+    review = _review_for_plan(plan, prov, positions=_legacy_positions(),
+                              leverage_authoritative=True, initial_margin_authoritative=True,
+                              assumed_leverage=10)
+    assert review["projected_margin_feasibility_status"] == \
+        v1.STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED
+    assert v1.PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE in \
+        review["feasibility"]["account_risk_review_reasons"]
+    assert review["target_position_count"] == 50
+
+
+# --- E/F. Batch summary schema + isolated one-shot isolation ---------------
+
+
+def test_batch_summary_schema_field_names():
+    plan, prov = _50_plan()
+    batch = _review_for_plan(plan, prov)["execution_batch"]
+    for field in ("total_opening_notional_usdt", "total_reducing_notional_usdt",
+                  "total_projected_gross_exposure_usdt"):
+        assert field in batch
+
+
+def test_isolated_one_shot_review_not_authoritative_flag():
+    plan, prov = _50_plan()
+    review = _review_for_plan(plan, prov)
+    assert review["isolated_one_shot_review_is_authoritative"] is False
+
+
+def test_full_plan_visible_when_rule_validation_fails():
+    plan, _ = _50_plan()
+    prov = _override_provider()
+    rule_ev = {s: prov.instrument_rule_evidence(s) for s in _50_symbols()}
+    rule_ev["C0USDT"] = {"symbol": "C0USDT", "rule_status": "MISSING"}
+    review = _review_for_plan(plan, prov, rule_ev=rule_ev)
+    assert review["projected_margin_feasibility_status"] == v1.STRATEGY_PORTFOLIO_RULE_REJECTION
+    assert review["target_position_count"] == 50
+    assert review["execution_batch"]["expected_action_count"] == 50
+    assert review["execution_batch_authorized"] is False
+    assert review["sender_reachable"] is False
+
+
+# --- H. Real VPS Plan-only expected invariants -----------------------------
+
+
+def test_cli_review_full_provenance_and_mark_risk(tmp_path, fwd_root):
+    running_pilot(tmp_path, fwd_root)
+    plan, prov = _50_plan(positions=_legacy_positions())
+    # Provide legacy mark prices via the provider's market_price path.
+    prov._prices.update({"EDUUSDT": 0.6, "POLYXUSDT": 0.3})
+    review = daily_cli.build_active_v1_review(provider=prov, plan=plan, pilot_id=PILOT, date=DATE)
+    assert review["active_policy"] == v1.POLICY_ACTIVE_STRATEGY_NATIVE_V1
+    assert review["target_position_count"] == 50
+    assert review["long_target_count"] == 25
+    assert review["short_target_count"] == 25
+    assert review["legacy_protected_position_count"] == 2
+    assert review["legacy_executable_action_count"] == 0
+    assert review["non_null_rule_fingerprint_count"] == 50
+    assert review["batch_float_artifact_count"] == 0
+    assert Decimal(review["legacy_mark_gross_notional_usdt"]) > 0
+    assert review["execution_batch_authorized"] is False
+    assert review["execution_ready"] is False
+    assert review["sender_reachable"] is False
+    assert review["order_post_count"] == 0
+    assert review["amend_post_count"] == 0
+    assert review["cancel_post_count"] == 0
+    assert review["live_endpoint_called"] is False

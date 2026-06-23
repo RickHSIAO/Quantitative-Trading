@@ -371,6 +371,18 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
         except Exception:  # noqa: BLE001
             pass
 
+    # Legacy protected positions are valued at CURRENT MARK price (never entry price).
+    # Fetch each legacy symbol's public ticker via the same market-price path. A
+    # missing mark fails closed in the review (no fallback to entry price).
+    legacy_mark_price_by_symbol: dict[str, Any] = {}
+    for p in open_positions:
+        sym = str(getattr(p, "symbol", "")).strip().upper()
+        if sym and sym in v1.PROTECTED_SYMBOLS and sym not in legacy_mark_price_by_symbol:
+            try:
+                legacy_mark_price_by_symbol[sym] = provider.market_price(sym)
+            except Exception:  # noqa: BLE001
+                legacy_mark_price_by_symbol[sym] = None
+
     return v1.build_strategy_native_review(
         plan=plan, open_positions=open_positions, pilot_id=pilot_id, run_date=date,
         artifact_fingerprint=_forward_fingerprint_of(plan),
@@ -378,7 +390,13 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
         rule_evidence_by_symbol=rule_evidence_by_symbol, price_by_symbol=price_by_symbol,
         leverage_authoritative=bool(acct.get("leverage_authoritative", False)),
         initial_margin_authoritative=bool(acct.get("initial_margin_authoritative", False)),
-        assumed_leverage=acct.get("assumed_leverage"))
+        assumed_leverage=acct.get("assumed_leverage"),
+        legacy_mark_price_by_symbol=legacy_mark_price_by_symbol,
+        legacy_mark_price_source="DemoMarketPriceGuard -> /v5/market/tickers (public GET)",
+        # The read-only Demo market-price path does not surface an authoritative
+        # exchange observation time, so price-freshness evidence is UNAVAILABLE and
+        # account-risk fails closed (no invented timestamp/freshness).
+        price_freshness_status=v1.PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE)
 
 
 def orchestrate_gated_send(

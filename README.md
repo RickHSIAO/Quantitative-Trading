@@ -17,7 +17,43 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CC 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CC_FIX1 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CC_FIX1_BATCH_RULE_PROVENANCE_DECIMAL_AND_LEGACY_MARK_RISK**（2026-06-23, Opus 4.8 / 批次規則溯源 + 規範化 Decimal + legacy mark 風險）
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / ALL BATCH ACTIONS BOUND TO AUTHORITATIVE RULES / DECIMAL ACTION PAYLOADS CANONICAL / LEGACY ACCOUNT RISK USES CURRENT MARK PRICE / EXECUTION BATCH NOT AUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 2147cf2 之上新增一筆 follow-up commit，只修批次完整性與帳戶風險估值，不更動已接受的 TASK-014CC 核心政策。
+>
+> - **核心 Strategy-native 政策維持不變：** active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY、50 標的、25 多 / 25 空、
+>   ±0.02 權重、固定 10000-USDT 資本、strategy gross 10000 USDT；過時 one-position / one-order-per-day / tiny /
+>   SOLUSDT-only 限制維持 inactive 或隔離測試；EDUUSDT / POLYXUSDT 維持未觸碰、不阻擋 V1、零可執行動作。
+> - **規則溯源綁定每一個批次動作（修 defect 1）：** 每個 Strategy-native 批次動作現在帶非空
+>   instrument_rule_fingerprint，並附 instrument_rule_source / instrument_rule_status / qty_step / min_qty /
+>   max_qty / min_notional / tick_size / rule_validation_status，全部來自既有
+>   `DemoReadOnlyClient.get_instruments_info()` 載入的真實 InstrumentRules（不另建第二個規則來源）。規則缺失 /
+>   非 Trading / malformed / qtyStep 非整數倍 / 低於 minQty / 超過 maxQty / 低於 minNotional → 動作驗證失敗、
+>   feasibility=STRATEGY_PORTFOLIO_RULE_REJECTION，但完整 50 標的計畫與批次仍保留供稽核。
+> - **規範化 Decimal 動作表示（修 defect 2）：** 數量以純 Decimal 依權威 qty_step floor，去除
+>   1430.8000000000002 / 305.53000000000003 / 7047.200000000001 等 binary-float 殘影（→ "1430.8" / "305.53" /
+>   "7047.2"）。qty / qty_step / price_snapshot / target/current/delta notional / min_qty / max_qty /
+>   min_notional / tick_size 皆為規範化字串；action_fingerprint / idempotency_key /
+>   canonical_action_payload_fingerprint 由規範化字串（含非空規則指紋）計算。相同重跑 → 相同指紋 / batch_id；
+>   規則 / 數量 / 價格快照改變 → 對應 action_fingerprint 與 batch_id 改變。batch_float_artifact_count=0。
+> - **legacy 現值改用 current mark price（修 defect 3）：** EDUUSDT / POLYXUSDT 以既有
+>   DemoMarketPriceGuard 公開 ticker 取得 mark price，輸出 entry_price / entry_notional（僅資訊）/ mark_price /
+>   mark_price_source / mark_price_snapshot / mark_notional_usdt / unrealized_pnl_usdt；帳戶風險改用
+>   legacy_mark_gross_notional_usdt + strategy gross。mark 取不到時 fail-closed
+>   LEGACY_MARK_PRICE_UNAVAILABLE → STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED，絕不回退 entry price。
+> - **價格溯源 / freshness：** 每個動作帶 price_source / price_snapshot_fingerprint / price_freshness_status；
+>   現有讀取路徑無權威觀測時間 → price_freshness_status=PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE 並 fail-closed，
+>   不捏造時間或新鮮度。完整計畫仍可見。
+> - **隔離 one-shot review 仍非權威：** isolated_one_shot_review_is_authoritative=false，無法改變 active policy、
+>   無法阻擋 V1 計畫、無法授權任何 Strategy-native 動作。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、native dispatch disabled、
+>   execute_daily_native_call_count=0、transport_sender_call_count=0、order/amend/cancel/live POST=0；無 Demo 下單、
+>   無 Live 授權、無 real authorization marker。Pilot 與 Forward source byte-identical。
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CC_STRATEGY_NATIVE_DEMO_POLICY_ALIGNMENT_AND_PORTFOLIO_RECONCILIATION**（2026-06-23, Opus 4.8 / Demo 對齊 production-shaped V1 + 組合 reconciliation）
 > **`DEMO FOLLOWS PRODUCTION-SHAPED STRATEGY-NATIVE V1 / OBSOLETE ONE-POSITION AND TINY-ORDER LIMITS ARE NOT ACTIVE POLICY / LEGACY PROTECTED POSITIONS REMAIN UNTOUCHED BUT DO NOT BLOCK V1 PLANNING / EXECUTION BATCH NOT AUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

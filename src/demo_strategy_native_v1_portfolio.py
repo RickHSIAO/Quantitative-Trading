@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Mapping, Sequence
 
 from src import demo_strategy_pilot_readiness as rd
@@ -72,6 +72,28 @@ STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED = "STRATEGY_PORTFOLIO_ACCOUNT_RI
 BATCH_AUTHORIZATION_UNAUTHORIZED_PLAN_ONLY = "UNAUTHORIZED_PLAN_ONLY"
 BATCH_EXECUTION_NOT_STARTED = "NOT_STARTED"
 
+# --- Instrument-rule status (authoritative InstrumentRules snapshot) ---------
+INSTRUMENT_RULE_STATUS_TRADING = "TRADING"
+
+# --- Per-action rule-validation statuses ------------------------------------
+RULE_VALIDATION_PASS = "RULE_VALIDATION_PASS"
+RULE_VALIDATION_MISSING = "RULE_MISSING"
+RULE_VALIDATION_NON_TRADING = "RULE_NON_TRADING"
+RULE_VALIDATION_MALFORMED = "RULE_MALFORMED"
+RULE_VALIDATION_QTY_STEP_VIOLATION = "RULE_QTY_STEP_VIOLATION"
+RULE_VALIDATION_MIN_QTY_VIOLATION = "RULE_MIN_QTY_VIOLATION"
+RULE_VALIDATION_MAX_QTY_VIOLATION = "RULE_MAX_QTY_VIOLATION"
+RULE_VALIDATION_MIN_NOTIONAL_VIOLATION = "RULE_MIN_NOTIONAL_VIOLATION"
+
+# --- Legacy mark-price valuation --------------------------------------------
+MARK_PRICE_AVAILABLE = "MARK_PRICE_AVAILABLE"
+LEGACY_MARK_PRICE_UNAVAILABLE = "LEGACY_MARK_PRICE_UNAVAILABLE"
+
+# --- Market-price freshness evidence ----------------------------------------
+PRICE_FRESHNESS_FRESH = "PRICE_FRESH"
+PRICE_FRESHNESS_STALE = "PRICE_STALE"
+PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE = "PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE"
+
 _QTY_TOL = Decimal("1e-12")
 
 
@@ -100,6 +122,101 @@ def has_float_artifact(text: Any) -> bool:
         return False
     frac = s.split(".", 1)[1]
     return ("000000000000" in frac) or ("999999999999" in frac)
+
+
+def _canon_qty_dec(value: Any, qty_step: Any) -> Decimal:
+    """Canonical Decimal quantity floored to an exact ``qty_step`` multiple using
+    pure Decimal arithmetic. The numeric value is unchanged; only the binary-float
+    representation tail (e.g. ``1430.8000000000002``) is removed. When ``qty_step``
+    is unknown/non-positive the value is returned verbatim (rule validation then
+    fails closed elsewhere)."""
+    v = _dec(value)
+    step = _dec(qty_step) if qty_step is not None else Decimal("0")
+    if step > 0:
+        steps = (v / step).to_integral_value(rounding=ROUND_DOWN)
+        v = steps * step
+    return v
+
+
+def _rule_fingerprint(symbol: Any, qty_step: Any, min_qty: Any, max_qty: Any,
+                      tick_size: Any, min_notional: Any, status: Any) -> str:
+    """Deterministic identity of one authoritative InstrumentRules snapshot. Derived
+    ONLY from the real rule fields + status (never inferred from any action qty)."""
+    payload = "|".join([
+        str(symbol), str(qty_step), str(min_qty), str(max_qty),
+        str(tick_size), str(min_notional), str(status),
+    ])
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _price_fingerprint(symbol: Any, price: Any, source: Any) -> str:
+    payload = "|".join([str(symbol), str(price), str(source)])
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def normalize_rule_evidence(symbol: str, raw_ev: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Normalise authoritative instrument-rule evidence into the canonical batch
+    form. ``qty_step`` / ``min_qty`` / ``max_qty`` / ``min_notional`` / ``tick_size``
+    come ONLY from the real ``InstrumentRules`` snapshot surfaced by the provider
+    (``DemoReadOnlyClient.get_instruments_info()``); nothing is inferred from an
+    action quantity. A non-null ``instrument_rule_fingerprint`` is emitted only when
+    the rule is a valid TRADING rule with a positive ``qty_step``."""
+    ev = dict(raw_ev or {})
+    status = str(ev.get("rule_status", "MISSING")).upper()
+    qty_step = ev.get("qty_step")
+    out: dict[str, Any] = {
+        "symbol": symbol,
+        "rule_status": status,
+        "instrument_rule_status": status,
+        "instrument_rule_source": ev.get("instrument_rule_source"),
+        "market_price_source": ev.get("market_price_source"),
+        "qty_step": _fmt(qty_step) if qty_step is not None else None,
+        "min_qty": _fmt(ev.get("min_qty")) if ev.get("min_qty") is not None else None,
+        "max_qty": _fmt(ev.get("max_qty")) if ev.get("max_qty") is not None else None,
+        "min_notional": _fmt(ev.get("min_notional")) if ev.get("min_notional") is not None else None,
+        "tick_size": _fmt(ev.get("tick_size")) if ev.get("tick_size") is not None else None,
+    }
+    if status == INSTRUMENT_RULE_STATUS_TRADING and qty_step is not None and _dec(qty_step) > 0:
+        out["instrument_rule_fingerprint"] = _rule_fingerprint(
+            symbol, out["qty_step"], out["min_qty"], out["max_qty"],
+            out["tick_size"], out["min_notional"], INSTRUMENT_RULE_STATUS_TRADING)
+    else:
+        out["instrument_rule_fingerprint"] = None
+    return out
+
+
+def validate_action_rule(*, qty: Any, price: Any, rule: Mapping[str, Any]) -> str:
+    """Validate a canonical Decimal ``qty`` (and ``qty * price`` notional) against an
+    authoritative normalised rule. Fails closed for a missing / malformed /
+    non-Trading rule and for qtyStep / minQty / maxQty / minNotional violations.
+    Returns ``RULE_VALIDATION_PASS`` only when every check holds."""
+    status = str(rule.get("rule_status", "MISSING")).upper()
+    if status != INSTRUMENT_RULE_STATUS_TRADING:
+        return {
+            "MISSING": RULE_VALIDATION_MISSING,
+            "NON_TRADING": RULE_VALIDATION_NON_TRADING,
+            "MALFORMED": RULE_VALIDATION_MALFORMED,
+        }.get(status, RULE_VALIDATION_MISSING)
+    if rule.get("instrument_rule_fingerprint") is None:
+        return RULE_VALIDATION_MALFORMED
+    step = _dec(rule.get("qty_step"))
+    if step <= 0:
+        return RULE_VALIDATION_MALFORMED
+    q = _dec(qty)
+    if (q % step) != 0:
+        return RULE_VALIDATION_QTY_STEP_VIOLATION
+    min_qty = rule.get("min_qty")
+    if min_qty is not None and q < _dec(min_qty):
+        return RULE_VALIDATION_MIN_QTY_VIOLATION
+    max_qty = rule.get("max_qty")
+    if max_qty is not None and _dec(max_qty) > 0 and q > _dec(max_qty):
+        return RULE_VALIDATION_MAX_QTY_VIOLATION
+    min_notional = rule.get("min_notional")
+    if min_notional is not None and price is not None:
+        notional = (q * _dec(price)).copy_abs()
+        if notional < _dec(min_notional):
+            return RULE_VALIDATION_MIN_NOTIONAL_VIOLATION
+    return RULE_VALIDATION_PASS
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +301,78 @@ def separate_positions(open_positions: Sequence[Any]) -> SeparatedPositions:
     return SeparatedPositions(strategy_managed=managed, legacy_protected=legacy)
 
 
+def value_legacy_positions(
+    legacy_records: Sequence[Mapping[str, Any]], *,
+    mark_price_by_symbol: Mapping[str, Any] | None,
+    mark_price_source: str = "DemoMarketPriceGuard -> /v5/market/tickers (public GET)",
+    mark_price_observed_at_by_symbol: Mapping[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], Decimal, bool]:
+    """Value each LEGACY protected external position at its CURRENT MARK price (never
+    its entry price). Positions are NEVER modified. Entry price/notional are retained
+    as informational evidence only; account-level current risk uses the mark notional.
+
+    Fails closed when a current mark price is unavailable for any legacy position:
+    that position's mark fields are null with status ``LEGACY_MARK_PRICE_UNAVAILABLE``
+    and the third return value (``all_marks_available``) is False. There is NO silent
+    fallback to entry price for current-risk valuation.
+
+    Returns ``(enriched_legacy_records, legacy_mark_gross_notional, all_marks_available)``."""
+    mark_price_by_symbol = dict(mark_price_by_symbol or {})
+    observed_at_by = dict(mark_price_observed_at_by_symbol or {})
+    out: list[dict[str, Any]] = []
+    total_mark = Decimal("0")
+    all_available = True
+
+    for rec in legacy_records:
+        symbol = rec["symbol"]
+        side = rec["side"]
+        qty = _dec(rec["qty"])
+        entry = _dec(rec["entry_price"])
+        entry_notional = (qty * entry).copy_abs()
+        item: dict[str, Any] = {
+            "symbol": symbol, "side": side, "qty": _fmt(qty),
+            "entry_price": _fmt(entry),
+            "entry_notional_usdt": _fmt(entry_notional),
+            "entry_notional_usdt_informational_only": True,
+            "classification": LEGACY_PROTECTED_EXTERNAL_POSITIONS,
+            "executable": False,
+            "mark_price_source": mark_price_source,
+        }
+        mark_raw = mark_price_by_symbol.get(symbol)
+        mark = _dec(mark_raw) if mark_raw is not None else None
+        if mark is None or mark <= 0:
+            all_available = False
+            item.update({
+                "mark_price": None, "mark_price_snapshot": None,
+                "mark_price_snapshot_fingerprint": None, "mark_notional_usdt": None,
+                "unrealized_pnl_usdt": None,
+                "mark_price_status": LEGACY_MARK_PRICE_UNAVAILABLE,
+                "mark_price_observed_at": observed_at_by.get(symbol),
+            })
+        else:
+            mark_notional = (qty * mark).copy_abs()
+            total_mark += mark_notional
+            ns = _norm_side(side)
+            if ns == "long":
+                upnl: Decimal | None = (mark - entry) * qty
+            elif ns == "short":
+                upnl = (entry - mark) * qty
+            else:
+                upnl = None
+            item.update({
+                "mark_price": _fmt(mark), "mark_price_snapshot": _fmt(mark),
+                "mark_price_snapshot_fingerprint": _price_fingerprint(symbol, _fmt(mark), mark_price_source),
+                "mark_notional_usdt": _fmt(mark_notional),
+                "unrealized_pnl_usdt": (_fmt(upnl) if upnl is not None else None),
+                "mark_price_status": MARK_PRICE_AVAILABLE,
+                "mark_price_observed_at": observed_at_by.get(symbol),
+            })
+        out.append(item)
+
+    out.sort(key=lambda r: r["symbol"])
+    return out, total_mark, all_available
+
+
 # ---------------------------------------------------------------------------
 # Deterministic reconciliation (target vs strategy-managed vs legacy)
 # ---------------------------------------------------------------------------
@@ -255,15 +444,34 @@ def reconcile_portfolio(
 
 def action_fingerprint(
     *, run_date: str, pilot_id: str, symbol: str, side: str, intent: str,
-    reduce_only: bool, qty: str, notional: str, instrument_rule_fingerprint: str | None,
+    reduce_only: bool, qty: str, notional: str, price: str | None = None,
+    instrument_rule_fingerprint: str | None,
     artifact_fingerprint: str | None,
 ) -> str:
+    """Stable canonical action identity. Computed from the CANONICAL string
+    representation (canonical qty, price snapshot and target notional) plus the
+    NON-NULL authoritative instrument-rule fingerprint. A rule change, qty change or
+    price-snapshot change therefore changes this fingerprint (and the batch_id)."""
     payload = "|".join([
         TASK_ID, str(run_date), str(pilot_id), str(symbol), str(side), str(intent),
-        str(reduce_only), str(qty), str(notional), str(instrument_rule_fingerprint or ""),
-        str(artifact_fingerprint or ""),
+        str(reduce_only), str(qty), str(notional), str(price or ""),
+        str(instrument_rule_fingerprint or ""), str(artifact_fingerprint or ""),
     ])
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def canonical_action_payload_fingerprint(payload: Mapping[str, Any]) -> str:
+    """Fingerprint over the COMPLETE canonical action payload (every canonical
+    string field, in stable key order). Used as explicit evidence that the action
+    is built entirely from canonical Decimal strings + authoritative rule fields."""
+    keys = (
+        "symbol", "side", "intent", "reduce_only", "qty", "qty_step", "price_snapshot",
+        "target_notional_usdt", "current_position_qty", "current_position_notional_usdt",
+        "delta_notional_usdt", "min_qty", "max_qty", "min_notional", "tick_size",
+        "instrument_rule_fingerprint",
+    )
+    body = "|".join(f"{k}={payload.get(k)!s}" for k in keys)
+    return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 def idempotency_key(
@@ -288,6 +496,11 @@ class ExecutionBatch:
     actions: list[dict[str, Any]]
     batch_authorization_status: str
     batch_execution_status: str
+    rule_validation_passed: bool = True
+    rule_rejection: bool = False
+    rule_validation_failures: list[dict[str, Any]] = field(default_factory=list)
+    non_null_rule_fingerprint_count: int = 0
+    price_freshness_status: str = PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE
     sender_reachable: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -304,6 +517,11 @@ class ExecutionBatch:
             "actions": self.actions,
             "batch_authorization_status": self.batch_authorization_status,
             "batch_execution_status": self.batch_execution_status,
+            "rule_validation_passed": self.rule_validation_passed,
+            "rule_rejection": self.rule_rejection,
+            "rule_validation_failures": list(self.rule_validation_failures),
+            "non_null_rule_fingerprint_count": self.non_null_rule_fingerprint_count,
+            "price_freshness_status": self.price_freshness_status,
             "sender_reachable": self.sender_reachable,
         }
 
@@ -326,14 +544,25 @@ def build_execution_batch(
     rule_evidence_by_symbol: Mapping[str, Mapping[str, Any]],
     price_by_symbol: Mapping[str, Any],
     separated: SeparatedPositions, wallet_equity: str, available_balance: str,
+    price_observed_at_by_symbol: Mapping[str, Any] | None = None,
+    price_freshness_status: str = PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE,
 ) -> ExecutionBatch:
     """Deterministic production-shaped (multi-symbol) execution batch. NEVER sent;
     sender_reachable is always False. Actions are ordered by symbol so the batch
-    identity is stable across reruns."""
+    identity is stable across reruns.
+
+    Every action is BOUND to the authoritative ``InstrumentRules`` snapshot (non-null
+    fingerprint, qty_step / min_qty / max_qty / min_notional / tick_size, rule source,
+    rule status) and built from CANONICAL Decimal strings (qty floored to qty_step via
+    pure Decimal; no binary-float artifact). Each action is rule-validated; any failure
+    sets ``rule_rejection`` while the complete plan is preserved for audit."""
+    price_observed_at_by_symbol = dict(price_observed_at_by_symbol or {})
     actions: list[dict[str, Any]] = []
     opening = Decimal("0")
     reducing = Decimal("0")
     gross = Decimal("0")
+    failures: list[dict[str, Any]] = []
+    non_null_rule_fp = 0
 
     for rec in reconciliation:
         cls = rec["classification"]
@@ -342,11 +571,20 @@ def build_execution_batch(
             continue
         tgt = targets_by_symbol.get(symbol, {})
         cur = managed_by_symbol.get(symbol, {})
-        rule_ev = rule_evidence_by_symbol.get(symbol, {})
-        qty = _fmt(tgt.get("qty", cur.get("qty", 0)))
-        qty_step = _fmt(rule_ev.get("qty_step")) if rule_ev.get("qty_step") is not None else \
-            _fmt(tgt.get("qty_step", 0))
-        price = _fmt(price_by_symbol.get(symbol, tgt.get("price", 0)))
+        rule = normalize_rule_evidence(symbol, rule_evidence_by_symbol.get(symbol))
+
+        # Canonical Decimal qty floored to the AUTHORITATIVE qty_step (never a float
+        # round-trip of the planner value). Fall back to the target's own step only
+        # for display when the rule is absent (validation then fails closed).
+        rule_step = rule.get("qty_step")
+        step_for_floor = rule_step if rule_step is not None else (
+            _fmt(tgt.get("qty_step")) if tgt.get("qty_step") is not None else None)
+        qty_dec = _canon_qty_dec(tgt.get("qty", cur.get("qty", 0)), step_for_floor)
+        qty = _fmt(qty_dec)
+        qty_step = rule_step if rule_step is not None else (
+            _fmt(tgt.get("qty_step", 0)) if tgt.get("qty_step") is not None else None)
+        price_raw = price_by_symbol.get(symbol, tgt.get("price"))
+        price = _fmt(price_raw) if price_raw is not None else None
         target_notional = _fmt(tgt.get("target_notional", 0))
         cur_notional = _dec(cur.get("notional_usdt", 0))
         tgt_notional = _dec(tgt.get("target_notional", 0)).copy_abs()
@@ -359,23 +597,50 @@ def build_execution_batch(
         if cls in (RECON_REDUCE, RECON_CLOSE):
             reducing += cur_notional
         gross += tgt_notional
-        rule_fp = rule_ev.get("instrument_rule_fingerprint")
+
+        rule_fp = rule.get("instrument_rule_fingerprint")
+        if rule_fp is not None:
+            non_null_rule_fp += 1
+        rule_validation_status = validate_action_rule(qty=qty, price=price, rule=rule)
+        if rule_validation_status != RULE_VALIDATION_PASS:
+            failures.append({"symbol": symbol, "rule_validation_status": rule_validation_status})
+
+        observed_at = price_observed_at_by_symbol.get(symbol)
+        action_freshness = (price_freshness_status if observed_at is not None
+                            else PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE)
+
         afp = action_fingerprint(run_date=run_date, pilot_id=pilot_id, symbol=symbol,
                                  side=side, intent=intent, reduce_only=reduce_only, qty=qty,
-                                 notional=target_notional, instrument_rule_fingerprint=rule_fp,
+                                 notional=target_notional, price=price,
+                                 instrument_rule_fingerprint=rule_fp,
                                  artifact_fingerprint=artifact_fingerprint)
         ikey = idempotency_key(run_date=run_date, pilot_id=pilot_id, symbol=symbol,
                                side=side, intent=intent, qty=qty)
-        actions.append({
+        action: dict[str, Any] = {
             "symbol": symbol, "side": side, "intent": intent, "reduce_only": reduce_only,
             "qty": qty, "qty_decimal": qty, "qty_step": qty_step, "price_snapshot": price,
             "target_notional_usdt": target_notional,
             "current_position_qty": _fmt(cur.get("qty", 0)),
             "current_position_notional_usdt": _fmt(cur_notional),
             "delta_notional_usdt": _fmt(delta_notional),
+            # --- Authoritative instrument-rule provenance (never inferred) -----
             "instrument_rule_fingerprint": rule_fp,
+            "instrument_rule_source": rule.get("instrument_rule_source"),
+            "instrument_rule_status": rule.get("instrument_rule_status"),
+            "min_qty": rule.get("min_qty"), "max_qty": rule.get("max_qty"),
+            "min_notional": rule.get("min_notional"), "tick_size": rule.get("tick_size"),
+            "rule_validation_status": rule_validation_status,
+            # --- Market-price provenance + freshness ---------------------------
+            "price_source": rule.get("market_price_source"),
+            "price_snapshot_fingerprint": (_price_fingerprint(symbol, price, rule.get("market_price_source"))
+                                           if price is not None else None),
+            "price_observed_at": observed_at,
+            "price_age_seconds": None,
+            "price_freshness_status": action_freshness,
             "action_fingerprint": afp, "idempotency_key": ikey,
-        })
+        }
+        action["canonical_action_payload_fingerprint"] = canonical_action_payload_fingerprint(action)
+        actions.append(action)
 
     actions.sort(key=lambda a: a["symbol"])
     ordered_fps = [a["action_fingerprint"] for a in actions]
@@ -384,6 +649,7 @@ def build_execution_batch(
                               snap_fp, *ordered_fps])
     batch_id = "batch:" + hashlib.sha256(batch_payload.encode("utf-8")).hexdigest()[:32]
 
+    rule_rejection = bool(failures)
     return ExecutionBatch(
         batch_id=batch_id, strategy_run_date=str(run_date),
         strategy_artifact_fingerprint=artifact_fingerprint,
@@ -392,7 +658,10 @@ def build_execution_batch(
         total_opening_notional_usdt=_fmt(opening), total_reducing_notional_usdt=_fmt(reducing),
         total_projected_gross_exposure_usdt=_fmt(gross), actions=actions,
         batch_authorization_status=BATCH_AUTHORIZATION_UNAUTHORIZED_PLAN_ONLY,
-        batch_execution_status=BATCH_EXECUTION_NOT_STARTED, sender_reachable=False)
+        batch_execution_status=BATCH_EXECUTION_NOT_STARTED,
+        rule_validation_passed=not rule_rejection, rule_rejection=rule_rejection,
+        rule_validation_failures=failures, non_null_rule_fingerprint_count=non_null_rule_fp,
+        price_freshness_status=price_freshness_status, sender_reachable=False)
 
 
 def _open_side(long_short: str) -> str:
@@ -409,11 +678,17 @@ def assess_feasibility(
     legacy_gross_notional: Any, leverage_authoritative: bool,
     initial_margin_authoritative: bool, assumed_leverage: Any = None,
     instrument_rule_rejection: bool = False,
+    legacy_mark_price_available: bool = True,
+    price_freshness_available: bool = True,
 ) -> dict[str, Any]:
     """Account-level feasibility for the FULL strategy portfolio. Legacy protected
-    exposure is included in total account gross notional and risk. Leverage/initial
-    margin are never assumed; if they cannot be read authoritatively the result is
-    ACCOUNT_RISK_REVIEW_REQUIRED (fail closed) while the full plan stays visible."""
+    exposure (valued at CURRENT MARK price) is included in total account gross notional
+    and risk. Leverage/initial margin are never assumed; if they cannot be read
+    authoritatively the result is ACCOUNT_RISK_REVIEW_REQUIRED (fail closed) while the
+    full plan stays visible.
+
+    Fail-closed precedence: instrument-rule rejection > missing legacy mark price /
+    missing price-freshness evidence > unavailable leverage / initial margin."""
     strat = _dec(strategy_gross_notional)
     legacy = _dec(legacy_gross_notional)
     total = strat + legacy
@@ -422,24 +697,36 @@ def assess_feasibility(
 
     assumptions: list[str] = [
         "strategy sizing is NEVER reduced by wallet equity (feasibility is a check, not a resize)",
-        "legacy protected exposure is included in total account gross notional and risk",
+        "legacy protected exposure is valued at CURRENT MARK price and included in total "
+        "account gross notional and risk (entry notional is informational only)",
     ]
+    account_risk_review_reasons: list[str] = []
+    required_im: Decimal | None = None
 
     if instrument_rule_rejection:
         status = STRATEGY_PORTFOLIO_RULE_REJECTION
         assumptions.append("one or more target symbols failed instrument-rule validation")
-        required_im: Decimal | None = None
+    elif not legacy_mark_price_available:
+        status = STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED
+        account_risk_review_reasons.append(LEGACY_MARK_PRICE_UNAVAILABLE)
+        assumptions.append("a current MARK price for a legacy protected position is UNAVAILABLE; "
+                           "failing closed without any fallback to entry price for current risk")
+    elif not price_freshness_available:
+        status = STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED
+        account_risk_review_reasons.append(PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE)
+        assumptions.append("authoritative market-price observation time / freshness evidence is "
+                           "UNAVAILABLE from read-only Demo metadata; failing closed")
     elif not (leverage_authoritative and initial_margin_authoritative):
         status = STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED
+        account_risk_review_reasons.append("LEVERAGE_OR_INITIAL_MARGIN_EVIDENCE_UNAVAILABLE")
         assumptions.append("authoritative per-symbol leverage / initial-margin requirement is "
                            "UNAVAILABLE from read-only Demo metadata; required initial margin "
                            "cannot be computed; failing closed without assuming leverage")
-        required_im = None
     else:
         lev = _dec(assumed_leverage)
         if lev <= 0:
             status = STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED
-            required_im = None
+            account_risk_review_reasons.append("LEVERAGE_OR_INITIAL_MARGIN_EVIDENCE_UNAVAILABLE")
             assumptions.append("authoritative leverage non-positive; failing closed")
         else:
             required_im = (total / lev)
@@ -453,11 +740,16 @@ def assess_feasibility(
         "wallet_equity_usdt": _fmt(equity),
         "available_balance_usdt": _fmt(avail),
         "strategy_target_gross_notional_usdt": _fmt(strat),
+        "legacy_mark_gross_notional_usdt": _fmt(legacy),
+        # Compatibility alias: legacy_gross_notional_usdt now carries the MARK valuation.
         "legacy_gross_notional_usdt": _fmt(legacy),
         "total_projected_account_gross_notional_usdt": _fmt(total),
         "required_initial_margin_usdt": (_fmt(required_im) if required_im is not None else None),
         "leverage_authoritative": leverage_authoritative,
         "initial_margin_authoritative": initial_margin_authoritative,
+        "legacy_mark_price_available": legacy_mark_price_available,
+        "price_freshness_available": price_freshness_available,
+        "account_risk_review_reasons": account_risk_review_reasons,
         "assumptions": assumptions,
     }
 
@@ -474,13 +766,24 @@ def build_strategy_native_review(
     price_by_symbol: Mapping[str, Any] | None = None,
     leverage_authoritative: bool = False, initial_margin_authoritative: bool = False,
     assumed_leverage: Any = None,
+    legacy_mark_price_by_symbol: Mapping[str, Any] | None = None,
+    legacy_mark_price_source: str = "DemoMarketPriceGuard -> /v5/market/tickers (public GET)",
+    legacy_mark_price_observed_at_by_symbol: Mapping[str, Any] | None = None,
+    price_observed_at_by_symbol: Mapping[str, Any] | None = None,
+    price_freshness_status: str = PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE,
 ) -> dict[str, Any]:
     """Full ACTIVE V1 Strategy-native Plan-only review. Non-dispatching: builds a
-    multi-symbol execution batch but authorizes and sends nothing. Legacy protected
-    positions are separated, untouched, never block planning, but count toward
-    account-level feasibility."""
+    multi-symbol execution batch but authorizes and sends nothing.
+
+    Every batch action is bound to the authoritative ``InstrumentRules`` snapshot
+    (non-null fingerprint + canonical rule fields) and built from canonical Decimal
+    strings. Legacy protected positions are separated, untouched, never block
+    planning, and are valued at CURRENT MARK price (entry notional is informational
+    only) for account-level feasibility. Missing rule / mark-price / freshness
+    evidence fails closed while the full plan stays visible."""
     rule_evidence_by_symbol = dict(rule_evidence_by_symbol or {})
     price_by_symbol = dict(price_by_symbol or {})
+    price_observed_at_by_symbol = dict(price_observed_at_by_symbol or {})
 
     targets = list(getattr(plan, "target_positions", []) or [])
     targets_by = {str(t.get("symbol", "")).strip().upper(): t for t in targets}
@@ -490,30 +793,38 @@ def build_strategy_native_review(
     recon = reconcile_portfolio(targets=targets, separated=separated)
 
     strategy_gross = sum((_dec(t.get("target_notional")).copy_abs() for t in targets), Decimal("0"))
-    legacy_gross = sum((r["_notional"] for r in separated.legacy_protected), Decimal("0"))
 
-    # Instrument-rule rejection if any target lacks a valid TRADING rule (when
-    # rule evidence is supplied).
-    rule_rejection = False
-    if rule_evidence_by_symbol:
-        for sym in targets_by:
-            ev = rule_evidence_by_symbol.get(sym)
-            if ev is not None and ev.get("rule_status") not in (None, "TRADING"):
-                rule_rejection = True
-                break
-
-    feasibility = assess_feasibility(
-        wallet_equity=wallet_equity, available_balance=available_balance,
-        strategy_gross_notional=strategy_gross, legacy_gross_notional=legacy_gross,
-        leverage_authoritative=leverage_authoritative,
-        initial_margin_authoritative=initial_margin_authoritative,
-        assumed_leverage=assumed_leverage, instrument_rule_rejection=rule_rejection)
+    # Legacy protected positions valued at CURRENT MARK price (never entry price).
+    # When no explicit legacy mark map is supplied, fall back to the shared price map
+    # (which on the VPS includes per-symbol public tickers). Missing marks fail closed.
+    legacy_marks = dict(legacy_mark_price_by_symbol) if legacy_mark_price_by_symbol is not None \
+        else {r["symbol"]: price_by_symbol.get(r["symbol"]) for r in separated.legacy_protected}
+    legacy_valued, legacy_mark_gross, legacy_marks_available = value_legacy_positions(
+        separated.legacy_protected, mark_price_by_symbol=legacy_marks,
+        mark_price_source=legacy_mark_price_source,
+        mark_price_observed_at_by_symbol=legacy_mark_price_observed_at_by_symbol)
+    legacy_mark_price_available = legacy_marks_available or not separated.legacy_protected
 
     batch = build_execution_batch(
         run_date=run_date, pilot_id=pilot_id, artifact_fingerprint=artifact_fingerprint,
         reconciliation=recon, targets_by_symbol=targets_by, managed_by_symbol=managed_by,
         rule_evidence_by_symbol=rule_evidence_by_symbol, price_by_symbol=price_by_symbol,
-        separated=separated, wallet_equity=_fmt(wallet_equity), available_balance=_fmt(available_balance))
+        separated=separated, wallet_equity=_fmt(wallet_equity), available_balance=_fmt(available_balance),
+        price_observed_at_by_symbol=price_observed_at_by_symbol,
+        price_freshness_status=price_freshness_status)
+
+    # Instrument-rule rejection is driven by AUTHORITATIVE per-action rule validation.
+    rule_rejection = batch.rule_rejection
+    price_freshness_available = price_freshness_status == PRICE_FRESHNESS_FRESH
+
+    feasibility = assess_feasibility(
+        wallet_equity=wallet_equity, available_balance=available_balance,
+        strategy_gross_notional=strategy_gross, legacy_gross_notional=legacy_mark_gross,
+        leverage_authoritative=leverage_authoritative,
+        initial_margin_authoritative=initial_margin_authoritative,
+        assumed_leverage=assumed_leverage, instrument_rule_rejection=rule_rejection,
+        legacy_mark_price_available=legacy_mark_price_available,
+        price_freshness_available=price_freshness_available)
 
     longs = sum(1 for t in targets if _norm_side(t.get("side")) == "long")
     shorts = sum(1 for t in targets if _norm_side(t.get("side")) == "short")
@@ -521,9 +832,13 @@ def build_strategy_native_review(
     plan_valid = bool(getattr(plan, "available", False)) and \
         bool((getattr(plan, "sizing_verification", {}) or {}).get("verified", False))
 
+    legacy_entry_gross = sum((r["_notional"] for r in separated.legacy_protected), Decimal("0"))
+
     return {
         "task_id": TASK_ID,
         **active_policy_classification(),
+        # Isolated one-shot review is NEVER authoritative for the active V1 policy.
+        "isolated_one_shot_review_is_authoritative": False,
         "plan_valid": plan_valid,
         "target_position_count": len(targets),
         "long_target_count": longs,
@@ -532,18 +847,24 @@ def build_strategy_native_review(
         "strategy_managed_open_position_count": len(separated.strategy_managed),
         "legacy_protected_position_count": len(separated.legacy_protected),
         "total_account_open_position_count": len(separated.strategy_managed) + len(separated.legacy_protected),
-        "legacy_protected_positions": [
-            {k: v for k, v in r.items() if not k.startswith("_")} for r in separated.legacy_protected],
+        "legacy_protected_positions": legacy_valued,
         "legacy_executable_action_count": 0,
+        "legacy_mark_price_available": legacy_mark_price_available,
         "strategy_target_gross_notional_usdt": _fmt(strategy_gross),
-        "legacy_gross_notional_usdt": _fmt(legacy_gross),
-        "total_projected_account_gross_notional_usdt": _fmt(strategy_gross + legacy_gross),
+        # Account-level CURRENT risk uses the MARK valuation; entry is informational.
+        "legacy_mark_gross_notional_usdt": _fmt(legacy_mark_gross),
+        "legacy_gross_notional_usdt": _fmt(legacy_mark_gross),
+        "legacy_entry_gross_notional_usdt_informational": _fmt(legacy_entry_gross),
+        "total_projected_account_gross_notional_usdt": _fmt(strategy_gross + legacy_mark_gross),
         "available_balance_usdt": _fmt(available_balance),
         "wallet_equity_usdt": _fmt(wallet_equity),
         "projected_margin_feasibility_status": feasibility["projected_margin_feasibility_status"],
         "feasibility": feasibility,
         "reconciliation": recon,
         "execution_batch": batch.to_dict(),
+        "batch_float_artifact_count": _batch_float_artifact_count(batch.actions),
+        "non_null_rule_fingerprint_count": batch.non_null_rule_fingerprint_count,
+        "price_freshness_status": price_freshness_status,
         # Authorization / dispatch invariants (Plan-only).
         "execution_batch_present": True,
         "execution_batch_authorized": False,
@@ -559,10 +880,26 @@ def build_strategy_native_review(
         "live_endpoint_called": False,
         "live_trading_authorized": False,
         "detail": ("ACTIVE Strategy-native V1 portfolio review (Plan-only). The full multi-symbol V1 "
-                   "plan is preserved; legacy protected positions are untouched and never block "
-                   "planning but count toward account-level feasibility. No order is dispatched and "
-                   "no execution is authorized in this task."),
+                   "plan is preserved; every batch action is bound to authoritative instrument rules "
+                   "and canonical Decimal payloads. Legacy protected positions are untouched and "
+                   "never block planning but count toward account-level feasibility at CURRENT MARK "
+                   "price. No order is dispatched and no execution is authorized in this task."),
     }
+
+
+def _batch_float_artifact_count(actions: Sequence[Mapping[str, Any]]) -> int:
+    """Count canonical string fields that still carry a binary-float artifact tail.
+    Authoritative evidence that the batch is artifact-free (expected 0)."""
+    fields = ("qty", "qty_decimal", "qty_step", "price_snapshot", "target_notional_usdt",
+              "current_position_qty", "current_position_notional_usdt", "delta_notional_usdt",
+              "min_qty", "max_qty", "min_notional", "tick_size")
+    count = 0
+    for a in actions:
+        for f in fields:
+            v = a.get(f)
+            if v is not None and has_float_artifact(v):
+                count += 1
+    return count
 
 
 __all__ = [
@@ -573,8 +910,16 @@ __all__ = [
     "RECON_REVERSE", "RECON_LEGACY_PROTECTED_UNMANAGED",
     "STRATEGY_PORTFOLIO_FEASIBLE", "STRATEGY_PORTFOLIO_INSUFFICIENT_AVAILABLE_MARGIN",
     "STRATEGY_PORTFOLIO_RULE_REJECTION", "STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED",
-    "active_policy_classification", "separate_positions", "reconcile_portfolio",
+    "INSTRUMENT_RULE_STATUS_TRADING",
+    "RULE_VALIDATION_PASS", "RULE_VALIDATION_MISSING", "RULE_VALIDATION_NON_TRADING",
+    "RULE_VALIDATION_MALFORMED", "RULE_VALIDATION_QTY_STEP_VIOLATION",
+    "RULE_VALIDATION_MIN_QTY_VIOLATION", "RULE_VALIDATION_MAX_QTY_VIOLATION",
+    "RULE_VALIDATION_MIN_NOTIONAL_VIOLATION",
+    "MARK_PRICE_AVAILABLE", "LEGACY_MARK_PRICE_UNAVAILABLE",
+    "PRICE_FRESHNESS_FRESH", "PRICE_FRESHNESS_STALE", "PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE",
+    "active_policy_classification", "separate_positions", "value_legacy_positions",
+    "reconcile_portfolio", "normalize_rule_evidence", "validate_action_rule",
     "build_execution_batch", "assess_feasibility", "build_strategy_native_review",
-    "action_fingerprint", "idempotency_key", "has_float_artifact", "SeparatedPositions",
-    "ExecutionBatch",
+    "action_fingerprint", "canonical_action_payload_fingerprint", "idempotency_key",
+    "has_float_artifact", "SeparatedPositions", "ExecutionBatch",
 ]

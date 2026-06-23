@@ -10021,3 +10021,71 @@ Files changed (committed):
   MOD  README.md                                           (TASK-014CC shared status)
   MOD  docs/research/commands/NEXT_ACTION.md               (TASK-014CC block)
   MOD  docs/research/commands/COMMAND_LOG.md               (this entry)
+---
+
+### TASK-014CC_FIX1_BATCH_RULE_PROVENANCE_DECIMAL_AND_LEGACY_MARK_RISK
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** 2147cf2
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Follow-up fix on top of the accepted TASK-014CC Strategy-native Demo policy
+  alignment. The core policy is UNCHANGED (active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY;
+  50 targets, 25 long / 25 short; +/-0.02 weights; fixed 10000-USDT capital; strategy
+  gross 10000 USDT; obsolete one-position / one-order-per-day / tiny / SOLUSDT-only limits
+  inactive or isolated; EDUUSDT/POLYXUSDT untouched, non-blocking, zero executable actions).
+  This task fixes three real VPS batch-integrity / account-risk defects:
+
+  - Defect 1 (rule provenance): every Strategy-native execution_batch action now carries a
+    NON-NULL instrument_rule_fingerprint plus instrument_rule_source / instrument_rule_status
+    / qty_step / min_qty / max_qty / min_notional / tick_size / rule_validation_status, all
+    derived from the real InstrumentRules already loaded through
+    DemoReadOnlyClient.get_instruments_info() (no second / synthetic rule source). Per-action
+    rule validation fails closed on missing / non-Trading / malformed rule and on qtyStep
+    multiple / minQty / maxQty / minNotional violations -> feasibility
+    STRATEGY_PORTFOLIO_RULE_REJECTION, while the complete 50-target plan + batch remain for audit.
+  - Defect 2 (canonical Decimal): action quantities are floored to the authoritative qty_step
+    using pure Decimal (no float round-trip), removing binary-float artifacts such as
+    1430.8000000000002 / 305.53000000000003 / 111.60000000000001 / 7047.200000000001 /
+    749.9000000000001 (-> "1430.8" / "305.53" / "111.6" / "7047.2" / "749.9").
+    action_fingerprint / idempotency_key / canonical_action_payload_fingerprint derive from
+    the canonical strings incl. the non-null instrument-rule fingerprint and the price snapshot.
+    Identical reruns are stable; a rule / qty / price-snapshot change changes the action
+    fingerprint and batch_id. batch_float_artifact_count=0.
+  - Defect 3 (legacy mark risk): legacy EDUUSDT/POLYXUSDT current risk uses CURRENT MARK price
+    (existing DemoMarketPriceGuard public ticker path): entry_price/entry_notional are
+    informational only; mark_price / mark_price_source / mark_price_snapshot / mark_notional_usdt
+    / unrealized_pnl_usdt emitted; account-level risk uses legacy_mark_gross_notional_usdt +
+    strategy gross. Missing mark fails closed LEGACY_MARK_PRICE_UNAVAILABLE ->
+    STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED and NEVER falls back to entry price.
+
+  Market-price provenance/freshness is emitted per action (price_source /
+  price_snapshot_fingerprint / price_freshness_status). The read-only Demo path has no
+  authoritative observation time, so price_freshness_status=PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE
+  and account-risk fails closed (no invented timestamps). The isolated one-shot review stays
+  isolated_one_shot_review_is_authoritative=false and cannot change active policy, block the V1
+  plan, or authorize any Strategy-native action.
+
+  Batch summary retains total_opening_notional_usdt / total_reducing_notional_usdt /
+  total_projected_gross_exposure_usdt. execution_batch_authorized=false; execution_ready=false;
+  sender_reachable=false; native dispatch disabled; execute_daily_native_call_count=0;
+  transport_sender_call_count=0; order/amend/cancel/live POST=0. No Demo order sent; no Live
+  authorization; no real authorization marker created. Pilot and Forward source byte-identical.
+
+  Tests: focused 59 passed (test_demo_strategy_native_v1_portfolio.py, +27 new for rule
+  provenance / canonical Decimal / fingerprint stability / legacy mark risk / freshness);
+  demo_trading regression 9176 passed (1 pre-existing unrelated emergency_close CLI failure
+  identical on parent 2147cf2). No strategy / sizing / Pilot / Forward change.
+
+VPS Plan-only verification (no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py     --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  MOD  src/demo_strategy_native_v1_portfolio.py            (rule provenance + canonical Decimal + legacy mark risk + freshness)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py     (legacy mark-price wiring + freshness evidence)
+  MOD  tests/demo_trading/test_demo_strategy_native_v1_portfolio.py (27 new FIX1 tests; mark-price fixtures)
+  MOD  README.md                                           (TASK-014CC_FIX1 shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md               (TASK-014CC_FIX1 block)
+  MOD  docs/research/commands/COMMAND_LOG.md               (this entry)

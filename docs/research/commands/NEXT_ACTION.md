@@ -1,5 +1,42 @@
 # Next Action
 
+> README shared status updated by TASK-014CC_FIX1 (2026-06-23).
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / ALL BATCH ACTIONS BOUND TO AUTHORITATIVE RULES / DECIMAL ACTION PAYLOADS CANONICAL / LEGACY ACCOUNT RISK USES CURRENT MARK PRICE / EXECUTION BATCH NOT AUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 2147cf2 fixing execution-batch integrity and account-risk valuation only (the accepted
+> TASK-014CC Strategy-native policy alignment is unchanged).
+>
+> - Core policy unchanged: active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY; 50 targets, 25 long / 25 short;
+>   ±0.02 weights; fixed 10000-USDT strategy capital; strategy gross 10000 USDT; obsolete one-position /
+>   one-order-per-day / tiny / SOLUSDT-only limits remain inactive/isolated; EDUUSDT/POLYXUSDT untouched,
+>   non-blocking, zero executable actions.
+> - Defect 1 fixed: every Strategy-native batch action now carries a NON-NULL instrument_rule_fingerprint plus
+>   instrument_rule_source / instrument_rule_status / qty_step / min_qty / max_qty / min_notional / tick_size /
+>   rule_validation_status, all from the real InstrumentRules already loaded via
+>   DemoReadOnlyClient.get_instruments_info() (no second/synthetic rule source). Missing / non-Trading /
+>   malformed rule, qtyStep-multiple / minQty / maxQty / minNotional violations fail the action and set
+>   feasibility=STRATEGY_PORTFOLIO_RULE_REJECTION while the full 50-target plan + batch stay visible.
+> - Defect 2 fixed: action quantities are canonical Decimal floored to the authoritative qty_step (no float
+>   round-trip), removing artifacts such as 1430.8000000000002 / 305.53000000000003 / 7047.200000000001
+>   (-> "1430.8" / "305.53" / "7047.2"). action_fingerprint / idempotency_key /
+>   canonical_action_payload_fingerprint derive from canonical strings incl. the non-null rule fingerprint;
+>   identical reruns are stable; a rule / qty / price-snapshot change changes the action fingerprint and
+>   batch_id. batch_float_artifact_count=0.
+> - Defect 3 fixed: legacy EDUUSDT/POLYXUSDT current risk uses CURRENT MARK price (DemoMarketPriceGuard public
+>   ticker): entry_price/entry_notional informational only; mark_price / mark_notional_usdt / unrealized_pnl;
+>   account risk uses legacy_mark_gross_notional_usdt + strategy gross. Missing mark fails closed
+>   LEGACY_MARK_PRICE_UNAVAILABLE -> STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED (never falls back to entry).
+> - Price provenance/freshness per action (price_source / price_snapshot_fingerprint / price_freshness_status);
+>   no authoritative observation time -> PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE and fail closed (no invented
+>   timestamps). Isolated one-shot review remains isolated_one_shot_review_is_authoritative=false.
+> - execution_batch_authorized=false; execution_ready=false; sender_reachable=false;
+>   execute_daily_native_call_count=0; transport_sender_call_count=0; order/amend/cancel/live POST=0; no Demo
+>   order sent; no Live authorization; no real auth marker. Pilot and Forward source byte-identical.
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
+
+---
+
 > README shared status updated by TASK-014CC (2026-06-23).
 > **`DEMO FOLLOWS PRODUCTION-SHAPED STRATEGY-NATIVE V1 / OBSOLETE ONE-POSITION AND TINY-ORDER LIMITS ARE NOT ACTIVE POLICY / LEGACY PROTECTED POSITIONS REMAIN UNTOUCHED BUT DO NOT BLOCK V1 PLANNING / EXECUTION BATCH NOT AUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of f261489 aligning the active Demo policy with the production-shaped Strategy-native V1 portfolio.
