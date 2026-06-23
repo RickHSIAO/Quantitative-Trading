@@ -140,6 +140,49 @@ DEFAULT_FUTURE_TOLERANCE_MS = 5_000
 DEFAULT_NEGATIVE_DELAY_TOLERANCE_MS = 2_000
 
 
+# ---------------------------------------------------------------------------
+# TASK-014CF_FIX1: authoritative source provenance / exit gate / dependency
+# ---------------------------------------------------------------------------
+
+# Clock-offset provenance statuses
+CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE = "CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE"
+CLOCK_OFFSET_PROVENANCE_STALE = "CLOCK_OFFSET_PROVENANCE_STALE"
+CLOCK_OFFSET_PROVENANCE_MISSING = "CLOCK_OFFSET_PROVENANCE_MISSING"
+CLOCK_OFFSET_PROVENANCE_CONFLICT = "CLOCK_OFFSET_PROVENANCE_CONFLICT"
+CLOCK_OFFSET_PROVENANCE_INCOMPATIBLE = "CLOCK_OFFSET_PROVENANCE_INCOMPATIBLE"
+
+# Symbol-universe source statuses (authoritative protected-legacy derivation)
+SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE = "SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE"
+SYMBOL_UNIVERSE_SOURCE_INCOMPATIBLE = "SYMBOL_UNIVERSE_SOURCE_INCOMPATIBLE"
+SYMBOL_UNIVERSE_SOURCE_CONFLICT = "SYMBOL_UNIVERSE_SOURCE_CONFLICT"
+SYMBOL_UNIVERSE_SOURCE_MISSING = "SYMBOL_UNIVERSE_SOURCE_MISSING"
+
+# WebSocket-client dependency readiness
+WS_CLIENT_DEPENDENCY_AVAILABLE = "WS_CLIENT_DEPENDENCY_AVAILABLE"
+WS_CLIENT_DEPENDENCY_MISSING = "WS_CLIENT_DEPENDENCY_MISSING"
+WS_CLIENT_DEPENDENCY_INCOMPATIBLE = "WS_CLIENT_DEPENDENCY_INCOMPATIBLE"
+
+# Stable documented CLI exit codes
+EXIT_COMPLETE = 0
+EXIT_INVALID_CONFIG = 2
+EXIT_SOURCE_EVIDENCE_FAILURE = 3
+EXIT_WS_UNAVAILABLE = 4
+EXIT_PARTIAL = 5
+EXIT_CONFLICT = 6
+EXIT_CREDENTIAL_SAFETY = 7
+
+DEFAULT_CLOCK_OFFSET_MAX_AGE_SECONDS = 900  # 15 minutes
+WS_CLIENT_MIN_VERSION = (1, 0, 0)
+
+# Accepted-CE artifact compatibility constants
+ACTIVE_STRATEGY_NATIVE_V1_POLICY = "ACTIVE_STRATEGY_NATIVE_V1_POLICY"
+EXPECTED_STRATEGY_NAME = "prev3y_crypto_combined_paper_safe_variant"
+EP_MARKET_TIME = "/v5/market/time"
+ACCOUNT_MODE_EVIDENCE_AUTHORITATIVE = "ACCOUNT_MODE_EVIDENCE_AUTHORITATIVE"
+EXCHANGE_CLOCK_BRACKET_AVAILABLE = "EXCHANGE_CLOCK_BRACKET_AVAILABLE"
+CLOCK_OFFSET_AVAILABLE = "CLOCK_OFFSET_AVAILABLE"
+
+
 class WsEndpointError(ValueError):
     """Raised when an endpoint / topic / payload violates a safety invariant."""
 
@@ -196,6 +239,323 @@ def _is_decimal_string(value: Any) -> bool:
         return True
     except (InvalidOperation, ValueError):
         return False
+
+
+def _sha256_bytes(raw: bytes) -> str:
+    return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def _parse_iso_epoch(value: Any) -> float | None:
+    """Parse an ISO-8601 UTC string (with or without fractional seconds / 'Z')
+    into epoch seconds. Returns None on any malformed input."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    s = value.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    for fmt_fn in (datetime.fromisoformat,):
+        try:
+            dt = fmt_fn(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            continue
+    return None
+
+
+# ---------------------------------------------------------------------------
+# WebSocket-client dependency readiness (guarded optional import)
+# ---------------------------------------------------------------------------
+
+def _default_ws_importer() -> tuple[str, str]:
+    import websocket  # websocket-client
+    return "websocket-client", str(getattr(websocket, "__version__", "0"))
+
+
+def check_ws_client_dependency(*, importer=None,
+                               min_version: tuple[int, ...] = WS_CLIENT_MIN_VERSION,
+                               ) -> dict[str, Any]:
+    """Return a fail-closed dependency-readiness record for websocket-client.
+
+    ``importer`` (testable) returns (distribution_name, version_string).
+    """
+    imp = importer or _default_ws_importer
+    try:
+        name, version = imp()
+    except Exception as exc:  # noqa: BLE001 — any import failure is fail-closed MISSING
+        return {"ws_client_dependency_status": WS_CLIENT_DEPENDENCY_MISSING,
+                "ws_client_distribution": "websocket-client",
+                "ws_client_version": None,
+                "ws_client_dependency_reason": f"import failed: {type(exc).__name__}"}
+    parts: list[int] = []
+    for tok in str(version).split(".")[:3]:
+        num = "".join(ch for ch in tok if ch.isdigit())
+        parts.append(int(num) if num else 0)
+    while len(parts) < len(min_version):
+        parts.append(0)
+    if tuple(parts) < tuple(min_version):
+        return {"ws_client_dependency_status": WS_CLIENT_DEPENDENCY_INCOMPATIBLE,
+                "ws_client_distribution": name,
+                "ws_client_version": str(version),
+                "ws_client_dependency_reason": (
+                    f"version {version} < required {'.'.join(map(str, min_version))}")}
+    return {"ws_client_dependency_status": WS_CLIENT_DEPENDENCY_AVAILABLE,
+            "ws_client_distribution": name,
+            "ws_client_version": str(version),
+            "ws_client_dependency_reason": None}
+
+
+# ---------------------------------------------------------------------------
+# Authoritative CE-evidence provenance (clock offset + protected legacy)
+# ---------------------------------------------------------------------------
+
+def _ce_review(ce_artifact: Mapping[str, Any]) -> Mapping[str, Any]:
+    rev = ce_artifact.get("strategy_native_review")
+    return rev if isinstance(rev, Mapping) else {}
+
+
+def extract_clock_offset_provenance(
+    ce_artifact: Mapping[str, Any],
+    *,
+    artifact_path: str,
+    artifact_bytes: bytes,
+    requested_strategy_date: str,
+    max_age_seconds: int = DEFAULT_CLOCK_OFFSET_MAX_AGE_SECONDS,
+    now_epoch: float,
+) -> dict[str, Any]:
+    """Validate the accepted CE/FIX1 Plan-only artifact and bind an AUTHORITATIVE
+    clock offset, or fail closed with a precise provenance status.
+
+    No raw caller-supplied offset can reach this path; the offset value is read
+    only from validated CE evidence.
+    """
+    review = _ce_review(ce_artifact)
+    clock = review.get("exchange_clock_evidence")
+    mode = review.get("account_mode_evidence") or {}
+    sha = _sha256_bytes(artifact_bytes)
+
+    missing: list[str] = []
+    incompatible: list[str] = []
+    conflict: list[str] = []
+
+    if not isinstance(clock, Mapping):
+        missing.append("exchange_clock_evidence_block_absent")
+        clock = {}
+
+    offset_val = clock.get("estimated_local_vs_exchange_clock_offset_seconds")
+    server_fp = clock.get("server_time_evidence_fingerprint")
+    if offset_val is None:
+        missing.append("estimated_local_vs_exchange_clock_offset_seconds_absent")
+    if not server_fp:
+        missing.append("server_time_evidence_fingerprint_absent")
+
+    # observed-at time (local high-resolution observation closest to the offset)
+    observed_at = (clock.get("after_local_response_received_at_utc")
+                   or clock.get("before_local_response_received_at_utc")
+                   or clock.get("collection_window_ended_at_utc")
+                   or mode.get("response_received_at_utc"))
+    observed_epoch = _parse_iso_epoch(observed_at)
+    if observed_epoch is None:
+        missing.append("evidence_observation_time_unavailable")
+
+    # compatibility (policy / strategy / date)
+    if str(ce_artifact.get("active_policy", "")) != ACTIVE_STRATEGY_NATIVE_V1_POLICY:
+        incompatible.append("active_policy_not_strategy_native_v1")
+    if str(review.get("active_strategy", "")) != EXPECTED_STRATEGY_NAME:
+        incompatible.append("strategy_name_incompatible")
+    if str(ce_artifact.get("date", "")) != str(requested_strategy_date):
+        incompatible.append("artifact_date_incompatible")
+    if str(mode.get("account_mode_evidence_status", "")) != ACCOUNT_MODE_EVIDENCE_AUTHORITATIVE:
+        incompatible.append("account_mode_not_authoritative")
+    if str(clock.get("source_endpoint", "")) != EP_MARKET_TIME:
+        incompatible.append("clock_source_endpoint_not_market_time")
+    if clock.get("per_symbol_exchange_quote_timestamp_available") is not False:
+        incompatible.append("per_symbol_quote_timestamp_must_remain_unavailable")
+
+    # evidence-status conflicts
+    if str(clock.get("exchange_clock_evidence_status", "")) != EXCHANGE_CLOCK_BRACKET_AVAILABLE:
+        conflict.append("exchange_clock_evidence_status_not_bracket_available")
+    if str(clock.get("clock_offset_evidence_status", "")) != CLOCK_OFFSET_AVAILABLE:
+        conflict.append("clock_offset_evidence_status_not_available")
+    if clock.get("server_time_bracket_ordered") is not True:
+        conflict.append("server_time_bracket_not_ordered")
+
+    age_seconds = (None if observed_epoch is None
+                   else round(float(now_epoch) - observed_epoch, 3))
+
+    # precedence: MISSING > INCOMPATIBLE > CONFLICT > STALE > AUTHORITATIVE
+    if missing:
+        status = CLOCK_OFFSET_PROVENANCE_MISSING
+    elif incompatible:
+        status = CLOCK_OFFSET_PROVENANCE_INCOMPATIBLE
+    elif conflict:
+        status = CLOCK_OFFSET_PROVENANCE_CONFLICT
+    elif age_seconds is not None and age_seconds > max_age_seconds:
+        status = CLOCK_OFFSET_PROVENANCE_STALE
+    elif age_seconds is not None and age_seconds < -max_age_seconds:
+        # evidence "observed" implausibly in the future -> conflict
+        status = CLOCK_OFFSET_PROVENANCE_CONFLICT
+        conflict.append("evidence_observation_time_in_future")
+    else:
+        status = CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE
+
+    authoritative = status == CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE
+    return {
+        "clock_offset_source_artifact_path": str(artifact_path),
+        "clock_offset_source_artifact_sha256": sha,
+        "clock_offset_source_evidence_fingerprint": (str(server_fp) if server_fp else None),
+        "clock_offset_source_observed_at_utc": (str(observed_at) if observed_at else None),
+        "clock_offset_source_age_seconds": age_seconds,
+        "clock_offset_max_age_seconds": int(max_age_seconds),
+        "clock_offset_provenance_status": status,
+        "clock_offset_provenance_failures": sorted(missing + incompatible + conflict),
+        # The offset value is surfaced ONLY when provenance is AUTHORITATIVE.
+        "estimated_local_vs_exchange_clock_offset_seconds": (
+            str(offset_val) if (authoritative and offset_val is not None) else None),
+        "clock_offset_evidence_status": (
+            CLOCK_OFFSET_AVAILABLE if authoritative else None),
+    }
+
+
+def extract_legacy_position_provenance(
+    ce_artifact: Mapping[str, Any],
+    *,
+    protected_symbol_allowlist: Sequence[str],
+    requested_strategy_date: str,
+    artifact_bytes: bytes,
+) -> dict[str, Any]:
+    """Derive the authoritative currently-observed protected legacy symbols from
+    the CE Plan-only current-position evidence. Fails closed on malformed /
+    duplicate-conflicting / out-of-allowlist current positions."""
+    review = _ce_review(ce_artifact)
+    allow = {_canonical_symbol(s) for s in protected_symbol_allowlist}
+    sha = _sha256_bytes(artifact_bytes)
+
+    failures: list[str] = []
+    positions = review.get("legacy_protected_positions")
+    if positions is None:
+        failures.append("current_position_evidence_block_absent")
+        positions = []
+    if not isinstance(positions, (list, tuple)):
+        failures.append("current_position_evidence_malformed")
+        positions = []
+
+    if str(ce_artifact.get("active_policy", "")) != ACTIVE_STRATEGY_NATIVE_V1_POLICY:
+        failures.append("active_policy_incompatible")
+    if str(review.get("active_strategy", "")) != EXPECTED_STRATEGY_NAME:
+        failures.append("strategy_name_incompatible")
+    if str(ce_artifact.get("date", "")) != str(requested_strategy_date):
+        failures.append("artifact_date_incompatible")
+
+    seen: dict[str, str] = {}
+    symbols: list[str] = []
+    conflict = False
+    for rec in positions:
+        if not isinstance(rec, Mapping):
+            failures.append("current_position_row_malformed")
+            conflict = True
+            continue
+        sym = _canonical_symbol(rec.get("symbol"))
+        side = str(rec.get("side", "")).strip().lower()
+        if not sym or not _LINEAR_SYMBOL_RE.match(sym):
+            failures.append(f"current_position_symbol_invalid:{rec.get('symbol')!r}")
+            conflict = True
+            continue
+        if sym not in allow:
+            failures.append(f"current_position_symbol_not_protected:{sym}")
+            conflict = True
+            continue
+        if sym in seen and seen[sym] != side:
+            failures.append(f"current_position_conflicting_side:{sym}")
+            conflict = True
+            continue
+        if sym in seen:
+            failures.append(f"current_position_duplicate:{sym}")
+            conflict = True
+            continue
+        seen[sym] = side
+        symbols.append(sym)
+
+    symbols = sorted(symbols)
+    if failures and conflict:
+        status = SYMBOL_UNIVERSE_SOURCE_CONFLICT
+    elif any(f.endswith("_incompatible") for f in failures):
+        status = SYMBOL_UNIVERSE_SOURCE_INCOMPATIBLE
+    elif "current_position_evidence_block_absent" in failures:
+        status = SYMBOL_UNIVERSE_SOURCE_MISSING
+    elif failures:
+        status = SYMBOL_UNIVERSE_SOURCE_CONFLICT
+    else:
+        status = SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE
+
+    fp_payload = {"symbols": symbols, "date": str(requested_strategy_date),
+                  "policy": str(ce_artifact.get("active_policy", ""))}
+    return {
+        "legacy_protected_symbols": symbols,
+        "current_protected_position_count": len(symbols),
+        "ce_source_artifact_sha256": sha,
+        "legacy_position_source_fingerprint": _fingerprint(fp_payload),
+        "symbol_universe_source_status": status,
+        "legacy_position_source_failures": sorted(set(failures)),
+    }
+
+
+def compute_completion_gate(
+    *,
+    overall_status: str,
+    required_count: int,
+    covered_count: int,
+    complete_count: int,
+    unique_count: int,
+    requested_count: int,
+    subscription_acknowledged: bool,
+    clock_offset_provenance_status: str | None,
+    legacy_source_status: str | None,
+    dependency_status: str | None,
+    require_complete: bool,
+    allow_real_network: bool,
+) -> dict[str, Any]:
+    """Deterministically map the run state to a stable exit code + reason."""
+    if not require_complete:
+        code, reason = (EXIT_COMPLETE,
+                        "require_complete_not_set: exploratory run, exit gate not enforced")
+    elif dependency_status not in (None, WS_CLIENT_DEPENDENCY_AVAILABLE):
+        code, reason = EXIT_WS_UNAVAILABLE, f"ws_client_dependency:{dependency_status}"
+    elif unique_count != requested_count:
+        code, reason = EXIT_SOURCE_EVIDENCE_FAILURE, "required_symbol_count_mismatch"
+    elif legacy_source_status not in (None, SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE):
+        code, reason = (EXIT_SOURCE_EVIDENCE_FAILURE,
+                        f"legacy_position_source:{legacy_source_status}")
+    elif clock_offset_provenance_status != CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE:
+        code, reason = (EXIT_SOURCE_EVIDENCE_FAILURE,
+                        f"clock_offset_provenance:{clock_offset_provenance_status}")
+    elif overall_status == WS_TICKER_EVIDENCE_CONFLICT:
+        code, reason = EXIT_CONFLICT, "evidence_conflict"
+    elif not subscription_acknowledged:
+        code, reason = EXIT_WS_UNAVAILABLE, "subscription_not_acknowledged"
+    elif overall_status == WS_TICKER_EVIDENCE_UNAVAILABLE:
+        code, reason = EXIT_WS_UNAVAILABLE, "coverage_unavailable"
+    elif overall_status == WS_TICKER_EVIDENCE_PARTIAL:
+        code, reason = EXIT_PARTIAL, "partial_coverage"
+    elif (overall_status == WS_TICKER_EVIDENCE_COMPLETE
+          and complete_count == required_count and required_count > 0):
+        code, reason = EXIT_COMPLETE, "complete"
+    else:
+        code, reason = EXIT_PARTIAL, "incomplete_fallback"
+    return {
+        "require_complete": bool(require_complete),
+        "cli_exit_status": code,
+        "cli_exit_reason": reason,
+        "overall_status": overall_status,
+        "required_count": required_count,
+        "covered_count": covered_count,
+        "complete_count": complete_count,
+        "subscription_acknowledged": bool(subscription_acknowledged),
+        "clock_offset_provenance_status": clock_offset_provenance_status,
+        "legacy_position_source_status": legacy_source_status,
+        "ws_client_dependency_status": dependency_status,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +780,7 @@ class PublicWsTickerEvidenceBuilder:
         price_field: str = PLANNER_PRICE_FIELD,
         clock_offset_seconds: float | str | None = None,
         clock_offset_status: str | None = None,
+        clock_offset_provenance_status: str | None = None,
         stale_threshold_ms: int = DEFAULT_STALE_THRESHOLD_MS,
         future_tolerance_ms: int = DEFAULT_FUTURE_TOLERANCE_MS,
         negative_delay_tolerance_ms: int = DEFAULT_NEGATIVE_DELAY_TOLERANCE_MS,
@@ -430,6 +791,9 @@ class PublicWsTickerEvidenceBuilder:
             None if clock_offset_seconds is None else Decimal(str(clock_offset_seconds))
         )
         self.clock_offset_status = clock_offset_status
+        # COMPLETE freshness requires AUTHORITATIVE clock-offset provenance; an
+        # arbitrary numeric offset + "CLOCK_OFFSET_AVAILABLE" can never qualify.
+        self.clock_offset_provenance_status = clock_offset_provenance_status
         self.stale_threshold_ms = int(stale_threshold_ms)
         self.future_tolerance_ms = int(future_tolerance_ms)
         self.negative_delay_tolerance_ms = int(negative_delay_tolerance_ms)
@@ -607,7 +971,9 @@ class PublicWsTickerEvidenceBuilder:
 
     def _transport_delay_ms(self, ev: SymbolEvidence) -> float | None:
         if (self.clock_offset_seconds is None
-                or self.clock_offset_status != "CLOCK_OFFSET_AVAILABLE"
+                or self.clock_offset_status != CLOCK_OFFSET_AVAILABLE
+                or self.clock_offset_provenance_status
+                != CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE
                 or ev.selected_price_local_received_epoch_ns is None
                 or ev.selected_price_ts_ms is None):
             return None
@@ -742,6 +1108,12 @@ class PublicWsTickerEvidenceBuilder:
         subscription_acknowledged: bool = False,
         reconnect_generation_ambiguous: bool = False,
         collection_deadline_seconds: float | None = None,
+        source_evidence: Mapping[str, Any] | None = None,
+        clock_offset_provenance: Mapping[str, Any] | None = None,
+        legacy_position_provenance: Mapping[str, Any] | None = None,
+        dependency_status: str | None = None,
+        require_complete: bool = False,
+        allow_real_network: bool = False,
     ) -> dict[str, Any]:
         per_symbol = self.build_per_symbol_evidence(finalize_epoch_ns=finalize_epoch_ns)
         audit = self.network_audit()
@@ -816,6 +1188,25 @@ class PublicWsTickerEvidenceBuilder:
             "subscription_acknowledged": bool(subscription_acknowledged),
         }
 
+        # TASK-014CF_FIX1: deterministic completion gate + exit code/reason.
+        legacy_source_status = (None if legacy_position_provenance is None
+                                else legacy_position_provenance.get(
+                                    "symbol_universe_source_status"))
+        completion_gate = compute_completion_gate(
+            overall_status=overall,
+            required_count=required,
+            covered_count=audit["ws_covered_symbol_count"],
+            complete_count=complete_n,
+            unique_count=self.universe["unique_symbol_count"],
+            requested_count=self.universe["requested_symbol_count"],
+            subscription_acknowledged=bool(subscription_acknowledged),
+            clock_offset_provenance_status=self.clock_offset_provenance_status,
+            legacy_source_status=legacy_source_status,
+            dependency_status=dependency_status,
+            require_complete=require_complete,
+            allow_real_network=allow_real_network,
+        )
+
         artifact: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "schema": SCHEMA_NAME,
@@ -831,7 +1222,16 @@ class PublicWsTickerEvidenceBuilder:
                 None if self.clock_offset_seconds is None
                 else str(self.clock_offset_seconds)),
             "clock_offset_status": self.clock_offset_status,
+            "clock_offset_provenance_status": self.clock_offset_provenance_status,
             "symbol_universe": self.universe,
+            # TASK-014CF_FIX1 authoritative-source provenance blocks.
+            "source_evidence": (dict(source_evidence)
+                                if source_evidence is not None else None),
+            "clock_offset_provenance": (dict(clock_offset_provenance)
+                                        if clock_offset_provenance is not None else None),
+            "legacy_position_provenance": (dict(legacy_position_provenance)
+                                           if legacy_position_provenance is not None else None),
+            "ws_client_dependency_status": dependency_status,
             "connection_summary": connection_summary,
             "subscription_summary": subscription_summary,
             "message_audit": audit,
@@ -840,6 +1240,9 @@ class PublicWsTickerEvidenceBuilder:
             "freshness_summary": freshness_summary,
             "overall_status": overall,
             "blockers": blockers,
+            "completion_gate": completion_gate,
+            "cli_exit_status": completion_gate["cli_exit_status"],
+            "cli_exit_reason": completion_gate["cli_exit_reason"],
             "execution_batch_authorized": False,
             "execution_ready": False,
             "sender_reachable": False,
@@ -868,4 +1271,17 @@ __all__ = [
     "assert_no_credentials", "build_subscription_message", "validate_linear_symbol",
     "derive_required_symbol_universe", "SymbolEvidence",
     "PublicWsTickerEvidenceBuilder",
+    # TASK-014CF_FIX1 authoritative source / gate / dependency
+    "CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE", "CLOCK_OFFSET_PROVENANCE_STALE",
+    "CLOCK_OFFSET_PROVENANCE_MISSING", "CLOCK_OFFSET_PROVENANCE_CONFLICT",
+    "CLOCK_OFFSET_PROVENANCE_INCOMPATIBLE",
+    "SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE", "SYMBOL_UNIVERSE_SOURCE_INCOMPATIBLE",
+    "SYMBOL_UNIVERSE_SOURCE_CONFLICT", "SYMBOL_UNIVERSE_SOURCE_MISSING",
+    "WS_CLIENT_DEPENDENCY_AVAILABLE", "WS_CLIENT_DEPENDENCY_MISSING",
+    "WS_CLIENT_DEPENDENCY_INCOMPATIBLE",
+    "EXIT_COMPLETE", "EXIT_INVALID_CONFIG", "EXIT_SOURCE_EVIDENCE_FAILURE",
+    "EXIT_WS_UNAVAILABLE", "EXIT_PARTIAL", "EXIT_CONFLICT", "EXIT_CREDENTIAL_SAFETY",
+    "DEFAULT_CLOCK_OFFSET_MAX_AGE_SECONDS",
+    "check_ws_client_dependency", "extract_clock_offset_provenance",
+    "extract_legacy_position_provenance", "compute_completion_gate",
 ]

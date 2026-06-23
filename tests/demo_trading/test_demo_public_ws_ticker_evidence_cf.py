@@ -61,11 +61,12 @@ def delta_msg(symbol, *, ts, cs, last_price=None, other=None):
 
 
 def fresh_builder(universe=None, *, clock_offset="0.0068", offset_status="CLOCK_OFFSET_AVAILABLE",
-                  stale_ms=10_000):
+                  provenance=ws.CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE, stale_ms=10_000):
     return ws.PublicWsTickerEvidenceBuilder(
         universe=universe or make_universe(),
         clock_offset_seconds=clock_offset,
         clock_offset_status=offset_status,
+        clock_offset_provenance_status=provenance,
         stale_threshold_ms=stale_ms,
     )
 

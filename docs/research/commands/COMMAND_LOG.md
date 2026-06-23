@@ -10625,3 +10625,55 @@ emergency_close CLI failure).
 
 **VPS read-only collection (no API keys; no send command; single logical line):**
   python scripts/collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --legacy-symbol EDUUSDT --legacy-symbol POLYXUSDT --allow-real-network --clock-offset-seconds 0.006840791 --clock-offset-status CLOCK_OFFSET_AVAILABLE --out outputs/ws_ticker_evidence_20260622.json --verify-no-credential-leak --json-only
+
+---
+
+### TASK-014CF_FIX1_AUTHORITATIVE_UNIVERSE_CLOCK_PROVENANCE_AND_COMPLETE_EXIT_GATE (2026-06-24, Opus 4.8)
+
+New FIX1 commit on top of ad28707. TASK-014CF core implementation exists but
+FIX1 is REQUIRED before VPS acceptance. Binds the clock offset and the
+protected-legacy universe to authoritative CE evidence and adds a
+--require-complete exit gate. No planner integration; REST prices unchanged;
+readiness blockers retained.
+
+**Changed files:**
+- src/demo_public_ws_ticker_evidence.py (provenance + dependency + gate logic)
+- scripts/collect_public_ws_ticker_evidence.py (--ce-evidence-json, --require-complete)
+- tests/demo_trading/test_demo_public_ws_ticker_evidence_cf.py (provenance threading)
+- tests/demo_trading/test_demo_public_ws_ticker_evidence_cf_fix1.py (37 focused tests)
+- requirements.txt (direct websocket-client>=1.6.0,<2.0.0)
+
+**Fixes:**
+- Clock-offset provenance bound to the accepted CE/FIX1 Plan-only artifact:
+  validates policy/account-mode/clock-status/offset/fingerprint/endpoint/bracket-
+  order/per-symbol-quote-unavailable/date/strategy/observed-time/age/SHA-256.
+  COMPLETE impossible unless provenance AUTHORITATIVE and within max age; a raw
+  numeric offset can never manufacture authority (unsafe test-only, gated).
+- Protected-legacy universe derived from CE legacy_protected_positions; current
+  protected symbols cannot be omitted; new protected positions auto-included;
+  malformed/duplicate/conflicting/out-of-allowlist evidence fails closed;
+  production --legacy-symbol removed (test-only override gated to test/temp).
+- --require-complete exit codes: 0 COMPLETE / 2 invalid config / 3 source-evidence /
+  4 ws-unavailable / 5 partial / 6 conflict / 7 credential-safety. UNAVAILABLE no
+  longer exits zero under --require-complete. Artifact still written on safe non-zero.
+- Dependency: requirements.txt declares websocket-client directly; readiness status
+  WS_CLIENT_DEPENDENCY_AVAILABLE/MISSING/INCOMPATIBLE.
+- Artifact adds source_evidence / clock_offset_provenance / legacy_position_provenance /
+  completion_gate / cli_exit_status / cli_exit_reason, all inside the fingerprint.
+
+**Safety:** execution_batch_authorized=false; order/amend/cancel/live=0; no Demo
+order; no Live; no auth marker; Pilot + Forward source byte-identical.
+
+**Tests:** 37 focused (cf_fix1) + 61 (cf core, green after provenance threading),
+real pytest exit 0; demo_trading regression 9404 passed (1 pre-existing unrelated
+emergency_close CLI failure; real pytest exit 1 solely due to it).
+
+**VPS read-only commands (two steps; no API keys in step B; no send command):**
+  A. generate a fresh accepted CE Plan-only artifact (existing read-only flow, may use
+     the Demo credential env, performs no write/order):
+     python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only > /tmp/ce_evidence_20260622.json
+  B. run the public collector WITHOUT loading/transmitting credentials, reading the CE
+     artifact as a local evidence source:
+     python scripts/collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --ce-evidence-json /tmp/ce_evidence_20260622.json --allow-real-network --require-complete --out outputs/ws_ticker_evidence_20260622.json --verify-no-credential-leak --json-only
+  C. check the actual exit code:
+     echo "collector_exit_code=$?"

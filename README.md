@@ -17,7 +17,44 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CF 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CF_FIX1 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CF_FIX1_AUTHORITATIVE_UNIVERSE_CLOCK_PROVENANCE_AND_COMPLETE_EXIT_GATE**（2026-06-24, Opus 4.8 / 權威來源綁定 + 時鐘 provenance + 完成度退出閘）
+> **`TASK-014CF CORE PRESERVED / CLOCK OFFSET BOUND TO FRESH AUTHORITATIVE CE EVIDENCE / PROTECTED LEGACY SYMBOLS DERIVED FROM AUTHORITATIVE CURRENT POSITIONS / ARBITRARY OFFSET AND MANUAL PRODUCTION LEGACY OMISSION REJECTED / REQUIRE-COMPLETE RETURNS NONZERO FOR PARTIAL UNAVAILABLE OR CONFLICT / PUBLIC WEBSOCKET REMAINS NO-AUTH / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 ad28707 之上新增一筆 FIX1 commit。TASK-014CF 核心已實作但 **FIX1 為 VPS 驗收前置條件**：將時鐘 offset 與
+> 受保護 legacy 宇宙綁定到權威來源，並加入 --require-complete 退出閘。不整合進 planner、不取代 REST 價格源、
+> 不移除任何 execution-readiness blocker、不更動策略目標 / 權重 / 固定資本 / 受保護持倉 / Pilot。
+>
+> - **時鐘 offset provenance（修不一致 1）：** 新增 --ce-evidence-json，讀取已接受的 CE/FIX1 Plan-only artifact 並驗證
+>   active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY、帳戶模式權威、exchange_clock_evidence_status=
+>   EXCHANGE_CLOCK_BRACKET_AVAILABLE、clock_offset_evidence_status=CLOCK_OFFSET_AVAILABLE、offset 存在、
+>   server_time_evidence_fingerprint 存在、source_endpoint=/v5/market/time、bracket ordered、per-symbol quote 仍不可用、
+>   date/policy/strategy 相容、observed time 可用且 age 在設定上限內、來源 SHA-256 計算記錄。emit clock_offset_source_*
+>   provenance 欄位與狀態（AUTHORITATIVE/STALE/MISSING/CONFLICT/INCOMPATIBLE）。**唯有 provenance=AUTHORITATIVE 且
+>   age 合格時 WS_TICKER_EVIDENCE_COMPLETE 才可能**；任意數值 offset + 字串 CLOCK_OFFSET_AVAILABLE 無法偽造權威。
+>   原始數值 offset 僅保留為明確 unsafe 測試專用選項，正常生產 CLI 不可用。
+> - **權威受保護 legacy 宇宙（修不一致 2）：** 不再以生產 --legacy-symbol 定義宇宙；改由 CE Plan-only 的
+>   legacy_protected_positions（current-position 證據）推導：每個現有持倉須為合法線性符號、對 PROTECTED_SYMBOLS 驗證、
+>   Strategy 符號比對權威 50-symbol Primary Forward 來源、現有受保護符號不可手動省略、未預期的受保護現有持倉自動納入、
+>   重複/畸形/衝突 current-position 證據 fail closed、date/policy/strategy 相容。emit strategy_symbol_source_fingerprint /
+>   legacy_position_source_fingerprint / ce_source_artifact_sha256 / current_protected_position_count /
+>   symbol_universe_source_status。手動 legacy 覆寫僅限明確 test-only 選項且在 test/temp context 外被拒。
+> - **完成度退出閘（修不一致 3）：** 新增 --require-complete。穩定退出碼 0=COMPLETE、2=invalid CLI/config、
+>   3=authoritative source/evidence failure、4=WebSocket connection/subscription unavailable、5=partial coverage、
+>   6=evidence conflict、7=credential safety failure。COMPLETE 且精確覆蓋才 0；PARTIAL/UNAVAILABLE/CONFLICT/缺訂閱 ack/
+>   required count 不符/clock provenance 非權威/credential leak 皆非零。安全的非零結果仍寫出 artifact 以保留可稽核性。
+>   CLI summary 印出 overall_status / required / covered / complete / blockers / 退出碼原因。
+> - **依賴可重現（修不一致 4）：** requirements.txt 新增直接 websocket-client>=1.6.0,<2.0.0（先前僅透過 pybit 傳遞）；
+>   新增 WS_CLIENT_DEPENDENCY_AVAILABLE/MISSING/INCOMPATIBLE readiness（lazy import；正常單元測試離線）。
+> - **artifact 新增 canonical 區塊：** source_evidence、clock_offset_provenance、legacy_position_provenance、
+>   completion_gate、cli_exit_status、cli_exit_reason；全部納入 artifact_fingerprint；不含憑證 / 授權標頭 / secret / 環境傾印。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、order/amend/cancel/live=0；
+>   無 Demo 下單、無 Live 授權、無 auth marker、Pilot 未進階、Pilot 與 Forward source byte-identical。
+> - 驗證：focused 37 passed（cf_fix1）+ 61 passed（cf 核心，更新 provenance 後仍全綠），real pytest exit 0；
+>   demo_trading regression 9404 passed（1 個既有無關 emergency_close CLI 失敗，real pytest exit 1 僅因此）。
+>
+> 下一里程碑：將每個 planner action 價格綁定到帶 selected price / symbol / ts / cs / local receive timing 的同一
+> WebSocket 訊息（同訊息整合任務），以及 human-authorization + staged Demo batch execution protocol。本任務不提供送單命令。
 
 > **TASK-014CF_PUBLIC_WEBSOCKET_TICKER_TIMESTAMP_EVIDENCE**（2026-06-23, Opus 4.8 / 公共唯讀 WebSocket ticker 時間戳證據）
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / MAINNET PUBLIC LINEAR WEBSOCKET USED FOR DEMO PUBLIC MARKET DATA / PUBLIC TICKER STREAM REQUIRES NO AUTHENTICATION / SYSTEM-GENERATED TICKER TS CAPTURED WITHOUT MISLABELLING IT AS TRADE TIME / SNAPSHOT-DELTA PRICE TIMESTAMP BINDING FAILS CLOSED / REST PRICES NOT REPLACED IN THIS TASK / EXECUTION FRESHNESS REMAINS PARTIAL PENDING SAME-MESSAGE PRICE INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

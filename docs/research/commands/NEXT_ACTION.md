@@ -1,5 +1,45 @@
 # Next Action
 
+> **TASK-014CF_FIX1_AUTHORITATIVE_UNIVERSE_CLOCK_PROVENANCE_AND_COMPLETE_EXIT_GATE** (2026-06-24, Opus 4.8)
+>
+> **`TASK-014CF CORE PRESERVED / CLOCK OFFSET BOUND TO FRESH AUTHORITATIVE CE EVIDENCE / PROTECTED LEGACY SYMBOLS DERIVED FROM AUTHORITATIVE CURRENT POSITIONS / ARBITRARY OFFSET AND MANUAL PRODUCTION LEGACY OMISSION REJECTED / REQUIRE-COMPLETE RETURNS NONZERO FOR PARTIAL UNAVAILABLE OR CONFLICT / PUBLIC WEBSOCKET REMAINS NO-AUTH / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> New FIX1 commit on top of ad28707. TASK-014CF core implementation exists but FIX1
+> is REQUIRED before VPS acceptance. Binds the clock offset and the protected-legacy
+> universe to authoritative CE evidence and adds a --require-complete exit gate. No
+> planner integration; REST price source unchanged; readiness blockers retained; no
+> Strategy / sizing / capital / protected-position / Pilot change.
+>
+> - Clock-offset provenance: --ce-evidence-json reads the accepted CE/FIX1 Plan-only
+>   artifact and validates policy/account-mode/clock-status/offset/fingerprint/endpoint/
+>   bracket-order/per-symbol-quote-unavailable/date/strategy/observed-time/age/SHA-256.
+>   COMPLETE is impossible unless provenance is AUTHORITATIVE and within max age. A raw
+>   numeric offset + "CLOCK_OFFSET_AVAILABLE" can never manufacture authority; the raw
+>   offset survives only as an unsafe test-only option rejected outside test/temp context.
+> - Protected-legacy universe: derived from CE legacy_protected_positions (current-position
+>   evidence), validated against PROTECTED_SYMBOLS; current protected symbols cannot be
+>   omitted; new protected positions auto-included; malformed/duplicate/conflicting/
+>   out-of-allowlist evidence fails closed; --legacy-symbol removed from production (test-only
+>   --unsafe-test-legacy-symbol gated to test/temp). Source fingerprints + status emitted.
+> - --require-complete exit codes: 0 COMPLETE / 2 invalid config / 3 source-evidence /
+>   4 ws-unavailable / 5 partial / 6 conflict / 7 credential-safety. Artifact still written
+>   on a safe non-zero outcome; CLI prints status/required/covered/complete/blockers/reason.
+> - Dependency: requirements.txt now declares websocket-client>=1.6.0,<2.0.0 directly;
+>   WS_CLIENT_DEPENDENCY_AVAILABLE/MISSING/INCOMPATIBLE readiness; tests stay offline.
+> - Artifact adds source_evidence / clock_offset_provenance / legacy_position_provenance /
+>   completion_gate / cli_exit_status / cli_exit_reason, all inside the fingerprint; no
+>   credentials / auth headers / secrets / env dumps.
+> - execution_batch_authorized=false; order/amend/cancel/live=0; no Demo order; no Live;
+>   no auth marker; Pilot + Forward source byte-identical.
+> - Tests: 37 focused (cf_fix1) + 61 (cf core, green after provenance threading); real pytest
+>   exit 0. demo_trading regression 9404 passed (1 pre-existing unrelated emergency_close CLI
+>   failure; real pytest exit 1 solely due to it).
+>
+> Next milestone: same-message integration binding each planner action price to the exact
+> WebSocket message; then human-authorization + staged Demo batch execution protocol.
+
+---
+
 > **TASK-014CF_PUBLIC_WEBSOCKET_TICKER_TIMESTAMP_EVIDENCE** (2026-06-23, Opus 4.8)
 >
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / MAINNET PUBLIC LINEAR WEBSOCKET USED FOR DEMO PUBLIC MARKET DATA / PUBLIC TICKER STREAM REQUIRES NO AUTHENTICATION / SYSTEM-GENERATED TICKER TS CAPTURED WITHOUT MISLABELLING IT AS TRADE TIME / SNAPSHOT-DELTA PRICE TIMESTAMP BINDING FAILS CLOSED / REST PRICES NOT REPLACED IN THIS TASK / EXECUTION FRESHNESS REMAINS PARTIAL PENDING SAME-MESSAGE PRICE INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

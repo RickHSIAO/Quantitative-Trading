@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import time
 from typing import Any
 
@@ -68,19 +69,36 @@ def derive_strategy_target_symbols(*, run_date: str, repo_root: str,
 
 
 def build_universe(*, run_date: str, repo_root: str, forward_source_root: str | None,
-                   legacy_symbols: list[str]) -> dict[str, Any]:
+                   legacy_symbols: list[str], legacy_source_reference: str
+                   ) -> tuple[dict[str, Any], str]:
     strategy_symbols, strat_ref = derive_strategy_target_symbols(
         run_date=run_date, repo_root=repo_root, forward_source_root=forward_source_root)
-    legacy_ref = ("observed protected legacy positions requiring account-level "
-                  "mark-price feasibility evidence (supplied --legacy-symbol; "
-                  f"validated against PROTECTED_SYMBOLS={sorted(PROTECTED_SYMBOL_ALLOWLIST)})")
-    return ws.derive_required_symbol_universe(
+    universe = ws.derive_required_symbol_universe(
         strategy_target_symbols=strategy_symbols,
         observed_legacy_symbols=legacy_symbols,
         protected_symbol_allowlist=PROTECTED_SYMBOL_ALLOWLIST,
         strategy_source_reference=strat_ref,
-        legacy_source_reference=legacy_ref,
+        legacy_source_reference=legacy_source_reference,
     )
+    return universe, strat_ref
+
+
+def _in_test_or_temp_context(out_path: str | None) -> bool:
+    """True only inside an explicit pytest run or when writing under a temp dir.
+
+    Unsafe test-only overrides (raw clock offset, manual legacy symbols) are
+    rejected outside this context.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    tmp = os.path.realpath(tempfile.gettempdir())
+    if out_path:
+        try:
+            if os.path.realpath(os.path.dirname(out_path) or ".").startswith(tmp):
+                return True
+        except OSError:
+            return False
+    return False
 
 
 def _collect_real(builder: "ws.PublicWsTickerEvidenceBuilder", *, universe: dict[str, Any],
@@ -180,23 +198,31 @@ def _collect_real(builder: "ws.PublicWsTickerEvidenceBuilder", *, universe: dict
     }
 
 
+def _load_ce_evidence(path: str) -> tuple[dict[str, Any], bytes]:
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    return json.loads(raw.decode("utf-8")), raw
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(
         "Standalone public read-only WebSocket ticker timestamp evidence "
-        "collector (TASK-014CF). No credentials, no orders, no Pilot."))
+        "collector (TASK-014CF/FIX1). No credentials, no orders, no Pilot."))
     ap.add_argument("--strategy-date", required=True,
                     help="Primary Forward Record run date (YYYY-MM-DD).")
-    ap.add_argument("--legacy-symbol", action="append", default=[],
-                    help="Observed protected legacy symbol (repeatable).")
+    # Authoritative source of BOTH the clock offset and the protected-legacy
+    # universe (accepted CE/FIX1 Plan-only artifact). Required for production.
+    ap.add_argument("--ce-evidence-json", default=None,
+                    help="Path to the accepted TASK-014CE/FIX1 Plan-only JSON artifact.")
+    ap.add_argument("--clock-offset-max-age-seconds", type=int,
+                    default=ws.DEFAULT_CLOCK_OFFSET_MAX_AGE_SECONDS)
     ap.add_argument("--deadline-seconds", type=float, default=30.0)
     ap.add_argument("--max-reconnect", type=int, default=1)
     ap.add_argument("--heartbeat-seconds", type=float, default=18.0)
     ap.add_argument("--stale-threshold-ms", type=int,
                     default=ws.DEFAULT_STALE_THRESHOLD_MS)
-    ap.add_argument("--clock-offset-seconds", default=None,
-                    help="Accepted CE clock offset (seconds) for transport delay.")
-    ap.add_argument("--clock-offset-status", default=None,
-                    help="CE clock_offset_evidence_status (e.g. CLOCK_OFFSET_AVAILABLE).")
+    ap.add_argument("--require-complete", action="store_true",
+                    help="Production gate: non-zero exit unless evidence is COMPLETE.")
     ap.add_argument("--out", default=None, help="Artifact output path (JSON).")
     ap.add_argument("--allow-real-network", action="store_true",
                     help="Open the real public linear WebSocket (default: offline).")
@@ -206,40 +232,168 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo-root", default=ROOT)
     ap.add_argument("--test-forward-source-root", default=None)
     ap.add_argument("--json-only", action="store_true")
+    # ---- UNSAFE test-only overrides (rejected outside test/temp context) ----
+    ap.add_argument("--unsafe-test-legacy-symbol", action="append", default=[],
+                    help="TEST-ONLY manual protected-legacy symbol override.")
+    ap.add_argument("--unsafe-test-clock-offset-seconds", default=None,
+                    help="TEST-ONLY raw clock offset (cannot create authoritative "
+                         "provenance).")
+    ap.add_argument("--unsafe-test-clock-offset-status", default=None,
+                    help="TEST-ONLY raw clock offset status.")
+    ap.add_argument("--unsafe-allow-test-overrides", action="store_true",
+                    help="Acknowledge unsafe test-only overrides (test/temp only).")
     args = ap.parse_args(argv)
 
-    legacy_symbols = [s.strip().upper() for s in args.legacy_symbol if s.strip()]
-    universe = build_universe(
-        run_date=args.strategy_date, repo_root=args.repo_root,
-        forward_source_root=args.test_forward_source_root,
-        legacy_symbols=legacy_symbols)
+    def _summary_print(artifact: dict[str, Any], universe: dict[str, Any]) -> None:
+        cov = artifact["coverage_summary"]
+        print(f"overall_status={artifact['overall_status']}")
+        print(f"required={cov['unique_symbol_count']} "
+              f"covered={cov['covered_symbol_count']} "
+              f"complete={cov['complete_symbol_count']}")
+        print(f"blockers={artifact['blockers']}")
+        print(f"cli_exit_status={artifact['cli_exit_status']} "
+              f"cli_exit_reason={artifact['cli_exit_reason']}")
+        print(f"symbol_universe_fingerprint={universe['symbol_universe_fingerprint']}")
+        print(f"artifact_fingerprint={artifact['artifact_fingerprint']}")
+
+    # ---- resolve unsafe test-only overrides ----
+    unsafe_overrides_used = bool(args.unsafe_test_legacy_symbol
+                                 or args.unsafe_test_clock_offset_seconds
+                                 or args.unsafe_test_clock_offset_status)
+    if unsafe_overrides_used:
+        if not (args.unsafe_allow_test_overrides and _in_test_or_temp_context(args.out)):
+            print("ERROR: unsafe test-only overrides rejected outside a test/temp context",
+                  file=sys.stderr)
+            return ws.EXIT_INVALID_CONFIG
+
+    # ---- dependency readiness ----
+    dependency = ws.check_ws_client_dependency()
+    dependency_status = dependency["ws_client_dependency_status"]
+
+    # ---- authoritative clock-offset + legacy provenance from CE evidence ----
+    clock_provenance: dict[str, Any] | None = None
+    legacy_provenance: dict[str, Any] | None = None
+    source_evidence: dict[str, Any] | None = None
+    legacy_symbols: list[str] = []
+    legacy_source_reference = ""
+    clock_offset_seconds = None
+    clock_offset_status = None
+    clock_provenance_status = None
+
+    if args.ce_evidence_json:
+        try:
+            ce_artifact, ce_bytes = _load_ce_evidence(args.ce_evidence_json)
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: cannot read CE evidence artifact: {exc}", file=sys.stderr)
+            return ws.EXIT_SOURCE_EVIDENCE_FAILURE
+        now_epoch = time.time()
+        clock_provenance = ws.extract_clock_offset_provenance(
+            ce_artifact, artifact_path=args.ce_evidence_json, artifact_bytes=ce_bytes,
+            requested_strategy_date=args.strategy_date,
+            max_age_seconds=args.clock_offset_max_age_seconds, now_epoch=now_epoch)
+        legacy_provenance = ws.extract_legacy_position_provenance(
+            ce_artifact, protected_symbol_allowlist=PROTECTED_SYMBOL_ALLOWLIST,
+            requested_strategy_date=args.strategy_date, artifact_bytes=ce_bytes)
+        legacy_symbols = list(legacy_provenance["legacy_protected_symbols"])
+        legacy_source_reference = (
+            f"authoritative CE current-position evidence "
+            f"sha256={legacy_provenance['ce_source_artifact_sha256']} "
+            f"status={legacy_provenance['symbol_universe_source_status']}")
+        clock_provenance_status = clock_provenance["clock_offset_provenance_status"]
+        clock_offset_seconds = clock_provenance[
+            "estimated_local_vs_exchange_clock_offset_seconds"]
+        clock_offset_status = clock_provenance["clock_offset_evidence_status"]
+        source_evidence = {
+            "ce_evidence_artifact_path": args.ce_evidence_json,
+            "ce_source_artifact_sha256": legacy_provenance["ce_source_artifact_sha256"],
+            "active_policy": ce_artifact.get("active_policy"),
+            "artifact_date": ce_artifact.get("date"),
+            "requested_strategy_date": args.strategy_date,
+            "account_mode_evidence_status": (
+                (ce_artifact.get("strategy_native_review") or {}).get(
+                    "account_mode_evidence") or {}).get("account_mode_evidence_status"),
+            "strategy_symbol_source_fingerprint": None,  # set after universe build
+            "legacy_position_source_fingerprint": (
+                legacy_provenance["legacy_position_source_fingerprint"]),
+        }
+    elif args.unsafe_test_legacy_symbol or args.unsafe_test_clock_offset_seconds:
+        # TEST-ONLY path (already gated above): synthesize a non-authoritative
+        # provenance so COMPLETE remains impossible from raw inputs.
+        legacy_symbols = [s.strip().upper() for s in args.unsafe_test_legacy_symbol
+                          if s.strip()]
+        legacy_source_reference = "UNSAFE_TEST_ONLY_MANUAL_LEGACY_SYMBOLS"
+        clock_offset_seconds = args.unsafe_test_clock_offset_seconds
+        clock_offset_status = args.unsafe_test_clock_offset_status
+        # Raw numeric offset can NEVER be authoritative provenance.
+        clock_provenance_status = ws.CLOCK_OFFSET_PROVENANCE_MISSING
+        clock_provenance = {
+            "clock_offset_provenance_status": clock_provenance_status,
+            "clock_offset_source_artifact_path": None,
+            "note": "UNSAFE_TEST_ONLY_RAW_OFFSET_NOT_AUTHORITATIVE",
+        }
+    else:
+        print("ERROR: --ce-evidence-json is required for production collection "
+              "(authoritative clock offset + protected-legacy universe)",
+              file=sys.stderr)
+        return ws.EXIT_INVALID_CONFIG
+
+    # ---- build the authoritative symbol universe ----
+    try:
+        universe, strat_ref = build_universe(
+            run_date=args.strategy_date, repo_root=args.repo_root,
+            forward_source_root=args.test_forward_source_root,
+            legacy_symbols=legacy_symbols,
+            legacy_source_reference=legacy_source_reference)
+    except Exception as exc:  # noqa: BLE001 — fail closed on any source error
+        print(f"ERROR: symbol-universe derivation failed: {exc}", file=sys.stderr)
+        return ws.EXIT_SOURCE_EVIDENCE_FAILURE
+    if source_evidence is not None:
+        source_evidence["strategy_symbol_source_fingerprint"] = (
+            universe["symbol_universe_fingerprint"])
 
     builder = ws.PublicWsTickerEvidenceBuilder(
         universe=universe,
-        clock_offset_seconds=args.clock_offset_seconds,
-        clock_offset_status=args.clock_offset_status,
+        clock_offset_seconds=clock_offset_seconds,
+        clock_offset_status=clock_offset_status,
+        clock_offset_provenance_status=clock_provenance_status,
         stale_threshold_ms=args.stale_threshold_ms,
     )
 
     collect_meta = {"subscription_acknowledged": False,
                     "reconnect_generation_ambiguous": False}
     if args.allow_real_network:
-        collect_meta = _collect_real(
-            builder, universe=universe, deadline_seconds=args.deadline_seconds,
-            max_reconnect=args.max_reconnect, heartbeat_seconds=args.heartbeat_seconds)
+        if dependency_status != ws.WS_CLIENT_DEPENDENCY_AVAILABLE:
+            print(f"ERROR: websocket client dependency not available: {dependency_status}",
+                  file=sys.stderr)
+        else:
+            collect_meta = _collect_real(
+                builder, universe=universe, deadline_seconds=args.deadline_seconds,
+                max_reconnect=args.max_reconnect, heartbeat_seconds=args.heartbeat_seconds)
 
     artifact = builder.build_artifact(
         finalize_epoch_ns=time.time_ns(),
         subscription_acknowledged=collect_meta["subscription_acknowledged"],
         reconnect_generation_ambiguous=collect_meta["reconnect_generation_ambiguous"],
         collection_deadline_seconds=args.deadline_seconds,
+        source_evidence=source_evidence,
+        clock_offset_provenance=clock_provenance,
+        legacy_position_provenance=legacy_provenance,
+        dependency_status=dependency_status,
+        require_complete=args.require_complete,
+        allow_real_network=args.allow_real_network,
     )
 
+    # ---- credential-leak verification (hard abort on failure) ----
     if args.verify_no_credential_leak:
         secret_values = [os.environ.get(n, "") for n in _CREDENTIAL_ENV_NAMES]
-        ws.assert_no_credentials(artifact, secret_values=secret_values)
+        try:
+            ws.assert_no_credentials(artifact, secret_values=secret_values)
+        except ws.WsEndpointError as exc:
+            print(f"ERROR: credential safety failure: {exc}", file=sys.stderr)
+            return ws.EXIT_CREDENTIAL_SAFETY
         artifact["credential_leak_check"] = "NO_CREDENTIAL_VALUE_OR_KEY_PRESENT"
 
+    # ---- write artifact (still written on a safe non-zero evidence result) ----
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
             json.dump(artifact, fh, indent=2, sort_keys=True)
@@ -247,20 +401,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.json_only:
         print(json.dumps(artifact, indent=2, sort_keys=True))
     else:
-        cov = artifact["coverage_summary"]
-        print(f"overall_status={artifact['overall_status']}")
-        print(f"requested={cov['requested_symbol_count']} "
-              f"unique={cov['unique_symbol_count']} "
-              f"covered={cov['covered_symbol_count']} "
-              f"complete={cov['complete_symbol_count']}")
-        print(f"symbol_universe_fingerprint={universe['symbol_universe_fingerprint']}")
-        print(f"artifact_fingerprint={artifact['artifact_fingerprint']}")
+        _summary_print(artifact, universe)
 
-    # Exit 0 only on a clean COMPLETE run; otherwise 0 for offline derivation,
-    # non-zero when a real run did not reach COMPLETE.
-    if args.allow_real_network and artifact["overall_status"] != ws.WS_TICKER_EVIDENCE_COMPLETE:
-        return 2
-    return 0
+    return int(artifact["cli_exit_status"])
 
 
 if __name__ == "__main__":
