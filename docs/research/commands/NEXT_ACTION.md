@@ -1,5 +1,54 @@
 # Next Action
 
+> **TASK-014CF_FIX2_EARLY_COMPLETE_FINALIZATION_AND_CANONICAL_EVIDENCE_PARITY** (2026-06-24, Opus 4.8)
+>
+> **`TASK-014CF/FIX1 VPS TRANSPORT AND AUTHORITATIVE PROVENANCE VERIFIED / ALL 52 SYMBOLS COVERED AND ALL 52 SNAPSHOTS RECEIVED / FIX2 FINALIZES IMMEDIATELY WHEN ALL REQUIRED SAME-GENERATION PRICE-TIMESTAMP EVIDENCE IS FRESH / SELECTED PRICE SOURCE MESSAGE PROVENANCE IS IMMUTABLE / COVERAGE AND MESSAGE-AUDIT COUNTERS ARE CANONICAL AND IDENTICAL / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING PLANNER INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> New FIX2 commit on top of 8fc611a fixing VPS-discovered WebSocket evidence
+> correctness defects. No planner integration; REST price source unchanged;
+> freshness blockers retained; no Strategy / sizing / capital / protected-position
+> / Pilot change.
+>
+> - Real VPS finding: connection/auth(false)/authoritative-universe/provenance all
+>   passed; 52/52 covered; 52 snapshots + 3686 deltas (3738 msgs, malformed 0,
+>   out-of-order 0); ack true; credential leak check passed. But waiting for the full
+>   30s deadline left 29 complete / 23 STALE; collector correctly exited 5.
+> - A. Early completion: after each accepted message evaluate the whole required
+>   universe; finalize SUCCESSFULLY the instant every required symbol is simultaneously
+>   complete-and-fresh in one generation (snapshot/price/Decimal/ts/cs/topic-match/
+>   no-hard-fail/no-regression/no-gen-conflict/local-timing/authoritative-provenance/
+>   valid-delay/age-within-limit). Never loosen the stale threshold; never mark an
+>   already-stale snapshot complete; if never simultaneously 52/52 stay PARTIAL exit 5.
+>   Emits early_completion_* fields + collection_terminated_reason. Finalize time is the
+>   actual early-completion time.
+> - B. Immutable source-message binding: a dedicated price-source record
+>   (selected_price_source_* + deterministic fingerprint) is set when lastPrice is
+>   accepted and is never altered by a later delta without lastPrice.
+>   selected_price_updated_in_message canonical meaning = the accepted source message
+>   included the field (always true for a COMPLETE record); a separate
+>   last_processed_message_updated_selected_price holds the transient meaning.
+> - C. Counter parity: coverage_summary and message_audit complete/covered/required
+>   derive from ONE canonical source and must match exactly; ws_complete_symbol_count
+>   is no longer a stale zero; counter_parity_status=WS_COUNTER_PARITY_PASS/FAIL; a FAIL
+>   blocks COMPLETE.
+> - D. Freshness: canonical freshness_summary.execution_grade_freshness_complete stays
+>   False at 52/52 (REST actions not yet bound); a top-level alias mirrors it exactly;
+>   VPS validation reads the nested canonical field.
+> - E. Age uses the price-source ts + actual finalize time + accepted offset (not the
+>   latest unrelated message); selected_price_source_ts_ms and last_accepted_ts may differ.
+> - F. Timeout retains the PARTIAL artifact, exit 5, explicit stale/missing/conflict; no
+>   auto-reconnect merely because evidence aged while waiting.
+> - execution_batch_authorized=false; order/amend/cancel/live=0; no Demo order; no Live;
+>   no auth marker; Pilot + Forward source byte-identical.
+> - Tests: 15 focused (cf_fix2) + 98 (cf core + fix1), real pytest exit 0; demo_trading
+>   regression 9419 passed (1 pre-existing unrelated emergency_close CLI failure; real
+>   pytest exit 1 solely due to it).
+>
+> Next milestone: same-message integration binding each planner action price to the exact
+> WebSocket message; then human-authorization + staged Demo batch execution protocol.
+
+---
+
 > **TASK-014CF_FIX1_AUTHORITATIVE_UNIVERSE_CLOCK_PROVENANCE_AND_COMPLETE_EXIT_GATE** (2026-06-24, Opus 4.8)
 >
 > **`TASK-014CF CORE PRESERVED / CLOCK OFFSET BOUND TO FRESH AUTHORITATIVE CE EVIDENCE / PROTECTED LEGACY SYMBOLS DERIVED FROM AUTHORITATIVE CURRENT POSITIONS / ARBITRARY OFFSET AND MANUAL PRODUCTION LEGACY OMISSION REJECTED / REQUIRE-COMPLETE RETURNS NONZERO FOR PARTIAL UNAVAILABLE OR CONFLICT / PUBLIC WEBSOCKET REMAINS NO-AUTH / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

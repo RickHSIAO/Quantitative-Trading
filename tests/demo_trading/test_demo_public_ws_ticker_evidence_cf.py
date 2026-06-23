@@ -260,7 +260,7 @@ def test_delta_without_price_field_does_not_refresh_price_timestamp():
     # price timestamp stays pinned to the snapshot that carried lastPrice
     assert ev.selected_price == "100.0"
     assert ev.selected_price_ts_ms == 100
-    assert ev.selected_price_updated_in_last_message is False
+    assert ev.last_processed_message_updated_selected_price is False
     # ordering counters still advanced
     assert ev.last_accepted_cs == 2 and ev.last_accepted_ts == 500
 

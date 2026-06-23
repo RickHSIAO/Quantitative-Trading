@@ -119,8 +119,10 @@ def _collect_real(builder: "ws.PublicWsTickerEvidenceBuilder", *, universe: dict
     reconnects = 0
     acknowledged = False
     generation = -1
+    completion: dict[str, Any] | None = None
+    finalize_epoch_ns: int | None = None
 
-    while attempts <= max_reconnect:
+    while attempts <= max_reconnect and completion is None:
         generation += 1
         attempts += 1
         builder.record_connection_attempt()
@@ -182,20 +184,59 @@ def _collect_real(builder: "ws.PublicWsTickerEvidenceBuilder", *, universe: dict
                         msg, local_received_epoch_ns=recv_epoch_ns,
                         local_monotonic_received_ns=recv_mono_ns,
                         connection_generation=generation)
+                    # FIX2: finalize EARLY once every required symbol is
+                    # simultaneously COMPLETE and fresh in this generation. Never
+                    # loosen the stale threshold; never wait for the full deadline.
+                    check_ns = time.time_ns()
+                    ev = builder.evaluate_completion(check_epoch_ns=check_ns)
+                    if ev["all_required_complete"]:
+                        finalize_epoch_ns = check_ns
+                        completion = {
+                            "early_completion_enabled": True,
+                            "completion_achieved": True,
+                            "completion_achieved_at_epoch_ns": check_ns,
+                            "completion_achieved_at_utc": _utc_from_ns(check_ns),
+                            "completion_connection_generation": ev["connection_generation"],
+                            "completion_required_symbol_count": ev["required_symbol_count"],
+                            "completion_complete_symbol_count": ev["complete_symbol_count"],
+                            "completion_trigger_message_count": builder.ws_message_count,
+                            "collection_terminated_reason": "ALL_REQUIRED_SYMBOLS_COMPLETE",
+                        }
+                        break
         finally:
             try:
                 conn.close()
             except Exception:  # noqa: BLE001
                 pass
         # One bounded window per generation; reconnect only if it was not clean.
-        if clean:
+        if clean or completion is not None:
             break
 
-    # cumulative transport counts already recorded incrementally
+    if completion is None:
+        completion = {
+            "early_completion_enabled": True,
+            "completion_achieved": False,
+            "completion_achieved_at_epoch_ns": None,
+            "completion_achieved_at_utc": None,
+            "completion_connection_generation": None,
+            "completion_required_symbol_count": universe["unique_symbol_count"],
+            "completion_complete_symbol_count": None,
+            "completion_trigger_message_count": None,
+            "collection_terminated_reason": "COLLECTION_DEADLINE_REACHED",
+        }
+
     return {
         "subscription_acknowledged": acknowledged,
         "reconnect_generation_ambiguous": reconnects > 0,
+        "completion_meta": completion,
+        "finalize_epoch_ns": finalize_epoch_ns,
     }
+
+
+def _utc_from_ns(epoch_ns: int) -> str:
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(epoch_ns / 1e9, tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _load_ce_evidence(path: str) -> tuple[dict[str, Any], bytes]:
@@ -359,8 +400,9 @@ def main(argv: list[str] | None = None) -> int:
         stale_threshold_ms=args.stale_threshold_ms,
     )
 
-    collect_meta = {"subscription_acknowledged": False,
-                    "reconnect_generation_ambiguous": False}
+    collect_meta: dict[str, Any] = {"subscription_acknowledged": False,
+                                    "reconnect_generation_ambiguous": False,
+                                    "completion_meta": None, "finalize_epoch_ns": None}
     if args.allow_real_network:
         if dependency_status != ws.WS_CLIENT_DEPENDENCY_AVAILABLE:
             print(f"ERROR: websocket client dependency not available: {dependency_status}",
@@ -370,8 +412,11 @@ def main(argv: list[str] | None = None) -> int:
                 builder, universe=universe, deadline_seconds=args.deadline_seconds,
                 max_reconnect=args.max_reconnect, heartbeat_seconds=args.heartbeat_seconds)
 
+    # FIX2: when early completion succeeded, finalize at the ACTUAL early-completion
+    # time; otherwise finalize now (deadline reached / offline).
+    finalize_ns = collect_meta.get("finalize_epoch_ns") or time.time_ns()
     artifact = builder.build_artifact(
-        finalize_epoch_ns=time.time_ns(),
+        finalize_epoch_ns=finalize_ns,
         subscription_acknowledged=collect_meta["subscription_acknowledged"],
         reconnect_generation_ambiguous=collect_meta["reconnect_generation_ambiguous"],
         collection_deadline_seconds=args.deadline_seconds,
@@ -381,6 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         dependency_status=dependency_status,
         require_complete=args.require_complete,
         allow_real_network=args.allow_real_network,
+        completion_meta=collect_meta.get("completion_meta"),
     )
 
     # ---- credential-leak verification (hard abort on failure) ----

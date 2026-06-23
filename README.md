@@ -17,7 +17,49 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CF_FIX1 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CF_FIX2 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CF_FIX2_EARLY_COMPLETE_FINALIZATION_AND_CANONICAL_EVIDENCE_PARITY**（2026-06-24, Opus 4.8 / 早期完成終止 + 規範證據對齊）
+> **`TASK-014CF/FIX1 VPS TRANSPORT AND AUTHORITATIVE PROVENANCE VERIFIED / ALL 52 SYMBOLS COVERED AND ALL 52 SNAPSHOTS RECEIVED / FIX2 FINALIZES IMMEDIATELY WHEN ALL REQUIRED SAME-GENERATION PRICE-TIMESTAMP EVIDENCE IS FRESH / SELECTED PRICE SOURCE MESSAGE PROVENANCE IS IMMUTABLE / COVERAGE AND MESSAGE-AUDIT COUNTERS ARE CANONICAL AND IDENTICAL / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING PLANNER INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 8fc611a 之上新增一筆 FIX2 commit，修正 VPS 實測發現的 WebSocket 證據正確性缺陷。不整合進 planner、
+> 不取代 REST 價格源、不移除整合新鮮度 blocker、不更動策略目標 / 權重 / 固定資本 / 受保護持倉 / Pilot。
+>
+> - **真實 VPS 發現：** 連線 / 認證(false) / 權威宇宙與 provenance 全通過；52 符號全覆蓋；收到 52 snapshots +
+>   3686 deltas（共 3738 訊息，malformed=0、out-of-order=0）；訂閱 ack=true；憑證洩漏檢查通過。但因等到完整
+>   30 秒 deadline 才終止，deadline 時僅 29 完成、23 因 deadline finalize 而變 STALE，collector 正確退出 5。
+> - **A. 早期完成終止：** 每筆被接受訊息後評估完整必要符號宇宙；一旦同一連線世代所有必要符號同時具備
+>   snapshot/選定價格欄位/Decimal/合法 source ts+cs/topic 與 data symbol 相符/無 hard fail/無序列或時間戳倒退/
+>   無世代衝突/合法 local timing/權威 clock provenance/合法 transport delay/age 在新鮮上限內，即立刻成功終止，
+>   不再等 deadline。emit early_completion_enabled / completion_achieved / completion_achieved_at_epoch_ns / _utc /
+>   completion_connection_generation / completion_required_symbol_count / completion_complete_symbol_count /
+>   completion_trigger_message_count / collection_terminated_reason（ALL_REQUIRED_SYMBOLS_COMPLETE 或
+>   COLLECTION_DEADLINE_REACHED）。不放寬 stale 門檻；不把已 stale 的 snapshot 標記為 complete 來湊 52/52；
+>   若從未同時 52/52 則維持 PARTIAL 並退出 5。finalize 時間在早期完成時即實際早完成時刻。
+> - **B. 不可變 source-message 綁定：** lastPrice 被接受時記錄專屬 source 證據（selected_price_source_message_type /
+>   _included_field=true / _ts_ms / _cs / _local_received_epoch_ns / _local_received_at_utc /
+>   _local_monotonic_received_ns / _connection_generation / _topic / _symbol / 確定性
+>   selected_price_source_message_fingerprint）；之後不帶 lastPrice 的 delta 不更動這些欄位。
+>   selected_price_updated_in_message 規範語意=被接受的選定價格 source 訊息是否含選定欄位（對每筆 COMPLETE 必為 true）；
+>   新增 last_processed_message_updated_selected_price 表達「最近處理訊息是否更新價格」這個瞬時意義。
+> - **C. 規範計數對齊：** finalize 時所有 complete/covered/required 由單一規範來源推導，強制相等：
+>   coverage_summary.complete==message_audit.ws_complete、covered==ws_covered、requested==ws_required、
+>   completion_complete==complete（completion_achieved 時）。ws_complete_symbol_count 不再初始化為 0 後殘留；
+>   新增 counter_parity_status=WS_COUNTER_PARITY_PASS/FAIL，FAIL 阻止 COMPLETE。
+> - **D. 新鮮度 schema：** 規範欄位定為 freshness_summary.execution_grade_freshness_complete（保留 false，即使 52/52，
+>   因 REST planner action 尚未綁到同一 WebSocket 訊息）；新增 top-level alias 精確等於 nested 值；VPS 驗證命令改讀
+>   freshness_summary.execution_grade_freshness_complete。
+> - **E. finalize age：** 每符號 evidence_age_at_finalize_ms = (實際早完成/finalize 時刻 + 接受的 clock offset) −
+>   選定價格 source 訊息 ts；不以最新無關 ticker 訊息計算。selected_price_source_ts_ms（價格來源訊息 ts）與
+>   last_accepted_ts（最新協定訊息 ts）可合理不同，已標註。
+> - **F. timeout：** deadline 未達 52/52 → 保留 artifact、PARTIAL、--require-complete 退出 5、stale/missing/conflict 顯式保留、
+>   不靜默丟棄、不因等待中價格變舊而自動重連。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、order/amend/cancel/live=0；
+>   無 Demo 下單、無 Live 授權、無 auth marker、Pilot 未進階、Pilot 與 Forward source byte-identical。
+> - 驗證：focused 15 passed（cf_fix2）+ 98 passed（cf 核心 + fix1），real pytest exit 0；demo_trading regression
+>   9419 passed（1 個既有無關 emergency_close CLI 失敗，real pytest exit 1 僅因此）。
+>
+> 下一里程碑：將每個 planner action 價格綁定到帶 selected price / symbol / ts / cs / local receive timing 的同一
+> WebSocket 訊息（同訊息整合任務），以及 human-authorization + staged Demo batch execution protocol。本任務不提供送單命令。
 
 > **TASK-014CF_FIX1_AUTHORITATIVE_UNIVERSE_CLOCK_PROVENANCE_AND_COMPLETE_EXIT_GATE**（2026-06-24, Opus 4.8 / 權威來源綁定 + 時鐘 provenance + 完成度退出閘）
 > **`TASK-014CF CORE PRESERVED / CLOCK OFFSET BOUND TO FRESH AUTHORITATIVE CE EVIDENCE / PROTECTED LEGACY SYMBOLS DERIVED FROM AUTHORITATIVE CURRENT POSITIONS / ARBITRARY OFFSET AND MANUAL PRODUCTION LEGACY OMISSION REJECTED / REQUIRE-COMPLETE RETURNS NONZERO FOR PARTIAL UNAVAILABLE OR CONFLICT / PUBLIC WEBSOCKET REMAINS NO-AUTH / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

@@ -162,6 +162,10 @@ WS_CLIENT_DEPENDENCY_AVAILABLE = "WS_CLIENT_DEPENDENCY_AVAILABLE"
 WS_CLIENT_DEPENDENCY_MISSING = "WS_CLIENT_DEPENDENCY_MISSING"
 WS_CLIENT_DEPENDENCY_INCOMPATIBLE = "WS_CLIENT_DEPENDENCY_INCOMPATIBLE"
 
+# Canonical counter parity (coverage_summary vs message_audit)
+WS_COUNTER_PARITY_PASS = "WS_COUNTER_PARITY_PASS"
+WS_COUNTER_PARITY_FAIL = "WS_COUNTER_PARITY_FAIL"
+
 # Stable documented CLI exit codes
 EXIT_COMPLETE = 0
 EXIT_INVALID_CONFIG = 2
@@ -743,10 +747,14 @@ class SymbolEvidence:
     selected_price_ts_ms: int | None = None
     selected_price_cs: int | None = None
     selected_price_message_type: str | None = None
-    selected_price_updated_in_last_message: bool = False
+    # Transient: did the MOST RECENTLY PROCESSED message carry the selected field.
+    last_processed_message_updated_selected_price: bool = False
     selected_price_local_received_epoch_ns: int | None = None
     selected_price_local_received_at_utc: str | None = None
     selected_price_local_monotonic_received_ns: int | None = None
+    # Immutable provenance of the exact message that supplied the accepted price.
+    selected_price_source_connection_generation: int | None = None
+    selected_price_source_message_fingerprint: str | None = None
     exchange_data_generated_ts_ms: int | None = None
     last_accepted_cs: int | None = None
     last_accepted_ts: int | None = None
@@ -820,6 +828,9 @@ class PublicWsTickerEvidenceBuilder:
         self.ws_duplicate_message_count = 0
         self.ws_out_of_order_message_count = 0
         self._generations: set[int] = set()
+        # Canonical counts (set at build time; keep audit/coverage in lockstep).
+        self._canonical_covered_count = 0
+        self._canonical_complete_count = 0
 
     # -- transport / lifecycle bookkeeping ---------------------------------
 
@@ -940,31 +951,41 @@ class PublicWsTickerEvidenceBuilder:
         ev.last_accepted_cs = cs
         ev.last_accepted_ts = ts_ms
 
-        # selected price field handling: refresh price timestamp ONLY when the
-        # exact selected field is present in THIS message's data.
+        # selected price field handling: (re)bind the immutable price-source
+        # provenance ONLY when the exact selected field is present in THIS
+        # message's data. A later message WITHOUT the field never alters it.
         price_present = self.price_field in data
         if price_present:
             raw_price = data.get(self.price_field)
             if not _is_decimal_string(raw_price):
                 ev.fail(WS_SELECTED_PRICE_FIELD_MISSING,
                         f"{self.price_field} present but not a Decimal string")
-                ev.selected_price_updated_in_last_message = False
+                ev.last_processed_message_updated_selected_price = False
                 return "price_field_malformed"
             ev.selected_price = str(raw_price)
             ev.selected_price_decimal_ok = True
             ev.selected_price_ts_ms = ts_ms
             ev.selected_price_cs = cs
             ev.selected_price_message_type = msg_type
-            ev.selected_price_updated_in_last_message = True
+            ev.last_processed_message_updated_selected_price = True
             ev.selected_price_local_received_epoch_ns = int(local_received_epoch_ns)
             ev.selected_price_local_received_at_utc = _iso_from_epoch_ns(
                 int(local_received_epoch_ns))
             ev.selected_price_local_monotonic_received_ns = int(
                 local_monotonic_received_ns)
+            ev.selected_price_source_connection_generation = gen
             ev.exchange_data_generated_ts_ms = ts_ms
+            # Deterministic fingerprint of the EXACT price-carrying source message.
+            ev.selected_price_source_message_fingerprint = _fingerprint({
+                "topic": topic, "symbol": sym, "type": msg_type,
+                "ts_ms": ts_ms, "cs": cs, "price_field": self.price_field,
+                "price": str(raw_price),
+                "local_received_epoch_ns": int(local_received_epoch_ns),
+                "connection_generation": gen,
+            })
             return "price_updated"
 
-        ev.selected_price_updated_in_last_message = False
+        ev.last_processed_message_updated_selected_price = False
         return "no_price_change"
 
     # -- transport-delay / age estimates -----------------------------------
@@ -983,6 +1004,24 @@ class PublicWsTickerEvidenceBuilder:
         return float(delay_s * Decimal("1000"))
 
     def _evidence_age_ms(self, ev: SymbolEvidence, finalize_epoch_ns: int) -> float | None:
+        """Age of the accepted price evidence at finalization.
+
+        Computed from the PRICE-SOURCE message ts, the actual finalization time
+        and the accepted clock offset (NOT the latest unrelated ticker message):
+            est_exchange_finalize_time = finalize_epoch + clock_offset
+            age = est_exchange_finalize_time - selected_price_source_ts
+        Falls back to a local-receive-based age only when the offset is absent.
+        """
+        if ev.selected_price_ts_ms is None:
+            return None
+        if (self.clock_offset_seconds is not None
+                and self.clock_offset_status == CLOCK_OFFSET_AVAILABLE
+                and self.clock_offset_provenance_status
+                == CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE):
+            finalize_s = Decimal(int(finalize_epoch_ns)) / Decimal("1e9")
+            est_exchange_finalize_s = finalize_s + self.clock_offset_seconds
+            age_s = est_exchange_finalize_s - (Decimal(ev.selected_price_ts_ms) / Decimal("1000"))
+            return float(age_s * Decimal("1000"))
         if ev.selected_price_local_received_epoch_ns is None:
             return None
         return (finalize_epoch_ns - ev.selected_price_local_received_epoch_ns) / 1e6
@@ -1019,6 +1058,37 @@ class PublicWsTickerEvidenceBuilder:
 
         return WS_PRICE_TIMESTAMP_EVIDENCE_COMPLETE, delay_ms, age_ms
 
+    def evaluate_completion(self, *, check_epoch_ns: int) -> dict[str, Any]:
+        """Return whether EVERY required symbol is simultaneously COMPLETE and
+        fresh at ``check_epoch_ns``, within ONE connection generation.
+
+        Used by the collector to finalize early; it never loosens the stale
+        threshold and never marks an already-stale snapshot complete.
+        """
+        required = self.universe["symbols"]
+        complete = 0
+        gens: set[int] = set()
+        all_complete = True
+        for sym in required:
+            ev = self._symbols[sym]
+            status, _delay, _age = self._finalize_symbol_status(
+                ev, finalize_epoch_ns=check_epoch_ns)
+            if status == WS_PRICE_TIMESTAMP_EVIDENCE_COMPLETE:
+                complete += 1
+                if ev.selected_price_source_connection_generation is not None:
+                    gens.add(ev.selected_price_source_connection_generation)
+            else:
+                all_complete = False
+        single_generation = len(gens) <= 1
+        return {
+            "all_required_complete": bool(all_complete and complete == len(required)
+                                          and single_generation and len(required) > 0),
+            "complete_symbol_count": complete,
+            "required_symbol_count": len(required),
+            "connection_generation": (sorted(gens)[0] if len(gens) == 1 else None),
+            "single_generation": single_generation,
+        }
+
     def build_per_symbol_evidence(self, *, finalize_epoch_ns: int) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for sym in self.universe["symbols"]:
@@ -1035,6 +1105,10 @@ class PublicWsTickerEvidenceBuilder:
                 "connection_generation": ev.connection_generation,
                 "status": status,
             }
+            # Canonical: did the ACCEPTED price-SOURCE message contain the field.
+            # True for every record that has an accepted selected price (and thus
+            # always True for a WS_PRICE_TIMESTAMP_EVIDENCE_COMPLETE record).
+            source_included_field = ev.selected_price is not None
             out.append({
                 "symbol": ev.symbol,
                 "topic": ev.topic,
@@ -1043,8 +1117,13 @@ class PublicWsTickerEvidenceBuilder:
                 "selected_price_field": ev.selected_price_field,
                 "selected_price": ev.selected_price,
                 "selected_price_decimal": ev.selected_price,
-                "selected_price_updated_in_message": (
-                    ev.selected_price_updated_in_last_message),
+                # Canonical meaning: the accepted price-source message included
+                # the selected field (immutable; not the last processed message).
+                "selected_price_updated_in_message": source_included_field,
+                # Transient: whether the most recently processed message updated
+                # the price (a later delta without lastPrice sets this False).
+                "last_processed_message_updated_selected_price": (
+                    ev.last_processed_message_updated_selected_price),
                 "selected_price_message_type": ev.selected_price_message_type,
                 "selected_price_ts_ms": ev.selected_price_ts_ms,
                 "selected_price_cs": ev.selected_price_cs,
@@ -1054,6 +1133,23 @@ class PublicWsTickerEvidenceBuilder:
                     ev.selected_price_local_received_at_utc),
                 "selected_price_local_monotonic_received_ns": (
                     ev.selected_price_local_monotonic_received_ns),
+                # --- immutable price-SOURCE message provenance (FIX2) ---
+                "selected_price_source_message_type": ev.selected_price_message_type,
+                "selected_price_source_message_included_field": source_included_field,
+                "selected_price_source_ts_ms": ev.selected_price_ts_ms,
+                "selected_price_source_cs": ev.selected_price_cs,
+                "selected_price_source_local_received_epoch_ns": (
+                    ev.selected_price_local_received_epoch_ns),
+                "selected_price_source_local_received_at_utc": (
+                    ev.selected_price_local_received_at_utc),
+                "selected_price_source_local_monotonic_received_ns": (
+                    ev.selected_price_local_monotonic_received_ns),
+                "selected_price_source_connection_generation": (
+                    ev.selected_price_source_connection_generation),
+                "selected_price_source_topic": (ev.topic if source_included_field else None),
+                "selected_price_source_symbol": (ev.symbol if source_included_field else None),
+                "selected_price_source_message_fingerprint": (
+                    ev.selected_price_source_message_fingerprint),
                 "exchange_data_generated_ts_ms": ev.exchange_data_generated_ts_ms,
                 "exchange_data_generated_at_utc": _iso_from_ms(
                     ev.exchange_data_generated_ts_ms),
@@ -1061,6 +1157,8 @@ class PublicWsTickerEvidenceBuilder:
                     None if delay_ms is None else round(delay_ms, 3)),
                 "evidence_age_at_finalize_ms": (
                     None if age_ms is None else round(age_ms, 3)),
+                # selected_price_source_ts is the price message ts; last_accepted_ts
+                # is the latest PROTOCOL message ts -- these may legitimately differ.
                 "last_accepted_cs": ev.last_accepted_cs,
                 "last_accepted_ts": ev.last_accepted_ts,
                 "duplicate_message_count": ev.duplicate_message_count,
@@ -1072,14 +1170,13 @@ class PublicWsTickerEvidenceBuilder:
             })
         return out
 
-    def network_audit(self) -> dict[str, Any]:
+    def network_audit(self, *, covered_count: int | None = None,
+                      complete_count: int | None = None) -> dict[str, Any]:
+        # Canonical counts MUST be supplied so the message-audit never carries a
+        # stale zero while coverage_summary reports a non-zero count (FIX2 parity).
         required = self.universe["unique_symbol_count"]
-        covered = sum(1 for s in self.universe["symbols"] if self._symbols[s].covered)
-        complete = sum(
-            1 for s in self.universe["symbols"]
-            if self._finalize_symbol_status(
-                self._symbols[s], finalize_epoch_ns=0)[0]
-            == WS_PRICE_TIMESTAMP_EVIDENCE_COMPLETE)
+        covered = self._canonical_covered_count if covered_count is None else covered_count
+        complete = self._canonical_complete_count if complete_count is None else complete_count
         return {
             "ws_connection_attempt_count": self.ws_connection_attempt_count,
             "ws_connection_success_count": self.ws_connection_success_count,
@@ -1114,26 +1211,18 @@ class PublicWsTickerEvidenceBuilder:
         dependency_status: str | None = None,
         require_complete: bool = False,
         allow_real_network: bool = False,
+        completion_meta: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         per_symbol = self.build_per_symbol_evidence(finalize_epoch_ns=finalize_epoch_ns)
-        audit = self.network_audit()
 
         statuses = [row["evidence_status"] for row in per_symbol]
         required = self.universe["unique_symbol_count"]
+        # ONE canonical derivation of covered/complete; audit + coverage reuse it.
         complete_n = sum(1 for s in statuses if s == WS_PRICE_TIMESTAMP_EVIDENCE_COMPLETE)
-        conflict = any(
-            s in (WS_SYMBOL_TOPIC_MISMATCH, WS_CONNECTION_GENERATION_CONFLICT,
-                  WS_PRICE_FIELD_SEMANTICS_MISMATCH)
-            for s in statuses) or reconnect_generation_ambiguous
-
-        if conflict:
-            overall = WS_TICKER_EVIDENCE_CONFLICT
-        elif complete_n == required and required > 0 and len(self._generations) <= 1:
-            overall = WS_TICKER_EVIDENCE_COMPLETE
-        elif audit["ws_covered_symbol_count"] == 0:
-            overall = WS_TICKER_EVIDENCE_UNAVAILABLE
-        else:
-            overall = WS_TICKER_EVIDENCE_PARTIAL
+        covered_n = sum(1 for s in self.universe["symbols"] if self._symbols[s].covered)
+        self._canonical_covered_count = covered_n
+        self._canonical_complete_count = complete_n
+        audit = self.network_audit(covered_count=covered_n, complete_count=complete_n)
 
         status_counts: dict[str, int] = {}
         for s in statuses:
@@ -1142,13 +1231,43 @@ class PublicWsTickerEvidenceBuilder:
         coverage_summary = {
             "requested_symbol_count": self.universe["requested_symbol_count"],
             "unique_symbol_count": required,
-            "covered_symbol_count": audit["ws_covered_symbol_count"],
+            "covered_symbol_count": covered_n,
             "complete_symbol_count": complete_n,
             "per_symbol_status_counts": status_counts,
             "all_required_complete": complete_n == required and required > 0,
         }
 
-        # This task NEVER promotes execution readiness.
+        # FIX2 counter parity: coverage_summary and message_audit MUST agree.
+        completion_complete = (None if completion_meta is None
+                               else completion_meta.get("completion_complete_symbol_count"))
+        parity_ok = (
+            coverage_summary["complete_symbol_count"] == audit["ws_complete_symbol_count"]
+            and coverage_summary["covered_symbol_count"] == audit["ws_covered_symbol_count"]
+            and coverage_summary["requested_symbol_count"] == audit["ws_required_symbol_count"]
+            and (completion_meta is None or not completion_meta.get("completion_achieved")
+                 or completion_complete == complete_n))
+        counter_parity_status = (WS_COUNTER_PARITY_PASS if parity_ok
+                                 else WS_COUNTER_PARITY_FAIL)
+
+        conflict = any(
+            s in (WS_SYMBOL_TOPIC_MISMATCH, WS_CONNECTION_GENERATION_CONFLICT,
+                  WS_PRICE_FIELD_SEMANTICS_MISMATCH)
+            for s in statuses) or reconnect_generation_ambiguous
+
+        if conflict:
+            overall = WS_TICKER_EVIDENCE_CONFLICT
+        elif (complete_n == required and required > 0 and len(self._generations) <= 1
+              and parity_ok):
+            overall = WS_TICKER_EVIDENCE_COMPLETE
+        elif covered_n == 0:
+            overall = WS_TICKER_EVIDENCE_UNAVAILABLE
+        else:
+            overall = WS_TICKER_EVIDENCE_PARTIAL
+
+        # This task NEVER promotes execution readiness. The canonical freshness
+        # field lives at freshness_summary.execution_grade_freshness_complete and
+        # stays False even at 52/52, because REST planner actions are not yet bound
+        # to the same WebSocket messages. A top-level alias mirrors it EXACTLY.
         freshness_summary = {
             "price_freshness_status": PRICE_FRESHNESS_EVIDENCE_PARTIAL,
             "execution_grade_freshness_complete": False,
@@ -1238,8 +1357,25 @@ class PublicWsTickerEvidenceBuilder:
             "per_symbol_evidence": per_symbol,
             "coverage_summary": coverage_summary,
             "freshness_summary": freshness_summary,
+            # Top-level alias EXACTLY mirrors the canonical nested freshness field.
+            "execution_grade_freshness_complete": (
+                freshness_summary["execution_grade_freshness_complete"]),
             "overall_status": overall,
             "blockers": blockers,
+            # FIX2 canonical counter parity (a FAIL prevents COMPLETE above).
+            "counter_parity_status": counter_parity_status,
+            # FIX2 early-completion finalization metadata.
+            "early_completion": dict(completion_meta) if completion_meta is not None else {
+                "early_completion_enabled": True,
+                "completion_achieved": False,
+                "completion_achieved_at_epoch_ns": None,
+                "completion_achieved_at_utc": None,
+                "completion_connection_generation": None,
+                "completion_required_symbol_count": required,
+                "completion_complete_symbol_count": complete_n,
+                "completion_trigger_message_count": None,
+                "collection_terminated_reason": "COLLECTION_DEADLINE_REACHED",
+            },
             "completion_gate": completion_gate,
             "cli_exit_status": completion_gate["cli_exit_status"],
             "cli_exit_reason": completion_gate["cli_exit_reason"],
@@ -1284,4 +1420,5 @@ __all__ = [
     "DEFAULT_CLOCK_OFFSET_MAX_AGE_SECONDS",
     "check_ws_client_dependency", "extract_clock_offset_provenance",
     "extract_legacy_position_provenance", "compute_completion_gate",
+    "WS_COUNTER_PARITY_PASS", "WS_COUNTER_PARITY_FAIL",
 ]

@@ -10677,3 +10677,55 @@ emergency_close CLI failure; real pytest exit 1 solely due to it).
      python scripts/collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --ce-evidence-json /tmp/ce_evidence_20260622.json --allow-real-network --require-complete --out outputs/ws_ticker_evidence_20260622.json --verify-no-credential-leak --json-only
   C. check the actual exit code:
      echo "collector_exit_code=$?"
+
+---
+
+### TASK-014CF_FIX2_EARLY_COMPLETE_FINALIZATION_AND_CANONICAL_EVIDENCE_PARITY (2026-06-24, Opus 4.8)
+
+New FIX2 commit on top of 8fc611a fixing VPS-discovered WebSocket evidence
+correctness defects. No planner integration; REST prices unchanged; freshness
+blockers retained.
+
+**Real VPS finding (recorded):**
+- connection, authentication(false), authoritative universe and provenance all passed;
+- all 52 symbols covered; 52 snapshots received; 3686 deltas; 3738 total messages;
+  malformed=0; out-of-order=0; subscription ack=true; credential leak check passed;
+- at the 30s deadline only 29 were complete and 23 had become STALE due to deadline
+  finalization; the collector correctly exited 5.
+
+**Changed files:**
+- src/demo_public_ws_ticker_evidence.py (early-completion eval, immutable source
+  provenance, canonical counter parity, freshness alias, source-ts age)
+- scripts/collect_public_ws_ticker_evidence.py (early finalize, completion metadata)
+- tests/demo_trading/test_demo_public_ws_ticker_evidence_cf.py (renamed transient field)
+- tests/demo_trading/test_demo_public_ws_ticker_evidence_cf_fix2.py (15 focused tests)
+
+**Fixes:**
+- A. Early successful finalization the instant every required same-generation symbol
+  is simultaneously complete-and-fresh; never loosens the stale threshold; never marks
+  an already-stale snapshot complete; finalize time is the actual early-completion time;
+  emits early_completion_* + collection_terminated_reason.
+- B. Immutable selected_price_source_* provenance (with deterministic fingerprint) set
+  when lastPrice is accepted; a later delta without lastPrice never alters it.
+  selected_price_updated_in_message = source message included the field (true for every
+  COMPLETE record); last_processed_message_updated_selected_price holds the transient meaning.
+- C. Canonical counter parity: coverage_summary == message_audit for complete/covered/
+  required; ws_complete_symbol_count no longer a stale zero; counter_parity_status
+  WS_COUNTER_PARITY_PASS/FAIL; a FAIL blocks COMPLETE.
+- D. Canonical freshness_summary.execution_grade_freshness_complete stays False at 52/52;
+  top-level alias mirrors it exactly.
+- E. evidence_age_at_finalize_ms uses the price-source ts + actual finalize time + offset.
+- F. Timeout keeps the PARTIAL artifact, exit 5, explicit stale/missing/conflict.
+
+**Safety:** execution_batch_authorized=false; order/amend/cancel/live=0; no Demo order;
+no Pilot advancement; Live remains unauthorized; Pilot + Forward source byte-identical.
+
+**Tests:** 15 focused (cf_fix2) + 98 (cf core + fix1), real pytest exit 0; demo_trading
+regression 9419 passed (1 pre-existing unrelated emergency_close CLI failure; real pytest
+exit 1 solely due to it).
+
+**Revised VPS read-only commands (no API keys in step B; no send command):**
+  A. python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only > /tmp/ce_evidence_20260622.json
+  B. python scripts/collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --ce-evidence-json /tmp/ce_evidence_20260622.json --allow-real-network --require-complete --out outputs/ws_ticker_evidence_20260622.json --verify-no-credential-leak --json-only
+  C. echo "collector_exit_code=$?"
+  D. python -c "import json;a=json.load(open('outputs/ws_ticker_evidence_20260622.json'));print(a['overall_status'],a['coverage_summary']['complete_symbol_count'],a['message_audit']['ws_complete_symbol_count'],a['counter_parity_status'],a['early_completion']['collection_terminated_reason'],a['freshness_summary']['execution_grade_freshness_complete'])"
