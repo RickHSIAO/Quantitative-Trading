@@ -113,14 +113,15 @@ def _collect_real(builder: "ws.PublicWsTickerEvidenceBuilder", *, universe: dict
 
     endpoint = ws.assert_public_endpoint_allowed(ws.PUBLIC_LINEAR_WS_ENDPOINT)
     topics = [f"tickers.{s}" for s in universe["symbols"]]
-    sub_msg = ws.build_subscription_message(universe["symbols"], req_id="cf-public-ticker")
+    req_id = "cf-public-ticker"
+    sub_msg = ws.build_subscription_message(universe["symbols"], req_id=req_id)
 
     attempts = 0
     reconnects = 0
-    acknowledged = False
     generation = -1
     completion: dict[str, Any] | None = None
     finalize_epoch_ns: int | None = None
+    data_completion_at_ns: int | None = None
 
     while attempts <= max_reconnect and completion is None:
         generation += 1
@@ -138,7 +139,8 @@ def _collect_real(builder: "ws.PublicWsTickerEvidenceBuilder", *, universe: dict
         builder.record_connection_success(generation)
         try:
             conn.send(json.dumps(sub_msg))
-            builder.record_subscription_request(len(topics))
+            builder.record_subscription_request(len(topics), request_id=req_id,
+                                                generation=generation)
             conn.settimeout(1.0)
             deadline = time.monotonic() + deadline_seconds
             last_ping = time.monotonic()
@@ -170,39 +172,49 @@ def _collect_real(builder: "ws.PublicWsTickerEvidenceBuilder", *, universe: dict
                     builder.ws_malformed_message_count += 1
                     continue
                 op = str(msg.get("op", "")).strip().lower()
-                if op == "pong" or msg.get("ret_msg") == "pong" or (
-                        op == "ping"):
+                if op == "pong" or msg.get("ret_msg") == "pong" or op == "ping":
                     builder.record_pong()
                     continue
                 if op == "subscribe":
-                    if bool(msg.get("success", False)):
-                        acknowledged = True
-                        builder.record_subscription_ack()
-                    continue
-                if "topic" in msg and "data" in msg:
+                    # FIX3: validate + bind the ACK (data messages are NOT an ACK).
+                    ack_status = builder.ingest_subscription_ack(
+                        msg, connection_generation=generation,
+                        received_epoch_ns=recv_epoch_ns)
+                    if ack_status == ws.WS_SUBSCRIPTION_ACK_REJECTED:
+                        clean = False
+                        break
+                elif "topic" in msg and "data" in msg:
                     builder.ingest_data_message(
                         msg, local_received_epoch_ns=recv_epoch_ns,
                         local_monotonic_received_ns=recv_mono_ns,
                         connection_generation=generation)
-                    # FIX2: finalize EARLY once every required symbol is
-                    # simultaneously COMPLETE and fresh in this generation. Never
-                    # loosen the stale threshold; never wait for the full deadline.
-                    check_ns = time.time_ns()
-                    ev = builder.evaluate_completion(check_epoch_ns=check_ns)
-                    if ev["all_required_complete"]:
-                        finalize_epoch_ns = check_ns
-                        completion = {
-                            "early_completion_enabled": True,
-                            "completion_achieved": True,
-                            "completion_achieved_at_epoch_ns": check_ns,
-                            "completion_achieved_at_utc": _utc_from_ns(check_ns),
-                            "completion_connection_generation": ev["connection_generation"],
-                            "completion_required_symbol_count": ev["required_symbol_count"],
-                            "completion_complete_symbol_count": ev["complete_symbol_count"],
-                            "completion_trigger_message_count": builder.ws_message_count,
-                            "collection_terminated_reason": "ALL_REQUIRED_SYMBOLS_COMPLETE",
-                        }
-                        break
+
+                # FIX3: re-evaluate after EVERY processed message (ack/snapshot/delta).
+                # Full completion requires data completion AND a valid ACK; keep reading
+                # while either is missing; never loosen the stale threshold.
+                check_ns = time.time_ns()
+                ev = builder.evaluate_completion(check_epoch_ns=check_ns)
+                if ev["data_complete"] and data_completion_at_ns is None:
+                    data_completion_at_ns = check_ns
+                if ev["full_complete"]:
+                    finalize_epoch_ns = check_ns
+                    completion = {
+                        "early_completion_enabled": True,
+                        "completion_achieved": True,
+                        "completion_achieved_at_epoch_ns": check_ns,
+                        "completion_achieved_at_utc": _utc_from_ns(check_ns),
+                        "completion_connection_generation": ev["connection_generation"],
+                        "completion_required_symbol_count": ev["required_symbol_count"],
+                        "completion_complete_symbol_count": ev["complete_symbol_count"],
+                        "completion_trigger_message_count": builder.ws_message_count,
+                        "data_completion_achieved_at_epoch_ns": data_completion_at_ns,
+                        "data_completion_achieved_at_utc": (
+                            _utc_from_ns(data_completion_at_ns)
+                            if data_completion_at_ns is not None else None),
+                        "collection_terminated_reason":
+                            ws.TERMINATED_COMPLETE_AND_ACKED,
+                    }
+                    break
         finally:
             try:
                 conn.close()
@@ -213,6 +225,13 @@ def _collect_real(builder: "ws.PublicWsTickerEvidenceBuilder", *, universe: dict
             break
 
     if completion is None:
+        # Resolve the intermediate/terminal reason for the unfinished run.
+        if builder.subscription_ack_status == ws.WS_SUBSCRIPTION_ACK_REJECTED:
+            reason = ws.TERMINATED_SUBSCRIPTION_REJECTED
+        elif data_completion_at_ns is not None and not builder.subscription_acknowledged:
+            reason = ws.TERMINATED_DATA_WAITING_FOR_ACK
+        else:
+            reason = ws.TERMINATED_DEADLINE_REACHED
         completion = {
             "early_completion_enabled": True,
             "completion_achieved": False,
@@ -222,11 +241,14 @@ def _collect_real(builder: "ws.PublicWsTickerEvidenceBuilder", *, universe: dict
             "completion_required_symbol_count": universe["unique_symbol_count"],
             "completion_complete_symbol_count": None,
             "completion_trigger_message_count": None,
-            "collection_terminated_reason": "COLLECTION_DEADLINE_REACHED",
+            "data_completion_achieved_at_epoch_ns": data_completion_at_ns,
+            "data_completion_achieved_at_utc": (
+                _utc_from_ns(data_completion_at_ns)
+                if data_completion_at_ns is not None else None),
+            "collection_terminated_reason": reason,
         }
 
     return {
-        "subscription_acknowledged": acknowledged,
         "reconnect_generation_ambiguous": reconnects > 0,
         "completion_meta": completion,
         "finalize_epoch_ns": finalize_epoch_ns,
@@ -400,8 +422,7 @@ def main(argv: list[str] | None = None) -> int:
         stale_threshold_ms=args.stale_threshold_ms,
     )
 
-    collect_meta: dict[str, Any] = {"subscription_acknowledged": False,
-                                    "reconnect_generation_ambiguous": False,
+    collect_meta: dict[str, Any] = {"reconnect_generation_ambiguous": False,
                                     "completion_meta": None, "finalize_epoch_ns": None}
     if args.allow_real_network:
         if dependency_status != ws.WS_CLIENT_DEPENDENCY_AVAILABLE:
@@ -417,7 +438,6 @@ def main(argv: list[str] | None = None) -> int:
     finalize_ns = collect_meta.get("finalize_epoch_ns") or time.time_ns()
     artifact = builder.build_artifact(
         finalize_epoch_ns=finalize_ns,
-        subscription_acknowledged=collect_meta["subscription_acknowledged"],
         reconnect_generation_ambiguous=collect_meta["reconnect_generation_ambiguous"],
         collection_deadline_seconds=args.deadline_seconds,
         source_evidence=source_evidence,

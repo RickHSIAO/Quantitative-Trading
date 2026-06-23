@@ -166,6 +166,25 @@ WS_CLIENT_DEPENDENCY_INCOMPATIBLE = "WS_CLIENT_DEPENDENCY_INCOMPATIBLE"
 WS_COUNTER_PARITY_PASS = "WS_COUNTER_PARITY_PASS"
 WS_COUNTER_PARITY_FAIL = "WS_COUNTER_PARITY_FAIL"
 
+# TASK-014CF_FIX3: subscription-ACK / control-plane completion gating
+WS_SUBSCRIPTION_ACKNOWLEDGED = "WS_SUBSCRIPTION_ACKNOWLEDGED"
+WS_SUBSCRIPTION_ACK_MISSING = "WS_SUBSCRIPTION_ACK_MISSING"
+WS_SUBSCRIPTION_ACK_REJECTED = "WS_SUBSCRIPTION_ACK_REJECTED"
+WS_SUBSCRIPTION_ACK_CONFLICT = "WS_SUBSCRIPTION_ACK_CONFLICT"
+
+WS_CONTROL_PLANE_PARITY_PASS = "WS_CONTROL_PLANE_PARITY_PASS"
+WS_CONTROL_PLANE_PARITY_FAIL = "WS_CONTROL_PLANE_PARITY_FAIL"
+
+WS_SUBSCRIPTION_ACKNOWLEDGEMENT_MISSING = "WS_SUBSCRIPTION_ACKNOWLEDGEMENT_MISSING"
+
+# Collection termination reasons (FIX3)
+TERMINATED_COMPLETE_AND_ACKED = "ALL_REQUIRED_SYMBOLS_COMPLETE_AND_SUBSCRIPTION_ACKNOWLEDGED"
+TERMINATED_DATA_WAITING_FOR_ACK = "DATA_COMPLETE_WAITING_FOR_SUBSCRIPTION_ACK"
+TERMINATED_DEADLINE_REACHED = "COLLECTION_DEADLINE_REACHED"
+TERMINATED_SUBSCRIPTION_REJECTED = "SUBSCRIPTION_REJECTED"
+TERMINATED_CONNECTION_CLOSED = "CONNECTION_CLOSED"
+TERMINATED_EVIDENCE_CONFLICT = "EVIDENCE_CONFLICT"
+
 # Stable documented CLI exit codes
 EXIT_COMPLETE = 0
 EXIT_INVALID_CONFIG = 2
@@ -831,6 +850,14 @@ class PublicWsTickerEvidenceBuilder:
         # Canonical counts (set at build time; keep audit/coverage in lockstep).
         self._canonical_covered_count = 0
         self._canonical_complete_count = 0
+        # FIX3 subscription-ACK / control-plane state.
+        self.subscription_ack_status = WS_SUBSCRIPTION_ACK_MISSING
+        self.subscription_ack_received_at_epoch_ns: int | None = None
+        self.subscription_ack_request_id: str | None = None
+        self.subscription_ack_connection_generation: int | None = None
+        self.subscription_expected_request_id: str | None = None
+        self.subscription_expected_topic_count: int | None = None
+        self.subscription_request_generation: int | None = None
 
     # -- transport / lifecycle bookkeeping ---------------------------------
 
@@ -844,18 +871,96 @@ class PublicWsTickerEvidenceBuilder:
     def record_reconnect(self) -> None:
         self.ws_reconnect_count += 1
 
-    def record_subscription_request(self, topic_count: int) -> None:
+    def record_subscription_request(self, topic_count: int, *,
+                                    request_id: str | None = None,
+                                    generation: int | None = None) -> None:
         self.ws_subscription_request_count += 1
         self.ws_subscription_topic_count = int(topic_count)
+        self.subscription_expected_topic_count = int(topic_count)
+        self.subscription_expected_request_id = (
+            str(request_id) if request_id is not None else None)
+        self.subscription_request_generation = (
+            int(generation) if generation is not None else None)
 
-    def record_subscription_ack(self) -> None:
-        self.ws_subscription_ack_count += 1
+    def record_subscription_ack(self, *, request_id: str | None = None,
+                                connection_generation: int = 0,
+                                received_epoch_ns: int | None = None) -> None:
+        """Record a VALID subscription acknowledgement (test/collector helper).
+
+        Sets the canonical ACK status to WS_SUBSCRIPTION_ACKNOWLEDGED; only the
+        FIRST valid ack increments the audit count.
+        """
+        if self.subscription_ack_status != WS_SUBSCRIPTION_ACKNOWLEDGED:
+            self.ws_subscription_ack_count += 1
+        self.subscription_ack_status = WS_SUBSCRIPTION_ACKNOWLEDGED
+        self.subscription_ack_received_at_epoch_ns = received_epoch_ns
+        self.subscription_ack_request_id = (
+            str(request_id) if request_id is not None else self.subscription_expected_request_id)
+        self.subscription_ack_connection_generation = int(connection_generation)
+
+    def ingest_subscription_ack(
+        self,
+        message: Mapping[str, Any],
+        *,
+        connection_generation: int,
+        received_epoch_ns: int,
+    ) -> str:
+        """Validate and bind a subscription acknowledgement message.
+
+        A successful ACK must be op=subscribe, success=true, match the exact
+        request id (when used) and connection generation, carry no auth/private
+        fields, and not change the expected topic count. Returns the ACK status.
+        """
+        # No credential / auth field may ride on a control-plane message.
+        assert_no_credentials(message)
+        op = str(message.get("op", "")).strip().lower()
+        if op != "subscribe":
+            return self.subscription_ack_status  # not an ack for our request
+        success = bool(message.get("success", False))
+        req_id = message.get("req_id")
+        req_id = None if req_id is None else str(req_id)
+
+        if not success:
+            self.subscription_ack_status = WS_SUBSCRIPTION_ACK_REJECTED
+            self.subscription_ack_received_at_epoch_ns = int(received_epoch_ns)
+            self.subscription_ack_connection_generation = int(connection_generation)
+            self.subscription_ack_request_id = req_id
+            return self.subscription_ack_status
+
+        # request-id binding (only when a request id is in use)
+        if (self.subscription_expected_request_id is not None
+                and req_id is not None
+                and req_id != self.subscription_expected_request_id):
+            self.subscription_ack_status = WS_SUBSCRIPTION_ACK_CONFLICT
+            self.subscription_ack_received_at_epoch_ns = int(received_epoch_ns)
+            self.subscription_ack_request_id = req_id
+            self.subscription_ack_connection_generation = int(connection_generation)
+            return self.subscription_ack_status
+
+        # connection-generation binding: the ack must belong to the SAME generation
+        # in which the subscription request was issued.
+        if (self.subscription_request_generation is not None
+                and int(connection_generation) != self.subscription_request_generation):
+            self.subscription_ack_status = WS_SUBSCRIPTION_ACK_CONFLICT
+            self.subscription_ack_received_at_epoch_ns = int(received_epoch_ns)
+            self.subscription_ack_request_id = req_id
+            self.subscription_ack_connection_generation = int(connection_generation)
+            return self.subscription_ack_status
+
+        self.record_subscription_ack(
+            request_id=req_id, connection_generation=connection_generation,
+            received_epoch_ns=received_epoch_ns)
+        return self.subscription_ack_status
 
     def record_ping(self) -> None:
         self.ws_ping_count += 1
 
     def record_pong(self) -> None:
         self.ws_pong_count += 1
+
+    @property
+    def subscription_acknowledged(self) -> bool:
+        return self.subscription_ack_status == WS_SUBSCRIPTION_ACKNOWLEDGED
 
     # -- message ingestion --------------------------------------------------
 
@@ -1080,13 +1185,21 @@ class PublicWsTickerEvidenceBuilder:
             else:
                 all_complete = False
         single_generation = len(gens) <= 1
+        data_complete = bool(all_complete and complete == len(required)
+                             and single_generation and len(required) > 0)
+        acked = self.subscription_acknowledged
         return {
-            "all_required_complete": bool(all_complete and complete == len(required)
-                                          and single_generation and len(required) > 0),
+            # data-only completion (FIX2 semantics, preserved).
+            "all_required_complete": data_complete,
+            "data_complete": data_complete,
             "complete_symbol_count": complete,
             "required_symbol_count": len(required),
             "connection_generation": (sorted(gens)[0] if len(gens) == 1 else None),
             "single_generation": single_generation,
+            # FIX3: full completion requires data completion AND a valid ACK.
+            "subscription_acknowledged": acked,
+            "subscription_ack_status": self.subscription_ack_status,
+            "full_complete": bool(data_complete and acked),
         }
 
     def build_per_symbol_evidence(self, *, finalize_epoch_ns: int) -> list[dict[str, Any]]:
@@ -1202,7 +1315,7 @@ class PublicWsTickerEvidenceBuilder:
         *,
         finalize_epoch_ns: int,
         endpoint: str = PUBLIC_LINEAR_WS_ENDPOINT,
-        subscription_acknowledged: bool = False,
+        subscription_acknowledged: bool | None = None,
         reconnect_generation_ambiguous: bool = False,
         collection_deadline_seconds: float | None = None,
         source_evidence: Mapping[str, Any] | None = None,
@@ -1213,6 +1326,14 @@ class PublicWsTickerEvidenceBuilder:
         allow_real_network: bool = False,
         completion_meta: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
+        # Backward-compatible convenience: an explicit subscription_acknowledged=True
+        # establishes a valid ACK state (so control-plane parity holds) when the
+        # builder has not already ingested one. The canonical truth is builder state.
+        if (subscription_acknowledged is True
+                and self.subscription_ack_status == WS_SUBSCRIPTION_ACK_MISSING):
+            self.record_subscription_ack(
+                connection_generation=next(iter(sorted(self._generations)), 0),
+                received_epoch_ns=finalize_epoch_ns)
         per_symbol = self.build_per_symbol_evidence(finalize_epoch_ns=finalize_epoch_ns)
 
         statuses = [row["evidence_status"] for row in per_symbol]
@@ -1249,20 +1370,45 @@ class PublicWsTickerEvidenceBuilder:
         counter_parity_status = (WS_COUNTER_PARITY_PASS if parity_ok
                                  else WS_COUNTER_PARITY_FAIL)
 
+        # FIX3: canonical control-plane (subscription-ACK) gating.
+        ack = self.subscription_acknowledged
+        ack_rejected = self.subscription_ack_status == WS_SUBSCRIPTION_ACK_REJECTED
+        ack_conflict = self.subscription_ack_status == WS_SUBSCRIPTION_ACK_CONFLICT
+        # Control-plane parity: the acknowledged flag MUST match the audit count.
+        control_plane_parity_ok = (ack == (audit["ws_subscription_ack_count"] > 0))
+        control_plane_parity_status = (WS_CONTROL_PLANE_PARITY_PASS if control_plane_parity_ok
+                                       else WS_CONTROL_PLANE_PARITY_FAIL)
+
+        # Universe provenance only gates COMPLETE when it is actually supplied
+        # (the real collector always supplies it; pure unit builders may not).
+        legacy_src = (None if legacy_position_provenance is None
+                      else legacy_position_provenance.get("symbol_universe_source_status"))
+        universe_ok = legacy_src in (None, SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE)
+        clock_ok = self.clock_offset_provenance_status == CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE
+
+        data_complete = (complete_n == required and required > 0
+                         and len(self._generations) <= 1)
+
         conflict = any(
             s in (WS_SYMBOL_TOPIC_MISMATCH, WS_CONNECTION_GENERATION_CONFLICT,
                   WS_PRICE_FIELD_SEMANTICS_MISMATCH)
             for s in statuses) or reconnect_generation_ambiguous
 
-        if conflict:
+        # A rejected/conflicting ACK is a hard control-plane conflict.
+        if conflict or ack_rejected or ack_conflict:
             overall = WS_TICKER_EVIDENCE_CONFLICT
-        elif (complete_n == required and required > 0 and len(self._generations) <= 1
-              and parity_ok):
+        elif (data_complete and ack and parity_ok and control_plane_parity_ok
+              and clock_ok and universe_ok):
             overall = WS_TICKER_EVIDENCE_COMPLETE
         elif covered_n == 0:
             overall = WS_TICKER_EVIDENCE_UNAVAILABLE
         else:
             overall = WS_TICKER_EVIDENCE_PARTIAL
+
+        # Canonical full completion = data complete AND ACK AND parity AND provenance.
+        completion_achieved = bool(
+            data_complete and ack and parity_ok and control_plane_parity_ok
+            and clock_ok and universe_ok and not conflict)
 
         # This task NEVER promotes execution readiness. The canonical freshness
         # field lives at freshness_summary.execution_grade_freshness_complete and
@@ -1284,8 +1430,12 @@ class PublicWsTickerEvidenceBuilder:
             PRICE_FRESHNESS_EVIDENCE_PARTIAL,
             PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE,
             WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS,
-            EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK,
         ]
+        # FIX3: an explicit ACK-missing blocker when data is covered but the
+        # subscription was never acknowledged (e.g. 52/52 data but no ACK).
+        if not ack and covered_n > 0:
+            blockers.append(WS_SUBSCRIPTION_ACKNOWLEDGEMENT_MISSING)
+        blockers.append(EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK)
 
         connection_summary = {
             "endpoint": assert_public_endpoint_allowed(endpoint),
@@ -1304,13 +1454,20 @@ class PublicWsTickerEvidenceBuilder:
             "subscription_request_count": audit["ws_subscription_request_count"],
             "subscription_topic_count": audit["ws_subscription_topic_count"],
             "subscription_ack_count": audit["ws_subscription_ack_count"],
-            "subscription_acknowledged": bool(subscription_acknowledged),
+            "subscription_acknowledged": ack,
+            "subscription_ack_status": self.subscription_ack_status,
+            "subscription_ack_received_at_epoch_ns": (
+                self.subscription_ack_received_at_epoch_ns),
+            "subscription_ack_received_at_utc": (
+                _iso_from_epoch_ns(self.subscription_ack_received_at_epoch_ns)
+                if self.subscription_ack_received_at_epoch_ns is not None else None),
+            "subscription_ack_request_id": self.subscription_ack_request_id,
+            "subscription_ack_connection_generation": (
+                self.subscription_ack_connection_generation),
         }
 
         # TASK-014CF_FIX1: deterministic completion gate + exit code/reason.
-        legacy_source_status = (None if legacy_position_provenance is None
-                                else legacy_position_provenance.get(
-                                    "symbol_universe_source_status"))
+        legacy_source_status = legacy_src
         completion_gate = compute_completion_gate(
             overall_status=overall,
             required_count=required,
@@ -1318,13 +1475,62 @@ class PublicWsTickerEvidenceBuilder:
             complete_count=complete_n,
             unique_count=self.universe["unique_symbol_count"],
             requested_count=self.universe["requested_symbol_count"],
-            subscription_acknowledged=bool(subscription_acknowledged),
+            subscription_acknowledged=ack,
             clock_offset_provenance_status=self.clock_offset_provenance_status,
             legacy_source_status=legacy_source_status,
             dependency_status=dependency_status,
             require_complete=require_complete,
             allow_real_network=allow_real_network,
         )
+
+        # FIX3: canonical data-completion / full-completion / termination blocks.
+        cm = dict(completion_meta) if completion_meta is not None else {}
+        data_completion = {
+            "data_completion_achieved": data_complete,
+            "data_completion_achieved_at_epoch_ns": cm.get(
+                "data_completion_achieved_at_epoch_ns"),
+            "data_completion_achieved_at_utc": cm.get("data_completion_achieved_at_utc"),
+            "data_completion_required_symbol_count": required,
+            "data_completion_complete_symbol_count": complete_n,
+        }
+        subscription_ack_block = {
+            "subscription_acknowledged": ack,
+            "subscription_ack_status": self.subscription_ack_status,
+            "subscription_ack_received_at_epoch_ns": (
+                self.subscription_ack_received_at_epoch_ns),
+            "subscription_ack_received_at_utc": (
+                _iso_from_epoch_ns(self.subscription_ack_received_at_epoch_ns)
+                if self.subscription_ack_received_at_epoch_ns is not None else None),
+            "subscription_ack_request_id": self.subscription_ack_request_id,
+            "subscription_ack_connection_generation": (
+                self.subscription_ack_connection_generation),
+            "ws_subscription_ack_count": audit["ws_subscription_ack_count"],
+        }
+        # Resolve the canonical termination reason.
+        if completion_achieved:
+            terminated_reason = TERMINATED_COMPLETE_AND_ACKED
+        elif ack_rejected:
+            terminated_reason = TERMINATED_SUBSCRIPTION_REJECTED
+        elif conflict or ack_conflict:
+            terminated_reason = TERMINATED_EVIDENCE_CONFLICT
+        elif data_complete and not ack:
+            terminated_reason = TERMINATED_DATA_WAITING_FOR_ACK
+        else:
+            terminated_reason = str(cm.get("collection_terminated_reason")
+                                    or TERMINATED_DEADLINE_REACHED)
+        early_completion = {
+            "early_completion_enabled": True,
+            "completion_achieved": completion_achieved,
+            "completion_achieved_at_epoch_ns": (
+                cm.get("completion_achieved_at_epoch_ns") if completion_achieved else None),
+            "completion_achieved_at_utc": (
+                cm.get("completion_achieved_at_utc") if completion_achieved else None),
+            "completion_connection_generation": cm.get("completion_connection_generation"),
+            "completion_required_symbol_count": required,
+            "completion_complete_symbol_count": complete_n,
+            "completion_trigger_message_count": cm.get("completion_trigger_message_count"),
+            "collection_terminated_reason": terminated_reason,
+        }
 
         artifact: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
@@ -1364,18 +1570,12 @@ class PublicWsTickerEvidenceBuilder:
             "blockers": blockers,
             # FIX2 canonical counter parity (a FAIL prevents COMPLETE above).
             "counter_parity_status": counter_parity_status,
-            # FIX2 early-completion finalization metadata.
-            "early_completion": dict(completion_meta) if completion_meta is not None else {
-                "early_completion_enabled": True,
-                "completion_achieved": False,
-                "completion_achieved_at_epoch_ns": None,
-                "completion_achieved_at_utc": None,
-                "completion_connection_generation": None,
-                "completion_required_symbol_count": required,
-                "completion_complete_symbol_count": complete_n,
-                "completion_trigger_message_count": None,
-                "collection_terminated_reason": "COLLECTION_DEADLINE_REACHED",
-            },
+            # FIX3 canonical control-plane (subscription-ACK) parity.
+            "control_plane_parity_status": control_plane_parity_status,
+            # FIX3 split data-completion vs full-completion vs ACK.
+            "data_completion": data_completion,
+            "subscription_ack": subscription_ack_block,
+            "early_completion": early_completion,
             "completion_gate": completion_gate,
             "cli_exit_status": completion_gate["cli_exit_status"],
             "cli_exit_reason": completion_gate["cli_exit_reason"],
@@ -1421,4 +1621,12 @@ __all__ = [
     "check_ws_client_dependency", "extract_clock_offset_provenance",
     "extract_legacy_position_provenance", "compute_completion_gate",
     "WS_COUNTER_PARITY_PASS", "WS_COUNTER_PARITY_FAIL",
+    # TASK-014CF_FIX3 subscription-ACK / control-plane gating
+    "WS_SUBSCRIPTION_ACKNOWLEDGED", "WS_SUBSCRIPTION_ACK_MISSING",
+    "WS_SUBSCRIPTION_ACK_REJECTED", "WS_SUBSCRIPTION_ACK_CONFLICT",
+    "WS_CONTROL_PLANE_PARITY_PASS", "WS_CONTROL_PLANE_PARITY_FAIL",
+    "WS_SUBSCRIPTION_ACKNOWLEDGEMENT_MISSING",
+    "TERMINATED_COMPLETE_AND_ACKED", "TERMINATED_DATA_WAITING_FOR_ACK",
+    "TERMINATED_DEADLINE_REACHED", "TERMINATED_SUBSCRIPTION_REJECTED",
+    "TERMINATED_CONNECTION_CLOSED", "TERMINATED_EVIDENCE_CONFLICT",
 ]

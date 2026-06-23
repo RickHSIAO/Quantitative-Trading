@@ -1,5 +1,50 @@
 # Next Action
 
+> **TASK-014CF_FIX3_ACK_GATED_EARLY_COMPLETION_AND_CANONICAL_STATUS** (2026-06-24, Opus 4.8)
+>
+> **`TASK-014CF_FIX2 DATA PLANE VERIFIED AT 52 OF 52 / EARLY DATA COMPLETION WORKS / FIX3 REQUIRES SUCCESSFUL SUBSCRIPTION ACK BEFORE FULL COMPLETION / DATA MESSAGES ARE NOT IMPLICIT ACK / LATE ACK IS ACCEPTED ONLY WHILE ALL REQUIRED PRICE EVIDENCE REMAINS FRESH / CANONICAL OVERALL COMPLETE REQUIRES DATA PLUS ACK PLUS PARITY / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING PLANNER INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> New FIX3 commit on top of 13e3098 fixing a VPS-discovered control-plane race:
+> the collector terminated on 52/52 data completion BEFORE consuming the
+> subscription ACK, yielding overall=COMPLETE + completion_achieved=true while
+> subscription_acknowledged=false (the require-complete gate still failed closed
+> with exit 4). No planner integration; REST prices unchanged; blockers retained.
+>
+> - A. ACK-gated completion: full completion now requires BOTH all required
+>   same-generation evidence simultaneously fresh+complete AND a valid subscription
+>   ACK. The collector keeps reading after 52/52 data until the ACK arrives, and
+>   re-evaluates after every message (ack/snapshot/delta), handling both orderings.
+> - B. Split schema: data_completion_* vs subscription_ack (status ∈
+>   WS_SUBSCRIPTION_ACKNOWLEDGED/_MISSING/_REJECTED/_CONFLICT); completion_achieved =
+>   data_complete AND ack AND parity/provenance (no longer data-only).
+> - C. Termination reasons: ALL_REQUIRED_SYMBOLS_COMPLETE_AND_SUBSCRIPTION_ACKNOWLEDGED
+>   (success) / DATA_COMPLETE_WAITING_FOR_SUBSCRIPTION_ACK (intermediate) /
+>   COLLECTION_DEADLINE_REACHED / SUBSCRIPTION_REJECTED / CONNECTION_CLOSED /
+>   EVIDENCE_CONFLICT.
+> - D. Canonical overall COMPLETE requires data + ACK + counter parity + control-plane
+>   parity + authoritative clock + authoritative universe + no conflict. 52/52 with no
+>   ACK at deadline -> PARTIAL, exit 4 (subscription_not_acknowledged), 52/52 coverage
+>   preserved, completion_achieved=false, blocker WS_SUBSCRIPTION_ACKNOWLEDGEMENT_MISSING.
+>   Rejected ACK -> CONFLICT, never COMPLETE, auditable artifact retained.
+> - E. ACK binding: op=subscribe + success=true + request-id match + generation match +
+>   no auth/private fields + topic count 52; data messages are never an implicit ACK.
+> - F. Late ACK accepted only while all 52 remain fresh; age uses the actual
+>   full-completion time; the stale threshold is never loosened.
+> - G. control_plane_parity_status=WS_CONTROL_PLANE_PARITY_PASS/FAIL; ack==(count>0);
+>   COMPLETE implies completion_achieved + ack + exit 0; a FAIL blocks COMPLETE.
+> - H. FIX2 behavior preserved (immutable source provenance, counter parity, freshness
+>   alias, REST/WS counter separation, timeout retention, authoritative provenance).
+> - execution_batch_authorized=false; order/amend/cancel/live=0; no Demo order; no Live;
+>   no auth marker; Pilot + Forward source byte-identical.
+> - Tests: 14 focused (cf_fix3) + 113 (cf core + fix1 + fix2), real pytest exit 0;
+>   demo_trading regression 9433 passed (1 pre-existing unrelated emergency_close CLI
+>   failure; real pytest exit 1 solely due to it).
+>
+> Next milestone: same-message integration binding each planner action price to the exact
+> WebSocket message; then human-authorization + staged Demo batch execution protocol.
+
+---
+
 > **TASK-014CF_FIX2_EARLY_COMPLETE_FINALIZATION_AND_CANONICAL_EVIDENCE_PARITY** (2026-06-24, Opus 4.8)
 >
 > **`TASK-014CF/FIX1 VPS TRANSPORT AND AUTHORITATIVE PROVENANCE VERIFIED / ALL 52 SYMBOLS COVERED AND ALL 52 SNAPSHOTS RECEIVED / FIX2 FINALIZES IMMEDIATELY WHEN ALL REQUIRED SAME-GENERATION PRICE-TIMESTAMP EVIDENCE IS FRESH / SELECTED PRICE SOURCE MESSAGE PROVENANCE IS IMMUTABLE / COVERAGE AND MESSAGE-AUDIT COUNTERS ARE CANONICAL AND IDENTICAL / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING PLANNER INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

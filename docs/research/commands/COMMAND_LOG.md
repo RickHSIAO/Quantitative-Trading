@@ -10729,3 +10729,61 @@ exit 1 solely due to it).
   B. python scripts/collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --ce-evidence-json /tmp/ce_evidence_20260622.json --allow-real-network --require-complete --out outputs/ws_ticker_evidence_20260622.json --verify-no-credential-leak --json-only
   C. echo "collector_exit_code=$?"
   D. python -c "import json;a=json.load(open('outputs/ws_ticker_evidence_20260622.json'));print(a['overall_status'],a['coverage_summary']['complete_symbol_count'],a['message_audit']['ws_complete_symbol_count'],a['counter_parity_status'],a['early_completion']['collection_terminated_reason'],a['freshness_summary']['execution_grade_freshness_complete'])"
+
+---
+
+### TASK-014CF_FIX3_ACK_GATED_EARLY_COMPLETION_AND_CANONICAL_STATUS (2026-06-24, Opus 4.8)
+
+New FIX3 commit on top of 13e3098 fixing a VPS-discovered control-plane race:
+the collector terminated on 52/52 data completion BEFORE consuming the
+subscription ACK. No planner integration; REST prices unchanged; blockers retained.
+
+**Real VPS finding (recorded):**
+- clock provenance and legacy universe both AUTHORITATIVE; 52/52 covered;
+- 52 snapshots + 83 deltas (135 messages); malformed=0; out-of-order=0;
+- counter parity PASS; immutable source provenance passed for all 52;
+- early DATA completion achieved at message 135;
+- collector stopped before consuming the subscription ACK:
+  subscription_acknowledged=false, ws_subscription_ack_count=0, yet artifact showed
+  overall=COMPLETE / completion_achieved=true; require-complete correctly returned
+  cli_exit_reason=subscription_not_acknowledged / cli_exit_status=4.
+
+**Changed files:**
+- src/demo_public_ws_ticker_evidence.py (ACK ingest/binding, control-plane parity,
+  data-vs-full completion split, ACK-gated overall status + completion_achieved)
+- scripts/collect_public_ws_ticker_evidence.py (ACK-gated termination loop)
+- tests/demo_trading/test_demo_public_ws_ticker_evidence_cf_fix2.py (terminated reason)
+- tests/demo_trading/test_demo_public_ws_ticker_evidence_cf_fix3.py (14 focused tests)
+
+**Fixes:**
+- A. Full completion requires data completion AND a valid subscription ACK; the
+  collector keeps reading after 52/52 until ACK, re-evaluating after every message;
+  handles ACK-first and data-first orderings; terminates immediately when both hold.
+- B. Split data_completion_* from subscription_ack (status MISSING/ACK/REJECTED/CONFLICT);
+  completion_achieved = data_complete AND ack AND parity/provenance.
+- C. Termination reasons include ALL_REQUIRED_SYMBOLS_COMPLETE_AND_SUBSCRIPTION_ACKNOWLEDGED
+  (success) and DATA_COMPLETE_WAITING_FOR_SUBSCRIPTION_ACK (intermediate only).
+- D. Canonical overall COMPLETE requires data + ACK + counter parity + control-plane
+  parity + authoritative clock + authoritative universe + no conflict. 52/52 without
+  ACK -> PARTIAL, exit 4, blocker WS_SUBSCRIPTION_ACKNOWLEDGEMENT_MISSING. Rejected ACK
+  -> CONFLICT, never COMPLETE.
+- E. ACK binding (op/success/req-id/generation/no-auth/topic-count); data messages are
+  never an implicit ACK.
+- F. Late ACK accepted only while all 52 remain fresh; age uses the actual
+  full-completion time; stale threshold never loosened.
+- G. control_plane_parity_status=WS_CONTROL_PLANE_PARITY_PASS/FAIL; ack==(count>0);
+  COMPLETE implies completion_achieved + ack + exit 0; a FAIL blocks COMPLETE.
+- H. FIX2 immutable source / freshness / parity / safety behavior preserved.
+
+**Safety:** execution_batch_authorized=false; order/amend/cancel/live=0; no Demo order;
+no Pilot advancement; Live remains unauthorized; Pilot + Forward source byte-identical.
+
+**Tests:** 14 focused (cf_fix3) + 113 (cf core + fix1 + fix2), real pytest exit 0;
+demo_trading regression 9433 passed (1 pre-existing unrelated emergency_close CLI
+failure; real pytest exit 1 solely due to it).
+
+**Revised VPS read-only commands (no API keys in step B; no send command):**
+  A. python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only > /tmp/ce_evidence_20260622.json
+  B. python scripts/collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --ce-evidence-json /tmp/ce_evidence_20260622.json --allow-real-network --require-complete --out outputs/ws_ticker_evidence_20260622.json --verify-no-credential-leak --json-only
+  C. echo "collector_exit_code=$?"
+  D. python -c "import json;a=json.load(open('outputs/ws_ticker_evidence_20260622.json'));print(a['overall_status'],a['early_completion']['completion_achieved'],a['subscription_ack']['subscription_acknowledged'],a['message_audit']['ws_subscription_ack_count'],a['control_plane_parity_status'],a['early_completion']['collection_terminated_reason'],a['cli_exit_status'])"

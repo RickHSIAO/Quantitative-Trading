@@ -333,7 +333,9 @@ def test_early_completion_metadata_block_present():
                            completion_meta=meta)
     ec = art["early_completion"]
     assert ec["completion_achieved"] is True
-    assert ec["collection_terminated_reason"] == "ALL_REQUIRED_SYMBOLS_COMPLETE"
+    # FIX3: the canonical successful reason now includes subscription ACK.
+    assert ec["collection_terminated_reason"] == \
+        "ALL_REQUIRED_SYMBOLS_COMPLETE_AND_SUBSCRIPTION_ACKNOWLEDGED"
     assert ec["completion_complete_symbol_count"] == 52
     assert art["counter_parity_status"] == ws.WS_COUNTER_PARITY_PASS
     assert art["overall_status"] == ws.WS_TICKER_EVIDENCE_COMPLETE
