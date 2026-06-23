@@ -569,3 +569,185 @@ def test_policy_source_inventory_includes_canonical_sources():
     osh_s = [s for s in inv if "one_shot_authorized_execution_orchestrator" in s["source"]][0]
     assert ceg["cap_escalation_authorized"] is False
     assert osh_s["real_order_authorized"] is False
+
+
+# ===========================================================================
+# TASK-014CB_FIX2 -- audit schema: candidate counts, dispatcher call counts,
+# decimal output canonicalization, authorization-marker redaction.
+# ===========================================================================
+
+import re as _re  # noqa: E402
+
+_REAL_ORDER_MARKER_VALUE = osh.EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER
+_CAP_MARKER_VALUE = ce.EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER
+_ARTIFACT_RE = _re.compile(r"\d\.\d*(?:000000000000|999999999999)\d*")
+
+
+def _iter_strings(obj):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from _iter_strings(k)
+            yield from _iter_strings(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from _iter_strings(v)
+    else:
+        yield str(obj)
+
+
+def _has_float_artifact_anywhere(obj) -> bool:
+    return any(_ARTIFACT_RE.search(s) for s in _iter_strings(obj))
+
+
+def _50_plan_with_sol_and_protected():
+    plan, prov = _50_action_plan(positions=_protected_positions(), include_sol=True)
+    return plan, prov
+
+
+# --- corrected candidate-count semantics -----------------------------------
+
+
+def test_candidate_counts_explicit_for_vps_scenario():
+    plan, prov = _50_plan_with_sol_and_protected()
+    res = gate.evaluate_execution_gate(
+        plan=plan, open_positions=_protected_positions(), pilot_id=PILOT, date=DATE,
+        forward_fingerprint="fp", rule_provider=prov)
+    d = res.to_dict()
+    assert d["raw_planned_action_count"] == 50
+    assert d["canonical_adapter_supported_candidate_count"] == 1
+    assert d["rule_valid_supported_candidate_count"] == 1
+    assert d["policy_eligible_candidate_count"] == 0
+    assert d["selected_review_candidate_count"] == 1
+    assert d["execution_candidate_eligible"] is False
+
+
+def test_legacy_eligible_count_is_not_raw_count():
+    plan, prov = _50_plan_with_sol_and_protected()
+    res = gate.evaluate_execution_gate(
+        plan=plan, open_positions=_protected_positions(), pilot_id=PILOT, date=DATE,
+        forward_fingerprint="fp", rule_provider=prov)
+    d = res.to_dict()
+    assert d["eligible_execution_candidate_count"] != 50
+    assert d["eligible_execution_candidate_count"] == d["policy_eligible_candidate_count"]
+    assert "POLICY_ELIGIBLE_COUNT" in d["eligible_execution_candidate_count_semantics"]
+
+
+def test_sol_is_only_canonical_supported_action():
+    plan, prov = _50_action_plan(include_sol=True)
+    res = gate.evaluate_execution_gate(
+        plan=plan, open_positions=[], pilot_id=PILOT, date=DATE,
+        forward_fingerprint="fp", rule_provider=prov)
+    assert res.canonical_adapter_supported_candidate_count == 1
+    assert res.requested_symbol == "SOLUSDT"
+
+
+# --- explicit dispatcher call-count fields ---------------------------------
+
+
+def test_dispatcher_call_count_fields_present(tmp_path, fwd_root):
+    out_root = running_pilot(tmp_path, fwd_root)
+    plan, prov = _50_action_plan(include_sol=True)
+    out = daily_cli.orchestrate_gated_send(
+        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=None,
+        output_root=out_root, plan=plan)
+    assert out["execute_daily_native_called"] is False
+    assert out["execute_daily_native_call_count"] == 0
+    assert out["transport_sender_call_count"] == 0
+    assert out["order_post_count"] == 0
+    assert out["amend_post_count"] == 0
+    assert out["cancel_post_count"] == 0
+    assert out["live_endpoint_called"] is False
+
+
+# --- decimal output canonicalization ---------------------------------------
+
+
+def test_target_positions_no_float_artifact():
+    # ONEINCHUSDT @ 0.07287 with step 0.1 would yield 2744.6000000000004 naively.
+    prov = FakeProvider(symbols=["ONEINCHUSDT"], prices={"ONEINCHUSDT": 0.07287},
+                        steps={"ONEINCHUSDT": 0.1})
+    plan = ap.plan_strategy_native_actions(
+        forward_result=FakeForward([{"symbol": "ONEINCHUSDT", "side": "long",
+                                     "weight": 0.02, "score": 0.02}]), provider=prov)
+    d = plan.to_dict()
+    assert not _has_float_artifact_anywhere(d["target_positions"])
+    assert not _has_float_artifact_anywhere(d["actions"])
+    tp = d["target_positions"][0]
+    assert tp["qty"] == "2744.6"
+    assert isinstance(tp["qty"], str) and isinstance(tp["target_notional"], str)
+    assert tp["target_weight"] == "0.02"
+
+
+def test_full_plan_only_json_has_no_float_artifacts():
+    plan, prov = _50_action_plan(include_sol=True,
+                                 positions=_protected_positions())
+    res = gate.evaluate_execution_gate(
+        plan=plan, open_positions=_protected_positions(), pilot_id=PILOT, date=DATE,
+        forward_fingerprint="fp", rule_provider=prov)
+    payload = {"planner": plan.to_dict(), "execution_gate": res.to_dict()}
+    assert not _has_float_artifact_anywhere(payload)
+
+
+def test_rule_evidence_quantities_canonical():
+    plan, prov = _sol_plan(sol_step=0.1)
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    ev = res.rule_evidence
+    assert not _has_float_artifact_anywhere(ev)
+    assert ev["qty_step"] == "0.1"
+
+
+def test_action_quantities_remain_canonical_strings():
+    plan, prov = _50_action_plan(include_sol=True)
+    for a in plan.to_dict()["actions"]:
+        assert isinstance(a["qty"], str)
+        assert not gate.has_float_artifact(a["qty"])
+
+
+# --- authorization-marker redaction ----------------------------------------
+
+
+def test_marker_names_present_values_absent_in_gate():
+    plan, prov = _sol_plan()
+    res = gate.evaluate_execution_gate(plan=plan, open_positions=[], pilot_id=PILOT,
+                                       date=DATE, forward_fingerprint="fp", rule_provider=prov)
+    text = json.dumps(res.to_dict())
+    assert "EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER" in text
+    assert "EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER" in text
+    assert _REAL_ORDER_MARKER_VALUE not in text
+    assert _CAP_MARKER_VALUE not in text
+
+
+def test_no_marker_value_in_full_plan_only_payload(tmp_path, fwd_root):
+    out_root = running_pilot(tmp_path, fwd_root)
+    plan, prov = _50_action_plan(include_sol=True)
+    out = daily_cli.orchestrate_gated_send(
+        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=None,
+        output_root=out_root, plan=plan)
+    text = json.dumps(out)
+    assert _REAL_ORDER_MARKER_VALUE not in text
+    assert _CAP_MARKER_VALUE not in text
+    # marker NAMES still present for audit.
+    assert "EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER" in text
+
+
+def test_policy_sources_redact_marker_values():
+    inv = gate.policy_source_inventory()
+    text = json.dumps(inv)
+    assert _REAL_ORDER_MARKER_VALUE not in text
+    assert _CAP_MARKER_VALUE not in text
+    ceg = [s for s in inv if "cap_escalation_gate" in s["source"]][0]
+    assert ceg["cap_escalation_authorization_marker_name"] == "EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER"
+    assert "cap_escalation_marker" not in ceg  # the old VALUE key is gone
+
+
+def test_no_api_secret_in_full_payload(tmp_path, fwd_root):
+    out_root = running_pilot(tmp_path, fwd_root)
+    plan, prov = _50_action_plan(include_sol=True)
+    out = daily_cli.orchestrate_gated_send(
+        pilot_id=PILOT, date=DATE, forward_result=None, provider=prov, transport=None,
+        output_root=out_root, plan=plan)
+    text = json.dumps(out).lower()
+    for sensitive in ("demokey", "demosecret", "bybit_demo_api_key", "bybit_demo_api_secret",
+                      "x-bapi-sign"):
+        assert sensitive not in text

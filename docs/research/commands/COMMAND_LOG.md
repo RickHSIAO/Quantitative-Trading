@@ -9890,3 +9890,69 @@ Files changed (committed):
   MOD  README.md                                           (TASK-014CB_FIX shared status)
   MOD  docs/research/commands/NEXT_ACTION.md               (TASK-014CB_FIX block)
   MOD  docs/research/commands/COMMAND_LOG.md               (this entry)
+
+---
+
+### TASK-014CB_FIX2_AUDIT_SCHEMA_MARKER_REDACTION_AND_DECIMAL_OUTPUT
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning high)
+- **Parent commit:** 092c1a7
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Narrow audit-schema corrections only. The TASK-014CB_FIX core safety architecture
+  is accepted and unchanged: native send does not dispatch, real execution is
+  delegated to the canonical one-shot adapter, SOLUSDT-only allowlist, protected
+  positions block, instrument-rule provenance, fixed 10000-USDT V1 sizing, full
+  50-action planning output, zero order/amend/cancel/live calls.
+
+  (1) Candidate-count semantics corrected. The ambiguous
+  eligible_execution_candidate_count=50 is replaced with explicit fields:
+  raw_planned_action_count (50), canonical_adapter_supported_candidate_count (1),
+  rule_valid_supported_candidate_count (1), policy_eligible_candidate_count (0),
+  selected_review_candidate_count (1), execution_candidate_eligible (false). The
+  legacy field is retained but REDEFINED as the policy-eligible count (0) and marked
+  with eligible_execution_candidate_count_semantics=POLICY_ELIGIBLE_COUNT.
+
+  (2) Explicit dispatcher call-count fields added to both Plan-only and blocked
+  native-send outputs: execute_daily_native_called=false,
+  execute_daily_native_call_count=0, transport_sender_call_count=0. These come from
+  the non-dispatching architecture, not post-attempt inference. order/amend/cancel
+  POST=0, live=false retained.
+
+  (3) Decimal JSON output canonicalized. planner.to_dict() now emits target_positions
+  and current_positions as canonical Decimal STRINGS for qty/qty_step/price/
+  target_notional/target_weight (with *_decimal aliases); summed exposures are
+  rounded. Binary-float artifacts (e.g. 209.10000000000002, 2731.1000000000004) no
+  longer appear in planner.actions, planner.target_positions, execution_gate, or
+  rule_evidence. A recursive JSON test rejects long binary tails. Calculations and
+  strategy sizing are unchanged; only serialization is canonicalized.
+
+  (4) Authorization marker VALUES redacted. policy_source_inventory() emits only
+  marker NAMES (cap_escalation_authorization_marker_name=
+  EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER, real_order_authorization_marker_name=
+  EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER) plus cap_escalation_authorized=false
+  and real_order_authorized=false. No marker value, hash, prefix, suffix, or
+  reversible encoding appears in any JSON/Markdown/report. The canonical one-shot
+  modules retain their internal constants unchanged.
+
+  No strategy, sizing, Pilot, or execution behavior change; no Demo order sent;
+  Pilot and Forward source byte-identical; no API key/secret in output.
+
+  Tests: focused 41 passed; demo+strategy_selection regression 9269 passed (1
+  pre-existing unrelated emergency_close failure); canonical one-shot/tiny adapter
+  and TASK-014CB_FIX tests pass.
+
+VPS Plan-only verification (no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py \r
+    --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  MOD  src/demo_strategy_pilot_execution_gate.py           (explicit counts; marker redaction)
+  MOD  src/demo_strategy_pilot_action_planner.py           (canonical Decimal target/position output)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py     (dispatcher call-count fields)
+  MOD  tests/demo_trading/test_demo_strategy_pilot_execution_gate.py (41 tests, +FIX2 schema)
+  MOD  README.md                                           (TASK-014CB_FIX2 shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md               (TASK-014CB_FIX2 block)
+  MOD  docs/research/commands/COMMAND_LOG.md               (this entry)

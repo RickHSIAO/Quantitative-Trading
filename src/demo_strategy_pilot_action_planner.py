@@ -113,7 +113,8 @@ class PlannerResult:
             "task_id": TASK_ID, "status": self.status, "sizing_mode": V1_SIZING_MODE,
             "action_count": len(self.actions),
             "actions": [a.to_dict() for a in self.actions],
-            "target_positions": self.target_positions,
+            # Canonical Decimal strings only -- no binary-float artifact in JSON.
+            "target_positions": [_canon_target_position(tp) for tp in self.target_positions],
             "current_positions": self.current_positions,
             "rejected_signals": self.rejected_signals,
             "sizing_verification": dict(self.sizing_verification),
@@ -159,6 +160,47 @@ def _canon_qty_str(value: float, qty_step: float | None = None) -> str:
     if v == v.to_integral_value():
         v = v.quantize(Decimal("1"))
     return format(v, "f")
+
+
+def _canon_dec_str(value: Any) -> str:
+    """Canonical fixed-point decimal string with no binary-float artifact. The
+    shortest round-trip ``str(float)`` is parsed via Decimal, so a clean value
+    like ``0.07287`` stays ``0.07287`` and the intended value is preserved."""
+    try:
+        v = Decimal(str(value)).normalize()
+    except (InvalidOperation, ValueError, TypeError):
+        return "0"
+    if v == v.to_integral_value():
+        v = v.quantize(Decimal("1"))
+    return format(v, "f")
+
+
+def _canon_target_position(tp: Mapping[str, Any]) -> dict[str, Any]:
+    """Serialize one target-position with canonical Decimal STRINGS for every
+    numeric field so no binary-float artifact (e.g. ``209.10000000000002``) can
+    appear in the audit JSON. Calculations are unchanged; only display is
+    canonicalized. Authoritative ``*_decimal`` aliases are also emitted."""
+    step = tp.get("qty_step")
+    qty_s = _canon_qty_str(tp.get("qty", 0), step)
+    step_s = _canon_dec_str(step) if step is not None else None
+    price_s = _canon_dec_str(tp.get("price")) if "price" in tp else None
+    notional_s = _canon_dec_str(tp.get("target_notional")) if "target_notional" in tp else None
+    weight_s = _canon_dec_str(tp.get("target_weight")) if "target_weight" in tp else None
+    out: dict[str, Any] = {"symbol": tp.get("symbol"), "side": tp.get("side"),
+                           "qty": qty_s, "qty_decimal": qty_s}
+    if step_s is not None:
+        out["qty_step"] = step_s
+        out["qty_step_decimal"] = step_s
+    if price_s is not None:
+        out["price"] = price_s
+        out["price_decimal"] = price_s
+    if notional_s is not None:
+        out["target_notional"] = notional_s
+        out["target_notional_decimal"] = notional_s
+    if weight_s is not None:
+        out["target_weight"] = weight_s
+        out["target_weight_decimal"] = weight_s
+    return out
 
 
 def resolve_v1_capital_base_evidence(
@@ -415,10 +457,13 @@ def plan_strategy_native_actions(
         **capital_base_evidence,
         "demo_wallet_equity_usd": wallet_equity,
         "demo_available_balance_usd": wallet_available,
-        "long_target_exposure": long_exp,
-        "short_target_exposure": short_exp,
-        "gross_target_exposure": gross_exp,
-        "net_target_exposure": net_exp,
+        # Round the summed exposures to remove binary-float accumulation artifacts
+        # (e.g. fifty 0.02 weights summing to 1.0000000000000007). The intended
+        # values (gross ~ 1.0, net ~ 0.0) are unchanged; weights/capital untouched.
+        "long_target_exposure": round(long_exp, 12),
+        "short_target_exposure": round(short_exp, 12),
+        "gross_target_exposure": round(gross_exp, 12),
+        "net_target_exposure": round(net_exp, 12),
         "target_symbol_count": len(targets),
     }
 
@@ -438,8 +483,9 @@ def plan_strategy_native_actions(
 
 
 def _pos_dict(p: Any) -> dict[str, Any]:
-    return {"symbol": p.symbol, "side": p.side, "qty": float(p.quantity),
-            "entry_price": float(p.entry_price)}
+    # Canonical Decimal strings -- no binary-float artifact in audit JSON.
+    return {"symbol": p.symbol, "side": p.side,
+            "qty": _canon_dec_str(p.quantity), "entry_price": _canon_dec_str(p.entry_price)}
 
 
 def _diff_positions(targets: Mapping[str, Mapping[str, Any]],

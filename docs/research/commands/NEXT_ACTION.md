@@ -1,5 +1,26 @@
 # Next Action
 
+> README shared status updated by TASK-014CB_FIX2 (2026-06-23).
+> **`CORE SAFETY ARCHITECTURE UNCHANGED / CANDIDATE COUNTS CORRECTED / DISPATCH CALL COUNTS EXPLICIT / DECIMAL AUDIT OUTPUT CANONICAL / AUTHORIZATION MARKER VALUES REDACTED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 092c1a7 correcting the audit schema only (no strategy/sizing/Pilot/execution change).
+>
+> - Candidate-count semantics corrected: raw_planned_action_count=50,
+>   canonical_adapter_supported_candidate_count=1, rule_valid_supported_candidate_count=1,
+>   policy_eligible_candidate_count=0, selected_review_candidate_count=1, execution_candidate_eligible=false.
+>   Legacy eligible_execution_candidate_count redefined as the policy-eligible count (0), semantics marked.
+> - Explicit dispatcher call counts in Plan-only and blocked-send outputs: execute_daily_native_called=false,
+>   execute_daily_native_call_count=0, transport_sender_call_count=0 (from the non-dispatching architecture).
+> - Decimal audit output canonicalized: target_positions/current_positions emit canonical decimal strings
+>   (qty/qty_step/price/target_notional/target_weight + *_decimal aliases); exposure sums rounded. No
+>   binary-float artifact in planner.actions/target_positions/execution_gate/rule_evidence (recursive test).
+> - Authorization marker VALUES redacted from JSON; only marker NAMES + authorized=false flags emitted.
+> - Core TASK-014CB_FIX safety architecture unchanged; no Demo order sent; Pilot/Forward byte-identical.
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
+
+---
+
 > README shared status updated by TASK-014CB_FIX (2026-06-23).
 > **`FULL V1 PLAN PRESERVED / NATIVE SEND DISPATCH DISABLED / EXECUTION DELEGATED TO CANONICAL ONE-SHOT ADAPTER / QUANTITY RULES FROM AUTHORITATIVE INSTRUMENT METADATA / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 890b349 delegating real Demo execution to the existing canonical one-shot adapter.

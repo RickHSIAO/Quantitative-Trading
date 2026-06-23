@@ -210,12 +210,14 @@ def policy_source_inventory() -> list[dict[str, Any]]:
          "authorized_here": False},
         {"source": "demo_only_tiny_execution_adapter_tiny_order_cap_escalation_gate",
          "role": "cap-escalation authorization gate",
-         "cap_escalation_marker": CANONICAL_CAP_ESCALATION_AUTHORIZATION_MARKER,
+         # REDACTED: marker NAME only; the marker value is never emitted.
+         "cap_escalation_authorization_marker_name": "EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER",
          "cap_escalation_authorized": False,
          "authorized_here": False},
         {"source": "demo_only_tiny_execution_adapter_tiny_order_one_shot_authorized_execution_orchestrator",
          "role": "one-shot real-demo authorization marker + orchestrator",
-         "real_order_marker": CANONICAL_REAL_ORDER_AUTHORIZATION_MARKER,
+         # REDACTED: marker NAME only; the marker value is never emitted.
+         "real_order_authorization_marker_name": "EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER",
          "real_order_authorized": False,
          "authorized_here": False},
         {"source": "demo_only_tiny_execution_adapter_single_real_demo_order (endpoint guard)",
@@ -329,6 +331,13 @@ def build_rule_evidence(raw_evidence: dict[str, Any] | None) -> dict[str, Any]:
 @dataclass
 class ExecutionGateResult:
     raw_planned_action_count: int
+    # Explicit, unambiguous candidate counts (TASK-014CB_FIX2).
+    canonical_adapter_supported_candidate_count: int
+    rule_valid_supported_candidate_count: int
+    policy_eligible_candidate_count: int
+    selected_review_candidate_count: int
+    # Legacy field RETAINED for compatibility, REDEFINED as the policy-eligible
+    # count (NOT all raw planner actions). See eligible_execution_candidate_count_semantics.
     eligible_execution_candidate_count: int
     existing_open_position_count: int
     existing_protected_position_count: int
@@ -372,7 +381,13 @@ class ExecutionGateResult:
         return {
             "task_id": TASK_ID,
             "raw_planned_action_count": self.raw_planned_action_count,
+            "canonical_adapter_supported_candidate_count": self.canonical_adapter_supported_candidate_count,
+            "rule_valid_supported_candidate_count": self.rule_valid_supported_candidate_count,
+            "policy_eligible_candidate_count": self.policy_eligible_candidate_count,
+            "selected_review_candidate_count": self.selected_review_candidate_count,
             "eligible_execution_candidate_count": self.eligible_execution_candidate_count,
+            "eligible_execution_candidate_count_semantics":
+                "POLICY_ELIGIBLE_COUNT (NOT raw planner actions; equals policy_eligible_candidate_count)",
             "existing_open_position_count": self.existing_open_position_count,
             "existing_protected_position_count": self.existing_protected_position_count,
             "simultaneous_position_policy_status": self.simultaneous_position_policy_status,
@@ -464,15 +479,17 @@ def evaluate_execution_gate(
                           if str(getattr(p, "symbol", "")).strip().upper() in PROTECTED_SYMBOLS]
     existing_protected_count = len(existing_protected)
 
-    eligible = [a for a in actions if _is_opening_eligible(a)]
-    eligible_count = len(eligible)
+    # Non-protected NEW-opening actions. NOTE: this is NOT "eligible for execution";
+    # it is only the set of actions we screen against the canonical adapter allowlist.
+    non_protected_opening = [a for a in actions if _is_opening_eligible(a)]
     # Canonical one-shot allowlist: SOLUSDT only.
-    allowlisted = [a for a in eligible
+    allowlisted = [a for a in non_protected_opening
                    if str(getattr(a, "symbol", "")).strip().upper() == CANONICAL_ONE_SHOT_ALLOWED_SYMBOL]
+    canonical_supported_count = len(allowlisted)
 
     base_kwargs: dict[str, Any] = dict(
         raw_planned_action_count=raw_count,
-        eligible_execution_candidate_count=eligible_count,
+        canonical_adapter_supported_candidate_count=canonical_supported_count,
         existing_open_position_count=existing_open_count,
         existing_protected_position_count=existing_protected_count,
         canonical_one_shot_adapter_required=True,
@@ -493,6 +510,10 @@ def evaluate_execution_gate(
     if not plan_available or not sizing_verified:
         return ExecutionGateResult(
             **base_kwargs,
+            rule_valid_supported_candidate_count=0,
+            policy_eligible_candidate_count=0,
+            selected_review_candidate_count=0,
+            eligible_execution_candidate_count=0,
             simultaneous_position_policy_status=SIM_POLICY_PROTECTED_EXCLUSION_UNDEFINED
             if existing_protected_count else SIM_POLICY_WITHIN_LIMIT,
             multi_action_send_refused=raw_count > 1,
@@ -547,10 +568,10 @@ def evaluate_execution_gate(
             refusal_reasons.append(rstatus)
             cap_compliance_status = "RULE_INVALID"
     else:
-        # No SOLUSDT candidate. If there ARE eligible non-SOL V1 symbols, they are
-        # planning-only and explicitly unsupported by the canonical adapter.
-        if eligible:
-            first = eligible[0]
+        # No SOLUSDT candidate. If there ARE non-protected V1 opening actions, they
+        # are planning-only and explicitly unsupported by the canonical adapter.
+        if non_protected_opening:
+            first = non_protected_opening[0]
             requested_symbol = str(getattr(first, "symbol", "")).strip().upper()
             requested_side = str(getattr(first, "side", ""))
             target_notional = _format_decimal(getattr(first, "notional_usdt", None))
@@ -570,8 +591,17 @@ def evaluate_execution_gate(
     delegation_status = (CANONICAL_ONE_SHOT_EXECUTION_PACKET_REQUIRED if candidate_eligible
                          else final_status)
 
+    # Explicit, unambiguous candidate counts (TASK-014CB_FIX2).
+    rule_valid_supported_count = 1 if rule_valid_candidate else 0
+    selected_review_count = 1 if canonical_supported_count == 1 else 0
+    policy_eligible_count = 1 if candidate_eligible else 0
+
     return ExecutionGateResult(
         **base_kwargs,
+        rule_valid_supported_candidate_count=rule_valid_supported_count,
+        policy_eligible_candidate_count=policy_eligible_count,
+        selected_review_candidate_count=selected_review_count,
+        eligible_execution_candidate_count=policy_eligible_count,
         simultaneous_position_policy_status=sim_status,
         multi_action_send_refused=multi_action_send_refused,
         requested_symbol=requested_symbol, requested_side=requested_side,

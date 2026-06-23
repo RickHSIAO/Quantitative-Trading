@@ -372,7 +372,11 @@ def orchestrate_gated_send(
         "canonical_execution_packet_present": False,
         "send_path_refused": True,
         "native_dispatch_disabled": True,
+        # Dispatcher call counts come from the non-dispatching architecture itself
+        # (this function NEVER calls execute_daily_native or a transport), not from
+        # any post-attempt inference.
         "execute_daily_native_called": False,
+        "execute_daily_native_call_count": 0,
         "transport_sender_call_count": 0,
         "order_endpoint_called": False,
         "order_post_count": 0,
@@ -594,6 +598,10 @@ def main(argv: list[str] | None = None) -> int:
                    provider_audit.get("positions_private_read_only_get_count", 0),
                "total_private_read_only_get_count":
                    provider_audit.get("total_private_read_only_get_count", 0),
+               # Explicit dispatcher call counts from the non-dispatching architecture.
+               "execute_daily_native_called": False,
+               "execute_daily_native_call_count": 0,
+               "transport_sender_call_count": 0,
                "order_endpoint_called": False,
                "order_post_count": 0,
                "amend_post_count": 0,

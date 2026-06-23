@@ -17,7 +17,34 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CB_FIX 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CB_FIX2 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CB_FIX2_AUDIT_SCHEMA_MARKER_REDACTION_AND_DECIMAL_OUTPUT**（2026-06-23, Opus 4.8 / 稽核 schema 修正 + marker 遮蔽 + Decimal 輸出）
+> **`CORE SAFETY ARCHITECTURE UNCHANGED / CANDIDATE COUNTS CORRECTED / DISPATCH CALL COUNTS EXPLICIT / DECIMAL AUDIT OUTPUT CANONICAL / AUTHORIZATION MARKER VALUES REDACTED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> - **僅修正稽核 schema；TASK-014CB_FIX 的核心安全架構不變**（native 不 dispatch、委派 canonical one-shot adapter、
+>   SOLUSDT-only allowlist、受保護持倉阻擋、instrument-rule provenance、固定 10000-USDT V1 sizing、完整 50 動作規劃輸出）。
+> - **候選計數語意修正：** 不再以 `eligible_execution_candidate_count=50` 誤導。新增明確欄位 —
+>   `raw_planned_action_count=50`、`canonical_adapter_supported_candidate_count=1`、
+>   `rule_valid_supported_candidate_count=1`、`policy_eligible_candidate_count=0`、
+>   `selected_review_candidate_count=1`、`execution_candidate_eligible=false`。legacy `eligible_execution_candidate_count`
+>   重新定義為 policy-eligible（=0），並標註語意。
+> - **明確 dispatcher 呼叫計數：** Plan-only 與 blocked send 皆輸出 `execute_daily_native_called=false`、
+>   `execute_daily_native_call_count=0`、`transport_sender_call_count=0`；order/amend/cancel POST=0、live=false。
+>   值來自非 dispatch 架構本身，非送單後推斷。
+> - **Decimal 輸出 canonical：** `target_positions` / `current_positions` 改為 canonical decimal 字串
+>   （qty/qty_step/price/target_notional/target_weight，附 `*_decimal` 別名），exposure 加總取整。
+>   `209.10000000000002`、`2731.1000000000004` 等 binary-float 殘渣不再出現於 planner.actions /
+>   target_positions / execution_gate / rule_evidence。新增遞迴 JSON 測試拒絕長二進位尾數。
+> - **授權 marker 值遮蔽：** policy_sources 不再輸出 marker 值；僅 `cap_escalation_authorization_marker_name=`
+>   `EXPLICIT_DEMO_MIN_QTY_AUTHORIZATION_MARKER`、`real_order_authorization_marker_name=`
+>   `EXPLICIT_REAL_DEMO_ORDER_AUTHORIZATION_MARKER`、`cap_escalation_authorized=false`、`real_order_authorized=false`。
+>   不輸出 marker 值、雜湊、前後綴或可逆編碼；canonical one-shot 模組內部常數不變。
+> - 不更動策略、sizing、Pilot、執行行為；Pilot/Forward byte-identical；輸出無金鑰；未送任何 Demo 單。
+> - 驗證：focused 41 passed；demo+strategy_selection regression 9269 passed（1 個既有無關失敗）；canonical one-shot 安全測試全通過。
+>
+> VPS Plan-only（僅此命令）：
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CB_FIX_CANONICAL_ONE_SHOT_DELEGATION_AND_RULE_BOUND_QUANTITY**（2026-06-23, Opus 4.8 / 委派既有 one-shot adapter + 規則綁定數量）
 > **`FULL V1 PLAN PRESERVED / NATIVE SEND DISPATCH DISABLED / EXECUTION DELEGATED TO CANONICAL ONE-SHOT ADAPTER / QUANTITY RULES FROM AUTHORITATIVE INSTRUMENT METADATA / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
