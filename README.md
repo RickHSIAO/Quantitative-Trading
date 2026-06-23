@@ -17,7 +17,39 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CC_FIX1 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CD 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CD_AUTHORITATIVE_MARGIN_PRICE_FRESHNESS_AND_NETWORK_AUDIT**（2026-06-23, Opus 4.8 / 權威保證金 + 價格新鮮度 + 網路稽核證據）
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AUTHORITATIVE MARGIN EVIDENCE EXPLICIT / PRICE FRESHNESS EVIDENCE EXPLICIT / NETWORK AUDIT COUNTS CONSISTENT / EXECUTION BATCH STILL UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 67ff08c 之上新增一筆 commit，只加證據層（保證金 / 新鮮度 / 網路計數），不更動已接受的策略 / sizing / 批次政策。
+>
+> - **核心維持不變：** active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY、50 標的、25 多 / 25 空、±0.02 權重、
+>   固定 10000-USDT 資本、50 個 canonical 批次動作、50 個非空 instrument_rule_fingerprint 且全部 RULE_VALIDATION_PASS、
+>   batch_float_artifact_count=0、EDUUSDT/POLYXUSDT 未觸碰且以 current mark 估值、legacy 可執行動作=0。
+> - **權威讀取保證金證據（不臆測）：** 從既有唯讀 wallet/position 回應擷取（有才取，缺則 null）：account type /
+>   margin mode / equity / available / total IM / total MM / account IM 率 / MM 率 / 每倉 leverage / 每倉 IM / MM /
+>   倉位價值 / 強平價，並標註確切 Bybit V5 endpoint + 欄位路徑與 margin_evidence_snapshot_fingerprint；leverage /
+>   initial_margin 證據狀態 = AUTHORITATIVE / PARTIAL / UNAVAILABLE。account margin mode 來自 /v5/account/info（非允許
+>   唯讀路徑）故標示 unavailable，不捏造。
+> - **投影保證金模型（僅在權威輸入下計算）：** projected strategy / legacy / total IM、執行後可用保證金、headroom 比；
+>   狀態 AUTHORITATIVE_MARGIN_MODEL_COMPLETE / PARTIAL / MARGIN_EVIDENCE_UNAVAILABLE / MARGIN_EVIDENCE_CONFLICT /
+>   INSUFFICIENT_PROJECTED_MARGIN。不靜默選 leverage；無權威 applicable IM 率則 strategy 投影為 null + blocker。
+>   證據 partial/unavailable 時 projected_margin_feasibility_status 維持 STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED。
+> - **價格觀測 / 新鮮度：** 嚴格區分 exchange/server timestamp（無則 null，不偽稱）與 local 觀測 / request-start /
+>   response-received / elapsed_ms / batch-built / price_age；狀態 PRICE_FRESHNESS_PASS / STALE /
+>   EVIDENCE_PARTIAL / EVIDENCE_UNAVAILABLE。現有唯讀路徑無權威 exchange 時間 → 本機觀測僅得 PARTIAL/UNAVAILABLE，fail-closed。
+>   設定 review 門檻 30 秒（僅供 review，不授權執行）。
+> - **網路稽核語意修正：** 區分 ticker_http_request_count / requested / unique / cache_hit / strategy-priced /
+>   legacy-priced / total_priced；52 個唯一 symbol（50 strategy + 2 legacy）皆計入，request 數與 symbol 數分開且
+>   證明關係；不一致 → NETWORK_AUDIT_COUNTER_MISMATCH 並維持未授權。修正先前 ticker=50 卻含 2 legacy 的錯誤。
+> - **execution_readiness_blockers：** 結構化列出確切剩餘阻擋（PRICE_FRESHNESS_*、MARGIN_EVIDENCE_*、
+>   NETWORK_AUDIT_COUNTER_MISMATCH 等）。即使全部通過，批次本任務仍不授權
+>   （EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK 永遠在列）。
+> - execution_batch_authorized=false、execution_ready=false、sender_reachable=false、order/amend/cancel/live=0；
+>   無 Demo 下單、無 Live 授權、無 auth marker。Pilot 與 Forward source byte-identical。
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
 
 > **TASK-014CC_FIX1_BATCH_RULE_PROVENANCE_DECIMAL_AND_LEGACY_MARK_RISK**（2026-06-23, Opus 4.8 / 批次規則溯源 + 規範化 Decimal + legacy mark 風險）
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / ALL BATCH ACTIONS BOUND TO AUTHORITATIVE RULES / DECIMAL ACTION PAYLOADS CANONICAL / LEGACY ACCOUNT RISK USES CURRENT MARK PRICE / EXECUTION BATCH NOT AUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

@@ -10089,3 +10089,73 @@ Files changed (committed):
   MOD  README.md                                           (TASK-014CC_FIX1 shared status)
   MOD  docs/research/commands/NEXT_ACTION.md               (TASK-014CC_FIX1 block)
   MOD  docs/research/commands/COMMAND_LOG.md               (this entry)
+---
+
+### TASK-014CD_AUTHORITATIVE_MARGIN_PRICE_FRESHNESS_AND_NETWORK_AUDIT
+
+- **Date:** 2026-06-23
+- **Model:** Opus 4.8 (Codex GPT-5.5 reasoning very high)
+- **Parent commit:** 67ff08c
+- **Status:** COMMITTED (pending review)
+
+Summary:
+  Plan-only evidence layer on top of the VPS-verified TASK-014CC_FIX1 review. The
+  accepted rule-provenance / canonical-Decimal / legacy-mark-risk behaviour is
+  UNCHANGED; this task only ADDS authoritative margin, price-freshness and network-
+  count evidence. No strategy / sizing / batch change.
+
+  Core preserved: active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY; 50 targets, 25 long
+  / 25 short; +/-0.02 weights; fixed 10000-USDT capital; 50 canonical batch actions;
+  50 non-null instrument_rule_fingerprint all RULE_VALIDATION_PASS;
+  batch_float_artifact_count=0; EDUUSDT/POLYXUSDT untouched, valued at current mark;
+  legacy executable action count=0.
+
+  - Goal 1 (margin evidence): the read-only client now captures account-level margin
+    fields (totalInitialMargin / totalMaintenanceMargin / accountIMRate / accountMMRate)
+    and per-position margin fields (positionIM / positionMM / positionValue / markPrice
+    / liqPrice / leverage) WHERE PRESENT; absent fields stay None (never assumed). A new
+    module src/demo_strategy_native_margin_freshness_audit.py normalises them with exact
+    Bybit V5 endpoint+field paths, a margin_evidence_snapshot_fingerprint, and
+    leverage/initial-margin evidence status AUTHORITATIVE/PARTIAL/UNAVAILABLE.
+    account_margin_mode is /v5/account/info (not an allowed read-only path) -> unavailable.
+  - Goal 2 (projected-margin model): projected strategy/legacy/total initial margin,
+    projected available-after-execution and headroom are computed ONLY with an
+    authoritative applicable initial-margin rate (no silent leverage selection). Statuses
+    AUTHORITATIVE_MARGIN_MODEL_COMPLETE/PARTIAL, MARGIN_EVIDENCE_UNAVAILABLE/CONFLICT,
+    INSUFFICIENT_PROJECTED_MARGIN. Partial/unavailable -> projected_margin_feasibility_status
+    stays STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED with the full 50-target plan visible.
+  - Goal 3 (price freshness): exchange/server timestamp is captured separately from local
+    request-start / response-received / elapsed_ms / batch-built / price_age and is NEVER
+    spoofed (null when absent). Statuses PRICE_FRESHNESS_PASS/STALE/EVIDENCE_PARTIAL/
+    EVIDENCE_UNAVAILABLE; configurable 30s review threshold (review-only, authorizes nothing).
+    The read-only path surfaces no authoritative exchange time -> local-only -> PARTIAL/UNAVAILABLE.
+  - Goal 4 (network audit): ticker_http_request_count / requested / unique / cache_hit /
+    strategy-priced / legacy-priced / total_priced are distinct; all 52 unique symbols (50
+    strategy + 2 legacy) are counted; request count is proven distinct from symbol count;
+    NETWORK_AUDIT_CONSISTENT / NETWORK_AUDIT_COUNTER_MISMATCH (mismatch fails closed). This
+    corrects the prior ticker_public_get_count=50 report that excluded the 2 legacy marks.
+  - Goal 6 (readiness blockers): execution_readiness_blockers is a deterministic structured
+    list of the exact remaining blockers; the batch is NEVER authorised this task even if all
+    evidence passes (EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK always present).
+
+  execution_batch_authorized=false; execution_ready=false; sender_reachable=false;
+  execute_daily_native_call_count=0; transport_sender_call_count=0; order/amend/cancel/live
+  POST=0. No Demo order sent; no Live authorization; no auth marker. Pilot and Forward source
+  byte-identical.
+
+  Tests: focused 27 new (test_demo_strategy_native_margin_freshness_audit.py) + 59 FIX1 pass;
+  demo_trading regression 9203 passed (1 pre-existing unrelated emergency_close CLI failure
+  identical on parent 67ff08c). Read-only client tests (74) pass with the additive margin fields.
+
+VPS Plan-only verification (no send command provided this task):
+  python scripts/run_demo_strategy_pilot_native_daily.py     --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only
+
+Files changed (committed):
+  NEW  src/demo_strategy_native_margin_freshness_audit.py   (margin / freshness / network evidence builders)
+  MOD  src/demo_readonly_client.py                          (additive read-only margin field capture)
+  MOD  src/demo_strategy_native_v1_portfolio.py             (wire CD evidence + readiness blockers into review)
+  MOD  scripts/run_demo_strategy_pilot_native_daily.py      (margin evidence, timestamp capture, network counters)
+  NEW  tests/demo_trading/test_demo_strategy_native_margin_freshness_audit.py (27 tests)
+  MOD  README.md                                            (TASK-014CD shared status)
+  MOD  docs/research/commands/NEXT_ACTION.md                (TASK-014CD block)
+  MOD  docs/research/commands/COMMAND_LOG.md                (this entry)

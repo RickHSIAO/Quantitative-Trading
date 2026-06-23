@@ -38,6 +38,7 @@ from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Mapping, Sequence
 
 from src import demo_strategy_pilot_readiness as rd
+from src import demo_strategy_native_margin_freshness_audit as md
 
 TASK_ID = "TASK-014CC"
 
@@ -771,6 +772,11 @@ def build_strategy_native_review(
     legacy_mark_price_observed_at_by_symbol: Mapping[str, Any] | None = None,
     price_observed_at_by_symbol: Mapping[str, Any] | None = None,
     price_freshness_status: str = PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE,
+    # TASK-014CD authoritative evidence (Plan-only; never authorizes execution).
+    margin_evidence: Mapping[str, Any] | None = None,
+    applicable_initial_margin_rate: Any = None,
+    price_freshness_evidence: Mapping[str, Any] | None = None,
+    network_audit: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Full ACTIVE V1 Strategy-native Plan-only review. Non-dispatching: builds a
     multi-symbol execution batch but authorizes and sends nothing.
@@ -815,7 +821,22 @@ def build_strategy_native_review(
 
     # Instrument-rule rejection is driven by AUTHORITATIVE per-action rule validation.
     rule_rejection = batch.rule_rejection
-    price_freshness_available = price_freshness_status == PRICE_FRESHNESS_FRESH
+
+    # --- TASK-014CD authoritative margin / freshness / network evidence -------
+    margin_ev = dict(margin_evidence) if margin_evidence is not None \
+        else md.unavailable_margin_evidence()
+    margin_model = md.build_projected_margin_model(
+        margin_evidence=margin_ev, strategy_gross_notional=strategy_gross,
+        legacy_gross_notional=legacy_mark_gross, available_balance=available_balance,
+        applicable_initial_margin_rate=applicable_initial_margin_rate)
+
+    # The richer CD freshness evidence (when supplied) drives the headline status.
+    overall_freshness_status = (str(price_freshness_evidence.get("price_freshness_status"))
+                                if price_freshness_evidence is not None else price_freshness_status)
+    price_freshness_available = overall_freshness_status == md.PRICE_FRESHNESS_PASS
+
+    network_audit_status = (str(network_audit.get("network_audit_status"))
+                            if network_audit is not None else md.NETWORK_AUDIT_CONSISTENT)
 
     feasibility = assess_feasibility(
         wallet_equity=wallet_equity, available_balance=available_balance,
@@ -825,6 +846,14 @@ def build_strategy_native_review(
         assumed_leverage=assumed_leverage, instrument_rule_rejection=rule_rejection,
         legacy_mark_price_available=legacy_mark_price_available,
         price_freshness_available=price_freshness_available)
+
+    batch_float_artifact_count = _batch_float_artifact_count(batch.actions)
+    execution_readiness_blockers = md.build_execution_readiness_blockers(
+        rule_rejection=rule_rejection, batch_float_artifact_count=batch_float_artifact_count,
+        legacy_mark_price_available=legacy_mark_price_available,
+        price_freshness_status=overall_freshness_status,
+        margin_model_status=margin_model["margin_model_status"],
+        network_audit_status=network_audit_status)
 
     longs = sum(1 for t in targets if _norm_side(t.get("side")) == "long")
     shorts = sum(1 for t in targets if _norm_side(t.get("side")) == "short")
@@ -862,9 +891,18 @@ def build_strategy_native_review(
         "feasibility": feasibility,
         "reconciliation": recon,
         "execution_batch": batch.to_dict(),
-        "batch_float_artifact_count": _batch_float_artifact_count(batch.actions),
+        "batch_float_artifact_count": batch_float_artifact_count,
         "non_null_rule_fingerprint_count": batch.non_null_rule_fingerprint_count,
-        "price_freshness_status": price_freshness_status,
+        "price_freshness_status": overall_freshness_status,
+        # TASK-014CD authoritative evidence (Plan-only; authorizes nothing).
+        "margin_evidence": margin_ev,
+        "margin_model": margin_model,
+        "margin_model_status": margin_model["margin_model_status"],
+        "price_freshness_evidence": (dict(price_freshness_evidence)
+                                     if price_freshness_evidence is not None else None),
+        "network_audit": (dict(network_audit) if network_audit is not None else None),
+        "network_audit_status": network_audit_status,
+        "execution_readiness_blockers": execution_readiness_blockers,
         # Authorization / dispatch invariants (Plan-only).
         "execution_batch_present": True,
         "execution_batch_authorized": False,

@@ -85,6 +85,12 @@ class WalletSnapshot:
     secret_leak_violations:      list[str]  = field(default_factory=list)
     order_endpoint_called:       bool       = False
     available_balance_usd_source: str       = "unknown"  # TASK-014J: mapping provenance
+    # TASK-014CD: authoritative read-only margin evidence captured WHERE PRESENT.
+    # None means the field was absent in the response (never assumed/fabricated).
+    total_initial_margin_usd:     float | None = None
+    total_maintenance_margin_usd: float | None = None
+    account_im_rate:              float | None = None
+    account_mm_rate:              float | None = None
 
 
 @dataclass
@@ -96,6 +102,13 @@ class PositionSnapshot:
     stop_price:     float | None  # None when not set on the exchange
     unrealised_pnl: float
     leverage:       float
+    # TASK-014CD: per-position read-only margin evidence captured WHERE PRESENT.
+    # None means the field was absent in the response (never assumed/fabricated).
+    initial_margin_usd:     float | None = None
+    maintenance_margin_usd: float | None = None
+    position_value_usd:     float | None = None
+    mark_price:             float | None = None
+    liq_price:              float | None = None
 
 
 @dataclass
@@ -315,6 +328,7 @@ class DemoReadOnlyClient:
         equity = available = wallet_bal = 0.0
         account_type        = "UNKNOWN"
         available_source    = "missing"
+        total_im = total_mm = acc_im_rate = acc_mm_rate = None
         try:
             acc_list = data["result"]["list"]
             if acc_list:
@@ -324,6 +338,12 @@ class DemoReadOnlyClient:
                 usdt = next((c for c in coins if c.get("coin") == "USDT"), {})
                 equity     = float(usdt.get("equity", 0) or 0)
                 wallet_bal = float(usdt.get("walletBalance", 0) or 0)
+
+                # TASK-014CD: capture account-level margin evidence WHERE PRESENT.
+                total_im = _opt_float(acc.get("totalInitialMargin"))
+                total_mm = _opt_float(acc.get("totalMaintenanceMargin"))
+                acc_im_rate = _opt_float(acc.get("accountIMRate"))
+                acc_mm_rate = _opt_float(acc.get("accountMMRate"))
 
                 # Available-balance mapping priority (TASK-014J):
                 #   1. account.totalAvailableBalance  — most authoritative for UNIFIED
@@ -363,6 +383,10 @@ class DemoReadOnlyClient:
             secret_leak_violations=[],
             order_endpoint_called=False,
             available_balance_usd_source=available_source,
+            total_initial_margin_usd=total_im,
+            total_maintenance_margin_usd=total_mm,
+            account_im_rate=acc_im_rate,
+            account_mm_rate=acc_mm_rate,
         )
 
     def _positions_real(self) -> list[PositionSnapshot]:
@@ -393,6 +417,12 @@ class DemoReadOnlyClient:
                     stop_price=stop,
                     unrealised_pnl=float(item.get("unrealisedPnl", 0) or 0),
                     leverage=float(item.get("leverage", 1) or 1),
+                    # TASK-014CD: per-position margin evidence captured WHERE PRESENT.
+                    initial_margin_usd=_opt_float(item.get("positionIM")),
+                    maintenance_margin_usd=_opt_float(item.get("positionMM")),
+                    position_value_usd=_opt_float(item.get("positionValue")),
+                    mark_price=_opt_float(item.get("markPrice")),
+                    liq_price=_opt_float(item.get("liqPrice")),
                 ))
         except (KeyError, TypeError, ValueError):
             pass
@@ -531,3 +561,17 @@ def _decimal_places(v: float) -> int:
         return 0
     s = f"{v:.10f}".rstrip("0")
     return len(s.split(".")[-1]) if "." in s else 0
+
+
+def _opt_float(raw: Any) -> float | None:
+    """Parse an optional numeric response field. Returns None when the field is
+    absent or blank (never assumed) and never raises."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return None

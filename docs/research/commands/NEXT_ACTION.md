@@ -1,5 +1,42 @@
 # Next Action
 
+> README shared status updated by TASK-014CD (2026-06-23).
+> **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / AUTHORITATIVE MARGIN EVIDENCE EXPLICIT / PRICE FRESHNESS EVIDENCE EXPLICIT / NETWORK AUDIT COUNTS CONSISTENT / EXECUTION BATCH STILL UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> New commit on top of 67ff08c adding a Plan-only evidence layer (margin / price-freshness / network-count).
+> TASK-014CC_FIX1 is VPS verified; rule provenance / canonical Decimal / legacy mark risk are accepted and
+> unchanged. No strategy / sizing / batch change.
+>
+> - Core preserved: active_policy=ACTIVE_STRATEGY_NATIVE_V1_POLICY; 50 targets, 25 long / 25 short; +/-0.02
+>   weights; fixed 10000-USDT capital; 50 canonical batch actions; 50 non-null rule fingerprints all
+>   RULE_VALIDATION_PASS; batch_float_artifact_count=0; EDUUSDT/POLYXUSDT untouched, valued at current mark;
+>   legacy executable action count=0.
+> - Authoritative read-only MARGIN evidence captured WITHOUT assumptions (absent fields stay null): account
+>   type / margin mode / equity / available / total IM / total MM / account IM+MM rate / per-position leverage
+>   / IM / MM / position value / liq price, with exact Bybit V5 endpoint+field paths and
+>   margin_evidence_snapshot_fingerprint; leverage/initial-margin evidence status AUTHORITATIVE/PARTIAL/
+>   UNAVAILABLE. account_margin_mode is /v5/account/info (not an allowed read-only path) -> reported unavailable.
+> - Projected-margin model computed ONLY with authoritative inputs (never silently selecting leverage):
+>   projected strategy/legacy/total IM, projected available-after-execution, headroom ratio; statuses
+>   AUTHORITATIVE_MARGIN_MODEL_COMPLETE/PARTIAL, MARGIN_EVIDENCE_UNAVAILABLE/CONFLICT, INSUFFICIENT_PROJECTED_MARGIN.
+>   Partial/unavailable -> projected_margin_feasibility_status stays STRATEGY_PORTFOLIO_ACCOUNT_RISK_REVIEW_REQUIRED.
+> - Price observation/FRESHNESS evidence separates exchange/server timestamp (null when absent; never spoofed)
+>   from local request-start / response-received / elapsed_ms / batch-built / price_age; statuses
+>   PRICE_FRESHNESS_PASS/STALE/EVIDENCE_PARTIAL/EVIDENCE_UNAVAILABLE; configurable 30s review threshold (does
+>   NOT authorize). The read-only path has no authoritative exchange time -> local-only -> PARTIAL/UNAVAILABLE.
+> - Network-audit semantics corrected: ticker_http_request_count vs requested vs unique vs cache_hit vs
+>   strategy-priced vs legacy-priced vs total_priced; all 52 unique symbols (50 strategy + 2 legacy) counted;
+>   request count distinct from symbol count with a proven relationship; NETWORK_AUDIT_CONSISTENT /
+>   NETWORK_AUDIT_COUNTER_MISMATCH (mismatch fails closed). Fixes the prior ticker=50-with-2-legacy report.
+> - execution_readiness_blockers: deterministic structured list of the exact remaining blockers; the batch is
+>   NEVER authorized this task even if all evidence passes (EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK).
+> - execution_batch_authorized=false; execution_ready=false; sender_reachable=false; order/amend/cancel/live=0;
+>   no Demo order sent; no Live authorization; no auth marker. Pilot and Forward source byte-identical.
+>
+> VPS Plan-only verification (no send command):
+> `python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only`
+
+---
+
 > README shared status updated by TASK-014CC_FIX1 (2026-06-23).
 > **`ACTIVE STRATEGY-NATIVE V1 PRESERVED / ALL BATCH ACTIONS BOUND TO AUTHORITATIVE RULES / DECIMAL ACTION PAYLOADS CANONICAL / LEGACY ACCOUNT RISK USES CURRENT MARK PRICE / EXECUTION BATCH NOT AUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > New commit on top of 2147cf2 fixing execution-batch integrity and account-risk valuation only (the accepted

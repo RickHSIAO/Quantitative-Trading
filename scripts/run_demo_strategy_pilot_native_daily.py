@@ -50,6 +50,7 @@ if ROOT not in sys.path:
 from src import demo_strategy_pilot_action_planner as planner  # noqa: E402
 from src import demo_strategy_pilot_execution_gate as gate  # noqa: E402 (ISOLATED one-shot test utility)
 from src import demo_strategy_native_v1_portfolio as v1  # noqa: E402 (ACTIVE V1 policy)
+from src import demo_strategy_native_margin_freshness_audit as md  # noqa: E402 (TASK-014CD evidence)
 from src import demo_strategy_pilot_forward_source as fs  # noqa: E402
 from src import demo_strategy_pilot_native_execution as nx  # noqa: E402
 from src import demo_strategy_pilot_native_reporting as nrep  # noqa: E402
@@ -120,6 +121,12 @@ class RealDemoOrderTransport:
                                {"category": "linear", "orderLinkId": order_link_id})
 
 
+def _utc_iso(epoch: float) -> str:
+    """Local UTC ISO-8601 timestamp for an epoch-seconds value. This is a LOCALLY
+    generated request/response time, never an exchange/server timestamp."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+
+
 def _build_production_provider(_client=None, _guard=None):
     """Build the canonical account/market provider from the existing read-only
     Demo client + market guard + instrument rules. Fails closed (returns None) if
@@ -162,6 +169,12 @@ def _build_production_provider(_client=None, _guard=None):
             # Ticker GETs are counted lazily, once per distinct symbol (cached).
             self._price_cache: dict[str, float | None] = {}
             self._ticker_get_count = 0
+            # TASK-014CD network-audit counters (request vs symbol vs cache) +
+            # per-symbol price-observation evidence (local timestamps only).
+            self._ticker_requested_count = 0      # total market_price() calls
+            self._ticker_http_request_count = 0   # actual HTTP GETs (cache misses)
+            self._ticker_cache_hit_count = 0      # repeated calls served from cache
+            self._price_observation: dict[str, dict[str, Any]] = {}
             self._instruments: dict[str, InstrumentRules | None] = {}
             self._non_trading_count = 0
             self._malformed_count = 0
@@ -220,19 +233,75 @@ def _build_production_provider(_client=None, _guard=None):
             }
 
         def market_price(self, symbol: str):
-            # Cache per distinct symbol so each ticker GET is counted exactly once.
+            # Cache per distinct symbol so each ticker HTTP GET happens exactly once.
+            self._ticker_requested_count += 1
             if symbol in self._price_cache:
+                self._ticker_cache_hit_count += 1
                 return self._price_cache[symbol]
             value: float | None = None
+            req_start = time.time()
             try:
                 prices = self._guard.fetch_market_prices([symbol])
                 self._ticker_get_count += 1
+                self._ticker_http_request_count += 1
                 mp = prices.get(symbol)
                 value = float(mp.realtime_market_price) if mp and mp.is_usable() else None
+                # The guard's price_timestamp_utc is a LOCAL fetch time (NOT an
+                # exchange/server timestamp); it is recorded as such here. No
+                # authoritative exchange timestamp is surfaced by this path.
+                local_ts = getattr(mp, "price_timestamp_utc", "") if mp else ""
             except Exception:  # noqa: BLE001
                 value = None
+                local_ts = ""
+            resp_recv = time.time()
+            self._price_observation[symbol] = {
+                "price_source": "DemoMarketPriceGuard -> /v5/market/tickers (public GET)",
+                "exchange_timestamp_ms": None,  # not surfaced by the read-only path
+                "request_started_at_utc": _utc_iso(req_start),
+                "response_received_at_utc": local_ts or _utc_iso(resp_recv),
+                "response_received_epoch": resp_recv,
+                "request_elapsed_ms": round((resp_recv - req_start) * 1000.0, 3),
+            }
             self._price_cache[symbol] = value
             return value
+
+        def price_observation(self, symbol: str) -> dict | None:
+            return self._price_observation.get(symbol)
+
+        def network_audit_counters(self) -> dict:
+            priced = [s for s, v in self._price_cache.items() if v is not None]
+            return {
+                "ticker_http_request_count": self._ticker_http_request_count,
+                "ticker_requested_symbol_count": self._ticker_requested_count,
+                "ticker_unique_symbol_count": len(self._price_cache),
+                "ticker_cache_hit_count": self._ticker_cache_hit_count,
+                "priced_symbols": priced,
+            }
+
+        def margin_evidence(self) -> dict:
+            """Authoritative read-only margin evidence from the already-fetched
+            wallet + position responses. Absent fields stay None (never assumed)."""
+            per = [{
+                "symbol": p.symbol,
+                "leverage": getattr(p, "leverage", None),
+                "initial_margin": getattr(p, "initial_margin_usd", None),
+                "maintenance_margin": getattr(p, "maintenance_margin_usd", None),
+                "position_value": getattr(p, "position_value_usd", None),
+                "mark_price": getattr(p, "mark_price", None),
+                "liq_price": getattr(p, "liq_price", None),
+            } for p in self._positions]
+            return md.normalize_margin_evidence(
+                margin_evidence_source=(
+                    "DemoReadOnlyClient.get_wallet_balance() -> /v5/account/wallet-balance + "
+                    "get_open_positions() -> /v5/position/list (private read-only GET)"),
+                account_margin_mode=None,  # /v5/account/info not in allowed read-only paths
+                wallet_equity=self._wallet.equity_usd,
+                available_balance=self._wallet.available_balance_usd,
+                total_initial_margin=getattr(self._wallet, "total_initial_margin_usd", None),
+                total_maintenance_margin=getattr(self._wallet, "total_maintenance_margin_usd", None),
+                account_initial_margin_rate=getattr(self._wallet, "account_im_rate", None),
+                account_maintenance_margin_rate=getattr(self._wallet, "account_mm_rate", None),
+                per_position=per)
 
         def instrument_rule(self, symbol: str):
             return self._instruments.get(symbol)
@@ -309,6 +378,11 @@ def _build_production_provider(_client=None, _guard=None):
                 # Real network accounting (actual calls, not expected).
                 "instrument_metadata_public_get_count": self._instrument_metadata_get_count,
                 "ticker_public_get_count": self._ticker_get_count,
+                # TASK-014CD: request count is distinct from symbol/cache counts.
+                "ticker_http_request_count": self._ticker_http_request_count,
+                "ticker_requested_symbol_count": self._ticker_requested_count,
+                "ticker_unique_symbol_count": len(self._price_cache),
+                "ticker_cache_hit_count": self._ticker_cache_hit_count,
                 "total_public_get_count": total_public,
                 "wallet_private_read_only_get_count": self._wallet_get_count,
                 "positions_private_read_only_get_count": self._positions_get_count,
@@ -375,13 +449,53 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
     # Fetch each legacy symbol's public ticker via the same market-price path. A
     # missing mark fails closed in the review (no fallback to entry price).
     legacy_mark_price_by_symbol: dict[str, Any] = {}
+    legacy_symbols: list[str] = []
     for p in open_positions:
         sym = str(getattr(p, "symbol", "")).strip().upper()
         if sym and sym in v1.PROTECTED_SYMBOLS and sym not in legacy_mark_price_by_symbol:
+            legacy_symbols.append(sym)
             try:
                 legacy_mark_price_by_symbol[sym] = provider.market_price(sym)
             except Exception:  # noqa: BLE001
                 legacy_mark_price_by_symbol[sym] = None
+
+    # --- TASK-014CD authoritative margin evidence -----------------------------
+    margin_evidence = provider.margin_evidence() if hasattr(provider, "margin_evidence") else None
+
+    # --- TASK-014CD price-observation / freshness evidence (batch-built now) ---
+    batch_built_at = time.time()
+    freshness_snaps: list[dict[str, Any]] = []
+    if hasattr(provider, "price_observation"):
+        priced_syms = list(dict.fromkeys(list(price_by_symbol.keys()) + legacy_symbols))
+        for sym in priced_syms:
+            obs = provider.price_observation(sym) or {}
+            price_val = price_by_symbol.get(sym, legacy_mark_price_by_symbol.get(sym))
+            freshness_snaps.append(md.build_price_freshness_snapshot(
+                symbol=sym, price=price_val,
+                price_source=obs.get("price_source",
+                                     "DemoMarketPriceGuard -> /v5/market/tickers (public GET)"),
+                exchange_timestamp_ms=obs.get("exchange_timestamp_ms"),
+                request_started_at_utc=obs.get("request_started_at_utc"),
+                response_received_at_utc=obs.get("response_received_at_utc"),
+                request_elapsed_ms=obs.get("request_elapsed_ms"),
+                batch_built_at_utc=batch_built_at))
+    price_freshness_evidence = md.build_price_freshness_evidence(freshness_snaps) \
+        if freshness_snaps else None
+
+    # --- TASK-014CD network-audit counts (request vs symbol vs cache) ---------
+    network_audit = None
+    if hasattr(provider, "network_audit_counters"):
+        ctr = provider.network_audit_counters()
+        strat_priced = sum(1 for s in price_by_symbol if price_by_symbol.get(s) is not None)
+        legacy_priced = sum(1 for s in legacy_symbols
+                            if legacy_mark_price_by_symbol.get(s) is not None)
+        network_audit = md.build_network_audit(
+            ticker_http_request_count=ctr["ticker_http_request_count"],
+            ticker_requested_symbol_count=ctr["ticker_requested_symbol_count"],
+            ticker_unique_symbol_count=ctr["ticker_unique_symbol_count"],
+            ticker_cache_hit_count=ctr["ticker_cache_hit_count"],
+            strategy_target_priced_symbol_count=strat_priced,
+            legacy_mark_priced_symbol_count=legacy_priced)
 
     return v1.build_strategy_native_review(
         plan=plan, open_positions=open_positions, pilot_id=pilot_id, run_date=date,
@@ -394,9 +508,12 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
         legacy_mark_price_by_symbol=legacy_mark_price_by_symbol,
         legacy_mark_price_source="DemoMarketPriceGuard -> /v5/market/tickers (public GET)",
         # The read-only Demo market-price path does not surface an authoritative
-        # exchange observation time, so price-freshness evidence is UNAVAILABLE and
-        # account-risk fails closed (no invented timestamp/freshness).
-        price_freshness_status=v1.PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE)
+        # exchange observation time, so price-freshness evidence is PARTIAL/UNAVAILABLE
+        # and account-risk fails closed (no invented timestamp/freshness).
+        price_freshness_status=v1.PRICE_FRESHNESS_EVIDENCE_UNAVAILABLE,
+        margin_evidence=margin_evidence,
+        price_freshness_evidence=price_freshness_evidence,
+        network_audit=network_audit)
 
 
 def orchestrate_gated_send(
@@ -653,6 +770,12 @@ def main(argv: list[str] | None = None) -> int:
                # NOT the active V1 policy. Retained for visibility only.
                "isolated_one_shot_review": isolated_one_shot_review,
                "isolated_one_shot_review_is_authoritative": False,
+               # TASK-014CD explicit top-level evidence statuses (Plan-only).
+               "margin_model_status": (strategy_native_review or {}).get("margin_model_status"),
+               "network_audit_status": (strategy_native_review or {}).get("network_audit_status"),
+               "price_freshness_status": (strategy_native_review or {}).get("price_freshness_status"),
+               "execution_readiness_blockers":
+                   (strategy_native_review or {}).get("execution_readiness_blockers"),
                "plan_valid": plan.available and bool(plan.sizing_verification.get("verified", False)),
                "execution_batch_present": bool(strategy_native_review),
                "execution_batch_authorized": False,
@@ -681,6 +804,11 @@ def main(argv: list[str] | None = None) -> int:
                "instrument_metadata_public_get_count":
                    provider_audit.get("instrument_metadata_public_get_count", 0),
                "ticker_public_get_count": provider_audit.get("ticker_public_get_count", 0),
+               # TASK-014CD: request count distinct from symbol/cache counts.
+               "ticker_http_request_count": provider_audit.get("ticker_http_request_count", 0),
+               "ticker_requested_symbol_count": provider_audit.get("ticker_requested_symbol_count", 0),
+               "ticker_unique_symbol_count": provider_audit.get("ticker_unique_symbol_count", 0),
+               "ticker_cache_hit_count": provider_audit.get("ticker_cache_hit_count", 0),
                "total_public_get_count": provider_audit.get("total_public_get_count", 0),
                "wallet_private_read_only_get_count":
                    provider_audit.get("wallet_private_read_only_get_count", 0),
