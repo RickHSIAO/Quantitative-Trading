@@ -1,4 +1,4 @@
-"""TASK-014CH1 (+_FIX1) -- pure, offline consumer contract for the canonical
+"""TASK-014CH1 (+_FIX1, _FIX2) -- pure, offline consumer contract for the canonical
 WebSocket-bound Strategy-native Plan artifact.
 
 This module VALIDATES (and only validates) the canonical bound-plan wrapper produced
@@ -18,24 +18,23 @@ Hard scope (CH1):
   * It NEVER falls back to the original REST Plan: execution-grade freshness is
     reported complete ONLY when a fully validated WS-bound Plan passes every check.
 
-FIX1 hardening:
+FIX1 hardening: total fail-closed behaviour (never raises for a JSON-compatible
+Mapping), full per-symbol fingerprint recomputation (source-message + post-binding
+action), provenance cross-checks vs caller ground truth.
 
-  * :func:`validate_ws_bound_plan_artifact` is TOTALLY fail-closed: it never raises
-    for any JSON-compatible Mapping input. Malformed data becomes a machine-readable
-    failure result, never an exception. Each action is validated under a narrow
-    guard so one malformed action degrades to ``WS_BOUND_PLAN_ACTION_INCONSISTENT``
-    instead of aborting the whole consumer.
-  * Every per-symbol fingerprint a canonical bound action carries is independently
-    recomputed with the SAME producer helpers (no second hash/serialization):
-    the source-message fingerprint (``ws.canonical_source_message_fingerprint``),
-    the post-binding action fingerprint (``wb._fingerprint``), and the per-symbol
-    source-WS-artifact fingerprint/sha provenance.
-  * Provenance is cross-checked between the wrapper, the canonical bound Plan and the
-    per-symbol evidence, always against the caller-supplied ground truth (the two
-    self-reported copies are never trusted merely because they agree).
-  * Strategy-native V1 action semantics are independently verified: 50 actions,
-    25 long / 25 short, weights exactly +/-0.02 agreeing with side, fixed 10,000
-    USDT capital base, and |target_notional| == |weight| * capital == 200 USDT.
+FIX2 hardening:
+
+  * SIGNED Strategy-native V1 semantics: long => weight +0.02 / notional +200;
+    short => weight -0.02 / notional -200; notional == weight * 10,000 (signed);
+    side, weight sign and notional sign must all agree. No absolute-value-only
+    acceptance. Quantity still derives from |notional| (binder convention).
+  * Externally-anchored WS artifact fingerprint: the caller supplies the expected
+    WS ``artifact_fingerprint``; it must equal the wrapper copy, the canonical bound
+    Plan copy, AND every action's ``price_evidence.source_artifact_fingerprint``
+    (the expected value is never derived from the wrapper itself).
+  * Required, non-null, correctly-typed, semantically-valid execution-grade
+    price-evidence fields per action (a generic ``None``-tolerant type check is no
+    longer sufficient for a required field).
 """
 
 from __future__ import annotations
@@ -49,14 +48,18 @@ from typing import Any, Mapping, Sequence
 from src import demo_public_ws_ticker_evidence as ws
 from src import demo_strategy_native_ws_price_binding as wb
 
-TASK_ID = "TASK-014CH1_FIX1"
+TASK_ID = "TASK-014CH1_FIX2"
 
 EXPECTED_STRATEGY_SYMBOL_COUNT = wb.EXPECTED_STRATEGY_SYMBOL_COUNT  # 50
 EXPECTED_LONG_COUNT = 25
 EXPECTED_SHORT_COUNT = 25
 
-# Strategy-native V1 fixed semantics (preserved; never inferred from the artifact).
+# Strategy-native V1 fixed SIGNED semantics (preserved; never inferred).
 V1_CAPITAL_BASE_USD = Decimal("10000")
+V1_LONG_TARGET_WEIGHT = Decimal("0.02")
+V1_SHORT_TARGET_WEIGHT = Decimal("-0.02")
+V1_LONG_TARGET_NOTIONAL_USD = Decimal("200")
+V1_SHORT_TARGET_NOTIONAL_USD = Decimal("-200")
 V1_ABS_TARGET_WEIGHT = Decimal("0.02")
 V1_ABS_TARGET_NOTIONAL_USD = Decimal("200")
 
@@ -116,16 +119,16 @@ _ZERO_REQUIRED_NETWORK_FIELDS: tuple[str, ...] = (
     "order_endpoint_count",
 )
 
-# Per-symbol price-evidence fields that feed the source-message fingerprint, with
-# the acceptable JSON type for each (verified before any recomputation).
-_EVIDENCE_INT_FIELDS: tuple[str, ...] = (
-    "exchange_data_generated_ts_ms", "cross_sequence",
-    "local_received_epoch_ns", "local_monotonic_received_ns", "connection_generation",
+# Required execution-grade price-evidence fields (non-null + typed + semantic).
+_REQ_EVIDENCE_STR_FIELDS: tuple[str, ...] = (
+    "selected_price", "message_type", "local_received_at_utc",
+    "source_message_fingerprint", "source_artifact_fingerprint", "source_artifact_sha256",
 )
-_EVIDENCE_STR_FIELDS: tuple[str, ...] = (
-    "topic", "selected_price_field", "selected_price", "message_type",
-    "local_received_at_utc", "source_message_fingerprint",
-    "source_artifact_fingerprint", "source_artifact_sha256",
+_REQ_EVIDENCE_INT_POS_FIELDS: tuple[str, ...] = (
+    "exchange_data_generated_ts_ms", "local_received_epoch_ns",
+)
+_REQ_EVIDENCE_INT_NONNEG_FIELDS: tuple[str, ...] = (
+    "cross_sequence", "connection_generation", "local_monotonic_received_ns",
 )
 
 
@@ -183,12 +186,12 @@ def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, (list, tuple)) else []
 
 
-def _is_intish(value: Any) -> bool:
-    return value is None or (isinstance(value, int) and not isinstance(value, bool))
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _is_strish(value: Any) -> bool:
-    return value is None or isinstance(value, str)
+def _nonempty_str(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -290,33 +293,55 @@ def _recompute_action_fingerprint(tp: Mapping[str, Any], pe: Mapping[str, Any]) 
 # Per-action validation (fail closed; one bad action == ACTION_INCONSISTENT)
 # ---------------------------------------------------------------------------
 
-def _check_action(tp_raw: Any, *, ws_fp: Any, ws_sha: Any) -> dict[str, list[str]]:
+def _validate_evidence_fields(sym: str, pe: Mapping[str, Any]) -> list[str]:
+    """Require non-null, correctly typed and semantically valid execution-grade
+    price-evidence. A required field is NEVER accepted merely because ``None`` would
+    satisfy a generic type helper."""
+    probs: list[str] = []
+    topic = pe.get("topic")
+    if not isinstance(topic, str) or topic != f"tickers.{sym}":
+        probs.append(f"{sym}:evidence_topic_invalid:topic")
+    spf = pe.get("selected_price_field")
+    if not isinstance(spf, str) or spf != wb.PLANNER_PRICE_FIELD:
+        probs.append(f"{sym}:evidence_selected_price_field_invalid:selected_price_field")
+    if str(pe.get("source_type", "")) != wb.WS_SOURCE_TYPE:
+        probs.append(f"{sym}:evidence_source_type_invalid:source_type")
+    for f in _REQ_EVIDENCE_STR_FIELDS:
+        if not _nonempty_str(pe.get(f)):
+            probs.append(f"{sym}:evidence_field_missing_or_invalid:{f}")
+    for f in _REQ_EVIDENCE_INT_POS_FIELDS:
+        v = pe.get(f)
+        if not _is_int(v) or v <= 0:
+            probs.append(f"{sym}:evidence_field_missing_or_invalid:{f}")
+    for f in _REQ_EVIDENCE_INT_NONNEG_FIELDS:
+        v = pe.get(f)
+        if not _is_int(v) or v < 0:
+            probs.append(f"{sym}:evidence_field_missing_or_invalid:{f}")
+    return probs
+
+
+def _check_action(tp_raw: Any, *, expected_ws_fp: str, expected_ws_sha: str) -> dict[str, list[str]]:
     """Independently validate one canonical bound action.
 
-    Returns a dict with two problem lists: ``action`` (price/qty/notional/fingerprint
-    /V1-semantics inconsistencies) and ``ws`` (per-symbol source-WS provenance
-    mismatches). Never raises -- a narrow guard converts any unexpected error into an
-    action inconsistency for this symbol only."""
+    Returns a dict with two problem lists: ``action`` (evidence / price / qty /
+    notional / V1-semantics / fingerprint inconsistencies) and ``ws`` (per-symbol
+    source-WS provenance mismatches against the caller-anchored fingerprint/sha).
+    Never raises -- a narrow guard converts any unexpected error into an action
+    inconsistency for this symbol only."""
     out: dict[str, list[str]] = {"action": [], "ws": []}
     tp = _as_map(tp_raw)
-    sym = str(tp.get("symbol", "")).strip().upper() or "<unknown>"
+    sym = str(tp.get("symbol", "")).strip().upper()
     try:
+        if not sym:
+            out["action"].append("<unknown>:symbol_missing")
         pe_raw = tp.get("price_evidence")
         if not isinstance(pe_raw, Mapping):
-            out["action"].append(f"{sym}:price_evidence_absent_or_malformed")
+            out["action"].append(f"{sym or '<unknown>'}:price_evidence_absent_or_malformed")
             return out
         pe = pe_raw
 
-        # Source-field types must be acceptable before any fingerprint recompute.
-        type_ok = True
-        for f in _EVIDENCE_INT_FIELDS:
-            if not _is_intish(pe.get(f)):
-                out["action"].append(f"{sym}:evidence_field_type_invalid:{f}")
-                type_ok = False
-        for f in _EVIDENCE_STR_FIELDS:
-            if not _is_strish(pe.get(f)):
-                out["action"].append(f"{sym}:evidence_field_type_invalid:{f}")
-                type_ok = False
+        # Required execution-grade evidence (non-null, typed, semantic).
+        out["action"].extend(_validate_evidence_fields(sym or "<unknown>", pe))
 
         # Active price provenance.
         if tp.get("price") != pe.get("selected_price"):
@@ -344,7 +369,8 @@ def _check_action(tp_raw: Any, *, ws_fp: Any, ws_sha: Any) -> dict[str, list[str
         if eff is None or eff < 0:
             out["action"].append(f"{sym}:effective_notional_unparseable_or_negative")
 
-        # Recompute qty / effective notional ONLY with a valid price + qty_step.
+        # Recompute qty / effective notional ONLY with a valid price + qty_step;
+        # quantity uses ABSOLUTE notional (matches the binder convention).
         if (price is not None and price > 0 and notional is not None
                 and qty_step is not None and qty_step > 0):
             expected_qty = wb._floor_qty(notional.copy_abs(), price, qty_step)
@@ -357,44 +383,46 @@ def _check_action(tp_raw: Any, *, ws_fp: Any, ws_sha: Any) -> dict[str, list[str
             if not expected_qty > 0:
                 out["action"].append(f"{sym}:qty_not_positive")
 
-        # Strategy-native V1 weight / notional / direction semantics.
+        # Strategy-native V1 SIGNED weight / notional / direction semantics.
         weight = wb._dec(tp.get("target_weight"))
         side = str(tp.get("side", "")).strip().lower()
+        if side not in ("long", "short"):
+            out["action"].append(f"{sym}:side_not_long_or_short")
         if weight is None or weight == 0:
             out["action"].append(f"{sym}:target_weight_zero_or_unparseable")
         else:
             if weight.copy_abs() != V1_ABS_TARGET_WEIGHT:
                 out["action"].append(f"{sym}:target_weight_not_pm_0.02")
-            if side == "long" and weight <= 0:
-                out["action"].append(f"{sym}:side_weight_direction_mismatch")
-            if side == "short" and weight >= 0:
-                out["action"].append(f"{sym}:side_weight_direction_mismatch")
-            if notional is not None:
-                if notional.copy_abs() != (weight.copy_abs() * V1_CAPITAL_BASE_USD):
-                    out["action"].append(f"{sym}:target_notional_not_weight_times_capital")
-                if notional.copy_abs() != V1_ABS_TARGET_NOTIONAL_USD:
-                    out["action"].append(f"{sym}:target_notional_magnitude_not_200")
-        if side not in ("long", "short"):
-            out["action"].append(f"{sym}:side_not_long_or_short")
+            # side <-> weight sign agreement.
+            if (side == "long" and weight < 0) or (side == "short" and weight > 0):
+                out["action"].append(f"{sym}:side_weight_mismatch")
+        if notional is not None:
+            if notional.copy_abs() != V1_ABS_TARGET_NOTIONAL_USD:
+                out["action"].append(f"{sym}:target_notional_magnitude_not_200")
+            # side <-> notional sign agreement.
+            if (side == "long" and notional < 0) or (side == "short" and notional > 0):
+                out["action"].append(f"{sym}:side_notional_mismatch")
+            # weight <-> notional (signed): notional == weight * capital.
+            if weight is not None and notional != (weight * V1_CAPITAL_BASE_USD):
+                out["action"].append(f"{sym}:weight_notional_mismatch")
 
         # Per-symbol fingerprints (recomputed; producer helpers reused).
-        if type_ok:
-            stored_src_fp = pe.get("source_message_fingerprint")
-            if not stored_src_fp or _recompute_source_message_fingerprint(
-                    tp.get("symbol"), pe) != stored_src_fp:
-                out["action"].append(f"{sym}:source_message_fingerprint_mismatch")
-            stored_action_fp = tp.get("action_fingerprint")
-            if not stored_action_fp or _recompute_action_fingerprint(
-                    tp, pe) != stored_action_fp:
-                out["action"].append(f"{sym}:action_fingerprint_mismatch")
+        stored_src_fp = pe.get("source_message_fingerprint")
+        if not stored_src_fp or _recompute_source_message_fingerprint(
+                tp.get("symbol"), pe) != stored_src_fp:
+            out["action"].append(f"{sym}:source_message_fingerprint_mismatch")
+        stored_action_fp = tp.get("action_fingerprint")
+        if not stored_action_fp or _recompute_action_fingerprint(tp, pe) != stored_action_fp:
+            out["action"].append(f"{sym}:action_fingerprint_mismatch")
 
-        # Per-symbol source-WS-artifact provenance must match the canonical plan.
-        if str(pe.get("source_artifact_fingerprint", "")) != str(ws_fp or ""):
-            out["ws"].append(f"{sym}:source_artifact_fingerprint_mismatch")
-        if str(pe.get("source_artifact_sha256", "")) != str(ws_sha or ""):
-            out["ws"].append(f"{sym}:source_artifact_sha256_mismatch")
+        # Per-symbol source-WS-artifact provenance, anchored to the CALLER's expected
+        # fingerprint / sha256 (never derived from the wrapper).
+        if str(pe.get("source_artifact_fingerprint", "")) != str(expected_ws_fp):
+            out["ws"].append(f"{sym}:source_artifact_fingerprint_not_expected")
+        if str(pe.get("source_artifact_sha256", "")) != str(expected_ws_sha):
+            out["ws"].append(f"{sym}:source_artifact_sha256_not_expected")
     except Exception as exc:  # noqa: BLE001  (narrow: per-symbol only, fail closed)
-        out["action"].append(f"{sym}:action_validation_error:{type(exc).__name__}")
+        out["action"].append(f"{sym or '<unknown>'}:action_validation_error:{type(exc).__name__}")
     return out
 
 
@@ -425,6 +453,7 @@ def validate_ws_bound_plan_artifact(
     expected_run_date: str,
     expected_original_plan_fingerprint: str,
     expected_ws_artifact_sha256: str,
+    expected_ws_artifact_fingerprint: str,
     expected_symbols: Sequence[str],
 ) -> BoundPlanConsumerResult:
     """Fail-closed validation of a canonical WS-bound Plan wrapper.
@@ -432,7 +461,10 @@ def validate_ws_bound_plan_artifact(
     Never raises for a JSON-compatible Mapping input. Returns a
     :class:`BoundPlanConsumerResult`; the validated canonical Plan
     (``validated_actions``) is exposed ONLY when every required check passes; on any
-    failure it is empty and ``execution_grade_freshness_complete`` is False."""
+    failure it is empty and ``execution_grade_freshness_complete`` is False.
+
+    ``expected_ws_artifact_fingerprint`` and ``expected_ws_artifact_sha256`` are the
+    EXTERNAL ground truth for WS provenance; they are never derived from the wrapper."""
     failures: list[str] = []
     blockers: list[str] = []
 
@@ -531,15 +563,20 @@ def validate_ws_bound_plan_artifact(
     if str(original_fp or "") != str(expected_original_plan_fingerprint):
         _fail(WS_BOUND_PLAN_ORIGINAL_PLAN_MISMATCH, "original_plan_fingerprint_mismatch")
 
-    # WS artifact provenance: caller sha256 is ground truth; wrapper / cbp copies
-    # must agree with it AND with each other; wrapper / cbp WS fingerprints agree.
+    # WS artifact provenance externally anchored: caller fingerprint + sha256 are the
+    # ground truth; wrapper, canonical Plan AND every action evidence must equal them.
+    exp_ws_fp = str(expected_ws_artifact_fingerprint)
+    exp_ws_sha = str(expected_ws_artifact_sha256)
     wrapper_ws_fp = artifact.get("source_ws_artifact_fingerprint")
     cbp_ws_fp = cbp_map.get("source_ws_artifact_fingerprint")
-    if (str(ws_sha or "") != str(expected_ws_artifact_sha256)
-            or str(cbp_map.get("source_ws_artifact_sha256", "")) != str(expected_ws_artifact_sha256)):
-        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "ws_artifact_sha256_mismatch")
-    if not wrapper_ws_fp or str(wrapper_ws_fp) != str(cbp_ws_fp):
-        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "wrapper_vs_canonical_ws_fingerprint_mismatch")
+    if str(ws_sha or "") != exp_ws_sha:
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "wrapper_ws_sha256_not_expected")
+    if str(cbp_map.get("source_ws_artifact_sha256", "")) != exp_ws_sha:
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "canonical_ws_sha256_not_expected")
+    if str(wrapper_ws_fp or "") != exp_ws_fp:
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "wrapper_ws_fingerprint_not_expected")
+    if str(cbp_ws_fp or "") != exp_ws_fp:
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "canonical_ws_fingerprint_not_expected")
 
     # --- Stage 5: symbol set + 25/25 structure + symbol-set fingerprint --------
     planner = _as_map(cbp_map.get("planner"))
@@ -578,13 +615,13 @@ def validate_ws_bound_plan_artifact(
     action_problems: list[str] = []
     ws_prov_problems: list[str] = []
     for t in targets:
-        res = _check_action(t, ws_fp=cbp_ws_fp, ws_sha=cbp_map.get("source_ws_artifact_sha256"))
+        res = _check_action(t, expected_ws_fp=exp_ws_fp, expected_ws_sha=exp_ws_sha)
         action_problems.extend(res["action"])
         ws_prov_problems.extend(res["ws"])
     if action_problems:
-        _fail(WS_BOUND_PLAN_ACTION_INCONSISTENT, "; ".join(action_problems[:30]))
+        _fail(WS_BOUND_PLAN_ACTION_INCONSISTENT, "; ".join(action_problems[:40]))
     if ws_prov_problems:
-        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "; ".join(ws_prov_problems[:30]))
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "; ".join(ws_prov_problems[:40]))
 
     # --- Stage 7: authorization / dispatch counters all false / zero -----------
     auth_problems = _authorization_failures(artifact)
@@ -663,7 +700,9 @@ def _finalize(failures: list[str], blockers: list[str], provenance_ok: bool,
 __all__ = [
     "TASK_ID",
     "EXPECTED_STRATEGY_SYMBOL_COUNT", "EXPECTED_LONG_COUNT", "EXPECTED_SHORT_COUNT",
-    "V1_CAPITAL_BASE_USD", "V1_ABS_TARGET_WEIGHT", "V1_ABS_TARGET_NOTIONAL_USD",
+    "V1_CAPITAL_BASE_USD", "V1_LONG_TARGET_WEIGHT", "V1_SHORT_TARGET_WEIGHT",
+    "V1_LONG_TARGET_NOTIONAL_USD", "V1_SHORT_TARGET_NOTIONAL_USD",
+    "V1_ABS_TARGET_WEIGHT", "V1_ABS_TARGET_NOTIONAL_USD",
     "WS_BOUND_PLAN_CONSUMER_PASS",
     "WS_BOUND_PLAN_SCHEMA_INVALID", "WS_BOUND_PLAN_WRAPPER_FINGERPRINT_MISMATCH",
     "WS_BOUND_PLAN_FINGERPRINT_MISMATCH", "WS_BOUND_PLAN_PROVENANCE_MISMATCH",

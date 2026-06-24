@@ -36,11 +36,21 @@ _spec.loader.exec_module(cg)
 # Bundle + reseal helpers
 # ---------------------------------------------------------------------------
 
+def _signed_plan(rest_price: str = "100.0"):
+    """Plan with the REAL producer's SIGNED target-notional convention: long +200,
+    short -200 (cg.build_plan uses absolute 200, so flip the shorts)."""
+    plan = cg.build_plan(rest_price=rest_price)
+    for tp in plan["planner"]["target_positions"]:
+        if str(tp["side"]).strip().lower() == "short":
+            tp["target_notional"] = "-200"
+    return plan
+
+
 def _correct_bundle(now: int | None = None, *, stale: bool = False):
     """Build a real binder wrapper plus the matching correct caller expectations."""
     now = now or time.time_ns()
     ws_art = cg.build_complete_ws_artifact(now_ns=now)
-    plan = cg.build_plan(rest_price="100.0")
+    plan = _signed_plan(rest_price="100.0")
     raw = json.dumps(ws_art).encode("utf-8")
     ws_sha = wb.compute_file_sha256(raw)
     epoch = now + (60_000_000_000 if stale else 2_000_000)
@@ -53,9 +63,28 @@ def _correct_bundle(now: int | None = None, *, stale: bool = False):
         expected_run_date=cg.DATE,
         expected_original_plan_fingerprint=wb._fingerprint(plan),
         expected_ws_artifact_sha256=ws_sha,
+        expected_ws_artifact_fingerprint=ws_art["artifact_fingerprint"],
         expected_symbols=list(cg.STRATEGY_50),
     )
     return copy.deepcopy(w), kw
+
+
+def _short_tp(w):
+    return next(t for t in w["canonical_bound_plan"]["planner"]["target_positions"]
+               if str(t["side"]).strip().lower() == "short")
+
+
+def _long_tp(w):
+    return next(t for t in w["canonical_bound_plan"]["planner"]["target_positions"]
+               if str(t["side"]).strip().lower() == "long")
+
+
+def _set_all_ws_fingerprint(w, value):
+    w["source_ws_artifact_fingerprint"] = value
+    cbp = w["canonical_bound_plan"]
+    cbp["source_ws_artifact_fingerprint"] = value
+    for tp in cbp["planner"]["target_positions"]:
+        tp["price_evidence"]["source_artifact_fingerprint"] = value
 
 
 def _reseal_cbp(w: dict) -> None:
@@ -446,7 +475,7 @@ def test_malformed_source_message_field_type_fails_closed():
     r = _validate(w, kw)
     _assert_failed(r)
     assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
-    assert any("evidence_field_type_invalid" in b for b in r.blockers)
+    assert any("cross_sequence" in b for b in r.blockers)
 
 
 # --- per-symbol fingerprints ------------------------------------------------
@@ -532,7 +561,7 @@ def test_side_weight_direction_mismatch_fails_closed():
     r = _validate(w, kw)
     _assert_failed(r)
     assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
-    assert any("side_weight_direction_mismatch" in b for b in r.blockers)
+    assert any("side_weight_mismatch" in b for b in r.blockers)
 
 
 def test_target_notional_mismatch_fails_closed():
@@ -586,3 +615,143 @@ def test_empty_mapping_does_not_raise():
     r = consumer.validate_ws_bound_plan_artifact({}, **kw)
     _assert_failed(r)
     assert r.status == consumer.WS_BOUND_PLAN_SCHEMA_INVALID
+
+
+# ===========================================================================
+# FIX2 -- signed V1 notional + externally-anchored WS provenance + evidence
+# ===========================================================================
+
+def test_signed_pass_long_plus200_short_minus200():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw)
+    assert r.status == consumer.WS_BOUND_PLAN_CONSUMER_PASS
+    longs = [a for a in r.validated_actions if a.side == "long"]
+    shorts = [a for a in r.validated_actions if a.side == "short"]
+    assert all(a.target_weight == "0.02" and a.target_notional == "200" for a in longs)
+    assert all(a.target_weight == "-0.02" and a.target_notional == "-200" for a in shorts)
+
+
+def test_short_with_positive_notional_fails_closed():
+    w, kw = _correct_bundle()
+    _short_tp(w)["target_notional"] = "200"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("side_notional_mismatch" in b for b in r.blockers)
+
+
+def test_long_with_negative_notional_fails_closed():
+    w, kw = _correct_bundle()
+    _long_tp(w)["target_notional"] = "-200"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("side_notional_mismatch" in b for b in r.blockers)
+
+
+def test_weight_notional_sign_mismatch_fails_closed():
+    w, kw = _correct_bundle()
+    tp = _long_tp(w)
+    tp["target_weight"] = "-0.02"  # long, +200 notional, but negative weight
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("weight_notional_mismatch" in b for b in r.blockers)
+    assert any("side_weight_mismatch" in b for b in r.blockers)
+
+
+# --- externally-anchored WS artifact fingerprint ---------------------------
+
+def test_wrong_caller_ws_artifact_fingerprint_fails_closed():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw, expected_ws_artifact_fingerprint="sha256:" + "a" * 64)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+def test_wrapper_and_canonical_ws_fp_changed_together_caller_unchanged_fails_closed():
+    w, kw = _correct_bundle()
+    _set_all_ws_fingerprint(w, "sha256:" + "b" * 64)  # internally consistent new value
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)  # caller expectation unchanged -> must fail
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+def test_per_symbol_source_artifact_fp_changed_with_layers_caller_unchanged_fails_closed():
+    w, kw = _correct_bundle()
+    # Move every layer's WS fingerprint together to a consistent value; the caller
+    # anchor still rejects it (per-action provenance must equal the external truth).
+    new = "sha256:" + "c" * 64
+    _set_all_ws_fingerprint(w, new)
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("source_artifact_fingerprint_not_expected" in b for b in r.blockers)
+
+
+# --- required execution-grade evidence fields ------------------------------
+
+def _evidence_case(mutate):
+    w, kw = _correct_bundle()
+    pe = _first_tp(w)["price_evidence"]
+    mutate(pe)
+    _reseal_wrapper(w)  # evidence fields (except smf) are not in the cbp fp material
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    return r
+
+
+def test_missing_topic_fails_closed():
+    r = _evidence_case(lambda pe: pe.pop("topic", None))
+    assert any("topic" in b for b in r.blockers)
+
+
+def test_wrong_topic_for_symbol_fails_closed():
+    r = _evidence_case(lambda pe: pe.__setitem__("topic", "tickers.WRONGUSDT"))
+    assert any("evidence_topic_invalid" in b for b in r.blockers)
+
+
+def test_missing_selected_price_field_fails_closed():
+    r = _evidence_case(lambda pe: pe.pop("selected_price_field", None))
+    assert any("selected_price_field" in b for b in r.blockers)
+
+
+def test_wrong_selected_price_field_fails_closed():
+    r = _evidence_case(lambda pe: pe.__setitem__("selected_price_field", "markPrice"))
+    assert any("selected_price_field" in b for b in r.blockers)
+
+
+def test_missing_exchange_timestamp_fails_closed():
+    r = _evidence_case(lambda pe: pe.pop("exchange_data_generated_ts_ms", None))
+    assert any("exchange_data_generated_ts_ms" in b for b in r.blockers)
+
+
+def test_missing_local_received_timestamp_fails_closed():
+    r = _evidence_case(lambda pe: pe.pop("local_received_at_utc", None))
+    assert any("local_received_at_utc" in b for b in r.blockers)
+
+
+def test_missing_local_monotonic_timestamp_fails_closed():
+    r = _evidence_case(lambda pe: pe.pop("local_monotonic_received_ns", None))
+    assert any("local_monotonic_received_ns" in b for b in r.blockers)
+
+
+def test_missing_connection_generation_fails_closed():
+    r = _evidence_case(lambda pe: pe.pop("connection_generation", None))
+    assert any("connection_generation" in b for b in r.blockers)
+
+
+def test_missing_message_type_fails_closed():
+    r = _evidence_case(lambda pe: pe.pop("message_type", None))
+    assert any("message_type" in b for b in r.blockers)
+
+
+def test_required_evidence_field_wrong_json_type_fails_closed():
+    r = _evidence_case(lambda pe: pe.__setitem__("local_received_epoch_ns", "not-an-int"))
+    assert any("local_received_epoch_ns" in b for b in r.blockers)
