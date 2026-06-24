@@ -46,9 +46,22 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
 - CG binding code complete in `src/demo_strategy_native_ws_price_binding.py`
 - Provides `bind_plan_prices_to_ws_evidence()`, `build_ws_bound_plan_artifact()`,
   `canonical_bound_plan_actions()`
-- **No integrated downstream runtime consumer.** The default REST price path
-  remains the only active runtime integration. CG binding is orphaned code
-  with no pipeline caller.
+- CH1 consumer contract complete in
+  `src/demo_strategy_native_ws_bound_plan_consumer.py`
+  (`validate_ws_bound_plan_artifact()`): fail-closed validation of a canonical
+  WS-bound Plan (fingerprint/provenance, signed V1 semantics, authoritative
+  clock-offset freshness, per-symbol source-record cross-validation).
+- **CH2: explicit opt-in terminal native Plan-only consumer is wired.**
+  `scripts/run_demo_strategy_pilot_native_daily.py --ws-bound-plan-only`
+  builds the REST seed Plan, reads a caller-supplied public-WS evidence JSON
+  file, binds it, validates via the CH1 consumer, and writes exactly one
+  canonical WS-bound Plan wrapper (orchestration in
+  `src/demo_strategy_native_ws_bound_plan_only.py`).
+- Opt-in only; the source WS artifact is supplied by file (no live WS
+  collection in this path). No REST fallback once WS binding begins. The path
+  is terminal **before** review / readiness / execution gate / native
+  execution; execution remains unauthorized and the Pilot is never advanced.
+- The **default** native-daily behavior (flag absent) is unchanged.
 
 ## Repository Cleanup
 
@@ -61,6 +74,8 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
 
 ## Next Decision
 
-Decide whether to integrate the WS evidence binding into the runtime pipeline,
-archive it as reference code, or defer pending forward-validation results.
+WS evidence binding now has an explicit opt-in terminal Plan-only runtime
+consumer (CH2). Remaining decisions: whether/how a later task consumes the
+canonical WS-bound Plan beyond the terminal Plan-only artifact (readiness /
+margin provenance), and whether to add a guarded live WS collection path.
 README rewrite is queued as a separate task after architecture documentation.

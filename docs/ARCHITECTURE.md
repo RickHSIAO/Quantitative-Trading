@@ -78,11 +78,27 @@ planner actions to WS source messages post-hoc, producing a
 canonical-bound-plan artifact with same-message proof and freshness
 completion status.
 
-**No native planner, daily runner, or execution consumer currently imports
-the WS binding module.** The canonical-bound-plan artifact is produced
-offline by CLI scripts (`scripts/bind_plan_prices_to_ws_evidence.py`,
-`scripts/generate_demo_strategy_ws_binding_fixture.py`). The default
-integrated runtime continues to use the REST planner path.
+### Opt-in: native Plan-only WS-bound consumer (CH1/CH2)
+
+`src/demo_strategy_native_ws_bound_plan_consumer.py` (CH1) is a pure,
+fail-closed validator (`validate_ws_bound_plan_artifact`) for a canonical
+WS-bound Plan: fingerprint/provenance, signed Strategy-native V1 semantics
+(±0.02 weight, ±200 USDT notional, 10,000 USDT capital), authoritative
+clock-offset freshness, and per-symbol source-record cross-validation.
+
+`src/demo_strategy_native_ws_bound_plan_only.py` (CH2) wires it as an explicit
+opt-in TERMINAL Plan-only path of the native daily runner
+(`scripts/run_demo_strategy_pilot_native_daily.py --ws-bound-plan-only`): it
+produces the REST seed Plan, reads a **caller-supplied** public-WS evidence
+JSON file (no live WS collection), binds it, validates through the CH1
+consumer, and writes exactly one canonical WS-bound Plan wrapper. The path is
+opt-in only, stops **before** active review / readiness / execution gate /
+native execution, never advances the Pilot, keeps execution unauthorized, and
+has **no REST fallback** once WS binding begins.
+
+The **default** native runtime (flag absent) is unchanged and continues to use
+the REST planner path. No readiness/gate/execution/Pilot module is reached by
+the Plan-only WS path.
 
 ## Execution Safety Boundary
 
@@ -128,7 +144,9 @@ integrated runtime continues to use the REST planner path.
 | Forward Record | `apps/forward_record/primary.py` | Frozen 10k capital base |
 | Paper Portfolio | `apps/paper_trading/recorder.py` | Simulated fills |
 | WS evidence schema | `src/demo_public_ws_ticker_evidence.py` | Public linear, no auth |
-| WS-bound offline artifact | `src/demo_strategy_native_ws_price_binding.py` | No runtime consumer |
+| WS-bound offline artifact | `src/demo_strategy_native_ws_price_binding.py` | Binder |
+| WS-bound Plan consumer | `src/demo_strategy_native_ws_bound_plan_consumer.py` | CH1 fail-closed validator |
+| WS-bound Plan-only wiring | `src/demo_strategy_native_ws_bound_plan_only.py` | CH2 opt-in terminal path |
 | Daily orchestrator | `src/demo_strategy_pilot_daily_runner.py` | DRY-RUN only |
 | Readiness state machine | `src/demo_strategy_pilot_readiness.py` | 7-day gate |
 | Current state | `docs/CURRENT_STATE.md` | Updated per cleanup task |
@@ -153,8 +171,10 @@ development iterations that require owner review for archival or removal.
 1. **Multiple Demo lineages**: Close-only, new-entry, tiny-guarded, and
    Strategy-native V1 coexist. Only V1 is current; others are dead code
    risk.
-2. **Orphan WS-bound artifact**: TASK-014CG/FIX1 canonical-bound-plan has
-   no runtime consumer. The feature is complete but disconnected.
+2. **WS-bound artifact consumer**: The canonical-bound-plan now has a CH1
+   fail-closed consumer and a CH2 opt-in terminal Plan-only native consumer.
+   It is still NOT consumed by readiness, margin audit, the execution gate, or
+   native execution (by design — execution remains unauthorized).
 3. **Target vs effective notional**: Planner computes `qty = notional / price`
    floored to `qty_step`. The effective notional after rounding differs
    from the strategy target. No reconciliation of this gap exists.
@@ -167,8 +187,9 @@ development iterations that require owner review for archival or removal.
 
 ## Next Architecture Decision
 
-Whether and how the native Plan-only/readiness pipeline should consume the
-canonical WS-bound Plan artifact as an integrated price evidence source, or
-whether the feature should remain an offline research validator. This
-decision gates the transition from REST-only planning to WS-evidenced
-execution readiness.
+The native Plan-only pipeline now consumes the canonical WS-bound Plan via an
+explicit opt-in TERMINAL path (CH1 consumer + CH2 wiring), gated before
+review/readiness/execution. The remaining decision is whether a later task
+should extend consumption into readiness / margin provenance (still without
+authorizing execution), and whether a guarded live WS collection path is
+warranted. Default REST-only planning remains unchanged in the meantime.

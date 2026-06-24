@@ -56,6 +56,7 @@ from src import demo_strategy_pilot_forward_source as fs  # noqa: E402
 from src import demo_strategy_pilot_native_execution as nx  # noqa: E402
 from src import demo_strategy_pilot_native_reporting as nrep  # noqa: E402
 from src import demo_strategy_pilot_readiness as rd  # noqa: E402
+from src import demo_strategy_native_ws_bound_plan_only as wsbpo  # noqa: E402 (CH2 Plan-only WS binding)
 from src.demo_only_tiny_execution_adapter_single_real_demo_order import (  # noqa: E402
     DEMO_BASE_URL, DEMO_HOST, EP_ORDER_REALTIME, EP_ORDER_HISTORY,
     RealDemoHttpTransport, assert_demo_url, host_of, load_demo_credentials,
@@ -948,7 +949,159 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--test-injected-actions-json", default=None,
                    help="TEST-ONLY injected action fixture; REFUSED in normal production mode")
     p.add_argument("--json-only", action="store_true")
+    # TASK-014CH2: explicit opt-in, terminal Plan-only WebSocket-bound path. Reads a
+    # caller-supplied public-WS evidence JSON (NO live WS collection), binds the REST
+    # seed Plan, validates via the CH1 consumer, and writes exactly one canonical
+    # WS-bound Plan wrapper. Stops before review / readiness / gate / execution.
+    p.add_argument("--ws-bound-plan-only", action="store_true",
+                   help="opt-in terminal Plan-only WebSocket-bound mode (no execution, no Pilot change)")
+    p.add_argument("--ws-ticker-evidence-json", default=None,
+                   help="path to the caller-supplied public-WS ticker evidence JSON (required for "
+                        "--ws-bound-plan-only); no live WebSocket collection is performed")
+    p.add_argument("--ws-bound-plan-output-json", default=None,
+                   help="output path for the single canonical WS-bound Plan wrapper artifact "
+                        "(required for --ws-bound-plan-only)")
+    p.add_argument("--ws-binding-epoch-ns", type=int, default=None,
+                   help="explicit binding epoch (ns) for deterministic runs; computed once if omitted")
+    p.add_argument("--ws-binding-freshness-threshold-ms", type=int,
+                   default=wsbpo.DEFAULT_FRESHNESS_THRESHOLD_MS,
+                   help="strict binding-time freshness threshold (ms); defaults to and may not exceed "
+                        "the producer strict maximum")
     return p
+
+
+def _build_ws_seed_plan_mapping(date: str, plan: Any) -> dict[str, Any]:
+    """Build the REST seed Plan Mapping the WS binder expects, from the canonical
+    planner result. The REST plan is ONLY a binding seed -- never a fallback Plan."""
+    return {
+        "date": date,
+        "active_policy": wsbpo.EXPECTED_POLICY_ID,
+        "strategy_native_review": {"active_strategy": wsbpo.EXPECTED_STRATEGY_ID},
+        "planner": plan.to_dict(),
+    }
+
+
+def _run_ws_bound_plan_only(args: Any, output_root: str | None) -> int:
+    """TASK-014CH2 terminal Plan-only WS-bound path (no execution / readiness / gate /
+    native execution / Pilot mutation / REST fallback)."""
+
+    def _summary(status: str, *, detail: str, exit_code: int,
+                 result: Any = None, output: str | None = None) -> int:
+        out = {
+            "status": status, "mode": "WS_BOUND_PLAN_ONLY", "detail": detail,
+            "pilot_id": args.pilot_id, "date": args.date,
+            "ws_ticker_evidence_json": args.ws_ticker_evidence_json,
+            "ws_bound_plan_output_json": output,
+            "execution_authorized": False, "execution_ready": False,
+            "sender_reachable": False, "pilot_advanced": False,
+            "order_post_count": 0, "amend_post_count": 0, "cancel_post_count": 0,
+            "live_order_post_count": 0, "live_trading_authorized": False,
+            "rest_fallback_used": False,
+        }
+        if result is not None:
+            out.update({
+                "blockers": list(result.blockers),
+                "canonical_bound_plan_fingerprint": result.canonical_bound_plan_fingerprint,
+                "source_ws_artifact_fingerprint": result.source_ws_artifact_fingerprint,
+                "source_ws_artifact_sha256": result.source_ws_artifact_sha256,
+                "original_plan_fingerprint": result.original_plan_fingerprint,
+                "binding_epoch_ns": result.binding_epoch_ns,
+                "freshness_threshold_ms": result.freshness_threshold_ms,
+            })
+        print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
+        return exit_code
+
+    # --- Flag validation (reject execution-capable / incompatible arguments) ---
+    incompatible = [n for n, v in (
+        ("send_orders_to_demo", args.send_orders_to_demo),
+        ("advance_on_success", args.advance_on_success),
+        ("reconcile_outputs_only", args.reconcile_outputs_only),
+        ("test_injected_actions_json", bool(args.test_injected_actions_json)),
+    ) if v]
+    if incompatible:
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID,
+                        detail=f"incompatible arguments for ws-bound-plan-only: {incompatible}",
+                        exit_code=EXIT_INVALID)
+    if not args.ws_ticker_evidence_json:
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID,
+                        detail="--ws-ticker-evidence-json is required", exit_code=EXIT_INVALID)
+    if not args.ws_bound_plan_output_json:
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID,
+                        detail="--ws-bound-plan-output-json is required", exit_code=EXIT_INVALID)
+    threshold = args.ws_binding_freshness_threshold_ms
+    if not (isinstance(threshold, int) and not isinstance(threshold, bool)
+            and 0 < threshold <= wsbpo.STRICT_MAX_FRESHNESS_THRESHOLD_MS):
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID,
+                        detail=f"invalid freshness threshold (1..{wsbpo.STRICT_MAX_FRESHNESS_THRESHOLD_MS})",
+                        exit_code=EXIT_INVALID)
+    if args.ws_binding_epoch_ns is not None:
+        if not (isinstance(args.ws_binding_epoch_ns, int) and args.ws_binding_epoch_ns > 0):
+            return _summary(wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID,
+                            detail="--ws-binding-epoch-ns must be a positive integer",
+                            exit_code=EXIT_INVALID)
+        binding_epoch_ns = int(args.ws_binding_epoch_ns)
+    else:
+        # Computed EXACTLY ONCE at the script boundary; shared by binder + consumer.
+        binding_epoch_ns = time.time_ns()
+
+    # --- Build the REST seed Plan (upstream binding seed only) -----------------
+    try:
+        forward_result = fs.load_primary_forward_strategy_result(
+            run_date=args.date, repo_root=ROOT, forward_source_root=args.test_forward_source_root)
+    except fs.ForwardSourceError as exc:
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID,
+                        detail=f"forward source invalid: {exc}", exit_code=EXIT_INPUT_FAILURE)
+    provider = _build_production_provider()
+    plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
+    if not plan.available or not plan.sizing_verification.get("verified", False):
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID,
+                        detail=f"REST seed plan unavailable/unverified: {plan.status}",
+                        exit_code=EXIT_INVALID)
+    seed_plan = _build_ws_seed_plan_mapping(args.date, plan)
+    expected_symbols = [str(tp.get("symbol", "")).strip().upper()
+                        for tp in plan.to_dict().get("target_positions", [])]
+
+    # --- Read the caller-supplied source WS evidence (no live collection) ------
+    try:
+        src_bytes = wsbpo.read_source_ws_bytes(args.ws_ticker_evidence_json)
+    except wsbpo.WsBoundPlanOnlyError as exc:
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_SOURCE_READ_FAILED,
+                        detail=str(exc), exit_code=EXIT_INPUT_FAILURE)
+    try:
+        src_artifact = wsbpo.parse_source_ws_artifact(src_bytes)
+    except wsbpo.WsBoundPlanOnlyError as exc:
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_SOURCE_JSON_INVALID,
+                        detail=str(exc), exit_code=EXIT_INPUT_FAILURE)
+
+    # --- Bind + validate (pure core); expose wrapper only on consumer PASS -----
+    result = wsbpo.build_and_validate_ws_bound_plan_only(
+        seed_plan=seed_plan, source_ws_artifact=src_artifact, source_ws_artifact_bytes=src_bytes,
+        binding_epoch_ns=binding_epoch_ns, freshness_threshold_ms=threshold,
+        expected_policy_id=wsbpo.EXPECTED_POLICY_ID, expected_strategy_id=wsbpo.EXPECTED_STRATEGY_ID,
+        expected_run_date=args.date, expected_symbols=expected_symbols,
+        source_ws_artifact_path=args.ws_ticker_evidence_json)
+
+    if result.status == wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID:
+        return _summary(result.status, detail="ws-bound-plan-only input invalid",
+                        exit_code=EXIT_INVALID, result=result)
+    if result.status == wsbpo.WS_BOUND_PLAN_ONLY_BINDING_FAILED:
+        return _summary(result.status, detail="WS binding did not produce a canonical bound plan",
+                        exit_code=EXIT_BLOCKED, result=result)
+    if not result.passed:  # CONSUMER_FAILED -- never falls back to the REST seed Plan
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_CONSUMER_FAILED,
+                        detail="CH1 consumer rejected the bound plan; terminal (no REST fallback)",
+                        exit_code=EXIT_BLOCKED, result=result)
+
+    # --- Write exactly one canonical wrapper artifact (atomic) -----------------
+    try:
+        wsbpo.atomic_write_wrapper(args.ws_bound_plan_output_json, result.wrapper_artifact)
+    except wsbpo.WsBoundPlanOnlyError as exc:
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_OUTPUT_FAILED,
+                        detail=str(exc), exit_code=EXIT_INPUT_FAILURE, result=result)
+
+    return _summary(wsbpo.WS_BOUND_PLAN_ONLY_PASS,
+                    detail="canonical WS-bound Plan wrapper written; terminal before execution",
+                    exit_code=EXIT_OK, result=result, output=args.ws_bound_plan_output_json)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -970,6 +1123,14 @@ def main(argv: list[str] | None = None) -> int:
             allow_discord_network=args.allow_discord_network)
         print(json.dumps(rep, ensure_ascii=False, indent=2, sort_keys=True))
         return EXIT_OK
+
+    # TASK-014CH2: explicit opt-in, terminal Plan-only WebSocket-bound path. Placed
+    # BEFORE the RUNNING gate so it never touches readiness / Pilot state. It builds
+    # the REST seed Plan, binds it to the caller-supplied WS evidence, validates via
+    # the CH1 consumer, writes one canonical wrapper, and stops. No execution, no
+    # active review, no gate, no native execution, no Pilot mutation, no REST fallback.
+    if args.ws_bound_plan_only:
+        return _run_ws_bound_plan_only(args, output_root)
 
     # RUNNING gate.
     state = rd.PilotStateStore(args.pilot_id, output_root).read_state()
