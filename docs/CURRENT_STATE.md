@@ -129,6 +129,22 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   projected-margin rate `UNAVAILABLE_NO_INDEPENDENT_RATE`; account feasibility
   `UNAVAILABLE_NOT_EVALUATED`). The default native-daily path and CH2 `--ws-bound-plan-only`
   are byte-unchanged. Pilot remains 0/7.
+- **CH3C1: the trusted review anchor-bundle builder exists** —
+  `src/demo_strategy_native_ws_review_anchor_bundle.py` (pure core) +
+  `scripts/build_demo_strategy_ws_review_anchor_bundle.py` (CLI). It builds the CH3
+  anchor manifest from an **externally-pinned CH2 PASS summary** (caller-owned
+  `--ch2-summary-sha256`, never derived from the summary), exact wrapper/source bytes,
+  and an **independent 50-symbol source** (`--expected-strategy-symbols-json` +
+  `--expected-strategy-symbols-sha256`; no immutable repo-pinned 50-symbol constant
+  exists, so the set must be externally supplied — never wrapper-derived, never silently
+  from Forward Record `latest_date`). It re-runs CH1 historical validation, pins the
+  canonical fingerprint to the summary, and writes ONE race-safe no-clobber manifest;
+  the printed `output_anchor_manifest_sha256` (the exact on-disk file SHA) is what the
+  operator preserves and later passes to `--ws-bound-plan-anchor-manifest-sha256`. A
+  produced manifest is accepted by the CH3B1 review core. The builder is a separate,
+  isolated script (no native-daily/Pilot/readiness/gate/execution/sender/reporting/
+  network import); it does NOT run review-only, query market data, check account margin,
+  or authorize execution. CH2/CH3B2 behavior unchanged; Pilot remains 0/7.
 
 ## Repository Cleanup
 

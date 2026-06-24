@@ -95,6 +95,17 @@ python scripts/bind_plan_prices_to_ws_evidence.py \
   --out <BOUND_PLAN_JSON> \
   --json-only
 
+# 建立可信任的 review anchor manifest（CH3C1，純離線）
+python scripts/build_demo_strategy_ws_review_anchor_bundle.py \
+  --ch2-summary-json <CH2_PASS_SUMMARY_JSON> \
+  --ch2-summary-sha256 sha256:<64hex> \
+  --ws-bound-plan-wrapper-json <CH2_WRAPPER_JSON> \
+  --ws-ticker-evidence-json <WS_EVIDENCE_JSON> \
+  --expected-strategy-symbols-json <SYMBOLS_JSON> \
+  --expected-strategy-symbols-sha256 sha256:<64hex> \
+  --output-anchor-manifest-json <ANCHOR_MANIFEST_JSON> \
+  --date <YYYY-MM-DD>
+
 # WS-bound Plan 唯讀審查（review-only，純離線、終止於審查前的所有執行路徑）
 python scripts/run_demo_strategy_pilot_native_daily.py \
   --pilot-id <ID> --date <YYYY-MM-DD> \
@@ -127,6 +138,22 @@ pytest tests/
 - 以 race-safe、no-clobber（`os.link` create-if-absent）方式只寫一份審查 envelope。
 
 此模式**不是執行核可**；它只證明歷史證據在其 binding epoch 當下有效。
+
+### anchor bundle builder（TASK-014CH3C1，純離線）
+
+`scripts/build_demo_strategy_ws_review_anchor_bundle.py` 由一份**外部釘選的 CH2 PASS
+summary**（其 SHA256 由操作者於 CH2 當下另外保存、以 `--ch2-summary-sha256` 傳入，
+**絕不由工具從 summary 反推**）、精確的 CH2 wrapper 與 source-WS 位元組、以及一個
+**獨立的 50 檔標的來源**（檔案 + 外部 SHA256；倉庫沒有不可變的內建 50 檔常數，因此
+標的集合必須由外部檔案提供，不得由 wrapper 反推、也不得隱性採用 Forward Record 的
+`latest_date`）建立 CH3 review anchor manifest。它會重跑 CH1 歷史驗證後，以 race-safe、
+no-clobber 方式寫出一份 manifest，並印出該 manifest 檔案的 SHA256。
+
+- 印出的 `output_anchor_manifest_sha256` 必須**另外保存**，稍後作為
+  `--ws-bound-plan-anchor-manifest-sha256` 傳入 review-only 模式。
+- 此工具**不執行 review-only、不查詢當前市場資料、不檢查帳戶保證金、不核可執行**；
+  無 Pilot / readiness / gate / native execution / sender / 對帳 / Notion / Discord /
+  REST / 網路。CH2 與 CH3B2 的行為皆不變。
 
 ## 安全性
 

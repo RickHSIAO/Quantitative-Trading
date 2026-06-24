@@ -124,6 +124,17 @@ readiness/gate/execution/sender/Pilot/reporting path, has no REST fallback, and 
 execution-ready. The default native-daily path and CH2 `--ws-bound-plan-only` are
 byte-unchanged. CH2 remains the latest executable terminal boundary.
 
+CH3C1 adds an offline, isolated builder for the trusted review anchor manifest that the
+CH3B2 mode consumes. From an externally-pinned CH2 PASS summary (caller-owned SHA, never
+derived from the summary), exact wrapper/source bytes, and an independent 50-symbol source
+(file + external SHA; no immutable repo-pinned 50-symbol constant exists), it re-runs CH1
+historical validation, pins the canonical fingerprint to the summary, and writes ONE
+race-safe no-clobber manifest; the printed on-disk manifest SHA is preserved by the operator
+for `--ws-bound-plan-anchor-manifest-sha256`. The builder script imports only pure
+validation/binder helpers + the no-clobber writer — no native-daily runner, Pilot,
+readiness, gate, execution, sender, reporting or network — and does not run review-only,
+query market data, check account margin, or authorize execution.
+
 CH2_FIX1 isolation hardening: the Plan-only mode-conflict validation runs as the
 FIRST branch of `main()` — before the reconcile/reporting branch, the
 `PilotStateStore` RUNNING gate, provider construction, source read and output
@@ -185,6 +196,7 @@ an existing destination and removes only the task-created temp on failure).
 | WS-bound Plan-only wiring | `src/demo_strategy_native_ws_bound_plan_only.py` | CH2 opt-in terminal path |
 | WS-bound Plan review core | `src/demo_strategy_native_ws_bound_plan_review.py` | CH3B1 pure offline review |
 | WS-bound Plan review CLI | `scripts/run_demo_strategy_pilot_native_daily.py --ws-bound-plan-review-only` | CH3B2 terminal review-only mode |
+| Review anchor-bundle builder | `src/demo_strategy_native_ws_review_anchor_bundle.py` + `scripts/build_demo_strategy_ws_review_anchor_bundle.py` | CH3C1 trusted manifest builder |
 | Daily orchestrator | `src/demo_strategy_pilot_daily_runner.py` | DRY-RUN only |
 | Readiness state machine | `src/demo_strategy_pilot_readiness.py` | 7-day gate |
 | Current state | `docs/CURRENT_STATE.md` | Updated per cleanup task |
