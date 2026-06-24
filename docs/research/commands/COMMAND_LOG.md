@@ -10861,3 +10861,75 @@ bound, counter and control-plane parity pass. Execution-grade freshness remains
 false because planner actions are not yet bound to the exact same WebSocket
 source messages. The next engineering milestone is a separate design and
 implementation task for same-message planner-price integration.
+
+---
+
+### TASK-014CG_PLAN_ONLY_WEBSOCKET_SAME_MESSAGE_PRICE_BINDING (2026-06-24, Opus 4.8)
+
+New TASK-014CG commit on top of 703db19. Binds each Strategy-native V1 Plan-only
+planner action to the EXACT public WebSocket source message that supplied its
+selected lastPrice. Plan-only integration: default REST planner behavior is
+unchanged; the binding runs ONLY under an explicit opt-in; no order, no Pilot
+advancement, no execution authorization.
+
+**New files (no existing source/tests/deps modified):**
+- src/demo_strategy_native_ws_price_binding.py (pure offline binding logic:
+  compatibility gate, same-message binding, binding-time freshness recompute,
+  canonical strategy_native_ws_price_binding artifact, top/nested parity)
+- scripts/bind_plan_prices_to_ws_evidence.py (thin local-artifact-only CLI;
+  explicit --bind-plan-prices-to-ws-evidence + --ws-ticker-evidence-json opt-in)
+- tests/demo_trading/test_demo_strategy_native_ws_price_binding_cg.py (30 tests)
+- tests/demo_trading/test_demo_bind_plan_prices_cli_cg.py (7 tests)
+
+**Design:**
+- A. Opt-in only: no binding without --bind-plan-prices-to-ws-evidence and an
+  explicit local --ws-ticker-evidence-json path; no auto-discovery; refuses when
+  an execution authorization marker is present or the sender is reachable.
+- B. Compatibility gate (fail-closed) requires schema=public_websocket_ticker_evidence,
+  supported version, CF/FIX lineage, overall=WS_TICKER_EVIDENCE_COMPLETE, cli_exit=0,
+  authenticated=false, public-linear endpoint, planner_price_field=lastPrice,
+  AUTHORITATIVE clock + universe provenance, counter + control-plane parity PASS,
+  subscription_acknowledged=true (ack_count=1), data + full completion, 52/52/52
+  coverage, present + recomputing artifact fingerprint, and policy/strategy/symbol
+  compatibility with the Plan-only run. File SHA-256 recorded.
+- C. Same-message binding: each action binds symbol + lastPrice + source ts + cs +
+  local receive epoch/utc/monotonic + connection generation + message type + topic +
+  source-message fingerprint + source artifact fingerprint + source artifact SHA-256.
+  The REST price is retained for audit (original_rest_price); the WebSocket timestamp
+  is NEVER attached to the REST price; one symbol price is never mixed with another
+  symbol evidence.
+- D. Decimal-exact recompute: target_notional = target_weight * fixed capital is
+  price-independent and preserved; only the quantity preview is recomputed from the
+  WebSocket-bound price (Decimal floor to qty_step). price_delta and price_delta_bps
+  use Decimal; pre/post action fingerprints differ when the price changes.
+- E. Strict binding-time freshness recomputed from the selected-price SOURCE ts +
+  current local binding time + authoritative accepted clock offset + strict threshold;
+  fails closed STALE/INVALID; threshold never loosened.
+- F. Per-action statuses: WS_SAME_MESSAGE_PRICE_BINDING_COMPLETE plus the documented
+  missing/duplicate/not-complete/price-field/source-incomplete/timestamp/sequence/
+  stale/artifact-incompatible/fingerprint/symbol-mismatch/price-conflict failures.
+  Overall: COMPLETE / PARTIAL / UNAVAILABLE / CONFLICT. COMPLETE requires 50/50 unique
+  symbols bound with parity; 49/50 stays PARTIAL.
+- G. Blocker transition: only a full COMPLETE binding sets
+  execution_grade_freshness_complete=true and resolves PRICE_FRESHNESS_EVIDENCE_PARTIAL,
+  PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE and WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS
+  within planner-action scope; EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK always
+  retained; a failed binding replaces them with WS_PLANNER_PRICE_BINDING_INCOMPLETE.
+- H. Top/nested parity (WS_PLANNER_BINDING_PARITY_PASS/FAIL); a FAIL prevents COMPLETE.
+
+**Safety:** even when freshness completes, execution_batch_authorized=false,
+execution_ready=false, sender_reachable=false, execute_daily_native_call_count=0,
+transport_sender_call_count=0, order/amend/cancel/live=0, no auth marker created;
+binding network audit private/public/websocket/order counts all 0; the binder imports
+no order/transport sender; Pilot + Forward source byte-identical.
+
+**Tests:** 37 focused (30 binding + 7 CLI), real pytest exit 0; demo_trading
+regression 9470 passed (1 pre-existing unrelated emergency_close CLI failure; real
+pytest exit 1 solely due to it).
+
+**Future VPS read-only workflow (no send command):**
+  A. python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id BYBIT_DEMO_PILOT_7D_202606_V1 --date 2026-06-22 --json-only > /tmp/plan_20260622.json
+  B. python scripts/collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --ce-evidence-json /tmp/plan_20260622.json --allow-real-network --require-complete --out /tmp/ws_20260622.json --verify-no-credential-leak --json-only
+  C. python scripts/bind_plan_prices_to_ws_evidence.py --plan-json /tmp/plan_20260622.json --ws-ticker-evidence-json /tmp/ws_20260622.json --bind-plan-prices-to-ws-evidence --require-complete --out outputs/ws_price_binding_20260622.json --verify-no-credential-leak --json-only
+  D. echo "binding_exit=$?"
+  E. python -c "import json;a=json.load(open('outputs/ws_price_binding_20260622.json'));print(a['overall_binding_status'],a['binding_parity_status'],a['bound_action_count'],a['failed_action_count'],a['execution_grade_freshness_complete'],a['execution_batch_authorized'],a['order_post_count'],a['binding_network_audit'])"

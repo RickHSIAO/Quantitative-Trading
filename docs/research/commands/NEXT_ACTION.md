@@ -1,5 +1,64 @@
 # Next Action
 
+> **TASK-014CG_PLAN_ONLY_WEBSOCKET_SAME_MESSAGE_PRICE_BINDING** (2026-06-24, Opus 4.8)
+>
+> **`STRATEGY-NATIVE V1 PLAN-ONLY ACTIONS BOUND TO THE EXACT SAME PUBLIC WEBSOCKET LASTPRICE MESSAGE / 50 STRATEGY ACTIONS REQUIRE 50 VALID SYMBOL PRICE TIMESTAMP SEQUENCE LOCAL-TIMING AND FINGERPRINT BINDINGS / PROTECTED LEGACY SYMBOLS REMAIN ACCOUNT EVIDENCE ONLY / REST PRICES RETAINED FOR AUDIT AND NOT MIXED WITH WEBSOCKET TIMESTAMPS / BINDING-TIME FRESHNESS FAILS CLOSED / EXECUTION-GRADE FRESHNESS MAY BECOME COMPLETE ONLY AFTER 50 OF 50 BINDINGS PASS / FRESHNESS COMPLETION DOES NOT AUTHORIZE EXECUTION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> New CG commit on top of 703db19 integrating the VPS-verified public WebSocket price
+> evidence into Strategy-native V1 Plan-only planner actions. Default REST planner
+> behavior is unchanged; the binding runs ONLY under an explicit opt-in. No planner
+> source/test/dependency file was modified; new standalone module + CLI + tests only.
+>
+> - **A. Opt-in only:** binding runs solely with `--bind-plan-prices-to-ws-evidence`
+>   plus an explicit local `--ws-ticker-evidence-json` path (no auto-discovery). The
+>   path refuses when an execution authorization marker is present or the sender is
+>   reachable; it performs no network/private/order request.
+> - **B. Compatibility gate (fail-closed):** requires schema=public_websocket_ticker_evidence,
+>   supported version, CF/FIX lineage, overall=WS_TICKER_EVIDENCE_COMPLETE, cli_exit=0,
+>   authenticated=false, public-linear endpoint, planner_price_field=lastPrice,
+>   AUTHORITATIVE clock + universe provenance, counter + control-plane parity PASS,
+>   subscription_acknowledged=true (ack_count=1), data + full completion, 52/52/52 coverage,
+>   present + recomputing artifact fingerprint, and date/policy/strategy/symbol compatibility
+>   with the Plan-only run. File SHA-256 recorded.
+> - **C. Same-message binding:** each action binds symbol + lastPrice + source ts + cs +
+>   local receive epoch/utc/monotonic + connection generation + message type + topic +
+>   source-message fingerprint + source artifact fingerprint + source artifact SHA-256.
+>   The original REST price is retained for audit; the WebSocket timestamp is NEVER attached
+>   to the REST price; one symbol's price is never mixed with another symbol's evidence.
+> - **D. Decimal-exact recompute:** target_notional = target_weight * fixed capital is
+>   price-independent and preserved; only the quantity preview is recomputed from the
+>   WebSocket-bound price (Decimal floor to qty_step). price_delta / price_delta_bps use
+>   Decimal; pre/post action fingerprints differ when the price changes; fingerprints are
+>   deterministic across runs.
+> - **E. Strict binding-time freshness:** recomputed from the selected-price SOURCE ts +
+>   current local binding time + authoritative accepted clock offset + strict threshold;
+>   fails closed STALE/INVALID; threshold never loosened (so the real VPS workflow generates
+>   the WS artifact and immediately runs the Plan-only binding command).
+> - **F. Statuses:** per-action WS_SAME_MESSAGE_PRICE_BINDING_COMPLETE plus the documented
+>   missing/duplicate/not-complete/price-field/source-incomplete/timestamp/sequence/stale/
+>   artifact-incompatible/fingerprint/symbol-mismatch/price-conflict failures; overall
+>   COMPLETE/PARTIAL/UNAVAILABLE/CONFLICT. COMPLETE requires 50/50 unique bound symbols +
+>   parity; 49/50 stays PARTIAL.
+> - **G. Blocker transition:** only a full COMPLETE binding sets
+>   execution_grade_freshness_complete=true and resolves PRICE_FRESHNESS_EVIDENCE_PARTIAL,
+>   PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE and WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS
+>   within planner-action scope; EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK always retained;
+>   a failed binding replaces them with WS_PLANNER_PRICE_BINDING_INCOMPLETE.
+> - **H. Parity:** top-level mirrors nested (WS_PLANNER_BINDING_PARITY_PASS/FAIL); a FAIL
+>   prevents COMPLETE.
+> - Even when freshness completes: execution_batch_authorized=false, execution_ready=false,
+>   sender_reachable=false, execute_daily_native_call_count=0, transport_sender_call_count=0,
+>   order/amend/cancel/live=0, no auth marker; binding network audit all zero; Pilot + Forward
+>   source byte-identical.
+> - Tests: 37 focused (30 binding + 7 CLI), real pytest exit 0; demo_trading regression
+>   9470 passed (1 pre-existing unrelated emergency_close CLI failure; real pytest exit 1
+>   solely due to it).
+>
+> Next milestone: human-authorization + staged Demo batch execution protocol (a separate
+> task); this CG task provides NO send command.
+
+---
+
 > **TASK-014CF_VPS_CLOSEOUT** (2026-06-24, Sonnet 4.6)
 >
 > **`TASK-014CF FIX1 FIX2 AND FIX3 ARE VPS VERIFIED / PUBLIC MAINNET LINEAR WEBSOCKET USED WITHOUT AUTHENTICATION / AUTHORITATIVE 52-SYMBOL UNIVERSE COMPLETE / ALL 52 SAME-MESSAGE PRICE-TIMESTAMP RECORDS COMPLETE / SUBSCRIPTION ACK VALIDATED AND BOUND / COUNTER AND CONTROL-PLANE PARITY PASS / REST PLANNER PRICES NOT REPLACED / EXECUTION-GRADE FRESHNESS REMAINS FALSE PENDING PLANNER SAME-MESSAGE INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

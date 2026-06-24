@@ -17,7 +17,41 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CF_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CG 同步更新；不解除 G20、不開啟 live real trading。
+
+> **TASK-014CG_PLAN_ONLY_WEBSOCKET_SAME_MESSAGE_PRICE_BINDING**（2026-06-24, Opus 4.8 / Plan-only 同訊息價格綁定）
+> **`STRATEGY-NATIVE V1 PLAN-ONLY ACTIONS BOUND TO THE EXACT SAME PUBLIC WEBSOCKET LASTPRICE MESSAGE / 50 STRATEGY ACTIONS REQUIRE 50 VALID SYMBOL PRICE TIMESTAMP SEQUENCE LOCAL-TIMING AND FINGERPRINT BINDINGS / PROTECTED LEGACY SYMBOLS REMAIN ACCOUNT EVIDENCE ONLY / REST PRICES RETAINED FOR AUDIT AND NOT MIXED WITH WEBSOCKET TIMESTAMPS / BINDING-TIME FRESHNESS FAILS CLOSED / EXECUTION-GRADE FRESHNESS MAY BECOME COMPLETE ONLY AFTER 50 OF 50 BINDINGS PASS / FRESHNESS COMPLETION DOES NOT AUTHORIZE EXECUTION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 703db19 之上新增一筆 CG commit，將 VPS 驗證的公開 WebSocket 價格證據整合進 Strategy-native V1 Plan-only planner action。
+> 預設 REST planner 行為不變；綁定僅在明確 opt-in 時執行。未改任何 planner 來源/測試/依賴檔；僅新增獨立模組 + CLI + 測試。
+>
+> - **A. 僅 opt-in：** 綁定僅在 `--bind-plan-prices-to-ws-evidence` 加明確本地 `--ws-ticker-evidence-json` 路徑時執行（不自動探索）。
+>   偵測到 execution authorization marker 或 sender 可達即拒絕；不發任何網路/私有/下單請求。
+> - **B. 相容性閘（fail-closed）：** 要求 schema=public_websocket_ticker_evidence、支援版本、CF/FIX 血緣、
+>   overall=WS_TICKER_EVIDENCE_COMPLETE、cli_exit=0、authenticated=false、public-linear endpoint、
+>   planner_price_field=lastPrice、AUTHORITATIVE clock + universe provenance、counter + control-plane parity PASS、
+>   subscription_acknowledged=true（ack_count=1）、data + full completion、52/52/52 coverage、artifact fingerprint 存在且可重算、
+>   且與 Plan-only run 的 date/policy/strategy/symbol 相容；記錄檔案 SHA-256。
+> - **C. 同訊息綁定：** 每個 action 綁定 symbol + lastPrice + source ts + cs + local receive epoch/utc/monotonic +
+>   connection generation + message type + topic + source-message fingerprint + source artifact fingerprint + source artifact SHA-256。
+>   原始 REST 價格保留供稽核；WebSocket 時間戳永不貼到 REST 價格上；不混用不同 symbol 的價格與證據。
+> - **D. Decimal 精確重算：** target_notional = target_weight × 固定資本為價格無關、予以保留；僅依 WebSocket 綁定價重算數量預覽
+>   （Decimal 向下取整到 qty_step）。price_delta / price_delta_bps 用 Decimal；價格變動時 pre/post action fingerprint 不同；跨次執行決定性。
+> - **E. 嚴格綁定時新鮮度：** 以選定價 SOURCE ts + 當前本地綁定時間 + 權威接受時鐘 offset + 嚴格門檻重算；STALE/INVALID 即 fail closed；
+>   門檻不放寬（故真實 VPS 流程須產生 WS artifact 後立即執行 Plan-only 綁定）。
+> - **F. 狀態：** per-action WS_SAME_MESSAGE_PRICE_BINDING_COMPLETE 加上文件化的 missing/duplicate/not-complete/price-field/
+>   source-incomplete/timestamp/sequence/stale/artifact-incompatible/fingerprint/symbol-mismatch/price-conflict 失敗；
+>   overall COMPLETE/PARTIAL/UNAVAILABLE/CONFLICT。COMPLETE 需 50/50 唯一符號綁定且 parity；49/50 維持 PARTIAL。
+> - **G. blocker 轉換：** 僅完整 COMPLETE 綁定才設 execution_grade_freshness_complete=true 並於 planner-action 範圍內解除
+>   PRICE_FRESHNESS_EVIDENCE_PARTIAL、PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE、WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS；
+>   EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK 永遠保留；綁定失敗則以 WS_PLANNER_PRICE_BINDING_INCOMPLETE 取代之。
+> - **H. parity：** top-level 鏡像 nested（WS_PLANNER_BINDING_PARITY_PASS/FAIL）；FAIL 阻止 COMPLETE。
+> - 即使新鮮度完成：execution_batch_authorized=false、execution_ready=false、sender_reachable=false、
+>   execute_daily_native_call_count=0、transport_sender_call_count=0、order/amend/cancel/live=0、無 auth marker；
+>   binding network audit 全為 0；binder 不 import 任何下單/transport sender；Pilot 與 Forward source byte-identical。
+> - 驗證：focused 37 passed（30 binding + 7 CLI），real pytest exit 0；demo_trading regression 9470 passed
+>   （1 個既有無關 emergency_close CLI 失敗，real pytest exit 1 僅因此）。
+>
+> 下一里程碑：human-authorization + staged Demo batch execution protocol（獨立任務）；本 CG 任務不提供送單命令。
 
 > **TASK-014CF_VPS_CLOSEOUT**（2026-06-24, Sonnet 4.6 / VPS 驗證結案）
 > **`TASK-014CF FIX1 FIX2 AND FIX3 ARE VPS VERIFIED / PUBLIC MAINNET LINEAR WEBSOCKET USED WITHOUT AUTHENTICATION / AUTHORITATIVE 52-SYMBOL UNIVERSE COMPLETE / ALL 52 SAME-MESSAGE PRICE-TIMESTAMP RECORDS COMPLETE / SUBSCRIPTION ACK VALIDATED AND BOUND / COUNTER AND CONTROL-PLANE PARITY PASS / REST PLANNER PRICES NOT REPLACED / EXECUTION-GRADE FRESHNESS REMAINS FALSE PENDING PLANNER SAME-MESSAGE INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
