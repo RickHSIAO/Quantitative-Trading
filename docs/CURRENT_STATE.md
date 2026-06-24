@@ -103,6 +103,17 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   `execution_readiness=False`. The core is pure (no file/network/wall-clock, no
   readiness/gate/execution/sender/Pilot/reporting import). CH2 remains the latest
   executable terminal boundary; Pilot remains 0/7.
+- CH3B1_FIX1: immutable review-helper boundary corrected — a single narrow
+  `_extract_frozen_projections` is the ONLY reader of the parsed wrapper; the exposure
+  and margin-arithmetic helpers now receive frozen scalar projections
+  (`WsBoundPlanReviewPriceProvenance` / `WsBoundPlanReviewMarginInputs`) only and never a
+  Mapping. Pre/post-extraction wrapper+canonical fingerprints must be identical. Margin
+  arithmetic now REQUIRES the wrapper-embedded gross (== 10,000) and rejects a non-null
+  applicable account rate; failed results use the dedicated
+  `OFFLINE_PROJECTED_MARGIN_RATE_NOT_EVALUATED`. Manifest symbols must be pre-normalized
+  (50 unique) and `run_date` is a validated YYYY-MM-DD calendar date (no clock read).
+  Still no CLI wiring; historical binding-time review only; execution readiness false;
+  CH2 remains the executable boundary; Pilot remains 0/7.
 
 ## Repository Cleanup
 

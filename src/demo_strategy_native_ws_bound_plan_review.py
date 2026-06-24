@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import date as _date  # calendar parsing only; never reads the clock
 from decimal import Decimal
 from typing import Any, Mapping, Sequence
 
@@ -69,7 +70,11 @@ WS_BOUND_PLAN_REVIEW_MARGIN_ARITHMETIC_FAILED = "WS_BOUND_PLAN_REVIEW_MARGIN_ARI
 WS_BOUND_PLAN_REVIEW_PROVENANCE_FAILED = "WS_BOUND_PLAN_REVIEW_PROVENANCE_FAILED"
 
 # --- Explicit "not evaluated / unavailable" semantics -----------------------
+# PASS: the offline projected-margin rate review ran and found no independent rate.
 OFFLINE_PROJECTED_MARGIN_RATE_UNAVAILABLE = "UNAVAILABLE_NO_INDEPENDENT_RATE"
+# FAILURE: the projected-margin rate review did not run (distinct from the PASS state,
+# and distinct from the current-market freshness NOT_EVALUATED constant).
+OFFLINE_PROJECTED_MARGIN_RATE_NOT_EVALUATED = "NOT_EVALUATED"
 ACCOUNT_MARGIN_FEASIBILITY_UNAVAILABLE = "UNAVAILABLE_NOT_EVALUATED"
 CURRENT_MARKET_FRESHNESS_NOT_EVALUATED = "NOT_EVALUATED"
 
@@ -96,6 +101,24 @@ class WsBoundPlanReviewAction:
     effective_notional: str
     source_message_fingerprint: str
     action_fingerprint: str
+
+
+@dataclass(frozen=True)
+class WsBoundPlanReviewPriceProvenance:
+    """Frozen, scalar-only per-symbol price-source provenance extracted (read-only)
+    from the wrapper at the immutable extraction boundary."""
+    symbol: str
+    price_source: str
+    selected_price: str | None
+    rest_planning_price: str | None
+    source_message_fingerprint: str | None
+
+
+@dataclass(frozen=True)
+class WsBoundPlanReviewMarginInputs:
+    """Frozen, scalar-only margin inputs extracted (read-only) from the wrapper."""
+    wrapper_strategy_gross_notional: str | None
+    wrapper_applicable_initial_margin_rate: str | None
 
 
 @dataclass(frozen=True)
@@ -157,7 +180,7 @@ def _fail(status: str, *blockers: str) -> WsBoundPlanReviewResult:
         freshness_threshold_ms=None,
         offline_exposure_review_complete=False,
         offline_margin_arithmetic_review_complete=False,
-        offline_projected_margin_rate_status=CURRENT_MARKET_FRESHNESS_NOT_EVALUATED,
+        offline_projected_margin_rate_status=OFFLINE_PROJECTED_MARGIN_RATE_NOT_EVALUATED,
         offline_projected_margin_review_complete=False,
         account_margin_feasibility_status=ACCOUNT_MARGIN_FEASIBILITY_UNAVAILABLE,
         binding_time_freshness_verified=False,
@@ -167,9 +190,57 @@ def _fail(status: str, *blockers: str) -> WsBoundPlanReviewResult:
         native_execution_called=False, pilot_advanced=False)
 
 
-def _exposure_check(rows: Sequence[WsBoundPlanReviewAction], wrapper: Mapping[str, Any]) -> list[str]:
-    """Independently recompute V1 exposure from frozen rows + read-only wrapper price
-    provenance. Returns problems (empty == complete)."""
+def _extract_frozen_projections(
+    parsed_wrapper: Mapping[str, Any],
+) -> tuple[tuple[WsBoundPlanReviewPriceProvenance, ...], WsBoundPlanReviewMarginInputs, list[str]]:
+    """IMMUTABLE EXTRACTION BOUNDARY. The ONLY place that reads the parsed wrapper.
+    Non-mutating: it copies scalar values into frozen projections and retains NO dict /
+    list / Mapping reference. Returns (frozen provenance tuple, frozen margin inputs,
+    extraction problems)."""
+    probs: list[str] = []
+    cbp = parsed_wrapper.get("canonical_bound_plan") if isinstance(parsed_wrapper, Mapping) else None
+    planner = cbp.get("planner") if isinstance(cbp, Mapping) else None
+    tps = planner.get("target_positions") if isinstance(planner, Mapping) else None
+    rows: list[WsBoundPlanReviewPriceProvenance] = []
+    seen: set[str] = set()
+    for tp in (tps if isinstance(tps, (list, tuple)) else []):
+        tpm = tp if isinstance(tp, Mapping) else {}
+        sym = str(tpm.get("symbol", "")).strip().upper()
+        if sym in seen:
+            probs.append(f"{sym}:duplicate_provenance_symbol")
+            continue
+        seen.add(sym)
+        pe = tpm.get("price_evidence")
+        pem = pe if isinstance(pe, Mapping) else {}
+        selected = pem.get("selected_price")
+        rest = tpm.get("rest_planning_price")
+        smf = pem.get("source_message_fingerprint")
+        rows.append(WsBoundPlanReviewPriceProvenance(
+            symbol=sym,
+            price_source=str(tpm.get("price_source", "")),
+            selected_price=None if selected is None else str(selected),
+            rest_planning_price=None if rest is None else str(rest),
+            source_message_fingerprint=None if smf is None else str(smf)))
+
+    review = cbp.get("rebuilt_price_dependent_review") if isinstance(cbp, Mapping) else None
+    reviewm = review if isinstance(review, Mapping) else {}
+    model = reviewm.get("projected_margin_model")
+    modelm = model if isinstance(model, Mapping) else {}
+    gross = reviewm.get("strategy_gross_notional")
+    rate = modelm.get("applicable_initial_margin_rate")
+    margin_inputs = WsBoundPlanReviewMarginInputs(
+        wrapper_strategy_gross_notional=None if gross is None else str(gross),
+        wrapper_applicable_initial_margin_rate=None if rate is None else str(rate))
+    return tuple(rows), margin_inputs, probs
+
+
+def _exposure_check(
+    rows: Sequence[WsBoundPlanReviewAction],
+    provenance: Sequence[WsBoundPlanReviewPriceProvenance],
+) -> list[str]:
+    """Independently recompute V1 exposure from FROZEN rows + FROZEN provenance only.
+    Receives no Mapping and accesses no wrapper / canonical_bound_plan / planner /
+    target_positions. Returns problems (empty == complete)."""
     probs: list[str] = []
     if len(rows) != EXPECTED_STRATEGY_SYMBOL_COUNT:
         probs.append(f"action_count_not_fifty:{len(rows)}")
@@ -178,15 +249,12 @@ def _exposure_check(rows: Sequence[WsBoundPlanReviewAction], wrapper: Mapping[st
     if long_n != EXPECTED_LONG_COUNT or short_n != EXPECTED_SHORT_COUNT:
         probs.append(f"long_short_not_25_25:long={long_n},short={short_n}")
 
-    # Read-only wrapper price-source provenance (rows hold no wrapper ref).
-    cbp = wrapper.get("canonical_bound_plan") if isinstance(wrapper, Mapping) else None
-    planner = cbp.get("planner") if isinstance(cbp, Mapping) else None
-    tps = planner.get("target_positions") if isinstance(planner, Mapping) else []
-    pe_by_symbol: dict[str, Mapping[str, Any]] = {}
-    for tp in (tps or []):
-        if isinstance(tp, Mapping):
-            sym = str(tp.get("symbol", "")).strip().upper()
-            pe_by_symbol[sym] = tp
+    prov_by_symbol: dict[str, WsBoundPlanReviewPriceProvenance] = {}
+    for p in provenance:
+        if p.symbol in prov_by_symbol:
+            probs.append(f"{p.symbol}:duplicate_provenance_symbol")
+            continue
+        prov_by_symbol[p.symbol] = p
 
     long_exp = Decimal("0")
     short_abs = Decimal("0")
@@ -229,23 +297,26 @@ def _exposure_check(rows: Sequence[WsBoundPlanReviewAction], wrapper: Mapping[st
             probs.append(f"{sym}:qty_inconsistent")
         if wb._canon_dec_str(expected_qty * price) != r.effective_notional:
             probs.append(f"{sym}:effective_notional_inconsistent")
-        # Active price provenance: must be the WS-bound price, never the REST seed.
-        tp = pe_by_symbol.get(sym)
-        if not isinstance(tp, Mapping):
-            probs.append(f"{sym}:target_missing_in_wrapper")
+        # Active price provenance (frozen rows only): WS-bound price, never the REST seed.
+        prov = prov_by_symbol.pop(sym, None)
+        if prov is None:
+            probs.append(f"{sym}:provenance_symbol_missing")
         else:
-            pe = tp.get("price_evidence") if isinstance(tp.get("price_evidence"), Mapping) else {}
-            if str(tp.get("price_source", "")) != wb.WS_SOURCE_TYPE:
+            if prov.price_source != wb.WS_SOURCE_TYPE:
                 probs.append(f"{sym}:active_price_source_not_websocket")
-            if r.price != pe.get("selected_price"):
+            if r.price != prov.selected_price:
                 probs.append(f"{sym}:active_price_not_ws_selected_price")
-            rest_price = tp.get("rest_planning_price")
-            if rest_price is not None and r.price == rest_price and rest_price != pe.get("selected_price"):
+            if r.source_message_fingerprint != prov.source_message_fingerprint:
+                probs.append(f"{sym}:provenance_source_message_fingerprint_mismatch")
+            if (prov.rest_planning_price is not None and r.price == prov.rest_planning_price
+                    and prov.rest_planning_price != prov.selected_price):
                 probs.append(f"{sym}:active_price_is_rest_seed_price")
         long_exp += notional if r.side == "long" else Decimal("0")
         short_abs += notional.copy_abs() if r.side == "short" else Decimal("0")
         gross += notional.copy_abs()
         net += notional
+    if prov_by_symbol:
+        probs.append(f"extra_provenance_symbols:{sorted(prov_by_symbol)}")
     if long_exp != V1_LONG_GROSS_USD:
         probs.append(f"long_exposure_not_5000:{long_exp}")
     if short_abs != V1_SHORT_ABS_GROSS_USD:
@@ -257,27 +328,26 @@ def _exposure_check(rows: Sequence[WsBoundPlanReviewAction], wrapper: Mapping[st
     return probs
 
 
-def _margin_arithmetic_check(rows: Sequence[WsBoundPlanReviewAction],
-                             wrapper: Mapping[str, Any]) -> list[str]:
-    """Offline margin ARITHMETIC review only: absolute gross (never signed net); the
-    wrapper-embedded gross must equal the independently recomputed 10,000; the wrapper
-    must NOT claim an independently-verified applicable account rate."""
+def _margin_arithmetic_check(
+    rows: Sequence[WsBoundPlanReviewAction],
+    margin_inputs: WsBoundPlanReviewMarginInputs,
+) -> list[str]:
+    """Offline margin ARITHMETIC review from FROZEN rows + FROZEN scalar margin inputs
+    only (no Mapping). Absolute gross (never signed net); the wrapper-embedded gross MUST
+    be present and equal the independently recomputed 10,000; the wrapper must NOT claim
+    an applicable account rate."""
     probs: list[str] = []
     gross_abs = sum((wb._dec(r.target_notional).copy_abs()
                      for r in rows if wb._dec(r.target_notional) is not None), Decimal("0"))
     if gross_abs != V1_GROSS_USD:
         probs.append(f"absolute_gross_not_10000:{gross_abs}")
-    cbp = wrapper.get("canonical_bound_plan") if isinstance(wrapper, Mapping) else None
-    review = cbp.get("rebuilt_price_dependent_review") if isinstance(cbp, Mapping) else None
-    if isinstance(review, Mapping):
-        embedded_gross = review.get("strategy_gross_notional")
-        if embedded_gross is not None and wb._dec(embedded_gross) != V1_GROSS_USD:
-            probs.append(f"wrapper_gross_not_10000:{embedded_gross}")
-        model = review.get("projected_margin_model")
-        if isinstance(model, Mapping):
-            rate = model.get("applicable_initial_margin_rate")
-            if rate is not None:
-                probs.append("wrapper_claims_applicable_account_rate")
+    embedded_gross = margin_inputs.wrapper_strategy_gross_notional
+    if embedded_gross is None:
+        probs.append("wrapper_embedded_gross_missing")
+    elif wb._dec(embedded_gross) is None or wb._dec(embedded_gross) != V1_GROSS_USD:
+        probs.append(f"wrapper_gross_not_10000:{embedded_gross}")
+    if margin_inputs.wrapper_applicable_initial_margin_rate is not None:
+        probs.append("wrapper_claims_applicable_account_rate")
     return probs
 
 
@@ -336,9 +406,15 @@ def build_ws_bound_plan_review(
         return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_policy_not_v1")
     if str(manifest.get("strategy_id", "")) != EXPECTED_STRATEGY_ID:
         return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_strategy_not_v1")
-    run_date = str(manifest.get("run_date", ""))
-    if not run_date:
+    run_date = manifest.get("run_date")
+    if not isinstance(run_date, str) or not run_date:
         return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_run_date_empty")
+    if not (len(run_date) == 10 and run_date[4] == "-" and run_date[7] == "-"):
+        return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_run_date_not_yyyy_mm_dd")
+    try:
+        _date.fromisoformat(run_date)  # validates calendar; reads no clock
+    except ValueError:
+        return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_run_date_invalid_calendar")
     for f in ("original_plan_fingerprint", "source_ws_artifact_sha256",
               "source_ws_artifact_fingerprint", "canonical_bound_plan_fingerprint"):
         if not consumer._is_canonical_sha(manifest.get(f)):
@@ -353,10 +429,14 @@ def build_ws_bound_plan_review(
     if not (_is_pos_int(threshold) and threshold <= STRICT_MAX_FRESHNESS_THRESHOLD_MS):
         return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_freshness_threshold_invalid")
     raw_syms = manifest.get("strategy_symbols")
-    if not isinstance(raw_syms, (list, tuple)):
-        return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_symbols_not_list")
-    symbols = [str(s).strip().upper() for s in raw_syms]
-    if len(set(symbols)) != EXPECTED_STRATEGY_SYMBOL_COUNT or len(symbols) != EXPECTED_STRATEGY_SYMBOL_COUNT:
+    if not isinstance(raw_syms, (list, tuple)) or len(raw_syms) != EXPECTED_STRATEGY_SYMBOL_COUNT:
+        return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_symbols_not_fifty_list")
+    # Symbols must ALREADY be normalized (no silent strip/upper of malformed input).
+    for s in raw_syms:
+        if not isinstance(s, str) or not s or s != s.strip().upper():
+            return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_symbol_not_normalized")
+    symbols = list(raw_syms)
+    if len(set(symbols)) != EXPECTED_STRATEGY_SYMBOL_COUNT:
         return _fail(WS_BOUND_PLAN_REVIEW_INPUT_INVALID, "manifest_symbols_not_fifty_unique")
     expected_symbol_set_fp = str(manifest.get("expected_symbol_set_fingerprint", ""))
     if expected_symbol_set_fp != ws.canonical_strategy_symbol_set_fingerprint(symbols):
@@ -430,23 +510,31 @@ def build_ws_bound_plan_review(
             action_fingerprint=str(a.action_fingerprint)))
     review_rows = tuple(rows)
 
-    # --- Offline exposure review (frozen rows + read-only wrapper provenance) -
-    exposure_problems = _exposure_check(review_rows, parsed_wrapper)
-    if exposure_problems:
-        return _fail(WS_BOUND_PLAN_REVIEW_EXPOSURE_FAILED, *exposure_problems[:30])
-
-    # --- Offline margin ARITHMETIC review (absolute gross; rate unavailable) --
-    margin_problems = _margin_arithmetic_check(review_rows, parsed_wrapper)
-    if margin_problems:
-        return _fail(WS_BOUND_PLAN_REVIEW_MARGIN_ARITHMETIC_FAILED, *margin_problems[:30])
-
-    # --- Defensive mutation proof (review never touched the wrapper) ----------
+    # --- IMMUTABLE EXTRACTION BOUNDARY ----------------------------------------
+    # pre-extraction fingerprints -> extract frozen scalar projections (the only read
+    # of the parsed wrapper) -> post-extraction fingerprints must be identical. After
+    # this point, no review helper receives the wrapper / canonical_bound_plan Mapping.
+    pre_canonical_fp = consumer._recompute_canonical_bound_plan_fingerprint(
+        parsed_wrapper.get("canonical_bound_plan") or {})
+    provenance, margin_inputs, extract_problems = _extract_frozen_projections(parsed_wrapper)
     post_wrapper_fp = consumer._recompute_wrapper_fingerprint(parsed_wrapper)
     post_canonical_fp = consumer._recompute_canonical_bound_plan_fingerprint(
         parsed_wrapper.get("canonical_bound_plan") or {})
     if not (pre_wrapper_fp == post_wrapper_fp
-            and post_canonical_fp == ch1.canonical_bound_plan_fingerprint):
+            and pre_canonical_fp == post_canonical_fp == ch1.canonical_bound_plan_fingerprint):
         return _fail(WS_BOUND_PLAN_REVIEW_PROVENANCE_FAILED, "wrapper_or_canonical_fingerprint_changed")
+    if extract_problems:
+        return _fail(WS_BOUND_PLAN_REVIEW_PROVENANCE_FAILED, *extract_problems[:30])
+
+    # --- Offline exposure review (FROZEN rows + FROZEN provenance only) -------
+    exposure_problems = _exposure_check(review_rows, provenance)
+    if exposure_problems:
+        return _fail(WS_BOUND_PLAN_REVIEW_EXPOSURE_FAILED, *exposure_problems[:30])
+
+    # --- Offline margin ARITHMETIC review (FROZEN scalar inputs only) ---------
+    margin_problems = _margin_arithmetic_check(review_rows, margin_inputs)
+    if margin_problems:
+        return _fail(WS_BOUND_PLAN_REVIEW_MARGIN_ARITHMETIC_FAILED, *margin_problems[:30])
 
     # --- Build the terminal review envelope (references + results; no Plan) ---
     review_rows_fp = ws._fingerprint([
@@ -540,8 +628,11 @@ __all__ = [
     "WS_BOUND_PLAN_REVIEW_CONSUMER_FAILED", "WS_BOUND_PLAN_REVIEW_CANONICAL_MISMATCH",
     "WS_BOUND_PLAN_REVIEW_EXPOSURE_FAILED", "WS_BOUND_PLAN_REVIEW_MARGIN_ARITHMETIC_FAILED",
     "WS_BOUND_PLAN_REVIEW_PROVENANCE_FAILED",
-    "OFFLINE_PROJECTED_MARGIN_RATE_UNAVAILABLE", "ACCOUNT_MARGIN_FEASIBILITY_UNAVAILABLE",
+    "OFFLINE_PROJECTED_MARGIN_RATE_UNAVAILABLE",
+    "OFFLINE_PROJECTED_MARGIN_RATE_NOT_EVALUATED",
+    "ACCOUNT_MARGIN_FEASIBILITY_UNAVAILABLE",
     "CURRENT_MARKET_FRESHNESS_NOT_EVALUATED",
-    "WsBoundPlanReviewAction", "WsBoundPlanReviewResult",
+    "WsBoundPlanReviewAction", "WsBoundPlanReviewPriceProvenance",
+    "WsBoundPlanReviewMarginInputs", "WsBoundPlanReviewResult",
     "build_ws_bound_plan_review",
 ]

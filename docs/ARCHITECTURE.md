@@ -108,8 +108,11 @@ V1 exposure review → offline margin-arithmetic review → terminal review-enve
 Mapping. It is **not yet CLI-wired** (CH3B2), is pure (no file/network/wall-clock),
 imports no readiness/gate/execution/sender/Pilot/reporting module, reviews only
 historical binding-time evidence (current-market freshness NOT evaluated), reports the
-projected-margin rate as unavailable, and is never execution-ready. CH2 remains the
-latest executable terminal boundary.
+projected-margin rate as unavailable, and is never execution-ready. A single narrow
+extraction boundary is the only reader of the parsed wrapper; the exposure and
+margin-arithmetic helpers operate on frozen scalar projections only (never a Mapping),
+and pre/post-extraction wrapper+canonical fingerprints must be identical. CH2 remains
+the latest executable terminal boundary.
 
 CH2_FIX1 isolation hardening: the Plan-only mode-conflict validation runs as the
 FIRST branch of `main()` — before the reconcile/reporting branch, the

@@ -385,20 +385,18 @@ def test_non_object_source_bytes_fails():
 # Exposure / margin tamper (resealed so CH1 + anchors pass; review must catch)
 # ===========================================================================
 
-def _resealed_wrapper_bundle(mutate_tp):
-    """Build a bundle whose wrapper has a per-target mutation, with the wrapper's own
-    fingerprints + the manifest canonical/wrapper anchors resealed to remain internally
-    consistent (so the defect is caught by the review's independent recompute, not by an
-    outer fingerprint check)."""
+def _resealed_bundle(mutate_cbp):
+    """Build a bundle whose canonical bound Plan is mutated, with the wrapper's own
+    fingerprints + the manifest canonical/wrapper anchors RESEALED to remain internally
+    consistent -- so the defect is caught by the review's independent recompute, not by
+    an outer fingerprint mismatch. State per test whether CH1 or CH3 rejects."""
     b = _bundle()
     wrapper = copy.deepcopy(b["wrapper"])
     cbp = wrapper["canonical_bound_plan"]
-    mutate_tp(cbp["planner"]["target_positions"][0])
-    # reseal canonical fp then wrapper fp so outer fingerprints stay self-consistent.
+    mutate_cbp(cbp)
     cbp["canonical_bound_plan_fingerprint"] = \
         consumer._recompute_canonical_bound_plan_fingerprint(cbp)
-    wrapper["wrapper_fingerprint"] = consumer._recompute_wrapper_fingerprint(
-        {k: v for k, v in wrapper.items() if k != "wrapper_fingerprint"})
+    wrapper["wrapper_fingerprint"] = consumer._recompute_wrapper_fingerprint(wrapper)
     wrapper_bytes = json.dumps(wrapper).encode("utf-8")
     raw, sha = _remanifest(
         b, canonical_bound_plan_fingerprint=cbp["canonical_bound_plan_fingerprint"],
@@ -406,14 +404,184 @@ def _resealed_wrapper_bundle(mutate_tp):
     return b, wrapper_bytes, raw, sha
 
 
-def test_qty_tamper_caught_by_review_or_consumer():
+def test_qty_tamper_caught_by_consumer():
     # Tamper qty so qty/effective consistency breaks; CH1 catches it first (ACTION),
     # surfaced here as CONSUMER_FAILED -- still terminal, no envelope.
-    b, wbytes, raw, sha = _resealed_wrapper_bundle(lambda tp: tp.__setitem__("qty", "7"))
+    b, wbytes, raw, sha = _resealed_bundle(
+        lambda cbp: cbp["planner"]["target_positions"][0].__setitem__("qty", "7"))
     r = _review(b, manifest_bytes=raw, manifest_sha=sha, wrapper_bytes=wbytes)
     _assert_failed(r)
-    assert r.status in (rev.WS_BOUND_PLAN_REVIEW_CONSUMER_FAILED,
-                        rev.WS_BOUND_PLAN_REVIEW_EXPOSURE_FAILED)
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_CONSUMER_FAILED
+
+
+# ===========================================================================
+# FIX1 -- immutable helper boundary, margin-rate failure semantics, validation
+# ===========================================================================
+
+def test_pass_without_optional_wrapper_fingerprint():
+    b = _bundle()
+    raw, sha = _remanifest(b, wrapper_fingerprint=None)  # optional anchor omitted
+    r = _review(b, manifest_bytes=raw, manifest_sha=sha)
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_PASS
+
+
+def test_exposure_helper_receives_only_frozen(monkeypatch):
+    captured = {}
+    orig = rev._exposure_check
+
+    def spy(rows, provenance):
+        captured["rows"] = rows
+        captured["prov"] = provenance
+        return orig(rows, provenance)
+
+    monkeypatch.setattr(rev, "_exposure_check", spy)
+    r = _review(_bundle())
+    assert r.passed
+    assert isinstance(captured["rows"], tuple)
+    assert all(isinstance(x, rev.WsBoundPlanReviewAction) for x in captured["rows"])
+    assert isinstance(captured["prov"], tuple)
+    assert all(isinstance(x, rev.WsBoundPlanReviewPriceProvenance) for x in captured["prov"])
+    assert not isinstance(captured["prov"], dict)
+
+
+def test_margin_helper_receives_only_frozen_scalars(monkeypatch):
+    captured = {}
+    orig = rev._margin_arithmetic_check
+
+    def spy(rows, margin_inputs):
+        captured["rows"] = rows
+        captured["margin"] = margin_inputs
+        return orig(rows, margin_inputs)
+
+    monkeypatch.setattr(rev, "_margin_arithmetic_check", spy)
+    r = _review(_bundle())
+    assert r.passed
+    assert isinstance(captured["rows"], tuple)
+    assert isinstance(captured["margin"], rev.WsBoundPlanReviewMarginInputs)
+    assert not isinstance(captured["margin"], dict)
+
+
+def test_extracted_projections_have_no_container_references():
+    b = _bundle()
+    parsed = json.loads(b["wrapper_bytes"])
+    provenance, margin_inputs, problems = rev._extract_frozen_projections(parsed)
+    assert problems == []
+    assert isinstance(provenance, tuple) and len(provenance) == 50
+    for p in provenance:
+        assert isinstance(p, rev.WsBoundPlanReviewPriceProvenance)
+        for value in dataclasses.astuple(p):
+            assert not isinstance(value, (dict, list))
+    assert isinstance(margin_inputs, rev.WsBoundPlanReviewMarginInputs)
+    for value in dataclasses.astuple(margin_inputs):
+        assert not isinstance(value, (dict, list))
+
+
+def test_review_rows_have_no_container_references():
+    r = _review(_bundle())
+    for row in r.review_rows:
+        for value in dataclasses.astuple(row):
+            assert not isinstance(value, (dict, list))
+
+
+def test_lowercase_manifest_symbol_fails():
+    b = _bundle()
+    syms = list(cg.STRATEGY_50)
+    syms[0] = syms[0].lower()
+    raw, sha = _remanifest(
+        b, strategy_symbols=syms,
+        expected_symbol_set_fingerprint=ws.canonical_strategy_symbol_set_fingerprint(syms))
+    r = _review(b, manifest_bytes=raw, manifest_sha=sha)
+    _assert_failed(r)
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_INPUT_INVALID
+
+
+def test_whitespace_padded_manifest_symbol_fails():
+    b = _bundle()
+    syms = list(cg.STRATEGY_50)
+    syms[0] = " " + syms[0] + " "
+    raw, sha = _remanifest(
+        b, strategy_symbols=syms,
+        expected_symbol_set_fingerprint=ws.canonical_strategy_symbol_set_fingerprint(syms))
+    r = _review(b, manifest_bytes=raw, manifest_sha=sha)
+    _assert_failed(r)
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_INPUT_INVALID
+
+
+@pytest.mark.parametrize("bad_date", ["2026-13-40", "2026-06-31", "20260622", "2026-6-2", "not-a-date"])
+def test_invalid_calendar_date_fails(bad_date):
+    b = _bundle()
+    raw, sha = _remanifest(b, run_date=bad_date)
+    r = _review(b, manifest_bytes=raw, manifest_sha=sha)
+    _assert_failed(r)
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_INPUT_INVALID
+
+
+def test_malformed_source_json_fails_deterministically():
+    b = _bundle()
+    r = _review(b, source_bytes=b"{not valid json")
+    _assert_failed(r)
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_INPUT_INVALID
+
+
+def test_wrong_external_canonical_fingerprint_precise_status():
+    b = _bundle()
+    raw, sha = _remanifest(b, canonical_bound_plan_fingerprint="sha256:" + "9" * 64)
+    r = _review(b, manifest_bytes=raw, manifest_sha=sha)
+    _assert_failed(r)
+    # CH1 takes no canonical-fp input; CH3 pins it -> precise CANONICAL_MISMATCH.
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_CANONICAL_MISMATCH
+
+
+def test_missing_wrapper_embedded_gross_caught_by_ch3_margin():
+    # CH1 fp covers strategy_gross_notional but not its presence/value; CH3 requires it.
+    b, wbytes, raw, sha = _resealed_bundle(
+        lambda cbp: cbp["rebuilt_price_dependent_review"].pop("strategy_gross_notional", None))
+    r = _review(b, manifest_bytes=raw, manifest_sha=sha, wrapper_bytes=wbytes)
+    _assert_failed(r)
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_MARGIN_ARITHMETIC_FAILED
+    assert r.offline_projected_margin_rate_status == rev.OFFLINE_PROJECTED_MARGIN_RATE_NOT_EVALUATED
+
+
+def test_wrong_wrapper_embedded_gross_fails():
+    b, wbytes, raw, sha = _resealed_bundle(
+        lambda cbp: cbp["rebuilt_price_dependent_review"].__setitem__("strategy_gross_notional", "9999"))
+    r = _review(b, manifest_bytes=raw, manifest_sha=sha, wrapper_bytes=wbytes)
+    _assert_failed(r)
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_MARGIN_ARITHMETIC_FAILED
+
+
+def test_non_null_wrapper_applicable_account_rate_fails():
+    b, wbytes, raw, sha = _resealed_bundle(
+        lambda cbp: cbp["rebuilt_price_dependent_review"]["projected_margin_model"].__setitem__(
+            "applicable_initial_margin_rate", "0.05"))
+    r = _review(b, manifest_bytes=raw, manifest_sha=sha, wrapper_bytes=wbytes)
+    _assert_failed(r)
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_MARGIN_ARITHMETIC_FAILED
+
+
+def test_failure_result_uses_dedicated_margin_rate_not_evaluated():
+    r = _review(_bundle(), manifest_sha="sha256:" + "0" * 64)  # MANIFEST_MISMATCH
+    _assert_failed(r)
+    assert r.offline_projected_margin_rate_status == rev.OFFLINE_PROJECTED_MARGIN_RATE_NOT_EVALUATED
+
+
+def test_pass_full_field_invariants():
+    r = _review(_bundle())
+    assert r.status == rev.WS_BOUND_PLAN_REVIEW_PASS
+    longs = [a for a in r.review_rows if a.side == "long"]
+    shorts = [a for a in r.review_rows if a.side == "short"]
+    assert len(r.review_rows) == 50 and len(longs) == 25 and len(shorts) == 25
+    assert all(a.target_notional == "-200" for a in shorts)
+    t = r.review_artifact["offline_exposure_totals"]
+    assert (t["gross_exposure_usd"], t["long_exposure_usd"],
+            t["short_absolute_exposure_usd"], t["net_signed_exposure_usd"]) == \
+        ("10000", "5000", "5000", "0")
+    assert r.binding_time_freshness_verified is True
+    assert r.current_market_freshness_status == rev.CURRENT_MARKET_FRESHNESS_NOT_EVALUATED
+    assert r.offline_projected_margin_rate_status == rev.OFFLINE_PROJECTED_MARGIN_RATE_UNAVAILABLE
+    assert r.offline_projected_margin_review_complete is False
+    assert r.account_margin_feasibility_status == rev.ACCOUNT_MARGIN_FEASIBILITY_UNAVAILABLE
+    assert r.execution_readiness is False
 
 
 # ===========================================================================
