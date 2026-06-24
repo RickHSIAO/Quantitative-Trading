@@ -88,6 +88,21 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   (`UNAVAILABLE_NO_INDEPENDENT_RATE`); account feasibility `UNAVAILABLE_NOT_EVALUATED`; the
   expected 50-symbol set is pinned to externally-preserved hashes (run-date, not latest_date).
   CH3 PASS is never execution-ready. Execution remains unauthorized; Pilot remains 0/7.
+- **CH3B1: the pure offline review core exists** —
+  `src/demo_strategy_native_ws_bound_plan_review.py`
+  (`build_ws_bound_plan_review`). It takes exact trusted anchor-manifest bytes +
+  exact CH2 wrapper bytes + exact source-WS bytes, pins identity to the external
+  manifest, re-runs the CH1 consumer, builds an immutable V1 exposure review and an
+  offline margin-arithmetic review, and returns a terminal review-envelope Mapping
+  (references only; no embedded Plan). **No CLI/runtime wiring yet** (CH3B2 will add
+  it and reuse the CH2 race-safe writer). Review is **historical binding-time only**
+  (`binding_time_freshness_verified=True`; `current_market_freshness_status=NOT_EVALUATED`,
+  `current_market_freshness_checked=False`); the projected-margin rate is unavailable
+  (`offline_projected_margin_review_complete=False`,
+  `UNAVAILABLE_NO_INDEPENDENT_RATE`); account feasibility `UNAVAILABLE_NOT_EVALUATED`;
+  `execution_readiness=False`. The core is pure (no file/network/wall-clock, no
+  readiness/gate/execution/sender/Pilot/reporting import). CH2 remains the latest
+  executable terminal boundary; Pilot remains 0/7.
 
 ## Repository Cleanup
 
