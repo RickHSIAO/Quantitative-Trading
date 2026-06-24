@@ -1011,11 +1011,14 @@ def _run_ws_bound_plan_only(args: Any, output_root: str | None) -> int:
         print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
         return exit_code
 
-    # --- Flag validation (reject execution-capable / incompatible arguments) ---
+    # --- Mode-conflict validation (BEFORE any side effect: no reconcile, no Pilot,
+    # no reporting, no provider, no read, no write) -----------------------------
     incompatible = [n for n, v in (
         ("send_orders_to_demo", args.send_orders_to_demo),
         ("advance_on_success", args.advance_on_success),
         ("reconcile_outputs_only", args.reconcile_outputs_only),
+        ("allow_notion_network", args.allow_notion_network),
+        ("allow_discord_network", args.allow_discord_network),
         ("test_injected_actions_json", bool(args.test_injected_actions_json)),
     ) if v]
     if incompatible:
@@ -1043,6 +1046,21 @@ def _run_ws_bound_plan_only(args: Any, output_root: str | None) -> int:
     else:
         # Computed EXACTLY ONCE at the script boundary; shared by binder + consumer.
         binding_epoch_ns = time.time_ns()
+
+    # --- Input/output path separation + no-clobber (BEFORE provider / read) ----
+    in_path = args.ws_ticker_evidence_json
+    out_path = args.ws_bound_plan_output_json
+    in_norm = os.path.normcase(os.path.realpath(in_path))
+    out_norm = os.path.normcase(os.path.realpath(out_path))
+    if in_norm == out_norm:
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID,
+                        detail="--ws-ticker-evidence-json and --ws-bound-plan-output-json "
+                               "resolve to the same path; the source artifact must not be overwritten",
+                        exit_code=EXIT_INVALID)
+    if os.path.exists(out_path):
+        return _summary(wsbpo.WS_BOUND_PLAN_ONLY_OUTPUT_EXISTS,
+                        detail="--ws-bound-plan-output-json already exists; refusing to clobber "
+                               "(use a fresh output path)", exit_code=EXIT_INVALID)
 
     # --- Build the REST seed Plan (upstream binding seed only) -----------------
     try:
@@ -1084,6 +1102,9 @@ def _run_ws_bound_plan_only(args: Any, output_root: str | None) -> int:
     if result.status == wsbpo.WS_BOUND_PLAN_ONLY_INPUT_INVALID:
         return _summary(result.status, detail="ws-bound-plan-only input invalid",
                         exit_code=EXIT_INVALID, result=result)
+    if result.status == wsbpo.WS_BOUND_PLAN_ONLY_SOURCE_JSON_INVALID:
+        return _summary(result.status, detail="source ws evidence bytes are not a JSON object",
+                        exit_code=EXIT_INPUT_FAILURE, result=result)
     if result.status == wsbpo.WS_BOUND_PLAN_ONLY_BINDING_FAILED:
         return _summary(result.status, detail="WS binding did not produce a canonical bound plan",
                         exit_code=EXIT_BLOCKED, result=result)
@@ -1108,6 +1129,18 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     output_root = args.test_output_root
 
+    # TASK-014CH2 (+FIX1): explicit opt-in, terminal Plan-only WebSocket-bound path.
+    # Dispatched as the FIRST branch -- before the test-injected check, the
+    # reconcile/reporting branch, the RUNNING gate (PilotStateStore), provider
+    # construction, REST seed planning, source read and output write -- so its
+    # mode-conflict validation precedes every existing side-effecting branch. It
+    # builds the REST seed Plan only as a binding seed, binds it to the caller-supplied
+    # WS evidence, validates via the CH1 consumer, writes one fresh canonical wrapper,
+    # and stops. No execution, review, readiness, gate, native execution, reporting,
+    # Pilot mutation, or REST fallback.
+    if args.ws_bound_plan_only:
+        return _run_ws_bound_plan_only(args, output_root)
+
     # The manually-supplied action JSON is a test-only injected fixture and is
     # REFUSED as a production source.
     if args.test_injected_actions_json and not _is_test_root(args.test_output_root):
@@ -1123,14 +1156,6 @@ def main(argv: list[str] | None = None) -> int:
             allow_discord_network=args.allow_discord_network)
         print(json.dumps(rep, ensure_ascii=False, indent=2, sort_keys=True))
         return EXIT_OK
-
-    # TASK-014CH2: explicit opt-in, terminal Plan-only WebSocket-bound path. Placed
-    # BEFORE the RUNNING gate so it never touches readiness / Pilot state. It builds
-    # the REST seed Plan, binds it to the caller-supplied WS evidence, validates via
-    # the CH1 consumer, writes one canonical wrapper, and stops. No execution, no
-    # active review, no gate, no native execution, no Pilot mutation, no REST fallback.
-    if args.ws_bound_plan_only:
-        return _run_ws_bound_plan_only(args, output_root)
 
     # RUNNING gate.
     state = rd.PilotStateStore(args.pilot_id, output_root).read_state()

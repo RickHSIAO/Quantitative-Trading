@@ -61,6 +61,16 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   collection in this path). No REST fallback once WS binding begins. The path
   is terminal **before** review / readiness / execution gate / native
   execution; execution remains unauthorized and the Pilot is never advanced.
+- CH2_FIX1 hardening: Plan-only mode-conflict validation runs **first** in
+  `main()`, before reconcile / PilotStateStore / reporting / provider / read /
+  write (rejects `--send-orders-to-demo`, `--advance-on-success`,
+  `--reconcile-outputs-only`, `--allow-notion-network`, `--allow-discord-network`,
+  `--test-injected-actions-json`). The **exact source-file bytes** are the
+  authoritative parse and SHA256 source (the parsed object drives fingerprint,
+  binder input and consumer); a supplied Mapping must deep-equal that parse.
+  Input and output paths must differ (no source overwrite), and output uses a
+  **fresh-path, no-clobber** policy (the atomic writer independently refuses an
+  existing destination; only the task-created temp is removed on failure).
 - The **default** native-daily behavior (flag absent) is unchanged.
 
 ## Repository Cleanup

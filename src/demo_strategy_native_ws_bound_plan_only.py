@@ -53,6 +53,7 @@ WS_BOUND_PLAN_ONLY_SOURCE_JSON_INVALID = "WS_BOUND_PLAN_ONLY_SOURCE_JSON_INVALID
 WS_BOUND_PLAN_ONLY_BINDING_FAILED = "WS_BOUND_PLAN_ONLY_BINDING_FAILED"
 WS_BOUND_PLAN_ONLY_CONSUMER_FAILED = "WS_BOUND_PLAN_ONLY_CONSUMER_FAILED"
 WS_BOUND_PLAN_ONLY_OUTPUT_FAILED = "WS_BOUND_PLAN_ONLY_OUTPUT_FAILED"
+WS_BOUND_PLAN_ONLY_OUTPUT_EXISTS = "WS_BOUND_PLAN_ONLY_OUTPUT_EXISTS"
 
 
 class WsBoundPlanOnlyError(ValueError):
@@ -99,14 +100,17 @@ def build_and_validate_ws_bound_plan_only(
     expected_symbols: Sequence[str],
     source_ws_artifact_path: str = "WS_TICKER_EVIDENCE",
 ) -> WsBoundPlanOnlyResult:
-    """Bind the REST seed Plan to the supplied source WS evidence and validate the
-    result through the CH1 consumer. Pure and deterministic; never raises. The wrapper
-    is exposed ONLY when the consumer returns PASS.
+    """Bind the REST seed Plan to the source WS evidence and validate the result
+    through the CH1 consumer. Pure, deterministic, and fail-closed (returns a result
+    rather than raising for malformed JSON-compatible input). The wrapper is exposed
+    ONLY when the consumer returns PASS.
 
-    The expected WS-artifact fingerprint is INDEPENDENTLY recomputed from the supplied
-    source artifact (never copied from the produced wrapper); the byte SHA256 is
-    computed from the exact supplied bytes; the original seed-Plan fingerprint is
-    computed BEFORE binding."""
+    The EXACT ``source_ws_artifact_bytes`` are the single source of truth: they are
+    parsed inside this core and that parsed object drives the logical fingerprint, the
+    binder input AND the CH1 consumer source artifact. The byte SHA256 is computed from
+    those same exact bytes; the original seed-Plan fingerprint is computed BEFORE
+    binding. ``source_ws_artifact`` is retained for compatibility and MUST deep-equal
+    the exact-bytes parse (else fail closed); it is never used as a fallback parse."""
 
     def _fail(status: str, *blockers: str) -> WsBoundPlanOnlyResult:
         return WsBoundPlanOnlyResult(
@@ -125,42 +129,58 @@ def build_and_validate_ws_bound_plan_only(
         return _fail(WS_BOUND_PLAN_ONLY_INPUT_INVALID, "freshness_threshold_exceeds_strict_max")
     if not isinstance(source_ws_artifact_bytes, (bytes, bytearray)):
         return _fail(WS_BOUND_PLAN_ONLY_INPUT_INVALID, "source_ws_artifact_bytes_not_bytes")
-    if not isinstance(seed_plan, Mapping) or not isinstance(source_ws_artifact, Mapping):
-        return _fail(WS_BOUND_PLAN_ONLY_INPUT_INVALID, "seed_plan_or_source_not_mapping")
+    if not isinstance(seed_plan, Mapping):
+        return _fail(WS_BOUND_PLAN_ONLY_INPUT_INVALID, "seed_plan_not_mapping")
     sym_list = [str(s).strip().upper() for s in (expected_symbols or [])]
     if len(set(sym_list)) != EXPECTED_STRATEGY_SYMBOL_COUNT or len(sym_list) != EXPECTED_STRATEGY_SYMBOL_COUNT:
         return _fail(WS_BOUND_PLAN_ONLY_INPUT_INVALID, "expected_symbols_not_exactly_fifty_unique")
 
-    # --- Independent anchors (never copied from the produced wrapper) ---------
+    # --- EXACT bytes are authoritative: parse them HERE (no caller fallback) ---
+    try:
+        parsed_source = json.loads(bytes(source_ws_artifact_bytes))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return _fail(WS_BOUND_PLAN_ONLY_SOURCE_JSON_INVALID, "source_ws_bytes_invalid_json")
+    if not isinstance(parsed_source, Mapping):
+        return _fail(WS_BOUND_PLAN_ONLY_SOURCE_JSON_INVALID, "source_ws_bytes_not_object")
+    # Compatibility guard: the supplied Mapping must MATCH the exact-bytes parse.
+    if not isinstance(source_ws_artifact, Mapping):
+        return _fail(WS_BOUND_PLAN_ONLY_INPUT_INVALID, "source_ws_artifact_not_mapping")
+    if dict(source_ws_artifact) != dict(parsed_source):
+        return _fail(WS_BOUND_PLAN_ONLY_INPUT_INVALID, "source_ws_mapping_does_not_match_exact_bytes")
+
+    # --- Independent anchors derived from the EXACT bytes / their parse --------
     byte_sha256 = wb.compute_file_sha256(bytes(source_ws_artifact_bytes))
     try:
         recomputed_source_fp = ws._fingerprint(
-            {k: v for k, v in source_ws_artifact.items() if k != "artifact_fingerprint"})
-    except Exception:  # noqa: BLE001
+            {k: v for k, v in parsed_source.items() if k != "artifact_fingerprint"})
+    except (TypeError, ValueError):
         return _fail(WS_BOUND_PLAN_ONLY_INPUT_INVALID, "source_ws_artifact_fingerprint_unrecomputable")
-    original_plan_fingerprint = wb._fingerprint(dict(seed_plan))
+    try:
+        original_plan_fingerprint = wb._fingerprint(dict(seed_plan))
+    except (TypeError, ValueError):
+        return _fail(WS_BOUND_PLAN_ONLY_INPUT_INVALID, "seed_plan_fingerprint_unrecomputable")
 
-    # --- Bind (existing WS binder) --------------------------------------------
+    # --- Bind (existing WS binder) -- uses the exact-bytes parse as input ------
     try:
         wrapper = wb.build_ws_bound_plan_artifact(
-            plan_artifact=seed_plan, ws_artifact=source_ws_artifact,
+            plan_artifact=seed_plan, ws_artifact=parsed_source,
             ws_artifact_path=str(source_ws_artifact_path), ws_artifact_sha256=byte_sha256,
             binding_epoch_ns=binding_epoch_ns,
             binding_freshness_threshold_ms=freshness_threshold_ms)
     except wb.WsPriceBindingError as exc:
         return _fail(WS_BOUND_PLAN_ONLY_BINDING_FAILED, f"binder_error:{exc}")
-    except Exception as exc:  # noqa: BLE001
-        return _fail(WS_BOUND_PLAN_ONLY_BINDING_FAILED, f"binder_unexpected_error:{type(exc).__name__}")
+    except (KeyError, TypeError, ValueError) as exc:  # noqa: BLE001
+        return _fail(WS_BOUND_PLAN_ONLY_BINDING_FAILED, f"binder_error:{type(exc).__name__}")
 
     if not isinstance(wrapper, Mapping) or wrapper.get("canonical_bound_plan") is None:
         overall = str(_as_str(wrapper, "overall_binding_status"))
         return _fail(WS_BOUND_PLAN_ONLY_BINDING_FAILED,
                      f"no_canonical_bound_plan:{overall}")
 
-    # --- Validate through the CH1 consumer ------------------------------------
+    # --- Validate through the CH1 consumer (same exact-bytes parse) -----------
     result = consumer.validate_ws_bound_plan_artifact(
         wrapper,
-        source_ws_artifact=source_ws_artifact,
+        source_ws_artifact=parsed_source,
         expected_policy_id=expected_policy_id,
         expected_strategy_id=expected_strategy_id,
         expected_run_date=expected_run_date,
@@ -228,8 +248,12 @@ def parse_source_ws_artifact(raw: bytes) -> Mapping[str, Any]:
 
 def atomic_write_wrapper(path: str | Path, wrapper: Mapping[str, Any]) -> None:
     """Write exactly one canonical wrapper artifact atomically (temp file + replace).
-    The wrapper is written UNMODIFIED. On any failure no partial file remains."""
+    The wrapper is written UNMODIFIED. Fresh-path only: independently REFUSES an
+    existing destination (second line of defense; never clobbers a pre-existing file).
+    On any failure only the task-created temp file is removed."""
     p = Path(path)
+    if p.exists():
+        raise WsBoundPlanOnlyError(f"output destination already exists (no clobber): {p}")
     p.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(p.parent), suffix=".tmp")
     try:
@@ -251,7 +275,7 @@ __all__ = [
     "WS_BOUND_PLAN_ONLY_PASS", "WS_BOUND_PLAN_ONLY_INPUT_INVALID",
     "WS_BOUND_PLAN_ONLY_SOURCE_READ_FAILED", "WS_BOUND_PLAN_ONLY_SOURCE_JSON_INVALID",
     "WS_BOUND_PLAN_ONLY_BINDING_FAILED", "WS_BOUND_PLAN_ONLY_CONSUMER_FAILED",
-    "WS_BOUND_PLAN_ONLY_OUTPUT_FAILED",
+    "WS_BOUND_PLAN_ONLY_OUTPUT_FAILED", "WS_BOUND_PLAN_ONLY_OUTPUT_EXISTS",
     "WsBoundPlanOnlyError", "WsBoundPlanOnlyResult",
     "build_and_validate_ws_bound_plan_only",
     "read_source_ws_bytes", "parse_source_ws_artifact", "atomic_write_wrapper",

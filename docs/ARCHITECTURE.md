@@ -100,6 +100,18 @@ The **default** native runtime (flag absent) is unchanged and continues to use
 the REST planner path. No readiness/gate/execution/Pilot module is reached by
 the Plan-only WS path.
 
+CH2_FIX1 isolation hardening: the Plan-only mode-conflict validation runs as the
+FIRST branch of `main()` — before the reconcile/reporting branch, the
+`PilotStateStore` RUNNING gate, provider construction, source read and output
+write — and rejects every execution/reporting/Pilot-mutating flag. The EXACT
+source-file bytes are the single source of truth: they are parsed inside the
+pure core and that parsed object drives the logical fingerprint, the binder
+input and the consumer source artifact; the byte SHA256 is taken from those same
+bytes; any supplied Mapping must deep-equal the exact-bytes parse. Input and
+output paths must resolve to different files (the source is never overwritten),
+and the output is fresh-path no-clobber (the atomic writer independently refuses
+an existing destination and removes only the task-created temp on failure).
+
 ## Execution Safety Boundary
 
 - **Plan-only vs send**: The daily runner sets `order_execution_authorized = False`.
