@@ -1,18 +1,16 @@
 # Agent Project Instructions
 
-Codex must read `docs/research/commands/NEXT_ACTION.md` at the start of every project session.
+## Session Startup
+
+Read `docs/CURRENT_STATE.md` at the start of every project session.
+Archived logs in `docs/archive/` are historical only — do not load by default.
 
 ## Codex Rules
 
-- Only execute the task specified in `NEXT_ACTION.md` or Rick's latest direct chat instruction.
-- If `NEXT_ACTION.md` status is not `READY`, do not start task work unless Rick explicitly authorizes it in the current chat.
-- Do not use old TASK-002 artifacts or architecture:
-  - `output/crypto_cost_stress.csv`
-  - `scripts/crypto_cost_stress.py`
+- Only execute the task specified by Rick's latest direct chat instruction.
 - Do not independently clear `BLOCKED` status.
 - Do not independently mark tasks `DONE`.
-- Complete implementation tasks by moving them to `REVIEW` when appropriate, not `DONE`.
-- After completing an authorized task, update `docs/research/commands/COMMAND_LOG.md`.
+- Complete implementation tasks by moving them to `REVIEW` when appropriate.
 
 ## Red Lines
 
@@ -25,8 +23,7 @@ Codex must read `docs/research/commands/NEXT_ACTION.md` at the start of every pr
 
 ## Primary Registry Files
 
-- `docs/research/commands/NEXT_ACTION.md`
-- `docs/research/commands/CODEX_COMMANDS.md`
-- `docs/research/commands/COMMAND_LOG.md`
+- `docs/CURRENT_STATE.md`
+- `docs/research/commands/CLAUDE_COMMANDS.md`
 - `docs/research/CODEX_TASK_QUEUE.md`
 - `docs/research/CLAUDE_REVIEW_QUEUE.md`
