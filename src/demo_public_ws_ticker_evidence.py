@@ -57,6 +57,25 @@ TASK_ID = "TASK-014CF"
 SCHEMA_NAME = "public_websocket_ticker_evidence"
 SCHEMA_VERSION = 1
 
+# TASK-014CG_FIX1: an explicit COMPATIBLE sub-schema version for canonical planner
+# price binding. The base artifact stays schema_version 1 (the historical
+# VPS-verified 52/52 / ACK / parity behavior is byte-unchanged); canonical_binding
+# evidence (authoritative structured strategy provenance + recomputable
+# source-message fingerprints) is layered on and versioned independently so a
+# version-1-only artifact is never silently reinterpreted as canonical-bind ready.
+CANONICAL_BINDING_SCHEMA_VERSION = 2
+
+# Recomputable source-message fingerprint provenance.
+SOURCE_MESSAGE_FINGERPRINT_VERSION = 1
+SOURCE_MESSAGE_FINGERPRINT_ALGORITHM = "sha256"
+SOURCE_MESSAGE_MATERIAL_VERSION = 1
+
+# Authoritative WS-side strategy provenance status vocabulary.
+STRATEGY_SOURCE_PROVENANCE_AUTHORITATIVE = "STRATEGY_SOURCE_PROVENANCE_AUTHORITATIVE"
+STRATEGY_SOURCE_PROVENANCE_INCOMPATIBLE = "STRATEGY_SOURCE_PROVENANCE_INCOMPATIBLE"
+STRATEGY_SOURCE_PROVENANCE_MISSING = "STRATEGY_SOURCE_PROVENANCE_MISSING"
+STRATEGY_SOURCE_PROVENANCE_CONFLICT = "STRATEGY_SOURCE_PROVENANCE_CONFLICT"
+
 # Mainnet public linear stream IS the correct source for Demo public market data.
 ENVIRONMENT = "MAINNET_PUBLIC_LINEAR_FOR_DEMO_PUBLIC_MARKET_DATA"
 CHANNEL_TYPE = "public/linear"
@@ -225,6 +244,56 @@ def _fingerprint(payload: Any) -> str:
     body = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=True)
     return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def canonical_strategy_symbol_set_fingerprint(symbols: Sequence[str]) -> str:
+    """Deterministic fingerprint of an authoritative Strategy symbol SET.
+
+    One shared, exported function so the WS producer, the Plan-only run and the
+    canonical binder all derive the SAME fingerprint from the SAME authoritative
+    ordered/sorted unique symbol set (no free-text / count / filename inference).
+    """
+    canon = sorted({_canonical_symbol(s) for s in symbols if _canonical_symbol(s)})
+    return _fingerprint({"strategy_symbol_set": canon,
+                         "material_version": SOURCE_MESSAGE_MATERIAL_VERSION,
+                         "schema": SCHEMA_NAME})
+
+
+def canonical_source_message_fingerprint(
+    *,
+    symbol: Any,
+    topic: Any,
+    selected_price_field: Any,
+    selected_price: Any,
+    source_message_type: Any,
+    source_ts_ms: Any,
+    source_cs: Any,
+    local_received_epoch_ns: Any,
+    local_received_at_utc: Any,
+    local_monotonic_received_ns: Any,
+    connection_generation: Any,
+) -> str:
+    """Deterministic, independently-recomputable fingerprint of the SAFE immutable
+    material of the exact price-carrying source message. No credentials and no
+    unrestricted raw server payload are included -- only the selected canonical
+    fields that the artifact already records, so the binder can recompute it.
+    """
+    material = {
+        "material_version": SOURCE_MESSAGE_MATERIAL_VERSION,
+        "symbol": _canonical_symbol(symbol),
+        "topic": str(topic),
+        "selected_price_field": str(selected_price_field),
+        "selected_price": None if selected_price is None else str(selected_price),
+        "source_message_type": None if source_message_type is None else str(source_message_type),
+        "source_ts_ms": source_ts_ms,
+        "source_cs": source_cs,
+        "local_received_epoch_ns": local_received_epoch_ns,
+        "local_received_at_utc": (None if local_received_at_utc is None
+                                  else str(local_received_at_utc)),
+        "local_monotonic_received_ns": local_monotonic_received_ns,
+        "connection_generation": connection_generation,
+    }
+    return _fingerprint(material)
 
 
 def _iso_from_epoch_ns(epoch_ns: int | None) -> str | None:
@@ -521,6 +590,70 @@ def extract_legacy_position_provenance(
         "legacy_position_source_fingerprint": _fingerprint(fp_payload),
         "symbol_universe_source_status": status,
         "legacy_position_source_failures": sorted(set(failures)),
+    }
+
+
+def extract_strategy_source_provenance(
+    ce_artifact: Mapping[str, Any],
+    *,
+    strategy_symbols: Sequence[str],
+    requested_strategy_date: str,
+    artifact_bytes: bytes,
+) -> dict[str, Any]:
+    """Derive AUTHORITATIVE, structured WS-side strategy provenance from the
+    accepted CE Plan-only artifact. The active strategy is read ONLY from the CE
+    artifact's authoritative ``strategy_native_review.active_strategy`` field
+    (never inferred from symbol count, free text, a source reference string,
+    filename or program defaults). Fails closed on any missing/incompatible field.
+    """
+    review = _ce_review(ce_artifact)
+    sha = _sha256_bytes(artifact_bytes)
+    strat = sorted({_canonical_symbol(s) for s in strategy_symbols if _canonical_symbol(s)})
+
+    active_policy = str(ce_artifact.get("active_policy", "")) or None
+    active_strategy = str(review.get("active_strategy", "")) or None
+    artifact_date = str(ce_artifact.get("date", "")) or None
+    ce_evidence_fp = None
+    clock = review.get("exchange_clock_evidence")
+    if isinstance(clock, Mapping):
+        ce_evidence_fp = clock.get("server_time_evidence_fingerprint")
+
+    failures: list[str] = []
+    if not active_policy:
+        failures.append("active_policy_absent")
+    if not active_strategy:
+        failures.append("active_strategy_absent")
+    if not artifact_date:
+        failures.append("requested_strategy_date_absent")
+    if not strat:
+        failures.append("strategy_symbols_absent")
+
+    incompatible: list[str] = []
+    if active_policy is not None and active_policy != ACTIVE_STRATEGY_NATIVE_V1_POLICY:
+        incompatible.append("active_policy_incompatible")
+    if active_strategy is not None and active_strategy != EXPECTED_STRATEGY_NAME:
+        incompatible.append("active_strategy_incompatible")
+    if artifact_date is not None and artifact_date != str(requested_strategy_date):
+        incompatible.append("requested_strategy_date_incompatible")
+
+    if failures:
+        status = STRATEGY_SOURCE_PROVENANCE_MISSING
+    elif incompatible:
+        status = STRATEGY_SOURCE_PROVENANCE_INCOMPATIBLE
+    else:
+        status = STRATEGY_SOURCE_PROVENANCE_AUTHORITATIVE
+
+    return {
+        "strategy_provenance_status": status,
+        "active_policy": active_policy,
+        "active_strategy": active_strategy,
+        "requested_strategy_date": (artifact_date or str(requested_strategy_date)),
+        "strategy_symbol_count": len(strat),
+        "strategy_symbols": strat,
+        "strategy_symbol_source_fingerprint": canonical_strategy_symbol_set_fingerprint(strat),
+        "ce_source_artifact_sha256": sha,
+        "ce_evidence_fingerprint": (str(ce_evidence_fp) if ce_evidence_fp else None),
+        "strategy_provenance_failures": sorted(set(failures + incompatible)),
     }
 
 
@@ -1080,14 +1213,17 @@ class PublicWsTickerEvidenceBuilder:
                 local_monotonic_received_ns)
             ev.selected_price_source_connection_generation = gen
             ev.exchange_data_generated_ts_ms = ts_ms
-            # Deterministic fingerprint of the EXACT price-carrying source message.
-            ev.selected_price_source_message_fingerprint = _fingerprint({
-                "topic": topic, "symbol": sym, "type": msg_type,
-                "ts_ms": ts_ms, "cs": cs, "price_field": self.price_field,
-                "price": str(raw_price),
-                "local_received_epoch_ns": int(local_received_epoch_ns),
-                "connection_generation": gen,
-            })
+            # Deterministic, independently-recomputable fingerprint of the EXACT
+            # price-carrying source message (one shared canonical function so the
+            # binder recomputes the identical value from the recorded fields).
+            ev.selected_price_source_message_fingerprint = canonical_source_message_fingerprint(
+                symbol=sym, topic=topic, selected_price_field=self.price_field,
+                selected_price=str(raw_price), source_message_type=msg_type,
+                source_ts_ms=ts_ms, source_cs=cs,
+                local_received_epoch_ns=int(local_received_epoch_ns),
+                local_received_at_utc=ev.selected_price_local_received_at_utc,
+                local_monotonic_received_ns=int(local_monotonic_received_ns),
+                connection_generation=gen)
             return "price_updated"
 
         ev.last_processed_message_updated_selected_price = False
@@ -1263,6 +1399,10 @@ class PublicWsTickerEvidenceBuilder:
                 "selected_price_source_symbol": (ev.symbol if source_included_field else None),
                 "selected_price_source_message_fingerprint": (
                     ev.selected_price_source_message_fingerprint),
+                # Recomputable source-message fingerprint provenance (CG_FIX1).
+                "source_message_fingerprint_version": SOURCE_MESSAGE_FINGERPRINT_VERSION,
+                "source_message_fingerprint_algorithm": SOURCE_MESSAGE_FINGERPRINT_ALGORITHM,
+                "source_message_material_version": SOURCE_MESSAGE_MATERIAL_VERSION,
                 "exchange_data_generated_ts_ms": ev.exchange_data_generated_ts_ms,
                 "exchange_data_generated_at_utc": _iso_from_ms(
                     ev.exchange_data_generated_ts_ms),
@@ -1321,6 +1461,7 @@ class PublicWsTickerEvidenceBuilder:
         source_evidence: Mapping[str, Any] | None = None,
         clock_offset_provenance: Mapping[str, Any] | None = None,
         legacy_position_provenance: Mapping[str, Any] | None = None,
+        strategy_source_provenance: Mapping[str, Any] | None = None,
         dependency_status: str | None = None,
         require_complete: bool = False,
         allow_real_network: bool = False,
@@ -1556,6 +1697,17 @@ class PublicWsTickerEvidenceBuilder:
                                         if clock_offset_provenance is not None else None),
             "legacy_position_provenance": (dict(legacy_position_provenance)
                                            if legacy_position_provenance is not None else None),
+            # CG_FIX1: authoritative WS-side strategy provenance + canonical-binding
+            # sub-schema version (only emitted when provenance is supplied, so a
+            # version-1-only artifact is never silently treated as canonical-ready).
+            "strategy_source_provenance": (dict(strategy_source_provenance)
+                                           if strategy_source_provenance is not None else None),
+            "canonical_binding_schema_version": (
+                CANONICAL_BINDING_SCHEMA_VERSION
+                if strategy_source_provenance is not None else None),
+            "source_message_fingerprint_version": SOURCE_MESSAGE_FINGERPRINT_VERSION,
+            "source_message_fingerprint_algorithm": SOURCE_MESSAGE_FINGERPRINT_ALGORITHM,
+            "source_message_material_version": SOURCE_MESSAGE_MATERIAL_VERSION,
             "ws_client_dependency_status": dependency_status,
             "connection_summary": connection_summary,
             "subscription_summary": subscription_summary,
@@ -1621,6 +1773,13 @@ __all__ = [
     "check_ws_client_dependency", "extract_clock_offset_provenance",
     "extract_legacy_position_provenance", "compute_completion_gate",
     "WS_COUNTER_PARITY_PASS", "WS_COUNTER_PARITY_FAIL",
+    # TASK-014CG_FIX1 canonical-binding strategy provenance + source-message fp
+    "CANONICAL_BINDING_SCHEMA_VERSION", "SOURCE_MESSAGE_FINGERPRINT_VERSION",
+    "SOURCE_MESSAGE_FINGERPRINT_ALGORITHM", "SOURCE_MESSAGE_MATERIAL_VERSION",
+    "STRATEGY_SOURCE_PROVENANCE_AUTHORITATIVE", "STRATEGY_SOURCE_PROVENANCE_INCOMPATIBLE",
+    "STRATEGY_SOURCE_PROVENANCE_MISSING", "STRATEGY_SOURCE_PROVENANCE_CONFLICT",
+    "canonical_strategy_symbol_set_fingerprint", "canonical_source_message_fingerprint",
+    "extract_strategy_source_provenance",
     # TASK-014CF_FIX3 subscription-ACK / control-plane gating
     "WS_SUBSCRIPTION_ACKNOWLEDGED", "WS_SUBSCRIPTION_ACK_MISSING",
     "WS_SUBSCRIPTION_ACK_REJECTED", "WS_SUBSCRIPTION_ACK_CONFLICT",

@@ -17,9 +17,43 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CG 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CG_FIX1 同步更新；不解除 G20、不開啟 live real trading。
 
-> **TASK-014CG_PLAN_ONLY_WEBSOCKET_SAME_MESSAGE_PRICE_BINDING**（2026-06-24, Opus 4.8 / Plan-only 同訊息價格綁定）
+> **TASK-014CG_FIX1_CANONICAL_BOUND_PLAN_AND_AUTHORITATIVE_STRATEGY_PROVENANCE**（2026-06-24, Opus 4.8 / 規範化 WS-綁定 Plan 修正）
+> **`TASK-014CG SIDE-CAR SEMANTIC AUDIT REJECTION CORRECTED / CANONICAL PLAN-ONLY ARTIFACT CONTAINS 50 REVISED TARGET POSITIONS WHOSE ACTIVE PRICE IS THE EXACT PUBLIC WEBSOCKET LASTPRICE / ORIGINAL REST PRICES RETAINED FOR AUDIT ONLY / AUTHORITATIVE POLICY STRATEGY DATE SYMBOL SET AND SYMBOL-SOURCE FINGERPRINT ARE MANDATORY / SOURCE-MESSAGE FINGERPRINTS RECOMPUTE FROM VERSIONED SAFE IMMUTABLE MATERIAL / ALL PRICE-DEPENDENT QUANTITY MARGIN READINESS AND FINGERPRINT FIELDS ARE REBUILT FROM WEBSOCKET PRICES / PROTECTED LEGACY SYMBOLS REMAIN EVIDENCE ONLY / EXECUTION-GRADE FRESHNESS MAY BECOME COMPLETE ONLY WITH A COMPLETE CANONICAL BOUND PLAN / FRESHNESS COMPLETION DOES NOT AUTHORIZE EXECUTION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> 在 c5c4bf2 之上新增一筆 FIX1 commit，修正下方 CG 區塊被語意稽核判為 sidecar overlay（只輸出 per_action_bindings、
+> 未產生規範化已綁定 plan、planner 價格仍為 REST）的問題。sidecar 稽核保留，但不再是唯一輸出。未更動任何既有
+> planner/execution/risk/Pilot/Forward/依賴檔；僅新增獨立模組 API + CLI wrapper + fixture + 測試 + WS 產生端 provenance。
+>
+> - **規範化已綁定 Plan-only artifact：** `build_ws_bound_plan_artifact()` deep-copy 已接受的 plan（永不變更輸入），
+>   將 50 個 Strategy target position 的 ACTIVE 價格設為 WS 綁定 lastPrice；重算 qty / effective_notional / qty-step 與最小檢查；
+>   原 REST 價格保留於 audit-only `rest_planning_price`；附上同訊息 `price_evidence`；由已綁定 plan 重建 projected margin；
+>   產生獨立 `canonical_bound_plan_fingerprint`；並提供決定性存取器 `canonical_bound_plan_actions()`。CLI 現輸出含
+>   `canonical_bound_plan` 的規範化 wrapper。不變式：active price == websocket_bound_price == price_evidence.selected_price（全 50）；
+>   REST 價格永不為 active 價格。
+> - **強制權威 WS 端策略 provenance：** WS 證據產生端從已接受 CE artifact 讀取 active_policy / active_strategy /
+>   requested_strategy_date / symbol-source fingerprint / symbol set / CE SHA-256 / CE evidence fingerprint
+>   （絕不以數量/文字/reference/檔名/預設推斷）。binder 要求 Plan==WS 完全相等，任何缺漏/不符即 fail closed。
+> - **強制 symbol-source fingerprint：** WS-stored == 重算 canonical（單一共用匯出函式）== Plan-stored（若提供）；不因 None 跳過。
+> - **可重算 source-message fingerprint：** 單一匯出 canonical 函式涵蓋安全不可變材料（symbol/topic/field/price/type/ts/cs/
+>   local epoch+utc+monotonic/generation）並記錄 version+algorithm+material-version；binder 獨立重算比對，即使 top-level WS
+>   已合法重新 fingerprint 仍會失敗。
+> - **版本化 WS 子 schema：** canonical_binding_schema_version=2 為規範化綁定必要條件；僅 v1 的 artifact 被拒。
+>   CF/FIX1/FIX2/FIX3 行為（52/52、ACK、counter + control-plane parity、不認證、不下單、early completion）byte 不變。
+> - **Projected margin：** 由已綁定 plan 重建（V1 strategy margin = strategy_gross × IMR；strategy_gross =
+>   Σ(weight×固定資本) 為價格無關，重建值可證明源自已綁定 plan，而非過時 REST 複本）。
+> - **新鮮度：** 以選定價 SOURCE ts + 綁定完成時間 + 權威 offset 嚴格重算；門檻不放寬；stale/future fail closed；
+>   execution_grade_freshness_complete 僅在完整規範化已綁定 plan 時為 true。
+> - 即使 COMPLETE：execution_batch_authorized=false、execution_ready=false、sender_reachable=false、
+>   execute_daily_native_call_count=0、transport_sender_call_count=0、order/amend/cancel/live=0、無 auth marker；
+>   binding network audit 全為 0；Pilot 與 Forward byte-identical。獨立離線 fixture 指令
+>   (`scripts/generate_demo_strategy_ws_binding_fixture.py --out-dir <temp>`) 產生 50/50 COMPLETE、零網路、零下單。
+> - 驗證：focused 66 passed（cg + cli + fix1；29 new），real pytest exit 0；demo_trading regression 9499 passed
+>   （1 個既有無關 emergency_close CLI 失敗，real pytest exit 1 僅因此）。
+>
+> 下一里程碑：human-authorization + staged Demo batch execution protocol（獨立任務）；FIX1 不提供送單命令。
+
+> **TASK-014CG_PLAN_ONLY_WEBSOCKET_SAME_MESSAGE_PRICE_BINDING**（2026-06-24, Opus 4.8 / Plan-only 同訊息價格綁定；下方區塊經語意稽核判為 sidecar，已由上方 FIX1 修正取代）
 > **`STRATEGY-NATIVE V1 PLAN-ONLY ACTIONS BOUND TO THE EXACT SAME PUBLIC WEBSOCKET LASTPRICE MESSAGE / 50 STRATEGY ACTIONS REQUIRE 50 VALID SYMBOL PRICE TIMESTAMP SEQUENCE LOCAL-TIMING AND FINGERPRINT BINDINGS / PROTECTED LEGACY SYMBOLS REMAIN ACCOUNT EVIDENCE ONLY / REST PRICES RETAINED FOR AUDIT AND NOT MIXED WITH WEBSOCKET TIMESTAMPS / BINDING-TIME FRESHNESS FAILS CLOSED / EXECUTION-GRADE FRESHNESS MAY BECOME COMPLETE ONLY AFTER 50 OF 50 BINDINGS PASS / FRESHNESS COMPLETION DOES NOT AUTHORIZE EXECUTION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
 > 在 703db19 之上新增一筆 CG commit，將 VPS 驗證的公開 WebSocket 價格證據整合進 Strategy-native V1 Plan-only planner action。
 > 預設 REST planner 行為不變；綁定僅在明確 opt-in 時執行。未改任何 planner 來源/測試/依賴檔；僅新增獨立模組 + CLI + 測試。

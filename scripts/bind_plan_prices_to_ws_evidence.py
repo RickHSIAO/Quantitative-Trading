@@ -164,7 +164,10 @@ def main(argv: list[str] | None = None) -> int:
     ws_sha256 = wb.compute_file_sha256(ws_bytes)
 
     try:
-        artifact = wb.bind_plan_prices_to_ws_evidence(
+        # CG_FIX1: emit the canonical revised Plan-only artifact (wrapper whose
+        # canonical_bound_plan field is the 50 WS-priced target positions), not
+        # only the sidecar audit overlay.
+        artifact = wb.build_ws_bound_plan_artifact(
             plan_artifact=plan_artifact, ws_artifact=ws_artifact,
             ws_artifact_path=args.ws_ticker_evidence_json, ws_artifact_sha256=ws_sha256,
             binding_epoch_ns=binding_epoch_ns,
@@ -193,8 +196,11 @@ def main(argv: list[str] | None = None) -> int:
             json.dump(artifact, fh, ensure_ascii=False, indent=2, sort_keys=True)
 
     overall = artifact["overall_binding_status"]
-    parity = artifact["binding_parity_status"]
-    if overall == wb.WS_PLANNER_PRICE_BINDING_COMPLETE and parity == wb.WS_PLANNER_BINDING_PARITY_PASS:
+    parity = artifact["wrapper_parity_status"]
+    canonical_complete = (artifact["canonical_bound_plan"] is not None
+                          and artifact["execution_grade_freshness_complete"] is True
+                          and parity == wb.WS_PLANNER_BINDING_PARITY_PASS)
+    if canonical_complete:
         exit_code = EXIT_COMPLETE
     elif overall == wb.WS_PLANNER_PRICE_BINDING_CONFLICT:
         exit_code = EXIT_CONFLICT
@@ -209,9 +215,11 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(json.dumps({
             "overall_binding_status": overall,
-            "binding_parity_status": parity,
+            "wrapper_parity_status": parity,
+            "canonical_revised_action_count": artifact["canonical_revised_action_count"],
             "bound_action_count": artifact["bound_action_count"],
             "failed_action_count": artifact["failed_action_count"],
+            "canonical_bound_plan_present": artifact["canonical_bound_plan"] is not None,
             "execution_grade_freshness_complete": artifact["execution_grade_freshness_complete"],
             "execution_batch_authorized": artifact["execution_batch_authorized"],
             "order_post_count": artifact["order_post_count"],

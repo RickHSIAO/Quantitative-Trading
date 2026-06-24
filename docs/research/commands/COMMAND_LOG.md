@@ -10933,3 +10933,84 @@ pytest exit 1 solely due to it).
   C. python scripts/bind_plan_prices_to_ws_evidence.py --plan-json /tmp/plan_20260622.json --ws-ticker-evidence-json /tmp/ws_20260622.json --bind-plan-prices-to-ws-evidence --require-complete --out outputs/ws_price_binding_20260622.json --verify-no-credential-leak --json-only
   D. echo "binding_exit=$?"
   E. python -c "import json;a=json.load(open('outputs/ws_price_binding_20260622.json'));print(a['overall_binding_status'],a['binding_parity_status'],a['bound_action_count'],a['failed_action_count'],a['execution_grade_freshness_complete'],a['execution_batch_authorized'],a['order_post_count'],a['binding_network_audit'])"
+
+---
+
+### TASK-014CG_FIX1_CANONICAL_BOUND_PLAN_AND_AUTHORITATIVE_STRATEGY_PROVENANCE (2026-06-24, Opus 4.8)
+
+New FIX1 commit on top of c5c4bf2 correcting the TASK-014CG pre-push semantic
+audit rejection (REJECTED_NEEDS_FIX1). The earlier CG output was only a
+per_action_bindings sidecar overlay that left the canonical planner prices as
+REST prices. FIX1 emits a COMPLETE canonical revised Plan-only artifact whose 50
+active Strategy target-position prices ARE the exact WebSocket-bound lastPrice.
+The sidecar audit is retained but is no longer the only output.
+
+**Changed/added files:**
+- src/demo_public_ws_ticker_evidence.py (authoritative WS-side strategy provenance,
+  canonical_binding_schema_version=2, exported canonical_source_message_fingerprint
+  + canonical_strategy_symbol_set_fingerprint, extract_strategy_source_provenance)
+- scripts/collect_public_ws_ticker_evidence.py (read strategy provenance from the CE
+  artifact and bind it into the evidence artifact)
+- src/demo_strategy_native_ws_price_binding.py (build_ws_bound_plan_artifact +
+  canonical_bound_plan_actions accessor; mandatory v2 + strategy provenance +
+  symbol-source fingerprint gate; per-action source-message fingerprint recompute;
+  price-dependent recompute + projected-margin rebuild from the bound plan)
+- scripts/bind_plan_prices_to_ws_evidence.py (emit the canonical wrapper)
+- scripts/generate_demo_strategy_ws_binding_fixture.py (NEW standalone offline
+  fixture generator + validator; no network, no credentials, no pytest)
+- tests/demo_trading/test_demo_strategy_native_ws_price_binding_cg.py (canonical semantics)
+- tests/demo_trading/test_demo_bind_plan_prices_cli_cg.py (canonical wrapper assertions)
+- tests/demo_trading/test_demo_strategy_native_ws_bound_plan_cg_fix1.py (29 new tests)
+
+**Corrections (audit findings 1-9):**
+- Canonical revised Plan-only artifact: build_ws_bound_plan_artifact deep-copies the
+  accepted plan, sets each of the 50 target_positions active price to the WS-bound
+  lastPrice, recomputes qty / effective_notional / qty-step + min checks, retains the
+  REST price under audit-only rest_planning_price, attaches the same-message
+  price_evidence, rebuilds the projected margin from the bound plan, and emits a
+  separate canonical_bound_plan_fingerprint. A deterministic accessor
+  (canonical_bound_plan_actions) returns the revised 50 for the next stage.
+- Invariant: canonical price == websocket_bound_price == price_evidence.selected_price
+  for all 50; the original REST price is never the active price.
+- execution_grade_freshness_complete can be true ONLY with a complete canonical bound
+  plan (50/50 + parity); 49/50 or any gate failure yields no canonical plan + false.
+- Authoritative WS-side strategy provenance (active_policy / active_strategy /
+  requested_strategy_date / strategy_symbol_source_fingerprint / symbol set / CE SHA-256
+  / CE evidence fingerprint) is read from the accepted CE artifact (never inferred from
+  count / text / reference / filename / defaults) and is MANDATORY; the binder requires
+  exact Plan==WS equality for policy/strategy/date/symbol-count/symbol-set.
+- Strategy symbol-source fingerprint is MANDATORY: WS-stored == recomputed canonical
+  (and == Plan-stored when supplied); never skipped on None.
+- Projected initial/maintenance margin are rebuilt FROM the canonical bound plan
+  (V1 projected strategy margin = strategy_gross_notional * IMR; strategy_gross =
+  sum(weight*fixed capital) is price-independent, so the rebuilt value is provably
+  derived from the bound plan, not a stale REST copy).
+- Source-message fingerprint: one exported canonical function over safe immutable
+  material (symbol/topic/field/price/type/ts/cs/local epoch+utc+monotonic/generation)
+  with version+algorithm+material-version recorded; the binder independently recomputes
+  and compares it, failing even after a valid top-level WS re-fingerprint.
+- New compatible WS sub-schema version 2 is REQUIRED for canonical binding; a
+  version-1-only artifact is rejected. Existing CF/FIX1/FIX2/FIX3 behavior (52/52, ACK,
+  counter + control-plane parity, no auth, no order, early completion) is unchanged.
+
+**Freshness arithmetic (preserved):** local_now_ms = binding_epoch_ns/1e6; offset_ms =
+estimated_local_vs_exchange_clock_offset_seconds*1000; est_exchange_now_ms = local_now_ms
++ offset_ms; evidence_age_at_binding_ms = est_exchange_now_ms - selected_price_source_ts_ms.
+Strict threshold, authoritative offset, binding-completion time (not WS finalize age),
+future/impossible age fails closed; threshold never enlarged.
+
+**Safety:** even on COMPLETE: execution_batch_authorized=false, execution_ready=false,
+sender_reachable=false, execute_daily_native_call_count=0, transport_sender_call_count=0,
+order/amend/cancel/live=0, no auth marker; binding network audit all zero; the binder
+imports no order/transport sender; Pilot + Forward source byte-identical.
+
+**Tests:** 66 focused (cg + cli + fix1; 29 new), real pytest exit 0; demo_trading
+regression 9499 passed (1 pre-existing unrelated emergency_close CLI failure; real
+pytest exit 1 solely due to it). Standalone offline fixture command: 50/50 COMPLETE,
+zero network, zero order, exit 0.
+
+**Future VPS read-only workflow (no send command):**
+  A. run_demo_strategy_pilot_native_daily.py --date 2026-06-22 --json-only > plan.json (fresh CE Plan-only artifact)
+  B. collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --ce-evidence-json plan.json --allow-real-network --require-complete --out ws.json --verify-no-credential-leak (new-version WS evidence)
+  C. bind_plan_prices_to_ws_evidence.py --plan-json plan.json --ws-ticker-evidence-json ws.json --bind-plan-prices-to-ws-evidence --require-complete --out ws_bound_plan.json --verify-no-credential-leak
+  D. verify canonical_bound_plan present; canonical_revised_action_count=50; bound=50; failed=0; every target price == price_evidence.selected_price; wrapper_parity_status=WS_PLANNER_BINDING_PARITY_PASS; execution_grade_freshness_complete=true; execution_batch_authorized=false; order/amend/cancel/live=0; binding network counts all zero. No send command is provided.

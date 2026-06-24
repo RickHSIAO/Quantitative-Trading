@@ -1,5 +1,60 @@
 # Next Action
 
+> **TASK-014CG_FIX1_CANONICAL_BOUND_PLAN_AND_AUTHORITATIVE_STRATEGY_PROVENANCE** (2026-06-24, Opus 4.8)
+>
+> **`TASK-014CG SIDE-CAR SEMANTIC AUDIT REJECTION CORRECTED / CANONICAL PLAN-ONLY ARTIFACT CONTAINS 50 REVISED TARGET POSITIONS WHOSE ACTIVE PRICE IS THE EXACT PUBLIC WEBSOCKET LASTPRICE / ORIGINAL REST PRICES RETAINED FOR AUDIT ONLY / AUTHORITATIVE POLICY STRATEGY DATE SYMBOL SET AND SYMBOL-SOURCE FINGERPRINT ARE MANDATORY / SOURCE-MESSAGE FINGERPRINTS RECOMPUTE FROM VERSIONED SAFE IMMUTABLE MATERIAL / ALL PRICE-DEPENDENT QUANTITY MARGIN READINESS AND FINGERPRINT FIELDS ARE REBUILT FROM WEBSOCKET PRICES / PROTECTED LEGACY SYMBOLS REMAIN EVIDENCE ONLY / EXECUTION-GRADE FRESHNESS MAY BECOME COMPLETE ONLY WITH A COMPLETE CANONICAL BOUND PLAN / FRESHNESS COMPLETION DOES NOT AUTHORIZE EXECUTION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> New FIX1 commit on top of c5c4bf2 correcting the CG pre-push semantic audit
+> rejection (the earlier CG output was only a per_action_bindings sidecar overlay
+> that left the canonical planner prices REST-priced). The sidecar audit is retained
+> but is no longer the only output. No existing planner/execution/risk/Pilot/Forward/
+> dependency file is changed; new standalone module APIs + CLI wrapper + fixture +
+> tests + WS-producer provenance only.
+>
+> - **Canonical revised Plan-only artifact:** `build_ws_bound_plan_artifact()` deep-copies
+>   the accepted plan (never mutates it) and makes the exact WebSocket-bound lastPrice the
+>   ACTIVE price for all 50 Strategy target positions; recomputes qty / effective_notional /
+>   qty-step + min checks; retains the REST price under audit-only `rest_planning_price`;
+>   attaches the same-message `price_evidence`; rebuilds the projected margin FROM the bound
+>   plan; emits a separate `canonical_bound_plan_fingerprint`; and exposes a deterministic
+>   accessor `canonical_bound_plan_actions()`. CLI now outputs the canonical wrapper with
+>   `canonical_bound_plan`. Invariant: active price == websocket_bound_price ==
+>   price_evidence.selected_price for all 50; the REST price is never the active price.
+> - **Mandatory authoritative WS-side strategy provenance:** the WS evidence producer now
+>   reads active_policy / active_strategy / requested_strategy_date / symbol-source
+>   fingerprint / symbol set / CE SHA-256 / CE evidence fingerprint from the accepted CE
+>   artifact (never inferred from count/text/reference/filename/defaults). The binder
+>   requires exact Plan==WS equality and fails closed on any missing/mismatched field.
+> - **Mandatory symbol-source fingerprint:** WS-stored == recomputed canonical (one shared
+>   exported function) == Plan-stored when supplied; never skipped on None.
+> - **Recomputable source-message fingerprint:** one exported canonical function over safe
+>   immutable material (symbol/topic/field/price/type/ts/cs/local epoch+utc+monotonic/gen)
+>   with version+algorithm+material-version recorded; the binder independently recomputes and
+>   compares it, failing even after a valid top-level WS re-fingerprint.
+> - **Versioned WS sub-schema:** canonical_binding_schema_version=2 is REQUIRED for canonical
+>   binding; a version-1-only artifact is rejected. CF/FIX1/FIX2/FIX3 behavior (52/52, ACK,
+>   counter + control-plane parity, no auth, no order, early completion) is byte-unchanged.
+> - **Projected margin:** rebuilt FROM the bound plan (V1 strategy margin = strategy_gross *
+>   IMR; strategy_gross = sum(weight*fixed capital) is price-independent, so the rebuilt
+>   value is provably bound-plan-derived, not a stale REST copy).
+> - **Freshness:** strict binding-time recompute from the selected-price SOURCE ts + binding
+>   completion time + authoritative offset; threshold never enlarged; stale/future fail closed;
+>   execution_grade_freshness_complete is true ONLY with a complete canonical bound plan.
+> - Even on COMPLETE: execution_batch_authorized=false, execution_ready=false,
+>   sender_reachable=false, execute_daily_native_call_count=0, transport_sender_call_count=0,
+>   order/amend/cancel/live=0, no auth marker; binding network audit all zero; Pilot + Forward
+>   byte-identical. A standalone offline fixture command
+>   (`scripts/generate_demo_strategy_ws_binding_fixture.py --out-dir <temp>`) produces 50/50
+>   COMPLETE with zero network and zero order.
+> - Tests: 66 focused (cg + cli + fix1; 29 new), real pytest exit 0; demo_trading regression
+>   9499 passed (1 pre-existing unrelated emergency_close CLI failure; real pytest exit 1
+>   solely due to it).
+>
+> Next milestone: human-authorization + staged Demo batch execution protocol (separate task);
+> FIX1 provides NO send command.
+
+---
+
 > **TASK-014CG_PLAN_ONLY_WEBSOCKET_SAME_MESSAGE_PRICE_BINDING** (2026-06-24, Opus 4.8)
 >
 > **`STRATEGY-NATIVE V1 PLAN-ONLY ACTIONS BOUND TO THE EXACT SAME PUBLIC WEBSOCKET LASTPRICE MESSAGE / 50 STRATEGY ACTIONS REQUIRE 50 VALID SYMBOL PRICE TIMESTAMP SEQUENCE LOCAL-TIMING AND FINGERPRINT BINDINGS / PROTECTED LEGACY SYMBOLS REMAIN ACCOUNT EVIDENCE ONLY / REST PRICES RETAINED FOR AUDIT AND NOT MIXED WITH WEBSOCKET TIMESTAMPS / BINDING-TIME FRESHNESS FAILS CLOSED / EXECUTION-GRADE FRESHNESS MAY BECOME COMPLETE ONLY AFTER 50 OF 50 BINDINGS PASS / FRESHNESS COMPLETION DOES NOT AUTHORIZE EXECUTION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

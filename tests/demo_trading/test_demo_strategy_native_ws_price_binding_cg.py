@@ -40,8 +40,27 @@ def _snap(symbol, *, ts, cs, last_price="100.5"):
             "data": {"symbol": symbol, "lastPrice": last_price}}
 
 
-def build_complete_ws_artifact(*, now_ns, last_price="100.5", offset="0.0068"):
-    """A real, fingerprinted, COMPLETE 52-symbol WS evidence artifact."""
+def _auth_strategy_provenance(symbols=None, *, date=DATE, status=None,
+                              active_strategy=None):
+    syms = symbols if symbols is not None else STRATEGY_50
+    return {
+        "strategy_provenance_status": status or ws.STRATEGY_SOURCE_PROVENANCE_AUTHORITATIVE,
+        "active_policy": wb.ACTIVE_STRATEGY_NATIVE_V1_POLICY,
+        "active_strategy": active_strategy or wb.EXPECTED_STRATEGY_NAME,
+        "requested_strategy_date": date,
+        "strategy_symbol_count": len(syms),
+        "strategy_symbols": sorted(syms),
+        "strategy_symbol_source_fingerprint":
+            ws.canonical_strategy_symbol_set_fingerprint(syms),
+        "ce_source_artifact_sha256": "sha256:" + "0" * 64,
+        "ce_evidence_fingerprint": None,
+        "strategy_provenance_failures": [],
+    }
+
+
+def build_complete_ws_artifact(*, now_ns, last_price="100.5", offset="0.0068",
+                               strategy_source_provenance="__auth__"):
+    """A real, fingerprinted, COMPLETE canonical-binding (v2) 52-symbol artifact."""
     u = _universe()
     b = ws.PublicWsTickerEvidenceBuilder(
         universe=u, clock_offset_seconds=offset,
@@ -57,8 +76,11 @@ def build_complete_ws_artifact(*, now_ns, last_price="100.5", offset="0.0068"):
         b.ingest_data_message(_snap(sym, ts=base_ts - i, cs=1000 + i, last_price=last_price),
                               local_received_epoch_ns=now_ns,
                               local_monotonic_received_ns=now_ns, connection_generation=0)
+    prov = (_auth_strategy_provenance() if strategy_source_provenance == "__auth__"
+            else strategy_source_provenance)
     art = b.build_artifact(
         finalize_epoch_ns=now_ns + 1_000_000, legacy_position_provenance=AUTH_LEGACY_PROV,
+        strategy_source_provenance=prov,
         dependency_status=ws.WS_CLIENT_DEPENDENCY_AVAILABLE, require_complete=True,
         allow_real_network=True,
         completion_meta={"collection_terminated_reason": ws.TERMINATED_COMPLETE_AND_ACKED})
@@ -289,15 +311,17 @@ def test_strategy_mismatch_fails_closed():
     assert art["overall_binding_status"] == wb.WS_PLANNER_PRICE_BINDING_CONFLICT
 
 
-def test_strategy_date_mismatch_is_compatible_only_when_dates_align():
+def test_strategy_date_mismatch_fails_closed():
     now = time.time_ns()
-    ws_art = build_complete_ws_artifact(now_ns=now)
-    # WS artifact carries no date, so any plan date is compatible by absence.
+    ws_art = build_complete_ws_artifact(now_ns=now)  # WS provenance date = DATE
+    # The WS artifact now carries an authoritative date; a mismatched plan date
+    # must fail closed.
     art = _bind(build_plan(date="2026-01-01"), ws_art, now_ns=now + 2_000_000)
-    assert art["overall_binding_status"] == wb.WS_PLANNER_PRICE_BINDING_COMPLETE
+    assert art["overall_binding_status"] == wb.WS_PLANNER_PRICE_BINDING_CONFLICT
+    assert "ws_plan_strategy_date_mismatch" in art["ws_artifact_compatibility"]["failures"]
 
 
-def test_strategy_symbol_fingerprint_mismatch_fails_closed():
+def test_plan_strategy_symbol_fingerprint_mismatch_fails_closed():
     now = time.time_ns()
     ws_art = build_complete_ws_artifact(now_ns=now)
     raw = json.dumps(ws_art).encode("utf-8")
@@ -306,7 +330,7 @@ def test_strategy_symbol_fingerprint_mismatch_fails_closed():
         ws_artifact_sha256=wb.compute_file_sha256(raw), binding_epoch_ns=now + 2_000_000,
         strategy_symbol_source_fingerprint="sha256:deadbeef")
     assert art["overall_binding_status"] == wb.WS_PLANNER_PRICE_BINDING_CONFLICT
-    assert "strategy_symbol_source_fingerprint_mismatch" in \
+    assert "plan_strategy_symbol_source_fingerprint_mismatch" in \
         art["ws_artifact_compatibility"]["failures"]
 
 

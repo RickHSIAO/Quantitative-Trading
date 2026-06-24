@@ -414,6 +414,15 @@ def main(argv: list[str] | None = None) -> int:
         source_evidence["strategy_symbol_source_fingerprint"] = (
             universe["symbol_universe_fingerprint"])
 
+    # ---- CG_FIX1: authoritative WS-side strategy provenance from the CE artifact.
+    # Read the active strategy ONLY from the accepted CE artifact (never inferred);
+    # bind the canonical Strategy symbol-set fingerprint for mandatory validation.
+    strategy_source_provenance: dict[str, Any] | None = None
+    if args.ce_evidence_json:
+        strategy_source_provenance = ws.extract_strategy_source_provenance(
+            ce_artifact, strategy_symbols=universe["strategy_symbols"],
+            requested_strategy_date=args.strategy_date, artifact_bytes=ce_bytes)
+
     builder = ws.PublicWsTickerEvidenceBuilder(
         universe=universe,
         clock_offset_seconds=clock_offset_seconds,
@@ -443,6 +452,7 @@ def main(argv: list[str] | None = None) -> int:
         source_evidence=source_evidence,
         clock_offset_provenance=clock_provenance,
         legacy_position_provenance=legacy_provenance,
+        strategy_source_provenance=strategy_source_provenance,
         dependency_status=dependency_status,
         require_complete=args.require_complete,
         allow_real_network=args.allow_real_network,

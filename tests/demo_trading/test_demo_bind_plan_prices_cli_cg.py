@@ -50,9 +50,21 @@ def _build_ws(now_ns):
              "data": {"symbol": sym, "lastPrice": "100.5"}},
             local_received_epoch_ns=now_ns, local_monotonic_received_ns=now_ns,
             connection_generation=0)
+    prov = {
+        "strategy_provenance_status": ws.STRATEGY_SOURCE_PROVENANCE_AUTHORITATIVE,
+        "active_policy": wb.ACTIVE_STRATEGY_NATIVE_V1_POLICY,
+        "active_strategy": wb.EXPECTED_STRATEGY_NAME,
+        "requested_strategy_date": "2026-06-22",
+        "strategy_symbol_count": 50, "strategy_symbols": STRATEGY_50,
+        "strategy_symbol_source_fingerprint":
+            ws.canonical_strategy_symbol_set_fingerprint(STRATEGY_50),
+        "ce_source_artifact_sha256": "sha256:" + "0" * 64,
+        "ce_evidence_fingerprint": None, "strategy_provenance_failures": [],
+    }
     return b.build_artifact(
         finalize_epoch_ns=now_ns + 1_000_000, legacy_position_provenance={
             "symbol_universe_source_status": ws.SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE},
+        strategy_source_provenance=prov,
         dependency_status=ws.WS_CLIENT_DEPENDENCY_AVAILABLE, require_complete=True,
         allow_real_network=True,
         completion_meta={"collection_terminated_reason": ws.TERMINATED_COMPLETE_AND_ACKED})
@@ -108,9 +120,16 @@ def test_dry_run_fixture_binds_fifty_with_zero_network_and_execution(tmp_path, c
     assert rc == cli.EXIT_COMPLETE
     art = json.loads(out_p.read_text(encoding="utf-8"))
     assert art["overall_binding_status"] == wb.WS_PLANNER_PRICE_BINDING_COMPLETE
-    assert art["binding_parity_status"] == wb.WS_PLANNER_BINDING_PARITY_PASS
+    assert art["wrapper_parity_status"] == wb.WS_PLANNER_BINDING_PARITY_PASS
+    assert art["canonical_revised_action_count"] == 50
     assert art["bound_action_count"] == 50
     assert art["failed_action_count"] == 0
+    # The canonical revised Plan-only artifact is present with 50 WS-priced targets.
+    cbp = art["canonical_bound_plan"]
+    assert cbp is not None
+    tps = cbp["planner"]["target_positions"]
+    assert len(tps) == 50
+    assert all(tp["price"] == tp["price_evidence"]["selected_price"] for tp in tps)
     assert art["execution_grade_freshness_complete"] is True
     assert art["execution_batch_authorized"] is False
     assert art["order_post_count"] == 0
