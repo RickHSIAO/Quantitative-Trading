@@ -9,12 +9,13 @@ Read only:
 3. `docs/TRADING_SAFETY.md` — when the task involves trading or execution safety
 4. Files directly relevant to the requested code change
 
-## Archived Logs
+## Historical Context
 
-- `docs/archive/` contains frozen 2026-H1 historical logs
-- Do not load archived logs by default; they are large and historical only
+- `docs/archive/` contains frozen 2026-H1 historical logs — do not load by default
+- `.local/PROJECT_UPDATES.md` is local-only historical context (gitignored);
+  read only when explicitly requested or for historical investigation
 - Use `git log` / `git blame` for ordinary development history
-- Runtime artifacts are not project documentation
+- Do not write giant final reports into the local update log
 
 ## Task Rules
 

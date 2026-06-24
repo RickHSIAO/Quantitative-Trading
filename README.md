@@ -70,8 +70,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-需要 Python 3.10 以上。主要相依套件：pandas、numpy、pybit、yfinance、
-openpyxl、pyarrow、websocket-client。
+相依套件由 `requirements.txt` 管理。目前開發環境使用 Python 3.13；
+其他 Python 版本未經正式 CI 驗證。主要相依套件：pandas、numpy、pybit、
+yfinance、openpyxl、pyarrow、websocket-client。
 
 ## 常用指令
 
@@ -83,10 +84,16 @@ python scripts/run_prev3y_crypto_baseline.py
 python scripts/run_forward_record.py
 
 # Plan-only Demo 日執行（不下單）
-python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id <ID> --run-date <YYYY-MM-DD>
+python scripts/run_demo_strategy_pilot_native_daily.py --pilot-id <ID> --date <YYYY-MM-DD>
 
 # 離線 WS 證據綁定
-python scripts/bind_plan_prices_to_ws_evidence.py
+python scripts/bind_plan_prices_to_ws_evidence.py \
+  --plan-json <PLAN_JSON> \
+  --ws-ticker-evidence-json <WS_EVIDENCE_JSON> \
+  --bind-plan-prices-to-ws-evidence \
+  --require-complete \
+  --out <BOUND_PLAN_JSON> \
+  --json-only
 
 # 執行測試
 pytest tests/

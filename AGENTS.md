@@ -3,7 +3,8 @@
 ## Session Startup
 
 Read `docs/CURRENT_STATE.md` at the start of every project session.
-Archived logs in `docs/archive/` are historical only — do not load by default.
+Archived logs in `docs/archive/` and `.local/PROJECT_UPDATES.md` are
+historical only — do not load by default; read only when explicitly requested.
 
 ## Codex Rules
 
