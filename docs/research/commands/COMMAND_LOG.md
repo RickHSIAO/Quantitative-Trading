@@ -10787,3 +10787,77 @@ failure; real pytest exit 1 solely due to it).
   B. python scripts/collect_public_ws_ticker_evidence.py --strategy-date 2026-06-22 --ce-evidence-json /tmp/ce_evidence_20260622.json --allow-real-network --require-complete --out outputs/ws_ticker_evidence_20260622.json --verify-no-credential-leak --json-only
   C. echo "collector_exit_code=$?"
   D. python -c "import json;a=json.load(open('outputs/ws_ticker_evidence_20260622.json'));print(a['overall_status'],a['early_completion']['completion_achieved'],a['subscription_ack']['subscription_acknowledged'],a['message_audit']['ws_subscription_ack_count'],a['control_plane_parity_status'],a['early_completion']['collection_terminated_reason'],a['cli_exit_status'])"
+
+---
+
+### TASK-014CF_VPS_CLOSEOUT (2026-06-24, Sonnet 4.6)
+
+Documentation-only closeout of the successful real VPS verification for
+TASK-014CF, FIX1, FIX2 and FIX3. No Python source, test, or dependency
+file changes. WebSocket evidence collector is fully VPS verified at 52/52
+with subscription ACK validated, counter and control-plane parity passed,
+and immutable source provenance validated for all 52 symbols.
+
+**VPS Git and CE state:**
+- VPS HEAD=fd0b9589425e1c30f7dff9d5fc771efea015a2cc
+- CE Plan-only exit=0; no Demo order; Pilot not advanced; Live not authorized
+
+**WebSocket collector result:**
+- collector_exit=0
+- overall_status=WS_TICKER_EVIDENCE_COMPLETE
+- cli_exit_status=0; cli_exit_reason=complete
+- artifact fingerprint: sha256:1f3cd55b17fa479865bd07007be59074de4a67e1689fd273c36b39db5bed5980
+- endpoint=wss://stream.bybit.com/v5/public/linear
+- authenticated=false; credential_leak_check=NO_CREDENTIAL_VALUE_OR_KEY_PRESENT
+- one connection attempt; one successful connection; zero reconnects
+
+**Authoritative provenance:**
+- clock_offset_provenance_status=CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE
+- clock evidence age=3.162 seconds
+- CE source artifact SHA-256: sha256:e4fd5cb2fe57df9268f4a19a52f85d8cf42d8092b5c31d987d4721e125fa7ca7
+- symbol_universe_source_status=SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE
+- Strategy symbol count=50; protected legacy symbol count=2 (EDUUSDT, POLYXUSDT)
+- required unique symbol count=52
+
+**Data completion:**
+- requested=52; covered=52; complete=52
+- per-symbol status: 52 x WS_PRICE_TIMESTAMP_EVIDENCE_COMPLETE
+- snapshot count=52; delta count=154; total ws data message count=206
+- malformed=0; out-of-order=0; duplicate=2
+- counter_parity_status=WS_COUNTER_PARITY_PASS
+- immutable selected-price source validation: bad_sources=[]
+
+**Subscription ACK:**
+- subscription request count=1; subscription topic count=52
+- subscription ACK count=1; subscription_acknowledged=true
+- subscription_ack_status=WS_SUBSCRIPTION_ACKNOWLEDGED
+- subscription_ack_request_id=cf-public-ticker
+- subscription ACK connection generation=0
+- control_plane_parity_status=WS_CONTROL_PLANE_PARITY_PASS
+
+**Completion:**
+- data_completion_achieved=true; data completion required/complete=52/52
+- completion_achieved=true; completion required/complete=52/52
+- completion connection generation=0; completion trigger message count=206
+- termination reason: ALL_REQUIRED_SYMBOLS_COMPLETE_AND_SUBSCRIPTION_ACKNOWLEDGED
+
+**Safety and remaining blockers:**
+- freshness_summary.execution_grade_freshness_complete=false
+- top-level compatibility alias execution_grade_freshness_complete=false
+- rest_planner_prices_replaced=false
+- execution_batch_authorized=false; execution_ready=false; sender_reachable=false
+- order_post_count=0; amend_post_count=0; cancel_post_count=0; live_order_post_count=0
+
+**Retained blockers:**
+- PRICE_FRESHNESS_EVIDENCE_PARTIAL
+- PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE
+- WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS
+- EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK
+
+The WebSocket evidence collector is fully VPS verified: public mainnet linear
+endpoint, no authentication, authoritative 52-symbol universe complete, all 52
+same-message price-timestamp records complete, subscription ACK validated and
+bound, counter and control-plane parity pass. Execution-grade freshness remains
+false because planner actions are not yet bound to the exact same WebSocket
+source messages. The next engineering milestone is a separate design and
+implementation task for same-message planner-price integration.

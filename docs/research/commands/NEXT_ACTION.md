@@ -1,5 +1,54 @@
 # Next Action
 
+> **TASK-014CF_VPS_CLOSEOUT** (2026-06-24, Sonnet 4.6)
+>
+> **`TASK-014CF FIX1 FIX2 AND FIX3 ARE VPS VERIFIED / PUBLIC MAINNET LINEAR WEBSOCKET USED WITHOUT AUTHENTICATION / AUTHORITATIVE 52-SYMBOL UNIVERSE COMPLETE / ALL 52 SAME-MESSAGE PRICE-TIMESTAMP RECORDS COMPLETE / SUBSCRIPTION ACK VALIDATED AND BOUND / COUNTER AND CONTROL-PLANE PARITY PASS / REST PLANNER PRICES NOT REPLACED / EXECUTION-GRADE FRESHNESS REMAINS FALSE PENDING PLANNER SAME-MESSAGE INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+>
+> Documentation-only closeout of the successful real VPS verification for
+> TASK-014CF, FIX1, FIX2 and FIX3. No Python source, test, or dependency file changes.
+>
+> **VPS verification result:**
+> - VPS HEAD=fd0b9589425e1c30f7dff9d5fc771efea015a2cc; CE Plan-only exit=0; no Demo order;
+>   Pilot not advanced; Live not authorized.
+> - collector_exit=0; overall_status=WS_TICKER_EVIDENCE_COMPLETE; cli_exit_status=0;
+>   cli_exit_reason=complete.
+> - artifact fingerprint: sha256:1f3cd55b17fa479865bd07007be59074de4a67e1689fd273c36b39db5bed5980.
+> - endpoint=wss://stream.bybit.com/v5/public/linear; authenticated=false;
+>   credential_leak_check=NO_CREDENTIAL_VALUE_OR_KEY_PRESENT.
+> - one connection attempt; one successful connection; zero reconnects.
+> - clock_offset_provenance_status=CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE; clock evidence
+>   age=3.162 seconds; CE source artifact SHA-256:
+>   sha256:e4fd5cb2fe57df9268f4a19a52f85d8cf42d8092b5c31d987d4721e125fa7ca7.
+> - symbol_universe_source_status=SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE; Strategy=50;
+>   protected legacy=2 (EDUUSDT, POLYXUSDT); required unique=52.
+> - requested=52; covered=52; complete=52; 52 x WS_PRICE_TIMESTAMP_EVIDENCE_COMPLETE.
+> - snapshot=52; delta=154; total ws data messages=206; malformed=0; out-of-order=0;
+>   duplicate=2; counter_parity_status=WS_COUNTER_PARITY_PASS.
+> - immutable selected-price source validation: bad_sources=[].
+> - subscription request=1; topic count=52; ACK count=1; subscription_acknowledged=true;
+>   subscription_ack_status=WS_SUBSCRIPTION_ACKNOWLEDGED; request_id=cf-public-ticker;
+>   ACK connection generation=0; control_plane_parity_status=WS_CONTROL_PLANE_PARITY_PASS.
+> - data_completion_achieved=true (52/52); completion_achieved=true (52/52);
+>   completion connection generation=0; trigger message count=206;
+>   termination reason=ALL_REQUIRED_SYMBOLS_COMPLETE_AND_SUBSCRIPTION_ACKNOWLEDGED.
+>
+> **Safety and remaining blockers:**
+> - freshness_summary.execution_grade_freshness_complete=false; top-level alias=false.
+> - rest_planner_prices_replaced=false.
+> - execution_batch_authorized=false; execution_ready=false; sender_reachable=false.
+> - order_post_count=0; amend_post_count=0; cancel_post_count=0; live_order_post_count=0.
+> - Retained blockers: PRICE_FRESHNESS_EVIDENCE_PARTIAL,
+>   PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE,
+>   WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS,
+>   EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK.
+>
+> The WebSocket evidence collector is fully VPS verified, but execution-grade freshness
+> remains false because planner actions are not yet bound to the exact same WebSocket
+> source messages. The next engineering milestone is a separate design and implementation
+> task for same-message planner-price integration.
+
+---
+
 > **TASK-014CF_FIX3_ACK_GATED_EARLY_COMPLETION_AND_CANONICAL_STATUS** (2026-06-24, Opus 4.8)
 >
 > **`TASK-014CF_FIX2 DATA PLANE VERIFIED AT 52 OF 52 / EARLY DATA COMPLETION WORKS / FIX3 REQUIRES SUCCESSFUL SUBSCRIPTION ACK BEFORE FULL COMPLETION / DATA MESSAGES ARE NOT IMPLICIT ACK / LATE ACK IS ACCEPTED ONLY WHILE ALL REQUIRED PRICE EVIDENCE REMAINS FRESH / CANONICAL OVERALL COMPLETE REQUIRES DATA PLUS ACK PLUS PARITY / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING PLANNER INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**

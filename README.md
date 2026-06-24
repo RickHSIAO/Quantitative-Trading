@@ -17,51 +17,39 @@
 ## Demo Trading Guarded Lifecycle Status（updated by TASK-014BW_PILOT_READINESS, 2026-06-22）
 
 共同狀態板，供 Rick / ChatGPT / Claude / Codex / Opus 三方協作對齊。本區塊由
-TASK-014CF_FIX3 同步更新；不解除 G20、不開啟 live real trading。
+TASK-014CF_VPS_CLOSEOUT 同步更新；不解除 G20、不開啟 live real trading。
 
-> **TASK-014CF_FIX3_ACK_GATED_EARLY_COMPLETION_AND_CANONICAL_STATUS**（2026-06-24, Opus 4.8 / ACK 閘控完成 + 規範狀態）
-> **`TASK-014CF_FIX2 DATA PLANE VERIFIED AT 52 OF 52 / EARLY DATA COMPLETION WORKS / FIX3 REQUIRES SUCCESSFUL SUBSCRIPTION ACK BEFORE FULL COMPLETION / DATA MESSAGES ARE NOT IMPLICIT ACK / LATE ACK IS ACCEPTED ONLY WHILE ALL REQUIRED PRICE EVIDENCE REMAINS FRESH / CANONICAL OVERALL COMPLETE REQUIRES DATA PLUS ACK PLUS PARITY / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING PLANNER INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
-> 在 13e3098 之上新增一筆 FIX3 commit，修正 VPS 實測發現的控制平面競態。不整合進 planner、不取代 REST 價格源、
-> 不移除 planner 整合新鮮度 blocker、不更動策略目標 / 權重 / 固定資本 / 受保護持倉 / Pilot。
+> **TASK-014CF_VPS_CLOSEOUT**（2026-06-24, Sonnet 4.6 / VPS 驗證結案）
+> **`TASK-014CF FIX1 FIX2 AND FIX3 ARE VPS VERIFIED / PUBLIC MAINNET LINEAR WEBSOCKET USED WITHOUT AUTHENTICATION / AUTHORITATIVE 52-SYMBOL UNIVERSE COMPLETE / ALL 52 SAME-MESSAGE PRICE-TIMESTAMP RECORDS COMPLETE / SUBSCRIPTION ACK VALIDATED AND BOUND / COUNTER AND CONTROL-PLANE PARITY PASS / REST PLANNER PRICES NOT REPLACED / EXECUTION-GRADE FRESHNESS REMAINS FALSE PENDING PLANNER SAME-MESSAGE INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
+> TASK-014CF / FIX1 / FIX2 / FIX3 VPS 驗證結案。僅文件更新，無 Python / 測試 / 依賴變更。
 >
-> - **真實 VPS 發現：** clock provenance / legacy universe 皆 AUTHORITATIVE；52 符號全覆蓋、52 snapshots + 83 deltas
->   （135 訊息）、parity PASS、不可變 source provenance 全通過、early data completion 在第 135 則訊息達成。但 collector
->   在消化 subscription ACK 之前就終止：subscription_acknowledged=false、ws_subscription_ack_count=0，artifact 卻顯示
->   overall=COMPLETE / completion_achieved=true，而 require-complete gate 正確以 cli_exit_reason=subscription_not_acknowledged
->   / cli_exit_status=4 fail closed —— 早期完成與規範狀態與缺 ACK 不一致。
-> - **A. ACK 閘控完成：** 不再僅因 52/52 資料完成即終止。完整完成同時要求 (1) 同一世代所有必要符號證據同時新鮮且完成；
->   且 (2) 收到該訂閱請求的成功 ACK。資料覆蓋達 52/52 但尚未收到 ACK 時 collector 持續讀取；每則訊息（ACK / snapshot /
->   delta）後都重評，處理「先 ACK 後資料」與「先資料後 ACK」兩種順序；兩條件皆成立即立刻終止，不等 deadline。
-> - **B. 拆分 data completion 與 full completion：** 新增 data_completion_*（achieved/at_epoch_ns/at_utc/required/complete）
->   與 subscription_ack（acknowledged / status / received_at / request_id / connection_generation）。ACK status：
->   WS_SUBSCRIPTION_ACKNOWLEDGED / _MISSING / _REJECTED / _CONFLICT。completion_achieved = data_complete AND ack AND
->   parity/provenance；不再以 completion_achieved 表達純資料完成。
-> - **C. 終止原因：** ALL_REQUIRED_SYMBOLS_COMPLETE_AND_SUBSCRIPTION_ACKNOWLEDGED（成功）/
->   DATA_COMPLETE_WAITING_FOR_SUBSCRIPTION_ACK（中間態）/ COLLECTION_DEADLINE_REACHED / SUBSCRIPTION_REJECTED /
->   CONNECTION_CLOSED / EVIDENCE_CONFLICT。成功必為 ACKNOWLEDGED 版本。
-> - **D. 規範 overall：** WS_TICKER_EVIDENCE_COMPLETE 僅當 全部符號完成 + ACK 成功 + counter parity PASS + control-plane
->   parity PASS + 權威 clock provenance + 權威 universe provenance + 無世代/硬證據衝突。52/52 但 deadline 仍缺 ACK →
->   overall=PARTIAL、cli_exit=4(subscription_not_acknowledged)、保留 52/52 coverage、completion_achieved=false、
->   blocker WS_SUBSCRIPTION_ACKNOWLEDGEMENT_MISSING。ACK 被拒 → CONFLICT，永不 COMPLETE，保留可稽核 artifact。
-> - **E. ACK 解析綁定：** 僅在 op=subscribe、success=true、request id 相符（有用時）、連線世代相符、無認證欄位、無非預期
->   私有 topic、topic count 維持 52 時才算成功；資料訊息抵達不視為隱含 ACK；僅記錄安全 ACK metadata。
-> - **F. 等待 ACK 時的新鮮度：** 52/52 先於 ACK 時持續接收、保留不可變 source 證據、允許後續帶價 delta 刷新個別 source、
->   反覆評估同時新鮮度；ACK 到達時若仍全新鮮才完成，否則繼續到刷新或 deadline；不凍結較早 data-completion 時刻為完成時刻；
->   age 以實際 full-completion 時刻計算；不放寬 stale 門檻。
-> - **G. 控制平面 parity：** subscription_summary.subscription_acknowledged == (ws_subscription_ack_count>0)；
->   completion_achieved ⇒ ack；overall=COMPLETE ⇒ completion_achieved；cli_exit=0 ⇒ COMPLETE 且 ack；新增
->   control_plane_parity_status=WS_CONTROL_PLANE_PARITY_PASS/FAIL，FAIL 阻止 COMPLETE。
-> - **H. 保留 FIX2：** 早期資料完成偵測、不可變 source provenance、selected_price_updated_in_message（COMPLETE 必 true）、
->   last_processed_message_updated_selected_price、coverage/audit 計數對齊、source ts/cs/timing、REST/WS 計數分離、
->   timeout artifact 保留、權威 CE provenance、權威 legacy 推導、無憑證 collection、require-complete 非零、
->   nested execution_grade_freshness_complete=false 與 top-level alias 對齊。
-> - execution_batch_authorized=false、order/amend/cancel/live=0；無 Demo 下單、無 Live 授權、無 auth marker、Pilot 未進階、
->   Pilot 與 Forward source byte-identical。
-> - 驗證：focused 14 passed（cf_fix3）+ 113 passed（cf 核心 + fix1 + fix2），real pytest exit 0；demo_trading regression
->   9433 passed（1 個既有無關 emergency_close CLI 失敗，real pytest exit 1 僅因此）。
+> - **VPS 驗證結果：** HEAD=fd0b9589425e1c30f7dff9d5fc771efea015a2cc；CE Plan-only exit=0；無 Demo 下單；
+>   Pilot 未進階；Live 未授權。
+> - **WebSocket collector：** collector_exit=0；overall_status=WS_TICKER_EVIDENCE_COMPLETE；
+>   cli_exit_status=0；cli_exit_reason=complete；artifact fingerprint
+>   sha256:1f3cd55b17fa479865bd07007be59074de4a67e1689fd273c36b39db5bed5980；
+>   endpoint=wss://stream.bybit.com/v5/public/linear；authenticated=false；
+>   credential_leak_check=NO_CREDENTIAL_VALUE_OR_KEY_PRESENT；1 連線、0 重連。
+> - **權威 provenance：** CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE；clock evidence age=3.162s；
+>   CE source SHA-256: sha256:e4fd5cb2fe57df9268f4a19a52f85d8cf42d8092b5c31d987d4721e125fa7ca7；
+>   SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE；Strategy=50 + protected legacy=2（EDUUSDT, POLYXUSDT）= 52。
+> - **資料完成：** requested=52；covered=52；complete=52；52 × WS_PRICE_TIMESTAMP_EVIDENCE_COMPLETE；
+>   snapshot=52；delta=154；total=206；malformed=0；out-of-order=0；duplicate=2；
+>   counter_parity_status=WS_COUNTER_PARITY_PASS；immutable source bad_sources=[]。
+> - **訂閱 ACK：** request=1；topic=52；ACK=1；subscription_acknowledged=true；
+>   WS_SUBSCRIPTION_ACKNOWLEDGED；request_id=cf-public-ticker；generation=0；
+>   control_plane_parity_status=WS_CONTROL_PLANE_PARITY_PASS。
+> - **完成：** data_completion_achieved=true（52/52）；completion_achieved=true（52/52）；
+>   generation=0；trigger message=206；
+>   ALL_REQUIRED_SYMBOLS_COMPLETE_AND_SUBSCRIPTION_ACKNOWLEDGED。
+> - **安全與剩餘 blocker：** execution_grade_freshness_complete=false（含 top-level alias）；
+>   rest_planner_prices_replaced=false；execution_batch_authorized=false；execution_ready=false；
+>   sender_reachable=false；order/amend/cancel/live=0。
+> - **保留 blocker：** PRICE_FRESHNESS_EVIDENCE_PARTIAL、PER_SYMBOL_EXCHANGE_QUOTE_TIMESTAMP_UNAVAILABLE、
+>   WS_PRICE_NOT_BOUND_TO_PLANNER_ACTIONS、EXECUTION_AUTHORIZATION_NOT_GRANTED_THIS_TASK。
 >
-> 下一里程碑：將每個 planner action 價格綁定到帶 selected price / symbol / ts / cs / local receive timing 的同一
-> WebSocket 訊息（同訊息整合任務），以及 human-authorization + staged Demo batch execution protocol。本任務不提供送單命令。
+> WebSocket 證據收集器已完全 VPS 驗證通過，但 execution-grade freshness 仍為 false，因為 planner action 尚未綁定到
+> 同一 WebSocket 來源訊息。下一工程里程碑為獨立設計與實作的同訊息 planner 價格整合任務。
 
 > **TASK-014CF_FIX2_EARLY_COMPLETE_FINALIZATION_AND_CANONICAL_EVIDENCE_PARITY**（2026-06-24, Opus 4.8 / 早期完成終止 + 規範證據對齊）
 > **`TASK-014CF/FIX1 VPS TRANSPORT AND AUTHORITATIVE PROVENANCE VERIFIED / ALL 52 SYMBOLS COVERED AND ALL 52 SNAPSHOTS RECEIVED / FIX2 FINALIZES IMMEDIATELY WHEN ALL REQUIRED SAME-GENERATION PRICE-TIMESTAMP EVIDENCE IS FRESH / SELECTED PRICE SOURCE MESSAGE PROVENANCE IS IMMUTABLE / COVERAGE AND MESSAGE-AUDIT COUNTERS ARE CANONICAL AND IDENTICAL / REST PRICES NOT REPLACED / EXECUTION FRESHNESS REMAINS PARTIAL PENDING PLANNER INTEGRATION / EXECUTION BATCH UNAUTHORIZED / ZERO ORDER POST / LIVE TRADING NOT AUTHORIZED`**
