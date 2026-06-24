@@ -72,6 +72,14 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   **fresh-path, no-clobber** policy (the atomic writer independently refuses an
   existing destination; only the task-created temp is removed on failure).
 - The **default** native-daily behavior (flag absent) is unchanged.
+- CH3A design audit complete (code-read-only): see
+  `docs/research/TASK-014CH3A_REVIEW_MARGIN_FRESHNESS_DESIGN_AUDIT.md`. No runtime
+  wiring changed; CH2 (`--ws-bound-plan-only`) remains the latest executable opt-in
+  boundary. Recommended next stage (Option B): a separate
+  `--ws-bound-plan-review-only` mode that re-pins to exact source bytes, re-runs the
+  CH1 consumer, and emits an offline review/margin/freshness envelope — terminal
+  before readiness / execution gate / native execution / sender / Pilot advancement.
+  Execution remains unauthorized; Pilot remains 0/7.
 
 ## Repository Cleanup
 
