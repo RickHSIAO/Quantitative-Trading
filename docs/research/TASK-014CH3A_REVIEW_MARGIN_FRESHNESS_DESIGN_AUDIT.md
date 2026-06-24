@@ -126,7 +126,12 @@ execution-authorizing / sender-capable / Pilot-mutating — i.e. before
 | Default-path compatibility | unchanged | unchanged | **risk of changing default review** |
 | Risk of reaching readiness/exec | low | **lowest** (separate pure orchestrator) | **high** (review path is adjacent to gate) |
 
-**Recommendation: Option B** — a separate `--ws-bound-plan-review-only` mode that reads
+> **SUPERSEDED by the FIX1 corrections at the end of this document.** The original
+> Option B sketch below under-specified the external anchors and immutability; the
+> corrected, authoritative design is in **"FIX1 — External-anchor & margin-semantics
+> corrections"**. Read that section as the binding design for CH3.
+
+**Recommendation (original, superseded): Option B** — a separate `--ws-bound-plan-review-only` mode that reads
 the already-written CH2 wrapper **and** the original source WS evidence file (exact bytes),
 re-runs the CH1 consumer to re-pin all fingerprints/SHA/freshness, then builds an offline
 review+margin artifact. It maximizes trust-boundary clarity, re-pins to exact bytes (no
@@ -224,3 +229,168 @@ destination-race behavior.
 Reused unchanged: `demo_strategy_native_ws_bound_plan_consumer` (CH1),
 `demo_strategy_native_margin_freshness_audit.build_projected_margin_model`,
 `demo_strategy_native_v1_portfolio.build_strategy_native_review` (via offline adapter).
+
+---
+
+# FIX1 — External-anchor & margin-semantics corrections (authoritative; supersedes §7–§13)
+
+The original Option B was incomplete: a *review-only* process must obtain **every** CH1
+caller-owned expected value from a source **independent of the wrapper under validation**.
+A value copied from that wrapper lets the artifact define its own acceptance and is
+rejected. This section is the binding CH3 design.
+
+## F1. Complete CH1 external-anchor contract
+
+`validate_ws_bound_plan_artifact(wrapper, *, source_ws_artifact, expected_policy_id,
+expected_strategy_id, expected_run_date, expected_original_plan_fingerprint,
+expected_ws_artifact_sha256, expected_ws_artifact_fingerprint, expected_binding_epoch_ns,
+expected_freshness_threshold_ms, expected_symbols)`.
+
+| CH1 expected value | Independent CH3 source (never the wrapper) |
+|---|---|
+| `expected_policy_id` | fixed constant `wb.ACTIVE_STRATEGY_NATIVE_V1_POLICY` (`ACTIVE_STRATEGY_NATIVE_V1_POLICY`) |
+| `expected_strategy_id` | fixed constant `wb.EXPECTED_STRATEGY_NAME` = `prev3y_crypto_combined_paper_safe_variant` |
+| `expected_run_date` | required CLI `--date`, cross-checked vs Forward Record `forward_summary.latest_date` (offline) |
+| `expected_original_plan_fingerprint` | **B1**: required CLI `--expected-original-plan-fingerprint` (from the trusted CH2 run summary) |
+| `expected_ws_artifact_sha256` | computed in-core from the EXACT source-WS-evidence bytes (`wb.compute_file_sha256`) |
+| `expected_ws_artifact_fingerprint` | recomputed in-core `ws._fingerprint(parsed_source minus artifact_fingerprint)` from exact bytes |
+| `expected_binding_epoch_ns` | **required** CLI `--ws-binding-epoch-ns` (from CH2 summary) |
+| `expected_freshness_threshold_ms` | **required** CLI `--ws-binding-freshness-threshold-ms` (from CH2 summary; >0, ≤10_000) |
+| `expected_symbols` (50) | canonical OFFLINE Forward Record source (F3) or required `--expected-strategy-symbols-json` |
+
+CH1 still recomputes wrapper/canonical/source/source-message/action fingerprints and
+exact-offset freshness internally; stored PASS/FRESH/COMPLETE remain insufficient.
+
+## F2. Original-plan fingerprint anchor — choose B1
+
+- **B1 (chosen):** required CLI `--expected-original-plan-fingerprint sha256:<64hex>`. The
+  CH2 summary prints `original_plan_fingerprint`; the operator copies it from the trusted
+  CH2 stdout, independent of the wrapper file. Narrowest design; no Plan regenerate/duplicate.
+- **B2 (rejected default):** re-supply original seed-Plan JSON and re-fingerprint — duplicates
+  the Plan, no trust gain.
+- **B3 (forbidden):** derive from the wrapper (artifact defines its own expected value).
+CH3 validates B1 is canonical `sha256:<64hex>`.
+
+## F3. Expected 50-symbol set anchor — canonical offline source EXISTS
+
+**Primary:** `src/demo_strategy_pilot_forward_source.py::load_primary_forward_strategy_result(
+run_date=<--date>, repo_root=ROOT).normalized_signals` → the 25-long/25-short signal symbols.
+This loader is offline, deterministic, no-network, does **not** invoke the planner, does
+**not** read Pilot state; it reads tracked Forward Record artifacts (`forward_summary.json`,
+`<YYYYMMDD>_positions.parquet`, `_forward_stats.json`, `_pnl.json`) and SHA256-hashes each,
+and carries the authoritative `forward_summary.strategy` (cross-checked vs `expected_strategy_id`).
+CH3 normalizes/uppercases, requires exactly 50 unique, and fingerprints via
+`ws.canonical_strategy_symbol_set_fingerprint(symbols)`; Forward Record SHAs are recorded as
+provenance.
+
+**Alternative (explicit):** required `--expected-strategy-symbols-json <PATH>` (50 unique
+normalized symbols), independently fingerprinted, matched to policy/strategy identity, never
+from the wrapper. Deriving symbols from the wrapper is impossible by design.
+
+## F4. Binding epoch & threshold are caller-owned (REQUIRED)
+
+`--ws-binding-epoch-ns` and `--ws-binding-freshness-threshold-ms` are **REQUIRED** in
+review-only mode; neither is defaulted or read from the wrapper (a separately authenticated
+external manifest may alternatively supply them). Threshold is a positive int ≤ 10_000.
+**How obtained:** the CH2 (`--ws-bound-plan-only`) run prints a JSON summary with
+`binding_epoch_ns`, `freshness_threshold_ms` (and `original_plan_fingerprint`); the operator
+copies those from that trusted invocation's stdout — not from the wrapper file.
+
+## F5. Exact wrapper bytes authoritative (corrected pure contract)
+
+```python
+def build_ws_bound_plan_review(
+    *, wrapper_artifact_bytes: bytes, source_ws_artifact_bytes: bytes,
+    expected_original_plan_fingerprint: str, expected_binding_epoch_ns: int,
+    expected_freshness_threshold_ms: int, expected_policy_id: str,
+    expected_strategy_id: str, expected_run_date: str,
+    expected_symbols: Sequence[str]) -> WsBoundPlanReviewResult: ...
+```
+
+- Parse BOTH byte inputs **inside** the pure core; require JSON object roots; **no fallback
+  to any caller Mapping**.
+- `wrapper_file_sha256 = wb.compute_file_sha256(wrapper_artifact_bytes)`;
+  `source_file_sha256 = wb.compute_file_sha256(source_ws_artifact_bytes)` (literal bytes).
+- Recompute both logical fingerprints from the parsed objects; use the parsed objects for
+  CH1 validation and review. Record `wrapper_file_sha256` in the envelope **in addition to**
+  the logical wrapper/canonical fingerprints.
+
+## F6. Immutable review projection (corrected)
+
+`deepcopy` is **not** read-only. CH3 builds `review_rows: tuple[ReviewActionRow, ...]` where
+`ReviewActionRow` is `@dataclass(frozen=True)` with scalar fields only (symbol, side, signed
+`target_notional`, price, qty, qty_step, effective_notional, source_message_fingerprint,
+action_fingerprint) + scalar provenance fields; no reference to mutable target-position
+dicts is retained, and no review helper receives the shared wrapper Mapping. Defensive:
+recompute the wrapper fingerprint **before** and **after** review and the canonical
+fingerprint **after**; any drift ⇒ terminal `WS_BOUND_PLAN_REVIEW_PROVENANCE_FAILED`.
+
+## F7. Offline margin semantics (separated)
+
+- **A. Exposure review:** 50 actions; 25 long / 25 short; signed notionals preserved (long
+  `+200`, short `-200`); long 5,000; short_absolute 5,000; gross 10,000; net 0; qty/price/
+  effective-notional consistency; active prices ONLY from validated WS-bound actions
+  (`price == price_evidence.selected_price`; REST `rest_planning_price` never reused).
+- **B. Projected strategy margin:** uses **absolute gross** `sum(|target_notional|)` (=10,000)
+  → `md.build_projected_margin_model`; an IM rate applies only if an explicitly identified,
+  independently-verified offline rate is present, else rate-projection is reported
+  rate-unavailable (deterministic). Signed/net is **never** fed to the scalar gross helper.
+- **C. Account feasibility:** equity, available balance, account IM/MM, risk tiers,
+  leverage/mode, order feasibility — require private data; **not available** in CH3.
+
+Result fields: `offline_exposure_review_complete = True`,
+`offline_projected_margin_review_complete = True` (the step ran deterministically;
+rate-projection may be rate-unavailable), `account_margin_feasibility_status =
+UNAVAILABLE_NOT_EVALUATED`, `execution_readiness = False`. CH3 PASS is **never** described as
+account-ready or execution-ready.
+
+## F8. Corrected Option A vs B → corrected Option B
+
+A (single bind+review) has anchors in-process but re-touches REST for the seed build each
+run and is not truly "review-only". **Corrected Option B** is recommended: no REST at review
+time, re-pins to exact wrapper+source bytes, structurally farthest from readiness/execution,
+keeps default/CH2 byte-unchanged. It is acceptable BECAUSE every anchor now has an
+independent source (fixed constants; `--date` cross-checked to the Forward Record; B1
+original-plan fp; required epoch/threshold; symbols from the offline Forward Record or
+explicit JSON; SHAs/fps from exact bytes). No expected value is taken from the wrapper.
+
+## F9. Corrected CLI specification
+
+Mode (mutually exclusive with `--ws-bound-plan-only`): **`--ws-bound-plan-review-only`**.
+Required: `--ws-bound-plan-wrapper-json <IN>`, `--ws-ticker-evidence-json <IN>`,
+`--ws-bound-plan-review-output-json <OUT>`, `--ws-binding-epoch-ns <POS_INT>`,
+`--ws-binding-freshness-threshold-ms <POS_INT ≤ 10000>`,
+`--expected-original-plan-fingerprint sha256:<64hex>`; expected symbols default from the
+Forward Record (via `--date`) else `--expected-strategy-symbols-json <PATH>`. All THREE
+paths pairwise distinct (realpath/normcase); review-out ≠ either input. Output uses the
+existing CH2 race-safe atomic create-if-absent / no-clobber writer.
+Rejected flags (`_INPUT_INVALID`): `--ws-bound-plan-only`, `--send-orders-to-demo`,
+`--advance-on-success`, `--reconcile-outputs-only`, `--allow-notion-network`,
+`--allow-discord-network`, `--test-injected-actions-json`.
+
+## F10. Corrected envelope fields (references + results; no full-Plan duplicate)
+
+`wrapper_file_sha256`, `wrapper_logical_fingerprint`, `canonical_bound_plan_fingerprint`,
+`source_ws_file_sha256`, `source_ws_logical_fingerprint`, `original_plan_fingerprint`,
+`expected_symbol_set_fingerprint`, `binding_epoch_ns`, `freshness_threshold_ms`,
+`review_rows` (or aggregate `review_rows_fingerprint`), `offline_exposure_totals`
+(long 5,000 / short_abs 5,000 / gross 10,000 / net 0), `offline_projected_margin_result`,
+`account_margin_feasibility_status = UNAVAILABLE_NOT_EVALUATED`, `execution_readiness = false`,
+and `readiness_called / execution_gate_called / native_execution_called / pilot_advanced`
+= false + order/sender/reporting counters = 0. Fresh output path; race-safe atomic
+publication; envelope references the wrapper by fingerprint/SHA (no embedded Plan) and is
+keyed to the source SHA so a prior run's envelope cannot be mistaken for the current result.
+
+## F11. Corrected future test matrix (additions)
+
+original-plan fp omitted → INPUT_INVALID; wrong original-plan fp → CONSUMER_FAILED;
+expected symbols cannot be derived from the wrapper (no such path); wrong external symbol set
+→ fail; required epoch omitted → INPUT_INVALID; required threshold omitted → INPUT_INVALID;
+wrapper exact-byte SHA preserved in envelope; wrapper bytes invalid/non-object → fail;
+wrapper Mapping never separately trusted (only exact bytes); review projection cannot mutate
+the wrapper; pre/post wrapper + post canonical fingerprints identical; offline margin complete
+while account feasibility = UNAVAILABLE_NOT_EVALUATED; CH3 PASS never sets
+`execution_readiness`; gross 10,000 / net 0 / long 5,000 / short absolute 5,000; signed short
+notionals remain `-200` in review rows; zero readiness/gate/native-exec/sender/Pilot/Notion/
+Discord calls (counter-raisers); no REST fallback; default native-daily + CH2 Plan-only
+byte-unchanged; no output/temp on failure; no-clobber destination-race behavior.
