@@ -247,25 +247,47 @@ def parse_source_ws_artifact(raw: bytes) -> Mapping[str, Any]:
 
 
 def atomic_write_wrapper(path: str | Path, wrapper: Mapping[str, Any]) -> None:
-    """Write exactly one canonical wrapper artifact atomically (temp file + replace).
-    The wrapper is written UNMODIFIED. Fresh-path only: independently REFUSES an
-    existing destination (second line of defense; never clobbers a pre-existing file).
-    On any failure only the task-created temp file is removed."""
+    """Publish exactly one canonical wrapper artifact with ATOMIC create-if-absent
+    semantics. The wrapper is written UNMODIFIED.
+
+    Race-safe no-clobber: the final pathname is created with ``os.link`` (hard link
+    from the fully-written temp), which atomically fails ``FileExistsError`` when the
+    destination already exists -- including a destination created by another process
+    between the preflight check and publication. ``os.replace`` is deliberately NOT
+    used because it would overwrite such a racing destination. Unsupported link
+    behavior fails closed (never falls back to an overwriting publish). Only the
+    task-created temp pathname is ever removed; an existing destination is never
+    deleted, unlinked, replaced or truncated."""
     p = Path(path)
-    if p.exists():
+    # Fast secondary defense; the atomic os.link below is the authoritative guarantee.
+    if os.path.lexists(p):
         raise WsBoundPlanOnlyError(f"output destination already exists (no clobber): {p}")
     p.parent.mkdir(parents=True, exist_ok=True)
+    # Temp in the destination directory => same filesystem (hard link is valid).
     fd, tmp = tempfile.mkstemp(dir=str(p.parent), suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(wrapper, fh, ensure_ascii=False, indent=2, sort_keys=True)
-        os.replace(tmp, p)
-    except Exception as exc:  # noqa: BLE001
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(wrapper, fh, ensure_ascii=False, indent=2, sort_keys=True)
+                fh.flush()
+                os.fsync(fh.fileno())
+        except Exception as exc:  # noqa: BLE001  (serialization / write failure)
+            raise WsBoundPlanOnlyError(f"failed to serialize wrapper artifact: {exc}") from exc
+        # Atomic create-if-absent publication: succeeds ONLY when p does not exist.
+        try:
+            os.link(tmp, p)
+        except FileExistsError as exc:
+            raise WsBoundPlanOnlyError(
+                f"output destination already exists (no clobber): {p}") from exc
+        except (OSError, NotImplementedError, AttributeError) as exc:
+            raise WsBoundPlanOnlyError(
+                f"atomic no-clobber publication unsupported/failed: {exc}") from exc
+    finally:
+        # Remove ONLY the task-created temp pathname; a linked destination survives.
         try:
             os.unlink(tmp)
         except OSError:
             pass
-        raise WsBoundPlanOnlyError(f"failed to write wrapper artifact: {exc}") from exc
 
 
 __all__ = [

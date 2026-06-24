@@ -1057,7 +1057,7 @@ def _run_ws_bound_plan_only(args: Any, output_root: str | None) -> int:
                         detail="--ws-ticker-evidence-json and --ws-bound-plan-output-json "
                                "resolve to the same path; the source artifact must not be overwritten",
                         exit_code=EXIT_INVALID)
-    if os.path.exists(out_path):
+    if os.path.lexists(out_path):  # lexists: also rejects a dangling-symlink destination
         return _summary(wsbpo.WS_BOUND_PLAN_ONLY_OUTPUT_EXISTS,
                         detail="--ws-bound-plan-output-json already exists; refusing to clobber "
                                "(use a fresh output path)", exit_code=EXIT_INVALID)

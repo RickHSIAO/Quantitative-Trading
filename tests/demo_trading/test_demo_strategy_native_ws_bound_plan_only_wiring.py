@@ -711,14 +711,106 @@ def test_atomic_writer_json_failure_removes_temp(tmp_path, monkeypatch):
     assert not any(p.suffix == ".tmp" for p in tmp_path.iterdir())
 
 
-def test_atomic_writer_replace_failure_removes_temp(tmp_path, monkeypatch):
+def test_atomic_writer_link_failure_removes_temp(tmp_path, monkeypatch):
+    # Atomic publication failure (os.link unsupported/errored) fails closed and
+    # removes only the task-created temp; no destination is produced.
     out = tmp_path / "bound.json"
 
     def _boom(*a, **k):
-        raise OSError("replace failure")
+        raise OSError("link failure")
 
-    monkeypatch.setattr(wsbpo.os, "replace", _boom)
+    monkeypatch.setattr(wsbpo.os, "link", _boom)
     with pytest.raises(wsbpo.WsBoundPlanOnlyError):
         wsbpo.atomic_write_wrapper(out, {"x": 1})
     assert not out.exists()
     assert not any(p.suffix == ".tmp" for p in tmp_path.iterdir())
+
+
+def test_atomic_writer_uses_create_if_absent_not_replace(monkeypatch, tmp_path):
+    # os.replace must NEVER be used for final publication; os.link IS used.
+    def _forbidden_replace(*a, **k):
+        raise AssertionError("os.replace must not be used to publish the artifact")
+
+    link_calls = {"n": 0}
+    real_link = os.link
+
+    def _counting_link(src, dst, *a, **k):
+        link_calls["n"] += 1
+        return real_link(src, dst, *a, **k)
+
+    monkeypatch.setattr(wsbpo.os, "replace", _forbidden_replace)
+    monkeypatch.setattr(wsbpo.os, "link", _counting_link)
+    out = tmp_path / "bound.json"
+    wsbpo.atomic_write_wrapper(out, {"x": 1})
+    assert out.exists() and link_calls["n"] == 1
+
+
+def test_atomic_writer_destination_race_created_before_link(tmp_path, monkeypatch):
+    # Deterministic race: the destination (with sentinel bytes) is created by another
+    # actor in the publication window, just before os.link. The atomic create-if-absent
+    # link then fails FileExistsError -> fail closed, sentinel preserved, no temp.
+    out = tmp_path / "bound.json"
+    sentinel = b'{"sentinel": "race"}'
+    real_link = os.link
+
+    def _racing_link(src, dst, *a, **k):
+        if not os.path.lexists(dst):
+            with open(dst, "wb") as fh:
+                fh.write(sentinel)
+        return real_link(src, dst, *a, **k)  # destination now exists -> FileExistsError
+
+    monkeypatch.setattr(wsbpo.os, "link", _racing_link)
+    with pytest.raises(wsbpo.WsBoundPlanOnlyError):
+        wsbpo.atomic_write_wrapper(out, {"x": 1})
+    assert out.read_bytes() == sentinel  # race-created content never overwritten
+    assert not any(p.suffix == ".tmp" for p in tmp_path.iterdir())
+
+
+def test_atomic_writer_rejects_directory_destination(tmp_path):
+    out = tmp_path / "bound.json"
+    out.mkdir()
+    with pytest.raises(wsbpo.WsBoundPlanOnlyError):
+        wsbpo.atomic_write_wrapper(out, {"x": 1})
+    assert out.is_dir()  # untouched
+    assert not any(p.suffix == ".tmp" for p in tmp_path.iterdir())
+
+
+def test_atomic_writer_rejects_dangling_symlink_destination(tmp_path):
+    out = tmp_path / "bound.json"
+    target = tmp_path / "missing_target.json"  # does not exist -> dangling
+    try:
+        os.symlink(str(target), str(out))
+    except (OSError, NotImplementedError, AttributeError) as exc:
+        pytest.skip(f"symlink creation not permitted on this platform: {exc}")
+    assert os.path.lexists(out) and not os.path.exists(out)  # dangling
+    with pytest.raises(wsbpo.WsBoundPlanOnlyError):
+        wsbpo.atomic_write_wrapper(out, {"x": 1})
+    assert os.path.lexists(out) and not target.exists()  # symlink untouched, target uncreated
+    assert not any(p.suffix == ".tmp" for p in tmp_path.iterdir())
+
+
+def test_cli_publication_race_returns_output_failed_no_clobber(tmp_path, monkeypatch, capsys):
+    # Full CLI PASS path, but the destination is created during publication (race).
+    _install_seed_mocks(monkeypatch)
+    counters = _install_forbidden_counters(monkeypatch)
+    now = time.time_ns()
+    ev, source = _write_source(tmp_path, now=now)
+    out = tmp_path / "bound.json"
+    sentinel = b'{"sentinel": "cli-race"}'
+    real_link = os.link
+
+    def _racing_link(src, dst, *a, **k):
+        if not os.path.lexists(dst):
+            with open(dst, "wb") as fh:
+                fh.write(sentinel)
+        return real_link(src, dst, *a, **k)
+
+    monkeypatch.setattr(wsbpo.os, "link", _racing_link)
+    rc = nrun.main(_base_argv(tmp_path, ev, out, epoch=now + 2_000_000))
+    assert rc == nrun.EXIT_INPUT_FAILURE
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["status"] == wsbpo.WS_BOUND_PLAN_ONLY_OUTPUT_FAILED
+    assert summary["rest_fallback_used"] is False
+    assert out.read_bytes() == sentinel  # race destination never overwritten
+    assert not any(p.suffix == ".tmp" for p in tmp_path.iterdir())
+    assert all(c.n == 0 for c in counters.values())
