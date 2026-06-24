@@ -35,12 +35,36 @@ FIX2 hardening:
   * Required, non-null, correctly-typed, semantically-valid execution-grade
     price-evidence fields per action (a generic ``None``-tolerant type check is no
     longer sufficient for a required field).
+
+FIX3 hardening (temporal / freshness integrity):
+
+  * Caller-anchored temporal expectations ``expected_binding_epoch_ns`` and
+    ``expected_freshness_threshold_ms`` (never derived from the wrapper). The
+    threshold must be positive and must not exceed the producer's strict maximum
+    (``DEFAULT_BINDING_FRESHNESS_THRESHOLD_MS`` = 10_000 ms) and must equal the
+    stored threshold fields; the binding epoch must equal the canonical / wrapper
+    binding-epoch copies.
+  * Binding-time freshness is INDEPENDENTLY recomputed per action from the caller
+    binding epoch + the fingerprint-verified exchange ``source_ts``, using the
+    producer's threshold + 5_000 ms future tolerance. Stale / future evidence is
+    rejected even when every stored FRESH/COMPLETE field is retained; the stored
+    age is cross-checked within the producer's bounded clock-offset tolerance.
+  * ``local_received_at_utc`` is parsed as a real tz-aware UTC ISO-8601 instant
+    (naive / non-UTC / invalid rejected) and must represent the same instant as
+    ``local_received_epoch_ns``.
+  * ``message_type`` must be one of the producer's real values (snapshot / delta).
+  * Caller-supplied fingerprints/sha256 must be canonical ``sha256:<64 hex>``.
+
+  The validator performs NO wall-clock / current-time read; all temporal anchors
+  are caller-supplied and all evidence timestamps come from the artifact.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -48,7 +72,7 @@ from typing import Any, Mapping, Sequence
 from src import demo_public_ws_ticker_evidence as ws
 from src import demo_strategy_native_ws_price_binding as wb
 
-TASK_ID = "TASK-014CH1_FIX2"
+TASK_ID = "TASK-014CH1_FIX3"
 
 EXPECTED_STRATEGY_SYMBOL_COUNT = wb.EXPECTED_STRATEGY_SYMBOL_COUNT  # 50
 EXPECTED_LONG_COUNT = 25
@@ -62,6 +86,15 @@ V1_LONG_TARGET_NOTIONAL_USD = Decimal("200")
 V1_SHORT_TARGET_NOTIONAL_USD = Decimal("-200")
 V1_ABS_TARGET_WEIGHT = Decimal("0.02")
 V1_ABS_TARGET_NOTIONAL_USD = Decimal("200")
+
+# Producer temporal contract (reused; never loosened).
+STRICT_MAX_FRESHNESS_THRESHOLD_MS = wb.DEFAULT_BINDING_FRESHNESS_THRESHOLD_MS  # 10_000
+FUTURE_TOLERANCE_MS = wb.DEFAULT_FUTURE_TOLERANCE_MS  # 5_000
+ALLOWED_MESSAGE_TYPES = frozenset({"snapshot", "delta"})
+_CANONICAL_SHA_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+# Tolerance (seconds) for the UTC-string vs epoch-ns instant comparison; the
+# producer emits microsecond-precision UTC strings, so 1 ms is comfortably exact.
+_UTC_EPOCH_TOLERANCE_S = 0.001
 
 # --- Status vocabulary ------------------------------------------------------
 WS_BOUND_PLAN_CONSUMER_PASS = "WS_BOUND_PLAN_CONSUMER_PASS"
@@ -194,6 +227,33 @@ def _nonempty_str(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _is_pos_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _is_canonical_sha(value: Any) -> bool:
+    return isinstance(value, str) and bool(_CANONICAL_SHA_RE.match(value))
+
+
+def _parse_utc_iso(value: Any) -> tuple[datetime | None, str | None]:
+    """Parse a producer UTC ISO-8601 timestamp. Returns ``(datetime, None)`` for a
+    valid tz-aware UTC instant, else ``(None, reason)``. Rejects naive and non-UTC
+    timestamps and invalid calendar/time values. Reads no current time."""
+    if not isinstance(value, str) or not value.strip():
+        return None, "missing"
+    txt = value.strip()
+    iso = (txt[:-1] + "+00:00") if txt.endswith(("Z", "z")) else txt
+    try:
+        dt = datetime.fromisoformat(iso)
+    except ValueError:
+        return None, "invalid"
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        return None, "naive"
+    if dt.utcoffset() != timedelta(0):
+        return None, "non_utc"
+    return dt, None
+
+
 # ---------------------------------------------------------------------------
 # File loading (the ONLY impure surface; kept out of the validation core)
 # ---------------------------------------------------------------------------
@@ -317,18 +377,85 @@ def _validate_evidence_fields(sym: str, pe: Mapping[str, Any]) -> list[str]:
         v = pe.get(f)
         if not _is_int(v) or v < 0:
             probs.append(f"{sym}:evidence_field_missing_or_invalid:{f}")
+    # Message type must be one of the producer's real values (snapshot / delta).
+    mt = pe.get("message_type")
+    if not isinstance(mt, str) or mt not in ALLOWED_MESSAGE_TYPES:
+        probs.append(f"{sym}:evidence_message_type_unsupported:message_type")
     return probs
 
 
-def _check_action(tp_raw: Any, *, expected_ws_fp: str, expected_ws_sha: str) -> dict[str, list[str]]:
+def _check_temporal(sym: str, tp: Mapping[str, Any], pe: Mapping[str, Any], *,
+                    caller_epoch_ns: int | None, caller_threshold_ms: int | None) -> list[str]:
+    """Independently recompute binding-time freshness + UTC/epoch temporal integrity.
+
+    Offset-free age is recomputed from the caller binding epoch + the
+    fingerprint-verified exchange ``source_ts`` and judged against the caller
+    threshold + the producer's 5_000 ms future tolerance; the stored age is
+    cross-checked within that bounded clock-offset window. Stale / future / mismatched
+    evidence is rejected even when every stored FRESH field is retained. Each input is
+    only used when present + well-typed (an absent field is an evidence failure handled
+    elsewhere, not a temporal failure)."""
+    probs: list[str] = []
+
+    # --- UTC timestamp semantics (only when the string is present) -------------
+    at_utc = pe.get("local_received_at_utc")
+    epoch_ns = pe.get("local_received_epoch_ns")
+    if isinstance(at_utc, str) and at_utc.strip():
+        dt, reason = _parse_utc_iso(at_utc)
+        if reason is not None:
+            probs.append(f"{sym}:local_received_at_utc_{reason}")
+        elif _is_pos_int(epoch_ns):
+            if abs(dt.timestamp() - (epoch_ns / 1e9)) > _UTC_EPOCH_TOLERANCE_S:
+                probs.append(f"{sym}:utc_epoch_instant_mismatch")
+
+    # --- Binding-time freshness recomputation ---------------------------------
+    if caller_epoch_ns is None or caller_threshold_ms is None:
+        return probs  # caller temporal anchors malformed; reported at top level
+    source_ts = pe.get("exchange_data_generated_ts_ms")
+    if not _is_pos_int(source_ts):
+        return probs  # invalid source ts is an evidence failure, not temporal
+    bf = tp.get("binding_freshness")
+    if not isinstance(bf, Mapping):
+        probs.append(f"{sym}:binding_freshness_absent")
+        return probs
+    if str(bf.get("binding_freshness_status", "")) != wb.BINDING_FRESHNESS_FRESH:
+        probs.append(f"{sym}:stored_binding_status_not_fresh")
+    if bf.get("binding_freshness_threshold_ms") != caller_threshold_ms:
+        probs.append(f"{sym}:stored_threshold_not_expected")
+
+    binding_ms = Decimal(caller_epoch_ns) / Decimal(1_000_000)
+    age_excl_offset = float(round(binding_ms - Decimal(source_ts), 3))
+    # Independent verdict on the offset-free age.
+    if age_excl_offset > float(caller_threshold_ms):
+        probs.append(f"{sym}:recomputed_age_exceeds_threshold")
+    if age_excl_offset < -float(FUTURE_TOLERANCE_MS):
+        probs.append(f"{sym}:recomputed_evidence_in_future")
+    # Cross-check the stored age: it must sit within one bounded clock offset of the
+    # offset-free age AND independently satisfy the threshold / future tolerance.
+    stored_age = bf.get("evidence_age_at_binding_ms")
+    if isinstance(stored_age, (int, float)) and not isinstance(stored_age, bool):
+        if abs(float(stored_age) - age_excl_offset) > float(FUTURE_TOLERANCE_MS):
+            probs.append(f"{sym}:stored_age_implausible_vs_recomputed")
+        if float(stored_age) > float(caller_threshold_ms):
+            probs.append(f"{sym}:stored_age_exceeds_threshold")
+        if float(stored_age) < -float(FUTURE_TOLERANCE_MS):
+            probs.append(f"{sym}:stored_age_in_future")
+    else:
+        probs.append(f"{sym}:stored_age_missing_or_invalid")
+    return probs
+
+
+def _check_action(tp_raw: Any, *, expected_ws_fp: str, expected_ws_sha: str,
+                  caller_epoch_ns: int | None, caller_threshold_ms: int | None) -> dict[str, list[str]]:
     """Independently validate one canonical bound action.
 
-    Returns a dict with two problem lists: ``action`` (evidence / price / qty /
-    notional / V1-semantics / fingerprint inconsistencies) and ``ws`` (per-symbol
-    source-WS provenance mismatches against the caller-anchored fingerprint/sha).
-    Never raises -- a narrow guard converts any unexpected error into an action
+    Returns a dict with three problem lists: ``action`` (evidence / price / qty /
+    notional / V1-semantics / fingerprint inconsistencies), ``ws`` (per-symbol
+    source-WS provenance mismatches against the caller-anchored fingerprint/sha) and
+    ``temporal`` (independent binding-time freshness + UTC/epoch integrity). Never
+    raises -- a narrow guard converts any unexpected error into an action
     inconsistency for this symbol only."""
-    out: dict[str, list[str]] = {"action": [], "ws": []}
+    out: dict[str, list[str]] = {"action": [], "ws": [], "temporal": []}
     tp = _as_map(tp_raw)
     sym = str(tp.get("symbol", "")).strip().upper()
     try:
@@ -421,6 +548,11 @@ def _check_action(tp_raw: Any, *, expected_ws_fp: str, expected_ws_sha: str) -> 
             out["ws"].append(f"{sym}:source_artifact_fingerprint_not_expected")
         if str(pe.get("source_artifact_sha256", "")) != str(expected_ws_sha):
             out["ws"].append(f"{sym}:source_artifact_sha256_not_expected")
+
+        # Independent temporal / freshness integrity.
+        out["temporal"].extend(_check_temporal(
+            sym or "<unknown>", tp, pe,
+            caller_epoch_ns=caller_epoch_ns, caller_threshold_ms=caller_threshold_ms))
     except Exception as exc:  # noqa: BLE001  (narrow: per-symbol only, fail closed)
         out["action"].append(f"{sym or '<unknown>'}:action_validation_error:{type(exc).__name__}")
     return out
@@ -454,6 +586,8 @@ def validate_ws_bound_plan_artifact(
     expected_original_plan_fingerprint: str,
     expected_ws_artifact_sha256: str,
     expected_ws_artifact_fingerprint: str,
+    expected_binding_epoch_ns: int,
+    expected_freshness_threshold_ms: int,
     expected_symbols: Sequence[str],
 ) -> BoundPlanConsumerResult:
     """Fail-closed validation of a canonical WS-bound Plan wrapper.
@@ -488,6 +622,25 @@ def validate_ws_bound_plan_artifact(
             or str(artifact.get("binding_mode", "")) != wb.BINDING_MODE_PLAN_ONLY):
         _fail(WS_BOUND_PLAN_SCHEMA_INVALID, "wrapper_schema_or_version_unsupported")
         return _finalize(failures, blockers, False, False, cbp_fp, ws_sha, original_fp, ())
+
+    # --- Stage 0b: caller-supplied expected-value FORMAT validation -------------
+    # Canonical fingerprint / sha256 format (never derived from the wrapper).
+    if not _is_canonical_sha(expected_ws_artifact_fingerprint):
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "expected_ws_artifact_fingerprint_not_canonical")
+    if not _is_canonical_sha(expected_ws_artifact_sha256):
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "expected_ws_artifact_sha256_not_canonical")
+    if not _is_canonical_sha(expected_original_plan_fingerprint):
+        _fail(WS_BOUND_PLAN_ORIGINAL_PLAN_MISMATCH, "expected_original_plan_fingerprint_not_canonical")
+    # Temporal anchors must be positive non-boolean ints; threshold within strict max.
+    epoch_ok = _is_pos_int(expected_binding_epoch_ns)
+    if not epoch_ok:
+        _fail(WS_BOUND_PLAN_STALE, "expected_binding_epoch_ns_not_positive_int")
+    threshold_ok = _is_pos_int(expected_freshness_threshold_ms)
+    if not threshold_ok:
+        _fail(WS_BOUND_PLAN_STALE, "expected_freshness_threshold_ms_not_positive_int")
+    elif expected_freshness_threshold_ms > STRICT_MAX_FRESHNESS_THRESHOLD_MS:
+        _fail(WS_BOUND_PLAN_STALE, "expected_freshness_threshold_exceeds_strict_max")
+        threshold_ok = False
 
     # --- Stage 1: wrapper fingerprint recomputes -------------------------------
     stored_wrapper_fp = artifact.get("wrapper_fingerprint")
@@ -578,6 +731,21 @@ def validate_ws_bound_plan_artifact(
     if str(cbp_ws_fp or "") != exp_ws_fp:
         _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "canonical_ws_fingerprint_not_expected")
 
+    # --- Stage 4b: temporal anchoring (caller epoch / threshold vs artifact) ---
+    # The caller's binding epoch must equal the canonical Plan epoch and any wrapper
+    # copy; the caller threshold must equal the stored threshold fields. Anchors are
+    # external and are never derived from the wrapper.
+    if epoch_ok:
+        if cbp_map.get("binding_epoch_ns") != expected_binding_epoch_ns:
+            _fail(WS_BOUND_PLAN_STALE, "canonical_binding_epoch_not_expected")
+        for f in ("binding_started_at_epoch_ns", "binding_completed_at_epoch_ns"):
+            if f in binding_audit and binding_audit.get(f) != expected_binding_epoch_ns:
+                _fail(WS_BOUND_PLAN_STALE, f"binding_audit_{f}_not_expected")
+    if threshold_ok:
+        if (f := binding_audit.get("binding_freshness_threshold_ms")) is not None \
+                and f != expected_freshness_threshold_ms:
+            _fail(WS_BOUND_PLAN_STALE, "binding_audit_threshold_not_expected")
+
     # --- Stage 5: symbol set + 25/25 structure + symbol-set fingerprint --------
     planner = _as_map(cbp_map.get("planner"))
     targets = _as_list(planner.get("target_positions"))
@@ -614,10 +782,17 @@ def validate_ws_bound_plan_artifact(
 
     action_problems: list[str] = []
     ws_prov_problems: list[str] = []
+    temporal_problems: list[str] = []
+    caller_epoch = expected_binding_epoch_ns if epoch_ok else None
+    caller_threshold = expected_freshness_threshold_ms if threshold_ok else None
     for t in targets:
-        res = _check_action(t, expected_ws_fp=exp_ws_fp, expected_ws_sha=exp_ws_sha)
+        res = _check_action(t, expected_ws_fp=exp_ws_fp, expected_ws_sha=exp_ws_sha,
+                            caller_epoch_ns=caller_epoch, caller_threshold_ms=caller_threshold)
         action_problems.extend(res["action"])
+        temporal_problems.extend(res["temporal"])
         ws_prov_problems.extend(res["ws"])
+    if temporal_problems:
+        _fail(WS_BOUND_PLAN_STALE, "; ".join(temporal_problems[:40]))
     if action_problems:
         _fail(WS_BOUND_PLAN_ACTION_INCONSISTENT, "; ".join(action_problems[:40]))
     if ws_prov_problems:
@@ -703,6 +878,7 @@ __all__ = [
     "V1_CAPITAL_BASE_USD", "V1_LONG_TARGET_WEIGHT", "V1_SHORT_TARGET_WEIGHT",
     "V1_LONG_TARGET_NOTIONAL_USD", "V1_SHORT_TARGET_NOTIONAL_USD",
     "V1_ABS_TARGET_WEIGHT", "V1_ABS_TARGET_NOTIONAL_USD",
+    "STRICT_MAX_FRESHNESS_THRESHOLD_MS", "FUTURE_TOLERANCE_MS", "ALLOWED_MESSAGE_TYPES",
     "WS_BOUND_PLAN_CONSUMER_PASS",
     "WS_BOUND_PLAN_SCHEMA_INVALID", "WS_BOUND_PLAN_WRAPPER_FINGERPRINT_MISMATCH",
     "WS_BOUND_PLAN_FINGERPRINT_MISMATCH", "WS_BOUND_PLAN_PROVENANCE_MISMATCH",

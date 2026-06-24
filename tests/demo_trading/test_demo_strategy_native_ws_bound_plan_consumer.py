@@ -64,9 +64,21 @@ def _correct_bundle(now: int | None = None, *, stale: bool = False):
         expected_original_plan_fingerprint=wb._fingerprint(plan),
         expected_ws_artifact_sha256=ws_sha,
         expected_ws_artifact_fingerprint=ws_art["artifact_fingerprint"],
+        expected_binding_epoch_ns=epoch,
+        expected_freshness_threshold_ms=wb.DEFAULT_BINDING_FRESHNESS_THRESHOLD_MS,
         expected_symbols=list(cg.STRATEGY_50),
     )
     return copy.deepcopy(w), kw
+
+
+def _reseal_action_evidence(tp):
+    """Recompute a target's source-message + action fingerprints from its (mutated)
+    price evidence, so a tamper test isolates the intended defect instead of only
+    tripping the source-message / action fingerprint check."""
+    pe = tp["price_evidence"]
+    pe["source_message_fingerprint"] = consumer._recompute_source_message_fingerprint(
+        tp["symbol"], pe)
+    tp["action_fingerprint"] = consumer._recompute_action_fingerprint(tp, pe)
 
 
 def _short_tp(w):
@@ -755,3 +767,164 @@ def test_missing_message_type_fails_closed():
 def test_required_evidence_field_wrong_json_type_fails_closed():
     r = _evidence_case(lambda pe: pe.__setitem__("local_received_epoch_ns", "not-an-int"))
     assert any("local_received_epoch_ns" in b for b in r.blockers)
+
+
+# ===========================================================================
+# FIX3 -- temporal / freshness integrity
+# ===========================================================================
+
+def test_valid_passes_with_caller_temporal_anchors():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw)
+    assert r.status == consumer.WS_BOUND_PLAN_CONSUMER_PASS
+    assert r.execution_grade_freshness_complete is True
+    assert len(r.validated_actions) == 50
+
+
+def test_stale_evidence_with_stored_fresh_retained_fails_closed():
+    w, kw = _correct_bundle()
+    binding_ms = kw["expected_binding_epoch_ns"] / 1e6
+    tp = _first_tp(w)
+    # Make the exchange source ts ~20s old; retain every stored FRESH field.
+    tp["price_evidence"]["exchange_data_generated_ts_ms"] = int(binding_ms) - 20_000
+    assert tp["binding_freshness"]["binding_freshness_status"] == wb.BINDING_FRESHNESS_FRESH
+    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+    assert w["execution_grade_freshness_complete"] is True  # stored field retained
+    assert r.execution_grade_freshness_complete is False    # consumer overrides it
+
+
+def test_evidence_timestamp_later_than_binding_fails_closed():
+    w, kw = _correct_bundle()
+    binding_ms = kw["expected_binding_epoch_ns"] / 1e6
+    tp = _first_tp(w)
+    tp["price_evidence"]["exchange_data_generated_ts_ms"] = int(binding_ms) + 20_000
+    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+    assert any("future" in b for b in r.blockers)
+
+
+def test_binding_epoch_changed_in_canonical_caller_unchanged_fails_closed():
+    w, kw = _correct_bundle()
+    w["canonical_bound_plan"]["binding_epoch_ns"] = kw["expected_binding_epoch_ns"] + 5_000_000
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)  # caller epoch unchanged -> anchor mismatch
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+    assert any("canonical_binding_epoch_not_expected" in b for b in r.blockers)
+
+
+def test_wrong_caller_binding_epoch_fails_closed():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw, expected_binding_epoch_ns=kw["expected_binding_epoch_ns"] + 999_999_999)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+
+
+def test_threshold_above_strict_max_fails_closed():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw,
+                  expected_freshness_threshold_ms=consumer.STRICT_MAX_FRESHNESS_THRESHOLD_MS + 1)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+    assert any("strict_max" in b for b in r.blockers)
+
+
+@pytest.mark.parametrize("bad", [0, -1, 1.5, "10", True, None])
+def test_bad_binding_epoch_format_fails_closed(bad):
+    w, kw = _correct_bundle()
+    r = _validate(w, kw, expected_binding_epoch_ns=bad)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+
+
+@pytest.mark.parametrize("bad", [0, -5, 2.5, "10000", True, None])
+def test_bad_threshold_format_fails_closed(bad):
+    w, kw = _correct_bundle()
+    r = _validate(w, kw, expected_freshness_threshold_ms=bad)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+
+
+# --- UTC timestamp semantics ------------------------------------------------
+
+def _temporal_evidence_case(mutate):
+    w, kw = _correct_bundle()
+    tp = _first_tp(w)
+    mutate(tp["price_evidence"])
+    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+    return r
+
+
+def test_invalid_iso_timestamp_fails_closed():
+    r = _temporal_evidence_case(lambda pe: pe.__setitem__("local_received_at_utc", "not-a-date"))
+    assert any("local_received_at_utc_invalid" in b for b in r.blockers)
+
+
+def test_naive_iso_timestamp_fails_closed():
+    r = _temporal_evidence_case(
+        lambda pe: pe.__setitem__("local_received_at_utc", "2026-06-22T12:00:00.000000"))
+    assert any("local_received_at_utc_naive" in b for b in r.blockers)
+
+
+def test_non_utc_timestamp_fails_closed():
+    r = _temporal_evidence_case(
+        lambda pe: pe.__setitem__("local_received_at_utc", "2026-06-22T12:00:00.000000+05:00"))
+    assert any("local_received_at_utc_non_utc" in b for b in r.blockers)
+
+
+def test_iso_timestamp_epoch_ns_mismatch_fails_closed():
+    w, kw = _correct_bundle()
+    tp = _first_tp(w)
+    pe = tp["price_evidence"]
+    # Valid UTC ISO string, but a different instant than local_received_epoch_ns.
+    pe["local_received_at_utc"] = ws._iso_from_epoch_ns(pe["local_received_epoch_ns"]
+                                                        + 3_600_000_000_000)  # +1h
+    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+    assert any("utc_epoch_instant_mismatch" in b for b in r.blockers)
+
+
+# --- message semantics ------------------------------------------------------
+
+def test_unsupported_message_type_fails_closed():
+    w, kw = _correct_bundle()
+    tp = _first_tp(w)
+    tp["price_evidence"]["message_type"] = "heartbeat"  # not snapshot/delta
+    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("message_type" in b for b in r.blockers)
+
+
+# --- malformed caller-supplied expected values ------------------------------
+
+def test_malformed_expected_ws_fingerprint_fails_closed():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw, expected_ws_artifact_fingerprint="deadbeef")
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+def test_malformed_expected_ws_sha256_fails_closed():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw, expected_ws_artifact_sha256="sha256:nothex")
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+def test_malformed_expected_original_plan_fingerprint_fails_closed():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw, expected_original_plan_fingerprint="not-canonical")
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ORIGINAL_PLAN_MISMATCH
