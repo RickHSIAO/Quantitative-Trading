@@ -111,8 +111,18 @@ historical binding-time evidence (current-market freshness NOT evaluated), repor
 projected-margin rate as unavailable, and is never execution-ready. A single narrow
 extraction boundary is the only reader of the parsed wrapper; the exposure and
 margin-arithmetic helpers operate on frozen scalar projections only (never a Mapping),
-and pre/post-extraction wrapper+canonical fingerprints must be identical. CH2 remains
-the latest executable terminal boundary.
+and pre/post-extraction wrapper+canonical fingerprints must be identical.
+
+CH3B2 wires this core into an explicit opt-in `--ws-bound-plan-review-only` CLI mode
+dispatched as the FIRST branch of `main()` — before the CH2 branch, reconcile/reporting,
+the RUNNING gate (`PilotStateStore`), and provider construction. It rejects mode conflicts
+and validates four pairwise-distinct paths + fresh-output no-clobber, reads exact bytes
+(binary, once) for the trusted anchor manifest + CH2 wrapper + source-WS evidence, runs the
+CH3B1 pure review, and publishes one race-safe (`os.link` create-if-absent, no
+`os.replace`) review envelope. It reads no Pilot state (despite `--pilot-id`), reaches no
+readiness/gate/execution/sender/Pilot/reporting path, has no REST fallback, and is never
+execution-ready. The default native-daily path and CH2 `--ws-bound-plan-only` are
+byte-unchanged. CH2 remains the latest executable terminal boundary.
 
 CH2_FIX1 isolation hardening: the Plan-only mode-conflict validation runs as the
 FIRST branch of `main()` — before the reconcile/reporting branch, the
@@ -173,7 +183,8 @@ an existing destination and removes only the task-created temp on failure).
 | WS-bound offline artifact | `src/demo_strategy_native_ws_price_binding.py` | Binder |
 | WS-bound Plan consumer | `src/demo_strategy_native_ws_bound_plan_consumer.py` | CH1 fail-closed validator |
 | WS-bound Plan-only wiring | `src/demo_strategy_native_ws_bound_plan_only.py` | CH2 opt-in terminal path |
-| WS-bound Plan review core | `src/demo_strategy_native_ws_bound_plan_review.py` | CH3B1 pure offline review (no wiring yet) |
+| WS-bound Plan review core | `src/demo_strategy_native_ws_bound_plan_review.py` | CH3B1 pure offline review |
+| WS-bound Plan review CLI | `scripts/run_demo_strategy_pilot_native_daily.py --ws-bound-plan-review-only` | CH3B2 terminal review-only mode |
 | Daily orchestrator | `src/demo_strategy_pilot_daily_runner.py` | DRY-RUN only |
 | Readiness state machine | `src/demo_strategy_pilot_readiness.py` | 7-day gate |
 | Current state | `docs/CURRENT_STATE.md` | Updated per cleanup task |

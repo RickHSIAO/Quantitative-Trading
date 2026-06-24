@@ -37,6 +37,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -57,6 +58,7 @@ from src import demo_strategy_pilot_native_execution as nx  # noqa: E402
 from src import demo_strategy_pilot_native_reporting as nrep  # noqa: E402
 from src import demo_strategy_pilot_readiness as rd  # noqa: E402
 from src import demo_strategy_native_ws_bound_plan_only as wsbpo  # noqa: E402 (CH2 Plan-only WS binding)
+from src import demo_strategy_native_ws_bound_plan_review as wsbpr  # noqa: E402 (CH3 review-only)
 from src.demo_only_tiny_execution_adapter_single_real_demo_order import (  # noqa: E402
     DEMO_BASE_URL, DEMO_HOST, EP_ORDER_REALTIME, EP_ORDER_HISTORY,
     RealDemoHttpTransport, assert_demo_url, host_of, load_demo_credentials,
@@ -967,6 +969,21 @@ def build_parser() -> argparse.ArgumentParser:
                    default=wsbpo.DEFAULT_FRESHNESS_THRESHOLD_MS,
                    help="strict binding-time freshness threshold (ms); defaults to and may not exceed "
                         "the producer strict maximum")
+    # TASK-014CH3B2: explicit opt-in, terminal review-ONLY mode. Reviews an existing CH2
+    # wrapper against an externally-preserved trusted anchor manifest + the original
+    # source-WS evidence, and writes one race-safe review envelope. Historical binding-time
+    # review only; no execution/readiness/gate/native-execution/Pilot/reporting/REST.
+    p.add_argument("--ws-bound-plan-review-only", action="store_true",
+                   help="opt-in terminal review-only mode (no execution, no Pilot change, no network)")
+    p.add_argument("--ws-bound-plan-anchor-manifest-json", default=None,
+                   help="path to the trusted external anchor-manifest JSON (required for review-only)")
+    p.add_argument("--ws-bound-plan-anchor-manifest-sha256", default=None,
+                   help="REQUIRED caller-owned expected anchor-manifest SHA256 (sha256:<64hex>); "
+                        "never computed by the CLI from the manifest")
+    p.add_argument("--ws-bound-plan-wrapper-json", default=None,
+                   help="path to the existing CH2 wrapper JSON to review (required for review-only)")
+    p.add_argument("--ws-bound-plan-review-output-json", default=None,
+                   help="output path for the single review envelope (required for review-only)")
     return p
 
 
@@ -979,6 +996,177 @@ def _build_ws_seed_plan_mapping(date: str, plan: Any) -> dict[str, Any]:
         "strategy_native_review": {"active_strategy": wsbpo.EXPECTED_STRATEGY_ID},
         "planner": plan.to_dict(),
     }
+
+
+def _run_ws_bound_plan_review_only(args: Any) -> int:
+    """TASK-014CH3B2 terminal review-ONLY path. Reviews an existing CH2 wrapper against a
+    trusted external anchor manifest + the original source-WS evidence and writes one
+    race-safe review envelope. No execution / readiness / gate / native execution /
+    sender / Pilot mutation / reconcile / Notion / Discord / REST. Reads NO Pilot state
+    despite --pilot-id being syntactically present."""
+    REVIEW_INPUT_READ_FAILED = "WS_BOUND_PLAN_REVIEW_INPUT_READ_FAILED"
+    REVIEW_OUTPUT_EXISTS = "WS_BOUND_PLAN_REVIEW_OUTPUT_EXISTS"
+    REVIEW_OUTPUT_FAILED = "WS_BOUND_PLAN_REVIEW_OUTPUT_FAILED"
+    _CANON_SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+    def _summary(status: str, *, detail: str, exit_code: int,
+                 result: Any = None, written: bool = False) -> int:
+        out = {
+            "status": status, "mode": "WS_BOUND_PLAN_REVIEW_ONLY", "detail": detail,
+            "pilot_id": args.pilot_id, "date": args.date,
+            "anchor_manifest_json": args.ws_bound_plan_anchor_manifest_json,
+            "wrapper_json": args.ws_bound_plan_wrapper_json,
+            "ws_ticker_evidence_json": args.ws_ticker_evidence_json,
+            "review_output_json": args.ws_bound_plan_review_output_json,
+            "review_artifact_written": written,
+            # Terminal, never executable; no side effects.
+            "execution_readiness": False, "readiness_called": False,
+            "execution_gate_called": False, "native_execution_called": False,
+            "pilot_advanced": False, "sender_reachable": False,
+            "order_post_count": 0, "amend_post_count": 0, "cancel_post_count": 0,
+            "live_order_post_count": 0, "notion_called": False, "discord_called": False,
+            "live_trading_authorized": False, "rest_fallback_used": False,
+        }
+        if result is not None:
+            env = result.review_artifact or {}
+            totals = env.get("offline_exposure_totals", {}) if isinstance(env, dict) else {}
+            out.update({
+                "blockers": list(result.blockers),
+                "anchor_manifest_sha256": result.anchor_manifest_sha256,
+                "anchor_manifest_fingerprint": result.anchor_manifest_fingerprint,
+                "wrapper_file_sha256": result.wrapper_file_sha256,
+                "wrapper_logical_fingerprint": result.wrapper_logical_fingerprint,
+                "canonical_bound_plan_fingerprint": result.canonical_bound_plan_fingerprint,
+                "source_ws_file_sha256": result.source_ws_file_sha256,
+                "source_ws_logical_fingerprint": result.source_ws_logical_fingerprint,
+                "original_plan_fingerprint": result.original_plan_fingerprint,
+                "run_date": result.run_date,
+                "binding_epoch_ns": result.binding_epoch_ns,
+                "freshness_threshold_ms": result.freshness_threshold_ms,
+                "action_count": totals.get("action_count"),
+                "long_count": totals.get("long_count"),
+                "short_count": totals.get("short_count"),
+                "gross_exposure_usd": totals.get("gross_exposure_usd"),
+                "long_exposure_usd": totals.get("long_exposure_usd"),
+                "short_absolute_exposure_usd": totals.get("short_absolute_exposure_usd"),
+                "net_signed_exposure_usd": totals.get("net_signed_exposure_usd"),
+                "offline_exposure_review_complete": result.offline_exposure_review_complete,
+                "offline_margin_arithmetic_review_complete":
+                    result.offline_margin_arithmetic_review_complete,
+                "offline_projected_margin_rate_status": result.offline_projected_margin_rate_status,
+                "offline_projected_margin_review_complete":
+                    result.offline_projected_margin_review_complete,
+                "account_margin_feasibility_status": result.account_margin_feasibility_status,
+                "binding_time_freshness_verified": result.binding_time_freshness_verified,
+                "current_market_freshness_status": result.current_market_freshness_status,
+                "current_market_freshness_checked": result.current_market_freshness_checked,
+            })
+        print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
+        return exit_code
+
+    # --- Mode-conflict rejection (BEFORE any file read or provider/Pilot init) --
+    incompatible = [n for n, v in (
+        ("ws_bound_plan_only", args.ws_bound_plan_only),
+        ("send_orders_to_demo", args.send_orders_to_demo),
+        ("advance_on_success", args.advance_on_success),
+        ("reconcile_outputs_only", args.reconcile_outputs_only),
+        ("allow_notion_network", args.allow_notion_network),
+        ("allow_discord_network", args.allow_discord_network),
+        ("test_injected_actions_json", bool(args.test_injected_actions_json)),
+        ("ws_bound_plan_output_json", bool(args.ws_bound_plan_output_json)),
+    ) if v]
+    if incompatible:
+        return _summary(wsbpr.WS_BOUND_PLAN_REVIEW_INPUT_INVALID,
+                        detail=f"incompatible arguments for ws-bound-plan-review-only: {incompatible}",
+                        exit_code=EXIT_INVALID)
+
+    # --- Required inputs -------------------------------------------------------
+    manifest_path = args.ws_bound_plan_anchor_manifest_json
+    manifest_sha = args.ws_bound_plan_anchor_manifest_sha256
+    wrapper_path = args.ws_bound_plan_wrapper_json
+    source_path = args.ws_ticker_evidence_json
+    output_path = args.ws_bound_plan_review_output_json
+    for name, value in (("--ws-bound-plan-anchor-manifest-json", manifest_path),
+                        ("--ws-bound-plan-anchor-manifest-sha256", manifest_sha),
+                        ("--ws-bound-plan-wrapper-json", wrapper_path),
+                        ("--ws-ticker-evidence-json", source_path),
+                        ("--ws-bound-plan-review-output-json", output_path)):
+        if not value:
+            return _summary(wsbpr.WS_BOUND_PLAN_REVIEW_INPUT_INVALID,
+                            detail=f"{name} is required", exit_code=EXIT_INVALID)
+    # Caller-owned expected manifest SHA must be canonical (never derived from the file).
+    if not _CANON_SHA.match(str(manifest_sha)):
+        return _summary(wsbpr.WS_BOUND_PLAN_REVIEW_INPUT_INVALID,
+                        detail="--ws-bound-plan-anchor-manifest-sha256 must be sha256:<64 lowercase hex>",
+                        exit_code=EXIT_INVALID)
+
+    # --- Path identity + occupied-output preflight (BEFORE any read) -----------
+    norms = {label: os.path.normcase(os.path.realpath(p)) for label, p in (
+        ("manifest", manifest_path), ("wrapper", wrapper_path),
+        ("source", source_path), ("output", output_path))}
+    if len(set(norms.values())) != 4:
+        return _summary(wsbpr.WS_BOUND_PLAN_REVIEW_INPUT_INVALID,
+                        detail=f"manifest/wrapper/source/output paths must be pairwise distinct: {norms}",
+                        exit_code=EXIT_INVALID)
+    if os.path.lexists(output_path):
+        return _summary(REVIEW_OUTPUT_EXISTS,
+                        detail="--ws-bound-plan-review-output-json already exists; refusing to clobber",
+                        exit_code=EXIT_INVALID)
+
+    # --- Exact-byte reads (binary, once each; no parse/reserialize) ------------
+    try:
+        manifest_bytes = wsbpo.read_source_ws_bytes(manifest_path)
+        wrapper_bytes = wsbpo.read_source_ws_bytes(wrapper_path)
+        source_bytes = wsbpo.read_source_ws_bytes(source_path)
+    except wsbpo.WsBoundPlanOnlyError as exc:
+        return _summary(REVIEW_INPUT_READ_FAILED, detail=str(exc), exit_code=EXIT_INPUT_FAILURE)
+
+    # --- Pure CH3B1 review (exact bytes passed unchanged) ----------------------
+    result = wsbpr.build_ws_bound_plan_review(
+        anchor_manifest_bytes=manifest_bytes,
+        expected_anchor_manifest_sha256=str(manifest_sha),
+        wrapper_artifact_bytes=wrapper_bytes,
+        source_ws_artifact_bytes=source_bytes)
+
+    if result.status != wsbpr.WS_BOUND_PLAN_REVIEW_PASS:
+        code = EXIT_INVALID if result.status == wsbpr.WS_BOUND_PLAN_REVIEW_INPUT_INVALID else EXIT_BLOCKED
+        return _summary(result.status, detail="review failed; terminal (no REST fallback)",
+                        exit_code=code, result=result)
+
+    # --- PASS invariants (fail closed before publication) ----------------------
+    invariants_ok = (
+        result.review_artifact is not None
+        and result.offline_exposure_review_complete is True
+        and result.offline_margin_arithmetic_review_complete is True
+        and result.offline_projected_margin_rate_status == wsbpr.OFFLINE_PROJECTED_MARGIN_RATE_UNAVAILABLE
+        and result.offline_projected_margin_review_complete is False
+        and result.account_margin_feasibility_status == wsbpr.ACCOUNT_MARGIN_FEASIBILITY_UNAVAILABLE
+        and result.binding_time_freshness_verified is True
+        and result.current_market_freshness_status == wsbpr.CURRENT_MARKET_FRESHNESS_NOT_EVALUATED
+        and result.current_market_freshness_checked is False
+        and result.execution_readiness is False
+        and result.readiness_called is False and result.execution_gate_called is False
+        and result.native_execution_called is False and result.pilot_advanced is False)
+    if not invariants_ok:
+        return _summary(wsbpr.WS_BOUND_PLAN_REVIEW_PROVENANCE_FAILED,
+                        detail="PASS invariants inconsistent; refusing to publish",
+                        exit_code=EXIT_BLOCKED, result=result)
+    # Cross-check the operator-supplied --date against the trusted manifest run date.
+    if str(args.date) != str(result.run_date):
+        return _summary(wsbpr.WS_BOUND_PLAN_REVIEW_INPUT_INVALID,
+                        detail=f"--date {args.date!r} != trusted manifest run_date {result.run_date!r}",
+                        exit_code=EXIT_INVALID, result=result)
+
+    # --- Publish one race-safe no-clobber review envelope (reuse CH2 writer) ----
+    try:
+        wsbpo.atomic_write_wrapper(output_path, result.review_artifact)
+    except wsbpo.WsBoundPlanOnlyError as exc:
+        return _summary(REVIEW_OUTPUT_FAILED, detail=str(exc), exit_code=EXIT_INPUT_FAILURE,
+                        result=result)
+
+    return _summary(wsbpr.WS_BOUND_PLAN_REVIEW_PASS,
+                    detail="review envelope written; terminal historical binding-time review only",
+                    exit_code=EXIT_OK, result=result, written=True)
 
 
 def _run_ws_bound_plan_only(args: Any, output_root: str | None) -> int:
@@ -1138,6 +1326,15 @@ def main(argv: list[str] | None = None) -> int:
     # WS evidence, validates via the CH1 consumer, writes one fresh canonical wrapper,
     # and stops. No execution, review, readiness, gate, native execution, reporting,
     # Pilot mutation, or REST fallback.
+    # TASK-014CH3B2: review-only is dispatched as the FIRST operational branch (before
+    # the CH2 Plan-only branch, the test-injected check, reconcile/reporting, the RUNNING
+    # gate / PilotStateStore, provider construction, and any source/output read), so its
+    # mode-conflict + path preflight precede every side-effecting branch. It reviews an
+    # existing wrapper offline and stops; no execution/readiness/gate/native-execution/
+    # Pilot/reporting/REST.
+    if args.ws_bound_plan_review_only:
+        return _run_ws_bound_plan_review_only(args)
+
     if args.ws_bound_plan_only:
         return _run_ws_bound_plan_only(args, output_root)
 

@@ -137,6 +137,19 @@ def test_valid_review_passes():
     assert all(a.price == "100.5" for a in r.review_rows)
 
 
+def test_pass_exposes_run_date():
+    b = _bundle()
+    r = _review(b)
+    assert r.run_date == cg.DATE
+    assert r.review_artifact["run_date"] == cg.DATE
+
+
+def test_failure_run_date_is_none():
+    r = _review(_bundle(), manifest_sha="sha256:" + "0" * 64)
+    assert r.passed is False
+    assert r.run_date is None
+
+
 def test_pass_offline_margin_and_freshness_semantics():
     b = _bundle()
     r = _review(b)

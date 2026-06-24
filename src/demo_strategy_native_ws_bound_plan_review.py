@@ -136,6 +136,7 @@ class WsBoundPlanReviewResult:
     anchor_manifest_fingerprint: str | None
     original_plan_fingerprint: str | None
     expected_symbol_set_fingerprint: str | None
+    run_date: str | None
     binding_epoch_ns: int | None
     freshness_threshold_ms: int | None
     offline_exposure_review_complete: bool
@@ -176,7 +177,7 @@ def _fail(status: str, *blockers: str) -> WsBoundPlanReviewResult:
         canonical_bound_plan_fingerprint=None, source_ws_file_sha256=None,
         source_ws_logical_fingerprint=None, anchor_manifest_sha256=None,
         anchor_manifest_fingerprint=None, original_plan_fingerprint=None,
-        expected_symbol_set_fingerprint=None, binding_epoch_ns=None,
+        expected_symbol_set_fingerprint=None, run_date=None, binding_epoch_ns=None,
         freshness_threshold_ms=None,
         offline_exposure_review_complete=False,
         offline_margin_arithmetic_review_complete=False,
@@ -562,6 +563,7 @@ def build_ws_bound_plan_review(
         "expected_source_ws_artifact_fingerprint": str(manifest.get("source_ws_artifact_fingerprint")),
         "original_plan_fingerprint": str(manifest.get("original_plan_fingerprint")),
         "expected_symbol_set_fingerprint": expected_symbol_set_fp,
+        "run_date": run_date,
         "binding_epoch_ns": int(epoch),
         "freshness_threshold_ms": int(threshold),
         # Review results.
@@ -606,6 +608,7 @@ def build_ws_bound_plan_review(
         anchor_manifest_sha256=manifest_sha, anchor_manifest_fingerprint=recomputed_manifest_fp,
         original_plan_fingerprint=str(manifest.get("original_plan_fingerprint")),
         expected_symbol_set_fingerprint=expected_symbol_set_fp,
+        run_date=run_date,
         binding_epoch_ns=int(epoch), freshness_threshold_ms=int(threshold),
         offline_exposure_review_complete=True,
         offline_margin_arithmetic_review_complete=True,

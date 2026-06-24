@@ -95,11 +95,38 @@ python scripts/bind_plan_prices_to_ws_evidence.py \
   --out <BOUND_PLAN_JSON> \
   --json-only
 
+# WS-bound Plan 唯讀審查（review-only，純離線、終止於審查前的所有執行路徑）
+python scripts/run_demo_strategy_pilot_native_daily.py \
+  --pilot-id <ID> --date <YYYY-MM-DD> \
+  --ws-bound-plan-review-only \
+  --ws-bound-plan-anchor-manifest-json <ANCHOR_MANIFEST_JSON> \
+  --ws-bound-plan-anchor-manifest-sha256 sha256:<64hex> \
+  --ws-bound-plan-wrapper-json <CH2_WRAPPER_JSON> \
+  --ws-ticker-evidence-json <WS_EVIDENCE_JSON> \
+  --ws-bound-plan-review-output-json <REVIEW_OUTPUT_JSON>
+
 # 執行測試
 pytest tests/
 ```
 
 不含任何 send / order 指令。Demo 執行需另外透過 one-shot adapter 明確授權。
+
+### review-only 模式（TASK-014CH3B2，明確 opt-in）
+
+審查一份既有的 CH2 WS-bound Plan wrapper，需提供：可信任的外部 anchor manifest
+檔（其 SHA256 由操作者於 CH2 當下另外保存、以 `--ws-bound-plan-anchor-manifest-sha256`
+傳入，**絕不由 CLI 從 manifest 反推**）、原始 source-WS 證據檔、以及一個全新的審查
+輸出路徑。四個路徑必須互異。此模式：
+
+- 僅為**歷史 binding-time** 審查；**不評估當前市場 freshness**
+  （`current_market_freshness_status = NOT_EVALUATED`）；
+- 投影保證金費率不可得（`UNAVAILABLE_NO_INDEPENDENT_RATE`，投影保證金審查未完成）、
+  帳戶保證金可行性不可得（`UNAVAILABLE_NOT_EVALUATED`）；
+- `execution_readiness = false`；不下單、不動 Pilot、不走 readiness / 執行 gate /
+  native execution / sender / 對帳 / Notion / Discord，**無 REST fallback**；
+- 以 race-safe、no-clobber（`os.link` create-if-absent）方式只寫一份審查 envelope。
+
+此模式**不是執行核可**；它只證明歷史證據在其 binding epoch 當下有效。
 
 ## 安全性
 

@@ -114,6 +114,21 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   (50 unique) and `run_date` is a validated YYYY-MM-DD calendar date (no clock read).
   Still no CLI wiring; historical binding-time review only; execution readiness false;
   CH2 remains the executable boundary; Pilot remains 0/7.
+- **CH3B2: the review-only CLI exists** — `scripts/run_demo_strategy_pilot_native_daily.py
+  --ws-bound-plan-review-only` (+ `--ws-bound-plan-anchor-manifest-json`,
+  `--ws-bound-plan-anchor-manifest-sha256`, `--ws-bound-plan-wrapper-json`,
+  `--ws-ticker-evidence-json`, `--ws-bound-plan-review-output-json`). It is dispatched as
+  the **first** branch of `main()` (before the CH2 branch, reconcile/reporting, the
+  RUNNING gate / `PilotStateStore`, and provider construction): reject mode conflicts +
+  validate the four pairwise-distinct paths + fresh-output no-clobber → read exact bytes
+  (binary, once) → CH3B1 pure review → publish one race-safe (`os.link`) review envelope →
+  terminal JSON summary. It reads NO Pilot state despite `--pilot-id`, performs no
+  REST/network/sender/execution/reconcile/Notion/Discord, and has no REST fallback. PASS
+  is **terminal before** readiness/gate/execution/Pilot/reporting and is never
+  execution-ready (historical binding-time only; current freshness NOT_EVALUATED;
+  projected-margin rate `UNAVAILABLE_NO_INDEPENDENT_RATE`; account feasibility
+  `UNAVAILABLE_NOT_EVALUATED`). The default native-daily path and CH2 `--ws-bound-plan-only`
+  are byte-unchanged. Pilot remains 0/7.
 
 ## Repository Cleanup
 
