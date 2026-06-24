@@ -34,8 +34,11 @@ backups/
 .claude/
 
 # outputs not committed to repo
+outputs/logs/
 outputs/monitor/
 outputs/variants/
+outputs/forward_record/daily_logs/
+outputs/forward_record/dashboard/
 
 # outputs: local runtime/generated artifacts (Option E -- 2026-05-18)
 outputs/attribution/
@@ -114,7 +117,7 @@ outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_preparation/
 outputs/demo_trading/demo_only_tiny_execution_adapter_tiny_order_execution/
 outputs/_test_scratch/
 .pytest_basetemp/
-.pytest_tmp/
+.pytest_tmp*/
 
 # TASK-014BY: strategy-selection runtime analysis outputs (not committed)
 outputs/research/
