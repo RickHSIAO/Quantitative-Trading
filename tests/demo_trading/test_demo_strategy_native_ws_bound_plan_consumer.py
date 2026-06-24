@@ -344,3 +344,245 @@ def test_order_post_count_above_zero_fails_closed():
     _reseal_wrapper(w)
     r = _validate(w, kw)
     assert r.status == consumer.WS_BOUND_PLAN_AUTHORIZATION_PRESENT
+
+
+# ===========================================================================
+# FIX1 -- total fail-closed behaviour, evidence integrity, V1 semantics
+# ===========================================================================
+
+def _assert_failed(r):
+    assert r.status != consumer.WS_BOUND_PLAN_CONSUMER_PASS
+    assert r.passed is False
+    assert r.validated_actions == ()
+    assert r.canonical_plan_available is False
+    assert r.execution_grade_freshness_complete is False
+
+
+def _first_tp(w):
+    return w["canonical_bound_plan"]["planner"]["target_positions"][0]
+
+
+# --- malformed qty_step -----------------------------------------------------
+
+def test_missing_qty_step_fails_closed():
+    w, kw = _correct_bundle()
+    del _first_tp(w)["qty_step"]
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+
+
+def test_non_numeric_qty_step_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["qty_step"] = "abc"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+
+
+def test_zero_qty_step_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["qty_step"] = "0"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+
+
+def test_negative_qty_step_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["qty_step"] = "-0.001"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+
+
+# --- malformed action numerics / evidence ----------------------------------
+
+def test_missing_price_evidence_fails_closed():
+    w, kw = _correct_bundle()
+    del _first_tp(w)["price_evidence"]
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("price_evidence_absent" in b for b in r.blockers)
+
+
+def test_malformed_numeric_price_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["price"] = "not-a-number"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+
+
+def test_malformed_quantity_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["qty"] = "xyz"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+
+
+def test_malformed_effective_notional_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["effective_notional"] = "??"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+
+
+def test_malformed_source_message_field_type_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["price_evidence"]["cross_sequence"] = {"unexpected": "dict"}
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("evidence_field_type_invalid" in b for b in r.blockers)
+
+
+# --- per-symbol fingerprints ------------------------------------------------
+
+def test_tampered_action_fingerprint_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["action_fingerprint"] = "sha256:" + "3" * 64
+    _reseal_wrapper(w)  # action_fingerprint is not part of the cbp fp material
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("action_fingerprint_mismatch" in b for b in r.blockers)
+
+
+def test_per_symbol_source_artifact_fingerprint_mismatch_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["price_evidence"]["source_artifact_fingerprint"] = "sha256:" + "4" * 64
+    _reseal_wrapper(w)  # not part of cbp fp material
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH in r.failure_codes
+
+
+# --- provenance cross-field -------------------------------------------------
+
+def test_wrapper_vs_canonical_ws_fingerprint_mismatch_fails_closed():
+    w, kw = _correct_bundle()
+    w["source_ws_artifact_fingerprint"] = "sha256:" + "5" * 64
+    _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+def test_tampered_canonical_original_plan_fingerprint_fails_closed():
+    w, kw = _correct_bundle()
+    w["canonical_bound_plan"]["original_plan_fingerprint"] = "sha256:" + "6" * 64
+    _reseal_cbp(w); _reseal_wrapper(w)
+    # Caller-supplied expected value remains the real one -> mismatch.
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ORIGINAL_PLAN_MISMATCH
+
+
+def test_symbol_set_fingerprint_mismatch_fails_closed():
+    w, kw = _correct_bundle()
+    w["strategy_identity"]["strategy_symbol_source_fingerprint"] = "sha256:" + "7" * 64
+    _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_SYMBOL_SET_MISMATCH
+    assert any("symbol_source_fingerprint_mismatch" in b for b in r.blockers)
+
+
+# --- Strategy-native V1 semantics ------------------------------------------
+
+def test_wrong_target_weight_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["target_weight"] = "0.03"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("target_weight_not_pm_0.02" in b for b in r.blockers)
+
+
+def test_zero_target_weight_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["target_weight"] = "0"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("target_weight_zero" in b for b in r.blockers)
+
+
+def test_side_weight_direction_mismatch_fails_closed():
+    w, kw = _correct_bundle()
+    tp = next(t for t in w["canonical_bound_plan"]["planner"]["target_positions"]
+              if t["side"] == "long")
+    tp["target_weight"] = "-0.02"  # long but negative weight
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("side_weight_direction_mismatch" in b for b in r.blockers)
+
+
+def test_target_notional_mismatch_fails_closed():
+    w, kw = _correct_bundle()
+    _first_tp(w)["target_notional"] = "500"
+    _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+
+
+def test_v1_capital_base_not_10000_fails_closed():
+    w, kw = _correct_bundle()
+    w["canonical_bound_plan"]["planner"]["sizing_verification"]["capital_base_usd"] = 5000
+    _reseal_wrapper(w)  # sizing_verification is not part of the cbp fp material
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert any("v1_capital_base_not_10000" in b for b in r.blockers)
+
+
+# --- total fail-closed on arbitrary / nested-wrong-type input --------------
+
+def test_arbitrary_malformed_mapping_does_not_raise():
+    w, kw = _correct_bundle()
+    r = consumer.validate_ws_bound_plan_artifact(
+        {"a": 1, "b": [1, 2, {"c": 3}], "schema": "garbage"}, **kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_SCHEMA_INVALID
+
+
+def test_nested_wrong_json_types_do_not_raise():
+    w, kw = _correct_bundle()
+    art = {
+        "schema": wb.SCHEMA_NAME, "schema_version": wb.SCHEMA_VERSION,
+        "task_id": wb.TASK_ID, "binding_mode": wb.BINDING_MODE_PLAN_ONLY,
+        "wrapper_fingerprint": None,
+        "overall_binding_status": 12345,
+        "canonical_bound_plan": ["not", "a", "map"],
+        "binding_audit": "oops-not-a-map",
+        "strategy_identity": 999,
+        "source_ws_artifact_sha256": {"nested": True},
+        "binding_network_audit": [1, 2, 3],
+    }
+    r = consumer.validate_ws_bound_plan_artifact(art, **kw)  # must not raise
+    _assert_failed(r)
+
+
+def test_empty_mapping_does_not_raise():
+    w, kw = _correct_bundle()
+    r = consumer.validate_ws_bound_plan_artifact({}, **kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_SCHEMA_INVALID
