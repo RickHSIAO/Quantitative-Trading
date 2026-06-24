@@ -1,0 +1,174 @@
+# System Architecture
+
+## System Purpose
+
+Multi-asset quantitative trading research and execution preparation system.
+Currently focused on crypto momentum (prev3y lookback, Bybit perpetuals).
+Produces strategy signals, constructs target portfolios, plans execution
+actions against Demo API prices, records forward validation results, and
+generates paper-trading PnL. Live trading is not authorized; execution
+remains Demo-only with explicit per-session authorization gates.
+
+## Runtime Modes
+
+| Mode | Description | Order dispatch |
+|---|---|---|
+| Research / Backtest | Historical signal generation, cost stress, variant studies | None |
+| Forward Validation | Daily signal → position recording, PnL tracking, overlay checks | None |
+| Paper Portfolio | Simulated fills at next-day open, fee/slippage modeling | None |
+| Plan-only Demo | REST price fetch, qty rounding, batch planning; no send | None |
+| Authorized Demo Execution | One-shot tiny adapter (SOLUSDT-locked); explicit gate | Demo only |
+| Live Trading | Not implemented, not authorized | Forbidden |
+
+## Canonical Data Flow
+
+```
+SQLite OHLCV
+  → Price snapshot (parquet)
+    → Universe membership (point-in-time market-cap filter)
+      → Momentum signals (TargetPortfolio: top/bottom N at ±0.02 weight)
+        → Forward Record (position_usd = weight × 10,000 frozen capital)
+          → Paper fills (simulated at next-day open + fees/slippage)
+          → Forward Source (normalized signals + SHA256 artifact proof)
+            → Action Planner (REST price → qty floored to qty_step)
+              → Strategy Review (reconcile vs open positions)
+                → Execution Gate (plan-only; never dispatches)
+                  → Reporting (JSON/Excel → Discord/Notion, gated)
+```
+
+### Stage Detail
+
+| Stage | Module | Input | Output | Consumer |
+|---|---|---|---|---|
+| Price snapshot | `src/data/crypto_daily.py` | SQLite DB | PriceSnapshotInfo (parquet) | Universe, signals |
+| Universe | `src/universe/prev3y_crypto.py` | Prices + CMC rankings | UniverseSnapshotInfo (parquet) | Signal generation |
+| Signals | `src/signals/prev3y_momentum.py` | Prices + universe | List[TargetPortfolio] | Forward record, planner |
+| Forward Record | `apps/forward_record/primary.py` | Config + market data | TrackRecord (positions DataFrame) | Forward source, dashboard |
+| Paper fills | `apps/paper_trading/recorder.py` | Targets + prices | Simulated fill DataFrame | PnL calculator |
+| Forward Source | `src/demo_strategy_pilot_forward_source.py` | Run date + artifacts | ForwardStrategySourceResult | Daily runner |
+| Action Planner | `src/demo_strategy_pilot_action_planner.py` | Signals + REST prices | PlannerResult (StrategyNativeAction list) | Strategy review |
+| Strategy Review | `src/demo_strategy_native_v1_portfolio.py` | Plan + positions + rules | ExecutionBatch + feasibility | Execution gate |
+| Freshness Audit | `src/demo_strategy_native_margin_freshness_audit.py` | Price snapshots + timestamps | Freshness status + blockers | Strategy review |
+| Execution Gate | `src/demo_strategy_pilot_execution_gate.py` | Planner actions + readiness | Review verdict (no dispatch) | Daily runner |
+| Daily Runner | `src/demo_strategy_pilot_daily_runner.py` | All above | PilotDailyRecord (JSON + Excel) | Reporting |
+| Native Execution | `src/demo_strategy_pilot_native_execution.py` | StrategyNativeAction + transport | Delivery ledger | Readiness state |
+| Readiness | `src/demo_strategy_pilot_readiness.py` | Pilot state + events | State machine verdict | Daily runner |
+
+## Current Price Paths
+
+### Integrated: REST (active)
+
+The action planner calls `provider.market_price(symbol)` through
+`DemoMarketPriceGuard` (`src/demo_market_price_guard.py`), which issues a
+public GET to `https://api-demo.bybit.com/v5/market/tickers`. No
+authentication required. The returned float price is used to compute
+`qty = |target_notional| / price`, floored to instrument `qty_step` via
+pure Decimal arithmetic. This is the only price path consumed by the
+planner and daily runner.
+
+### Offline: Public WebSocket evidence (not integrated)
+
+`src/demo_public_ws_ticker_evidence.py` defines the schema for collecting
+public linear WebSocket ticker snapshots (mainnet
+`wss://stream.bybit.com/v5/public/linear`, no credentials). Evidence is
+collected via `scripts/collect_public_ws_ticker_evidence.py`.
+
+`src/demo_strategy_native_ws_price_binding.py` (TASK-014CG/FIX1) binds
+planner actions to WS source messages post-hoc, producing a
+canonical-bound-plan artifact with same-message proof and freshness
+completion status.
+
+**No native planner, daily runner, or execution consumer currently imports
+the WS binding module.** The canonical-bound-plan artifact is produced
+offline by CLI scripts (`scripts/bind_plan_prices_to_ws_evidence.py`,
+`scripts/generate_demo_strategy_ws_binding_fixture.py`). The default
+integrated runtime continues to use the REST planner path.
+
+## Execution Safety Boundary
+
+- **Plan-only vs send**: The daily runner sets `order_execution_authorized = False`.
+  Actions are planned but never dispatched in normal operation.
+- **Authorization gate**: Real execution requires the one-shot tiny adapter
+  (`src/demo_only_tiny_execution_adapter.py`), locked to SOLUSDT, with
+  explicit per-session manual authorization.
+- **Demo-only**: All execution targets `api-demo.bybit.com`. Protected
+  symbols are rejected. Ambiguous outcomes fail closed.
+- **Live**: Not implemented, not authorized. `FORBIDDEN` in all validation
+  records.
+- **Future safety doc**: `docs/TRADING_SAFETY.md` (to be created) will
+  contain the complete execution authorization protocol.
+
+## Reporting and Runtime Artifacts
+
+| Category | Location | Tracked | Retention |
+|---|---|---|---|
+| Source code | `src/`, `apps/`, `scripts/` | Yes | Permanent |
+| Stable test fixtures | `tests/` | Yes | Permanent |
+| Configuration | `configs/` | Yes (except secrets) | Permanent |
+| Forward record baselines | `outputs/forward_record/baselines/` | Yes | Owner decision |
+| Runtime logs | `outputs/logs/` | No (gitignored) | Local/VPS |
+| Monitor heartbeats | `outputs/monitor/` | No (gitignored) | Local/VPS |
+| Generated dashboard | `outputs/forward_record/dashboard/` | No (gitignored) | Regenerated |
+| Daily forward/paper outputs | `outputs/forward_record/daily_logs/` | No (gitignored) | Local/VPS |
+| Demo trading outputs | `outputs/demo_trading/` | No (gitignored) | Local |
+| Research variant outputs | `outputs/research/` | No (gitignored) | Local |
+
+## Source-of-Truth Table
+
+| Concern | Canonical Module | Notes |
+|---|---|---|
+| Strategy signals | `src/signals/prev3y_momentum.py` | 3y lookback, top/bottom N |
+| Universe selection | `src/universe/prev3y_crypto.py` | Point-in-time CMC rankings |
+| Portfolio construction | `src/demo_strategy_native_v1_portfolio.py` | Reconcile + ExecutionBatch |
+| Action planner | `src/demo_strategy_pilot_action_planner.py` | REST price → qty rounding |
+| Price freshness | `src/demo_strategy_native_margin_freshness_audit.py` | Fail-closed staleness |
+| Margin audit | `src/demo_strategy_native_margin_freshness_audit.py` | Combined with freshness |
+| Authorization gate | `src/demo_strategy_pilot_execution_gate.py` | Review only, no dispatch |
+| Demo sender | `src/demo_strategy_pilot_native_execution.py` | Demo endpoint only |
+| Forward Record | `apps/forward_record/primary.py` | Frozen 10k capital base |
+| Paper Portfolio | `apps/paper_trading/recorder.py` | Simulated fills |
+| WS evidence schema | `src/demo_public_ws_ticker_evidence.py` | Public linear, no auth |
+| WS-bound offline artifact | `src/demo_strategy_native_ws_price_binding.py` | No runtime consumer |
+| Daily orchestrator | `src/demo_strategy_pilot_daily_runner.py` | DRY-RUN only |
+| Readiness state machine | `src/demo_strategy_pilot_readiness.py` | 7-day gate |
+| Current state | `docs/CURRENT_STATE.md` | Updated per cleanup task |
+
+## Parallel and Legacy Paths
+
+| Lineage | Key modules | Status |
+|---|---|---|
+| Close-only | `demo_close_only_sender.py`, `demo_close_only_cleanup.py` | Pre-V1; owner review needed |
+| New-entry | `demo_new_entry_sender.py`, `demo_new_entry_review.py`, `demo_new_entry_candidate_builder.py` | Pre-V1; owner review needed |
+| Tiny-guarded / scaffold | `demo_tiny_guarded_entry_*.py` (~30 files), `demo_tiny_lifecycle_*.py` | Pre-V1; owner review needed |
+| Strategy-native V1 | `demo_strategy_pilot_*.py`, `demo_strategy_native_*.py` | **Current active path** |
+| Report-only | `demo_strategy_pilot_reporting.py`, `demo_strategy_pilot_discord_notify.py`, `demo_strategy_pilot_notion_sync.py` | Active, gated |
+| One-shot execution adapter | `demo_only_tiny_execution_adapter*.py` | SOLUSDT-locked; canonical for real Demo orders |
+
+The Strategy-native V1 lineage is the current active path. Close-only,
+new-entry, and tiny-guarded lineages are legacy code from earlier
+development iterations that require owner review for archival or removal.
+
+## Known Architecture Risks
+
+1. **Multiple Demo lineages**: Close-only, new-entry, tiny-guarded, and
+   Strategy-native V1 coexist. Only V1 is current; others are dead code
+   risk.
+2. **Orphan WS-bound artifact**: TASK-014CG/FIX1 canonical-bound-plan has
+   no runtime consumer. The feature is complete but disconnected.
+3. **Target vs effective notional**: Planner computes `qty = notional / price`
+   floored to `qty_step`. The effective notional after rounding differs
+   from the strategy target. No reconciliation of this gap exists.
+4. **Historical tracking of generated artifacts**: Prior commits tracked
+   runtime logs, dashboards, and monitor outputs. REPO-002A untracked 31
+   files; residual generated content may remain in history.
+5. **No single integrated consumer**: No module combines WS evidence +
+   planner actions + execution dispatch in one pipeline. The offline
+   binding and the REST planner path remain separate.
+
+## Next Architecture Decision
+
+Whether and how the native Plan-only/readiness pipeline should consume the
+canonical WS-bound Plan artifact as an integrated price evidence source, or
+whether the feature should remain an offline research validator. This
+decision gates the transition from REST-only planning to WS-evidenced
+execution readiness.

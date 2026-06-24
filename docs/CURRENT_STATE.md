@@ -6,14 +6,17 @@ Multi-asset quantitative trading research system. Crypto momentum strategy
 with Bybit Demo execution pipeline, forward/paper recording, and monitoring.
 Strategy-native V1 architecture with cost-aware signal generation.
 
+Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
+
 ## Git State
 
 - **Remote stable (origin/main):** `703db19` (TASK-014CF closeout)
-- **Local HEAD:** `f76d0ae` (repo: stop tracking obvious runtime outputs)
+- **Local HEAD:** `6a0bd4f` (docs: freeze legacy AI logs and add current state)
 - **Local unpushed commits:**
   1. `c5c4bf2` — TASK-014CG: bind plan-only actions to websocket price evidence
   2. `4edbe50` — TASK-014CG_FIX1: emit canonical websocket-bound plan artifact
   3. `f76d0ae` — repo: stop tracking obvious runtime outputs
+  4. `6a0bd4f` — docs: freeze legacy AI logs and add current state
 
 ## Strategy-Native V1
 
@@ -52,6 +55,7 @@ Strategy-native V1 architecture with cost-aware signal generation.
 - TASK-REPO-001: Read-only audit complete
 - TASK-REPO-002A: Runtime outputs untracked (31 files), .gitignore updated
 - TASK-REPO-002B: Legacy AI logs frozen, CURRENT_STATE created
+- TASK-REPO-002C: Architecture source of truth created
 - Broken ref `refs/heads/feat/bb-slope-gate-v1.5.lock.cleared` still present
 - Stray untracked files (`commit＃85550e0`, `fix`) await owner review
 
