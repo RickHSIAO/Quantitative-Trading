@@ -17,6 +17,7 @@ import importlib.util
 import json
 import os
 import time
+from decimal import Decimal
 
 import pytest
 
@@ -46,10 +47,11 @@ def _signed_plan(rest_price: str = "100.0"):
     return plan
 
 
-def _correct_bundle(now: int | None = None, *, stale: bool = False):
-    """Build a real binder wrapper plus the matching correct caller expectations."""
+def _correct_bundle(now: int | None = None, *, stale: bool = False, offset: str = "0.0068"):
+    """Build a real binder wrapper plus the matching correct caller expectations,
+    including the actual source WS artifact used to create the bound wrapper."""
     now = now or time.time_ns()
-    ws_art = cg.build_complete_ws_artifact(now_ns=now)
+    ws_art = cg.build_complete_ws_artifact(now_ns=now, offset=offset)
     plan = _signed_plan(rest_price="100.0")
     raw = json.dumps(ws_art).encode("utf-8")
     ws_sha = wb.compute_file_sha256(raw)
@@ -58,6 +60,7 @@ def _correct_bundle(now: int | None = None, *, stale: bool = False):
         plan_artifact=plan, ws_artifact=ws_art, ws_artifact_path="ws.json",
         ws_artifact_sha256=ws_sha, binding_epoch_ns=epoch)
     kw = dict(
+        source_ws_artifact=ws_art,  # REQUIRED: the real source WS evidence artifact
         expected_policy_id=ws.ACTIVE_STRATEGY_NATIVE_V1_POLICY,
         expected_strategy_id=ws.EXPECTED_STRATEGY_NAME,
         expected_run_date=cg.DATE,
@@ -69,6 +72,64 @@ def _correct_bundle(now: int | None = None, *, stale: bool = False):
         expected_symbols=list(cg.STRATEGY_50),
     )
     return copy.deepcopy(w), kw
+
+
+def _src_rec(kw, sym):
+    return next(r for r in kw["source_ws_artifact"]["per_symbol_evidence"]
+               if str(r["symbol"]).strip().upper() == str(sym).strip().upper())
+
+
+def _reseal_source(kw):
+    """Recompute the source WS artifact's own fingerprint (producer convention)."""
+    src = kw["source_ws_artifact"]
+    src["artifact_fingerprint"] = ws._fingerprint(
+        {k: v for k, v in src.items() if k != "artifact_fingerprint"})
+    return src["artifact_fingerprint"]
+
+
+def _realign_source(w, kw):
+    """After mutating the source WS artifact, re-anchor every fingerprint copy
+    (source + wrapper + canonical + per-action + caller expectation) to it, so a test
+    isolates the injected source defect rather than a trivial fingerprint mismatch."""
+    fp = _reseal_source(kw)
+    _set_all_ws_fingerprint(w, fp)
+    _reseal_cbp(w)
+    _reseal_wrapper(w)
+    kw["expected_ws_artifact_fingerprint"] = fp
+
+
+def _rebind_all_temporal(w, kw, *, ts_delta_ms, offset_seconds):
+    """Consistently rebind EVERY bound action + its source record to a uniform source
+    ts (= binding_ms + ts_delta_ms) under one authoritative artifact-global offset, and
+    write the EXACT producer freshness as each stored binding_freshness, then realign
+    all fingerprints. The clock offset is artifact-global, so all 50 must agree."""
+    binding_ms = int(kw["expected_binding_epoch_ns"] / 1e6)
+    new_ts = binding_ms + ts_delta_ms
+    kw["source_ws_artifact"]["clock_offset_seconds"] = str(offset_seconds)
+    for tp in w["canonical_bound_plan"]["planner"]["target_positions"]:
+        rec = _src_rec(kw, tp["symbol"])
+        rec["selected_price_source_ts_ms"] = new_ts
+        rec["selected_price_ts_ms"] = new_ts
+        rec["selected_price_source_message_fingerprint"] = ws.canonical_source_message_fingerprint(
+            symbol=rec["symbol"], topic=rec["topic"],
+            selected_price_field=rec["selected_price_field"], selected_price=rec["selected_price"],
+            source_message_type=rec["selected_price_source_message_type"],
+            source_ts_ms=rec["selected_price_source_ts_ms"],
+            source_cs=rec["selected_price_source_cs"],
+            local_received_epoch_ns=rec["selected_price_source_local_received_epoch_ns"],
+            local_received_at_utc=rec["selected_price_source_local_received_at_utc"],
+            local_monotonic_received_ns=rec["selected_price_source_local_monotonic_received_ns"],
+            connection_generation=rec["selected_price_source_connection_generation"])
+        rec["evidence_fingerprint"] = wb._recompute_evidence_fingerprint(rec)
+        pe = tp["price_evidence"]
+        pe["exchange_data_generated_ts_ms"] = new_ts
+        _reseal_action_evidence(tp)  # recomputes pe smf (== rec smf) + action fingerprint
+        tp["binding_freshness"] = wb._evaluate_binding_freshness(
+            rec, binding_epoch_ns=kw["expected_binding_epoch_ns"],
+            clock_offset_seconds=Decimal(str(offset_seconds)),
+            threshold_ms=kw["expected_freshness_threshold_ms"],
+            future_tolerance_ms=wb.DEFAULT_FUTURE_TOLERANCE_MS)
+    _realign_source(w, kw)
 
 
 def _reseal_action_evidence(tp):
@@ -246,8 +307,8 @@ def test_tampered_per_symbol_evidence_fingerprint_fails_closed():
     tp["price_evidence"]["source_message_fingerprint"] = "sha256:" + "2" * 64
     _reseal_cbp(w)
     _reseal_wrapper(w)
-    r = _validate(w, kw)
-    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    r = _validate(w, kw)  # source unchanged -> bound evidence no longer matches source
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
 
 
 def test_wrong_source_message_fingerprint_material_fails_closed():
@@ -257,8 +318,8 @@ def test_wrong_source_message_fingerprint_material_fails_closed():
     tp["price_evidence"]["cross_sequence"] = (tp["price_evidence"]["cross_sequence"] or 0) + 7
     _reseal_cbp(w)
     _reseal_wrapper(w)
-    r = _validate(w, kw)
-    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    r = _validate(w, kw)  # diverges from the unchanged source record
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
 
 
 # ---------------------------------------------------------------------------
@@ -311,9 +372,12 @@ def test_missing_symbol_fails_closed():
 
 def test_extra_symbol_fails_closed():
     w, kw = _correct_bundle()
-    # Caller expects 49; the artifact carries the full 50 -> one is extra.
+    # Caller expects 49; the artifact (and source) carry the full 50 -> one is extra.
+    # The symbol-set mismatch surfaces (the source gate also rejects the 49-set, which
+    # is the higher-priority WS_ARTIFACT identity failure).
     r = _validate(w, kw, expected_symbols=list(cg.STRATEGY_50)[:-1])
-    assert r.status == consumer.WS_BOUND_PLAN_SYMBOL_SET_MISMATCH
+    _assert_failed(r)
+    assert consumer.WS_BOUND_PLAN_SYMBOL_SET_MISMATCH in r.failure_codes
 
 
 def test_duplicate_symbol_fails_closed():
@@ -449,7 +513,8 @@ def test_missing_price_evidence_fails_closed():
     _reseal_cbp(w); _reseal_wrapper(w)
     r = _validate(w, kw)
     _assert_failed(r)
-    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    # No price evidence -> the action cannot be proven to belong to the source record.
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
     assert any("price_evidence_absent" in b for b in r.blockers)
 
 
@@ -486,7 +551,7 @@ def test_malformed_source_message_field_type_fails_closed():
     _reseal_cbp(w); _reseal_wrapper(w)
     r = _validate(w, kw)
     _assert_failed(r)
-    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
     assert any("cross_sequence" in b for b in r.blockers)
 
 
@@ -709,13 +774,17 @@ def test_per_symbol_source_artifact_fp_changed_with_layers_caller_unchanged_fail
 # --- required execution-grade evidence fields ------------------------------
 
 def _evidence_case(mutate):
+    # Tampering the bound action's price evidence (while the source WS artifact is
+    # unchanged) makes the action no longer BELONG to the source record -> the
+    # source-membership cross-validation reports WS_ARTIFACT_MISMATCH (the precise
+    # FIX4 outcome). The malformed-field blockers are still recorded.
     w, kw = _correct_bundle()
     pe = _first_tp(w)["price_evidence"]
     mutate(pe)
     _reseal_wrapper(w)  # evidence fields (except smf) are not in the cbp fp material
     r = _validate(w, kw)
     _assert_failed(r)
-    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
     return r
 
 
@@ -782,26 +851,34 @@ def test_valid_passes_with_caller_temporal_anchors():
 
 
 def test_stale_evidence_with_stored_fresh_retained_fails_closed():
+    # Offset-free age looks fresh, but the authoritative +20s clock offset makes the
+    # EXACT producer age exceed the strict threshold. Every stored FRESH field is
+    # retained; the consumer recomputes with the authoritative offset and rejects it.
     w, kw = _correct_bundle()
-    binding_ms = kw["expected_binding_epoch_ns"] / 1e6
-    tp = _first_tp(w)
-    # Make the exchange source ts ~20s old; retain every stored FRESH field.
-    tp["price_evidence"]["exchange_data_generated_ts_ms"] = int(binding_ms) - 20_000
-    assert tp["binding_freshness"]["binding_freshness_status"] == wb.BINDING_FRESHNESS_FRESH
-    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    kw["source_ws_artifact"]["clock_offset_seconds"] = "20"
+    _realign_source(w, kw)
+    assert w["execution_grade_freshness_complete"] is True  # stored field retained
     r = _validate(w, kw)
     _assert_failed(r)
     assert r.status == consumer.WS_BOUND_PLAN_STALE
-    assert w["execution_grade_freshness_complete"] is True  # stored field retained
     assert r.execution_grade_freshness_complete is False    # consumer overrides it
 
 
-def test_evidence_timestamp_later_than_binding_fails_closed():
+def test_offset_free_future_but_exact_offset_adjusted_valid_passes():
+    # Source ts is 6s AFTER binding (offset-free age = -6s, would look "future"), but a
+    # +6s authoritative offset brings the EXACT age to ~0 -> valid / FRESH -> PASS.
     w, kw = _correct_bundle()
-    binding_ms = kw["expected_binding_epoch_ns"] / 1e6
-    tp = _first_tp(w)
-    tp["price_evidence"]["exchange_data_generated_ts_ms"] = int(binding_ms) + 20_000
-    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    _rebind_all_temporal(w, kw, ts_delta_ms=6000, offset_seconds="6")
+    r = _validate(w, kw)
+    assert r.status == consumer.WS_BOUND_PLAN_CONSUMER_PASS
+
+
+def test_evidence_timestamp_later_than_binding_fails_closed():
+    # A large negative authoritative offset places the estimated-exchange binding time
+    # before the evidence -> EXACT age is in the future beyond the tolerance.
+    w, kw = _correct_bundle()
+    kw["source_ws_artifact"]["clock_offset_seconds"] = "-20"
+    _realign_source(w, kw)
     r = _validate(w, kw)
     _assert_failed(r)
     assert r.status == consumer.WS_BOUND_PLAN_STALE
@@ -901,9 +978,9 @@ def test_unsupported_message_type_fails_closed():
     tp = _first_tp(w)
     tp["price_evidence"]["message_type"] = "heartbeat"  # not snapshot/delta
     _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
-    r = _validate(w, kw)
+    r = _validate(w, kw)  # source unchanged -> bound message type no longer matches source
     _assert_failed(r)
-    assert r.status == consumer.WS_BOUND_PLAN_ACTION_INCONSISTENT
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
     assert any("message_type" in b for b in r.blockers)
 
 
@@ -928,3 +1005,199 @@ def test_malformed_expected_original_plan_fingerprint_fails_closed():
     r = _validate(w, kw, expected_original_plan_fingerprint="not-canonical")
     _assert_failed(r)
     assert r.status == consumer.WS_BOUND_PLAN_ORIGINAL_PLAN_MISMATCH
+
+
+# ===========================================================================
+# FIX4 -- source WS artifact cross-validation + authoritative-offset freshness
+# ===========================================================================
+
+def test_valid_bound_plan_plus_source_ws_artifact_passes():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw)
+    assert r.status == consumer.WS_BOUND_PLAN_CONSUMER_PASS
+    assert len(r.validated_actions) == 50
+    assert r.execution_grade_freshness_complete is True
+
+
+def test_positive_clock_offset_passes():
+    w, kw = _correct_bundle(offset="0.0068")
+    assert _validate(w, kw).status == consumer.WS_BOUND_PLAN_CONSUMER_PASS
+
+
+def test_negative_clock_offset_passes():
+    w, kw = _correct_bundle(offset="-0.0068")
+    assert _validate(w, kw).status == consumer.WS_BOUND_PLAN_CONSUMER_PASS
+
+
+# --- authoritative clock offset --------------------------------------------
+
+def test_source_clock_offset_field_tampered_fails_closed():
+    # Small offset change keeps the exact age under threshold, but the stored age was
+    # computed with the original offset -> exact recomputation disagrees -> STALE.
+    w, kw = _correct_bundle()
+    kw["source_ws_artifact"]["clock_offset_seconds"] = "0.5"
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+    assert any("stored_age_differs_from_authoritative_recompute" in b for b in r.blockers)
+
+
+def test_duplicated_clock_offset_fields_disagree_fails_closed():
+    w, kw = _correct_bundle()
+    kw["source_ws_artifact"]["clock_offset_provenance"] = {
+        "clock_offset_provenance_status": ws.CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE,
+        "estimated_local_vs_exchange_clock_offset_seconds": "9.999",  # != top-level
+    }
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("clock_offset_duplicate_fields_disagree" in b for b in r.blockers)
+
+
+def test_clock_offset_provenance_not_authoritative_fails_closed():
+    w, kw = _correct_bundle()
+    kw["source_ws_artifact"]["clock_offset_provenance_status"] = \
+        ws.CLOCK_OFFSET_PROVENANCE_STALE
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+# --- source artifact identity ----------------------------------------------
+
+def test_source_ws_artifact_fingerprint_wrong_fails_closed():
+    w, kw = _correct_bundle()
+    kw["source_ws_artifact"]["artifact_fingerprint"] = "sha256:" + "0" * 64  # not resealed
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+def test_caller_fingerprint_matches_wrapper_but_not_source_fails_closed():
+    w, kw = _correct_bundle()
+    other = cg.build_complete_ws_artifact(now_ns=time.time_ns() + 10 ** 9)  # different fp
+    kw["source_ws_artifact"] = other
+    r = _validate(w, kw)  # caller fp == wrapper, but != supplied source artifact
+    _assert_failed(r)
+    assert consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH in r.failure_codes
+
+
+# --- per-action membership vs source record --------------------------------
+
+def test_action_source_ts_changed_membership_fails_closed():
+    w, kw = _correct_bundle()
+    tp = _first_tp(w)
+    tp["price_evidence"]["exchange_data_generated_ts_ms"] += 123  # diverge from source
+    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)  # source WS artifact unchanged
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("source_record_mismatch:exchange_ts_ms" in b for b in r.blockers)
+
+
+def test_action_selected_price_changed_membership_fails_closed():
+    w, kw = _correct_bundle()
+    tp = _first_tp(w)
+    tp["price_evidence"]["selected_price"] = "123.45"
+    tp["price"] = "123.45"
+    tp["price_decimal"] = "123.45"
+    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)  # source WS artifact unchanged
+    _assert_failed(r)
+    assert consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH in r.failure_codes
+
+
+def test_action_smf_recomputed_over_invented_evidence_fails_closed():
+    # The bound action's source-message fingerprint is internally consistent (recomputed
+    # over invented evidence) but does not match the unchanged source artifact record.
+    w, kw = _correct_bundle()
+    tp = _first_tp(w)
+    tp["price_evidence"]["cross_sequence"] += 999
+    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+# --- source record fingerprint integrity -----------------------------------
+
+def test_source_record_evidence_fingerprint_tampered_fails_closed():
+    w, kw = _correct_bundle()
+    rec = _src_rec(kw, _first_tp(w)["symbol"])
+    rec["evidence_fingerprint"] = "sha256:" + "e" * 64
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("source_evidence_fingerprint_mismatch" in b for b in r.blockers)
+
+
+def test_source_record_source_message_fingerprint_tampered_fails_closed():
+    w, kw = _correct_bundle()
+    rec = _src_rec(kw, _first_tp(w)["symbol"])
+    rec["selected_price_source_message_fingerprint"] = "sha256:" + "d" * 64
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("source_message_fingerprint" in b for b in r.blockers)
+
+
+# --- source symbol set ------------------------------------------------------
+
+def test_duplicate_source_symbol_fails_closed():
+    w, kw = _correct_bundle()
+    rec = _src_rec(kw, _first_tp(w)["symbol"])
+    kw["source_ws_artifact"]["per_symbol_evidence"].append(copy.deepcopy(rec))
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("duplicate_source_symbols" in b for b in r.blockers)
+
+
+def test_missing_strategy_source_symbol_fails_closed():
+    w, kw = _correct_bundle()
+    sym = _first_tp(w)["symbol"]
+    pse = kw["source_ws_artifact"]["per_symbol_evidence"]
+    kw["source_ws_artifact"]["per_symbol_evidence"] = [
+        r for r in pse if str(r["symbol"]).strip().upper() != str(sym).strip().upper()]
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("source_symbol_missing" in b for b in r.blockers)
+
+
+# --- wrong source record fields --------------------------------------------
+
+@pytest.mark.parametrize("field,value", [
+    ("selected_price_source_message_type", "delta"),
+    ("topic", "tickers.WRONGUSDT"),
+    ("selected_price_source_cs", 999_999),
+    ("selected_price_source_connection_generation", 7),
+])
+def test_wrong_source_record_field_fails_closed(field, value):
+    w, kw = _correct_bundle()
+    rec = _src_rec(kw, _first_tp(w)["symbol"])
+    rec[field] = value
+    _realign_source(w, kw)
+    r = _validate(w, kw)  # source record diverges from the bound action's evidence
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+# --- stored age vs exact recomputation -------------------------------------
+
+def test_stored_age_differs_from_exact_recompute_fails_closed():
+    w, kw = _correct_bundle()
+    bf = _first_tp(w)["binding_freshness"]
+    bf["evidence_age_at_binding_ms"] = float(bf["evidence_age_at_binding_ms"]) + 1234.5
+    _reseal_wrapper(w)  # binding_freshness is not part of the cbp fp material
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_STALE
+    assert any("stored_age_differs_from_authoritative_recompute" in b for b in r.blockers)

@@ -57,6 +57,22 @@ FIX3 hardening (temporal / freshness integrity):
 
   The validator performs NO wall-clock / current-time read; all temporal anchors
   are caller-supplied and all evidence timestamps come from the artifact.
+
+FIX4 hardening (source WS artifact cross-validation):
+
+  * The original source WS evidence artifact is now a REQUIRED parameter. It is
+    independently validated with the producer's own ``validate_ws_artifact_compatibility``
+    gate (schema, canonical-binding sub-schema, COMPLETE status, 52-symbol coverage,
+    public unauthenticated linear endpoint, ACK / control-plane / counter parity,
+    authoritative policy/strategy/date/symbol + clock-offset provenance, no
+    execution/order activity) and anchored to the caller fingerprint/sha.
+  * The producer-authoritative clock offset is extracted from that artifact and the
+    EXACT producer freshness formula is applied via ``wb._evaluate_binding_freshness``
+    (no offset-free approximation; future tolerance is not used as an offset
+    tolerance). Stored ``evidence_age_at_binding_ms`` must equal the recomputation.
+  * Every bound action's price evidence is proven to BELONG to the source artifact:
+    each field is compared to the unique per-symbol source record and the record's
+    own evidence + source-message fingerprints are recomputed with producer helpers.
 """
 
 from __future__ import annotations
@@ -72,7 +88,7 @@ from typing import Any, Mapping, Sequence
 from src import demo_public_ws_ticker_evidence as ws
 from src import demo_strategy_native_ws_price_binding as wb
 
-TASK_ID = "TASK-014CH1_FIX3"
+TASK_ID = "TASK-014CH1_FIX4"
 
 EXPECTED_STRATEGY_SYMBOL_COUNT = wb.EXPECTED_STRATEGY_SYMBOL_COUNT  # 50
 EXPECTED_LONG_COUNT = 25
@@ -384,20 +400,11 @@ def _validate_evidence_fields(sym: str, pe: Mapping[str, Any]) -> list[str]:
     return probs
 
 
-def _check_temporal(sym: str, tp: Mapping[str, Any], pe: Mapping[str, Any], *,
-                    caller_epoch_ns: int | None, caller_threshold_ms: int | None) -> list[str]:
-    """Independently recompute binding-time freshness + UTC/epoch temporal integrity.
-
-    Offset-free age is recomputed from the caller binding epoch + the
-    fingerprint-verified exchange ``source_ts`` and judged against the caller
-    threshold + the producer's 5_000 ms future tolerance; the stored age is
-    cross-checked within that bounded clock-offset window. Stale / future / mismatched
-    evidence is rejected even when every stored FRESH field is retained. Each input is
-    only used when present + well-typed (an absent field is an evidence failure handled
-    elsewhere, not a temporal failure)."""
+def _check_utc(sym: str, pe: Mapping[str, Any]) -> list[str]:
+    """UTC timestamp semantics: ``local_received_at_utc`` must be a tz-aware UTC
+    ISO-8601 instant equal to ``local_received_epoch_ns`` (only checked when present;
+    an absent field is an evidence failure handled elsewhere). No wall-clock read."""
     probs: list[str] = []
-
-    # --- UTC timestamp semantics (only when the string is present) -------------
     at_utc = pe.get("local_received_at_utc")
     epoch_ns = pe.get("local_received_epoch_ns")
     if isinstance(at_utc, str) and at_utc.strip():
@@ -407,54 +414,128 @@ def _check_temporal(sym: str, tp: Mapping[str, Any], pe: Mapping[str, Any], *,
         elif _is_pos_int(epoch_ns):
             if abs(dt.timestamp() - (epoch_ns / 1e9)) > _UTC_EPOCH_TOLERANCE_S:
                 probs.append(f"{sym}:utc_epoch_instant_mismatch")
-
-    # --- Binding-time freshness recomputation ---------------------------------
-    if caller_epoch_ns is None or caller_threshold_ms is None:
-        return probs  # caller temporal anchors malformed; reported at top level
-    source_ts = pe.get("exchange_data_generated_ts_ms")
-    if not _is_pos_int(source_ts):
-        return probs  # invalid source ts is an evidence failure, not temporal
-    bf = tp.get("binding_freshness")
-    if not isinstance(bf, Mapping):
-        probs.append(f"{sym}:binding_freshness_absent")
-        return probs
-    if str(bf.get("binding_freshness_status", "")) != wb.BINDING_FRESHNESS_FRESH:
-        probs.append(f"{sym}:stored_binding_status_not_fresh")
-    if bf.get("binding_freshness_threshold_ms") != caller_threshold_ms:
-        probs.append(f"{sym}:stored_threshold_not_expected")
-
-    binding_ms = Decimal(caller_epoch_ns) / Decimal(1_000_000)
-    age_excl_offset = float(round(binding_ms - Decimal(source_ts), 3))
-    # Independent verdict on the offset-free age.
-    if age_excl_offset > float(caller_threshold_ms):
-        probs.append(f"{sym}:recomputed_age_exceeds_threshold")
-    if age_excl_offset < -float(FUTURE_TOLERANCE_MS):
-        probs.append(f"{sym}:recomputed_evidence_in_future")
-    # Cross-check the stored age: it must sit within one bounded clock offset of the
-    # offset-free age AND independently satisfy the threshold / future tolerance.
-    stored_age = bf.get("evidence_age_at_binding_ms")
-    if isinstance(stored_age, (int, float)) and not isinstance(stored_age, bool):
-        if abs(float(stored_age) - age_excl_offset) > float(FUTURE_TOLERANCE_MS):
-            probs.append(f"{sym}:stored_age_implausible_vs_recomputed")
-        if float(stored_age) > float(caller_threshold_ms):
-            probs.append(f"{sym}:stored_age_exceeds_threshold")
-        if float(stored_age) < -float(FUTURE_TOLERANCE_MS):
-            probs.append(f"{sym}:stored_age_in_future")
-    else:
-        probs.append(f"{sym}:stored_age_missing_or_invalid")
     return probs
 
 
-def _check_action(tp_raw: Any, *, expected_ws_fp: str, expected_ws_sha: str,
-                  caller_epoch_ns: int | None, caller_threshold_ms: int | None) -> dict[str, list[str]]:
+def extract_authoritative_clock_offset(
+    source_ws_artifact: Mapping[str, Any], *, expected_ws_artifact_sha256: str,
+) -> tuple[Decimal | None, list[str]]:
+    """Extract the producer-authoritative clock offset from the validated source WS
+    artifact. Returns ``(Decimal | None, problems)``; the offset is returned only when
+    every requirement holds. Reuses producer constants and Decimal parsing."""
+    probs: list[str] = []
+    src = _as_map(source_ws_artifact)
+    if str(src.get("clock_offset_status", "")) != ws.CLOCK_OFFSET_AVAILABLE:
+        probs.append("clock_offset_status_not_available")
+    if str(src.get("clock_offset_provenance_status", "")) != ws.CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE:
+        probs.append("clock_offset_provenance_not_authoritative")
+    offset = wb._dec(src.get("clock_offset_seconds"))
+    if offset is None:
+        probs.append("clock_offset_seconds_not_finite_decimal")
+    # Duplicated nested provenance fields, where the producer schema emits them.
+    prov = src.get("clock_offset_provenance")
+    if isinstance(prov, Mapping) and prov:
+        nested = wb._dec(prov.get("estimated_local_vs_exchange_clock_offset_seconds"))
+        if offset is None or nested is None or nested != offset:
+            probs.append("clock_offset_duplicate_fields_disagree")
+        if str(prov.get("clock_offset_provenance_status", "")) != \
+                ws.CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE:
+            probs.append("clock_offset_provenance_block_not_authoritative")
+        nsha = prov.get("clock_offset_source_artifact_sha256")
+        if nsha is not None and str(nsha) != str(expected_ws_artifact_sha256):
+            probs.append("clock_offset_source_artifact_sha256_mismatch")
+    return (offset if not probs else None), probs
+
+
+def _check_source_record(
+    sym: str, tp: Mapping[str, Any], rec: Any, *,
+    clock_offset: Decimal | None, caller_epoch_ns: int | None, caller_threshold_ms: int | None,
+) -> dict[str, list[str]]:
+    """Prove the bound action's price evidence actually belongs to its source WS
+    per-symbol record, and recompute freshness with the EXACT producer formula +
+    authoritative offset. Returns ``{"ws": [...], "temporal": [...]}``. Never raises."""
+    out: dict[str, list[str]] = {"ws": [], "temporal": []}
+    if not isinstance(rec, Mapping):
+        out["ws"].append(f"{sym}:source_symbol_missing")
+        return out
+    try:
+        pe = _as_map(tp.get("price_evidence"))
+        if str(rec.get("symbol", "")).strip().upper() != sym:
+            out["ws"].append(f"{sym}:source_record_symbol_mismatch")
+        if str(rec.get("evidence_status", "")) != ws.WS_PRICE_TIMESTAMP_EVIDENCE_COMPLETE:
+            out["ws"].append(f"{sym}:source_record_not_evidence_complete")
+        # Field-for-field membership: the bound evidence must equal the source record.
+        membership = [
+            ("topic", rec.get("topic"), pe.get("topic")),
+            ("selected_price_field", rec.get("selected_price_field"), pe.get("selected_price_field")),
+            ("selected_price", rec.get("selected_price"), pe.get("selected_price")),
+            ("message_type", rec.get("selected_price_source_message_type"), pe.get("message_type")),
+            ("exchange_ts_ms", rec.get("selected_price_source_ts_ms"),
+             pe.get("exchange_data_generated_ts_ms")),
+            ("cross_sequence", rec.get("selected_price_source_cs"), pe.get("cross_sequence")),
+            ("local_received_epoch_ns", rec.get("selected_price_source_local_received_epoch_ns"),
+             pe.get("local_received_epoch_ns")),
+            ("local_received_at_utc", rec.get("selected_price_source_local_received_at_utc"),
+             pe.get("local_received_at_utc")),
+            ("local_monotonic_received_ns",
+             rec.get("selected_price_source_local_monotonic_received_ns"),
+             pe.get("local_monotonic_received_ns")),
+            ("connection_generation", rec.get("selected_price_source_connection_generation"),
+             pe.get("connection_generation")),
+            ("source_message_fingerprint", rec.get("selected_price_source_message_fingerprint"),
+             pe.get("source_message_fingerprint")),
+        ]
+        for name, src_v, pe_v in membership:
+            if src_v != pe_v:
+                out["ws"].append(f"{sym}:source_record_mismatch:{name}")
+        # Independently recompute the source record's own fingerprints (producer fns).
+        if wb._recompute_evidence_fingerprint(rec) != rec.get("evidence_fingerprint"):
+            out["ws"].append(f"{sym}:source_evidence_fingerprint_mismatch")
+        recomputed_smf = ws.canonical_source_message_fingerprint(
+            symbol=rec.get("symbol"), topic=rec.get("topic"),
+            selected_price_field=rec.get("selected_price_field"),
+            selected_price=rec.get("selected_price"),
+            source_message_type=rec.get("selected_price_source_message_type"),
+            source_ts_ms=rec.get("selected_price_source_ts_ms"),
+            source_cs=rec.get("selected_price_source_cs"),
+            local_received_epoch_ns=rec.get("selected_price_source_local_received_epoch_ns"),
+            local_received_at_utc=rec.get("selected_price_source_local_received_at_utc"),
+            local_monotonic_received_ns=rec.get(
+                "selected_price_source_local_monotonic_received_ns"),
+            connection_generation=rec.get("selected_price_source_connection_generation"))
+        if recomputed_smf != rec.get("selected_price_source_message_fingerprint"):
+            out["ws"].append(f"{sym}:source_record_source_message_fingerprint_mismatch")
+
+        # EXACT authoritative-offset freshness via the producer's own function.
+        if (clock_offset is not None and caller_epoch_ns is not None
+                and caller_threshold_ms is not None):
+            fr = wb._evaluate_binding_freshness(
+                rec, binding_epoch_ns=caller_epoch_ns, clock_offset_seconds=clock_offset,
+                threshold_ms=caller_threshold_ms, future_tolerance_ms=wb.DEFAULT_FUTURE_TOLERANCE_MS)
+            if fr["binding_freshness_status"] != wb.BINDING_FRESHNESS_FRESH:
+                out["temporal"].append(
+                    f"{sym}:authoritative_freshness_{fr['binding_freshness_status']}:{fr.get('reason')}")
+            bf = _as_map(tp.get("binding_freshness"))
+            if str(bf.get("binding_freshness_status", "")) != wb.BINDING_FRESHNESS_FRESH:
+                out["temporal"].append(f"{sym}:stored_binding_status_not_fresh")
+            if bf.get("binding_freshness_threshold_ms") != caller_threshold_ms:
+                out["temporal"].append(f"{sym}:stored_threshold_not_expected")
+            # Stored age must EQUAL the exact recomputation (producer precision).
+            if bf.get("evidence_age_at_binding_ms") != fr.get("evidence_age_at_binding_ms"):
+                out["temporal"].append(f"{sym}:stored_age_differs_from_authoritative_recompute")
+    except Exception as exc:  # noqa: BLE001  (narrow: per-symbol only, fail closed)
+        out["ws"].append(f"{sym}:source_record_validation_error:{type(exc).__name__}")
+    return out
+
+
+def _check_action(tp_raw: Any, *, expected_ws_fp: str, expected_ws_sha: str) -> dict[str, list[str]]:
     """Independently validate one canonical bound action.
 
     Returns a dict with three problem lists: ``action`` (evidence / price / qty /
     notional / V1-semantics / fingerprint inconsistencies), ``ws`` (per-symbol
     source-WS provenance mismatches against the caller-anchored fingerprint/sha) and
-    ``temporal`` (independent binding-time freshness + UTC/epoch integrity). Never
-    raises -- a narrow guard converts any unexpected error into an action
-    inconsistency for this symbol only."""
+    ``temporal`` (UTC/epoch integrity). Never raises -- a narrow guard converts any
+    unexpected error into an action inconsistency for this symbol only."""
     out: dict[str, list[str]] = {"action": [], "ws": [], "temporal": []}
     tp = _as_map(tp_raw)
     sym = str(tp.get("symbol", "")).strip().upper()
@@ -549,10 +630,9 @@ def _check_action(tp_raw: Any, *, expected_ws_fp: str, expected_ws_sha: str,
         if str(pe.get("source_artifact_sha256", "")) != str(expected_ws_sha):
             out["ws"].append(f"{sym}:source_artifact_sha256_not_expected")
 
-        # Independent temporal / freshness integrity.
-        out["temporal"].extend(_check_temporal(
-            sym or "<unknown>", tp, pe,
-            caller_epoch_ns=caller_epoch_ns, caller_threshold_ms=caller_threshold_ms))
+        # UTC timestamp semantics (exact authoritative freshness lives in the
+        # source-record cross-validation, which has the per-symbol source record).
+        out["temporal"].extend(_check_utc(sym or "<unknown>", pe))
     except Exception as exc:  # noqa: BLE001  (narrow: per-symbol only, fail closed)
         out["action"].append(f"{sym or '<unknown>'}:action_validation_error:{type(exc).__name__}")
     return out
@@ -580,6 +660,7 @@ def _authorization_failures(artifact: Mapping[str, Any]) -> list[str]:
 def validate_ws_bound_plan_artifact(
     artifact: Mapping[str, Any],
     *,
+    source_ws_artifact: Mapping[str, Any],
     expected_policy_id: str,
     expected_strategy_id: str,
     expected_run_date: str,
@@ -746,6 +827,39 @@ def validate_ws_bound_plan_artifact(
                 and f != expected_freshness_threshold_ms:
             _fail(WS_BOUND_PLAN_STALE, "binding_audit_threshold_not_expected")
 
+    # --- Stage 4c: source WS artifact self-validation + authoritative offset ---
+    # The original source WS evidence artifact is independently validated with the
+    # producer's own compatibility gate, anchored to the caller fingerprint/sha, and
+    # the authoritative clock offset is extracted from it (never approximated).
+    src = _as_map(source_ws_artifact)
+    try:
+        gate = wb.validate_ws_artifact_compatibility(
+            src, requested_strategy_date=expected_run_date,
+            active_policy=expected_policy_id, active_strategy=expected_strategy_id,
+            strategy_symbols=list(expected_symbols),
+            strategy_symbol_source_fingerprint=None)
+    except Exception:  # noqa: BLE001
+        gate = {"status": "ERROR", "failures": ["source_ws_artifact_gate_error"],
+                "ws_artifact_fingerprint_recomputes": False}
+    if gate.get("status") != wb.WS_ARTIFACT_COMPATIBILITY_OK:
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH,
+              "source_ws_artifact_incompatible:" + ";".join(gate.get("failures", [])[:12]))
+    if not gate.get("ws_artifact_fingerprint_recomputes"):
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "source_ws_artifact_fingerprint_does_not_recompute")
+    if str(src.get("artifact_fingerprint", "")) != exp_ws_fp:
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, "source_ws_artifact_fingerprint_not_expected")
+    # The source artifact itself must carry no execution authorization / order activity.
+    for f in ("execution_batch_authorized", "execution_ready", "sender_reachable"):
+        if src.get(f) is not False:
+            _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, f"source_ws_artifact_{f}_not_false")
+    for f in ("order_post_count", "amend_post_count", "cancel_post_count", "live_order_post_count"):
+        if src.get(f) not in (0, None) and src.get(f) != 0:
+            _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, f"source_ws_artifact_{f}_nonzero")
+    offset, offset_problems = extract_authoritative_clock_offset(
+        src, expected_ws_artifact_sha256=exp_ws_sha)
+    for p in offset_problems:
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, f"source_ws_artifact_{p}")
+
     # --- Stage 5: symbol set + 25/25 structure + symbol-set fingerprint --------
     planner = _as_map(cbp_map.get("planner"))
     targets = _as_list(planner.get("target_positions"))
@@ -780,17 +894,28 @@ def validate_ws_bound_plan_artifact(
         _fail(WS_BOUND_PLAN_ACTION_INCONSISTENT,
               f"v1_capital_base_not_10000:{sizing.get('capital_base_usd')}")
 
+    # Index the validated source artifact's per-symbol evidence (producer helper).
+    src_by_symbol, src_dups = wb._index_ws_evidence(src)
+    if src_dups:
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, f"duplicate_source_symbols:{sorted(src_dups)}")
+
     action_problems: list[str] = []
     ws_prov_problems: list[str] = []
     temporal_problems: list[str] = []
     caller_epoch = expected_binding_epoch_ns if epoch_ok else None
     caller_threshold = expected_freshness_threshold_ms if threshold_ok else None
     for t in targets:
-        res = _check_action(t, expected_ws_fp=exp_ws_fp, expected_ws_sha=exp_ws_sha,
-                            caller_epoch_ns=caller_epoch, caller_threshold_ms=caller_threshold)
+        res = _check_action(t, expected_ws_fp=exp_ws_fp, expected_ws_sha=exp_ws_sha)
         action_problems.extend(res["action"])
         temporal_problems.extend(res["temporal"])
         ws_prov_problems.extend(res["ws"])
+        sym = str(_as_map(t).get("symbol", "")).strip().upper()
+        src_rec = src_by_symbol.get(sym)
+        res2 = _check_source_record(
+            sym or "<unknown>", _as_map(t), src_rec,
+            clock_offset=offset, caller_epoch_ns=caller_epoch, caller_threshold_ms=caller_threshold)
+        ws_prov_problems.extend(res2["ws"])
+        temporal_problems.extend(res2["temporal"])
     if temporal_problems:
         _fail(WS_BOUND_PLAN_STALE, "; ".join(temporal_problems[:40]))
     if action_problems:
@@ -888,4 +1013,5 @@ __all__ = [
     "WS_BOUND_PLAN_ACTION_INCONSISTENT", "WS_BOUND_PLAN_AUTHORIZATION_PRESENT",
     "WsBoundPlanConsumerError", "ValidatedBoundAction", "BoundPlanConsumerResult",
     "load_ws_bound_plan_artifact", "validate_ws_bound_plan_artifact",
+    "extract_authoritative_clock_offset",
 ]
