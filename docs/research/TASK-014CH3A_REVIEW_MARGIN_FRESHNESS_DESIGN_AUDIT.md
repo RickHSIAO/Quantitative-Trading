@@ -394,3 +394,199 @@ while account feasibility = UNAVAILABLE_NOT_EVALUATED; CH3 PASS never sets
 notionals remain `-200` in review rows; zero readiness/gate/native-exec/sender/Pilot/Notion/
 Discord calls (counter-raisers); no REST fallback; default native-daily + CH2 Plan-only
 byte-unchanged; no output/temp on failure; no-clobber destination-race behavior.
+
+---
+
+# FIX2 — Historical-artifact anchors & review semantics (authoritative; supersedes FIX1 §F1–F11 where they conflict)
+
+FIX1 still (a) derived `expected_source_ws_*` only from the source bytes being reviewed,
+(b) did not externally pin the canonical Plan, (c) labelled binding-time freshness too
+broadly as "no stale risk", and (d) left the projected-margin rate unresolved. This FIX2
+section is the binding CH3 design.
+
+## G1. Source-WS external anchors are REQUIRED (not self-derived)
+
+Add REQUIRED caller-owned `expected_source_ws_artifact_sha256` and
+`expected_source_ws_artifact_fingerprint`. Independent source: the trusted CH2 invocation
+summary (it already prints `source_ws_artifact_sha256` and `source_ws_artifact_fingerprint`)
+or a preserved CH2 anchor manifest — NEVER the wrapper, NEVER the source artifact being
+reviewed. CH3 pure core:
+1. compute `source_file_sha256` from the exact supplied source bytes;
+2. recompute `source_logical_fingerprint` from the parsed exact bytes;
+3. compare BOTH to the externally supplied expected values;
+4. pass the externally supplied values into CH1;
+5. on `computed_from_current_source_bytes != external expected anchor` ⇒ terminal
+   `WS_BOUND_PLAN_REVIEW_PROVENANCE_FAILED` (before any review).
+
+Rationale: FIX1 made the source bytes "authoritative for what they are", but *what they are*
+must equal an externally-trusted identity, or the source artifact silently defines its own
+acceptance.
+
+## G2. Externally pin the canonical Plan; wrapper fp is NOT externally pinned (today)
+
+Add REQUIRED caller-owned `expected_canonical_bound_plan_fingerprint` (CH2 summary exposes
+`canonical_bound_plan_fingerprint`). The CH2 summary does **NOT** expose the binder
+`wrapper_fingerprint` (the `WsBoundPlanOnlyResult` carries no wrapper fp). **Trust model:**
+- the external `expected_canonical_bound_plan_fingerprint` pins the *intended* canonical Plan;
+- CH1 independently recomputes the wrapper fingerprint and checks wrapper safety fields
+  (self-consistency only);
+- the wrapper fingerprint is **NOT** treated as externally anchored until a future trusted
+  manifest exposes it. An optional `expected_wrapper_fingerprint` slot is reserved (validated
+  iff the manifest provides it). We do **not** claim the wrapper is externally pinned.
+
+## G3. Final complete external-anchor table
+
+| Anchor | Externally-supplied expected value (source) | Recomputed from current exact bytes | Comparison that must pass |
+|---|---|---|---|
+| policy ID | fixed `wb.ACTIVE_STRATEGY_NATIVE_V1_POLICY` | n/a | wrapper/cbp policy == constant (in CH1) |
+| strategy ID | fixed `wb.EXPECTED_STRATEGY_NAME` | n/a | == constant (CH1) + Forward Record `forward_summary.strategy` |
+| run date | manifest/CLI `--date` | n/a | == pinned date; cross-checked to symbol-source date |
+| original seed-Plan fp | manifest/CLI (CH2 `original_plan_fingerprint`) | — | == cbp.original_plan_fingerprint (CH1) |
+| source WS file SHA256 | manifest/CLI `expected_source_ws_artifact_sha256` | `wb.compute_file_sha256(source_bytes)` | computed == external == wrapper/cbp stored (CH1) |
+| source WS logical fp | manifest/CLI `expected_source_ws_artifact_fingerprint` | `ws._fingerprint(parsed_source−artifact_fingerprint)` | computed == external == wrapper/cbp stored (CH1) |
+| canonical bound-Plan fp | manifest/CLI `expected_canonical_bound_plan_fingerprint` | recomputed by CH1 from cbp | external == CH1-recomputed |
+| wrapper fp | **not available** (CH2 does not expose) | recomputed by CH1 from wrapper | CH1 self-consistency only; external check reserved |
+| binding epoch ns | REQUIRED manifest/CLI (CH2 `binding_epoch_ns`) | — | == cbp.binding_epoch_ns (CH1) |
+| freshness threshold ms | REQUIRED manifest/CLI (CH2 `freshness_threshold_ms`) | — | == stored thresholds (CH1); >0, ≤10_000 |
+| 50-symbol set + set fp | manifest/CLI symbol-set fp; symbols from pinned Forward Record date OR `--expected-strategy-symbols-json` | `ws.canonical_strategy_symbol_set_fingerprint(symbols)` | computed == external; symbol-source artifact SHA == manifest |
+
+No artifact defines its own expected identity: every "expected" value is external; every
+"recomputed" value is from the current exact bytes; review proceeds only if they match.
+
+## G4. CLI anchor design → **M2 (single trusted manifest)**
+
+Choose **M2**: one `--ws-bound-plan-anchor-manifest-json <PATH>` carrying the trusted CH2
+anchors (NOT the full Plan): `schema`, `schema_version`, `original_plan_fingerprint`,
+`canonical_bound_plan_fingerprint`, `source_ws_artifact_sha256`,
+`source_ws_artifact_fingerprint`, `binding_epoch_ns`, `freshness_threshold_ms`, `policy`,
+`strategy`, `run_date`, `expected_symbol_set_fingerprint`, optional `wrapper_fingerprint`.
+CH3 reads exact manifest bytes, requires the object root + supported `schema`/`schema_version`,
+recomputes a manifest logical fingerprint, and treats the manifest values as the external
+anchors. **Produced without changing CH2 in this doc-only task:** CH2 already prints all
+these fields in its JSON summary; the operator captures that trusted stdout (or a curated
+subset) into the manifest file at CH2 time. (A future optional CH2 enhancement could emit a
+dedicated manifest artifact; not required now.) M1 (many individual flags) is rejected as the
+default — higher transcription-error surface, no atomic capture.
+
+## G5. Freshness semantics — binding-time only
+
+CH3 **replays the CH1 freshness test at the historical `binding_epoch_ns`**; it does not
+assess present market freshness. Result fields:
+```text
+binding_time_freshness_verified   = True
+current_market_freshness_status   = NOT_EVALUATED
+current_market_freshness_checked   = False
+execution_readiness                = False
+```
+Correction to FIX1/CH3A: the earlier "no stale-time risk because the binding epoch is frozen"
+statement is **withdrawn**. The review may run hours/days/weeks later; a PASS proves the
+**historical** evidence was valid at its binding epoch, NOT that the Plan is presently
+executable. Any future execution path MUST separately collect and revalidate *current*
+evidence (and is out of CH3 scope).
+
+## G6. Projected-margin rate anchor → **Option B (no independent offline rate)**
+
+Verified sources: binder `_rebuild_projected_margin` uses
+`applicable_imr = review.get("applicable_initial_margin_rate")`, and
+`md.build_projected_margin_model(..., applicable_initial_margin_rate=...)` only projects
+strategy IM when an authoritative rate (>0) is supplied — otherwise it emits blocker
+`APPLICABLE_INITIAL_MARGIN_RATE_UNAVAILABLE` and a PARTIAL/UNAVAILABLE status. In the
+WS-bound Plan path `applicable_initial_margin_rate` is `None` (accountIMRate is private/account
+data, not applied to the 50-position strategy); maintenance-margin likewise needs account
+data. **No independent offline rate exists** (no wrapper-trusted, no private API, no REST, no
+Pilot). Therefore CH3 must NOT claim projected-margin completion:
+```text
+offline_exposure_review_complete          = True
+offline_margin_arithmetic_review_complete = True
+offline_projected_margin_rate_status      = UNAVAILABLE_NO_INDEPENDENT_RATE
+offline_projected_margin_review_complete  = False
+account_margin_feasibility_status         = UNAVAILABLE_NOT_EVALUATED
+execution_readiness                        = False
+```
+A completion boolean is never set True merely because a helper returned deterministically.
+(This supersedes FIX1 §F7, which incorrectly set `offline_projected_margin_review_complete=True`.)
+
+## G7. CH3 PASS semantics + status model
+
+`WS_BOUND_PLAN_REVIEW_PASS` means ONLY: all external artifact anchors matched; CH1 historical
+binding validation passed; the immutable exposure review passed; offline arithmetic checks
+passed; no input mutation occurred (pre/post wrapper + post canonical fps identical); all
+forbidden side-effect counters are zero. It does **NOT** mean current market freshness,
+account-margin sufficiency, risk-tier sufficiency, execution readiness, or order authorization.
+
+**Status model (chosen):** retain a single overall **PASS** that always carries the explicit
+partial/unavailable margin + freshness status fields above; do **not** introduce a separate
+`WS_BOUND_PLAN_REVIEW_PARTIAL`. Justification: the projected-rate/account/current-freshness
+"unavailable" states are the **expected, designed** offline outcome (not a degradation), so
+modelling them as explicit always-present fields is deterministic and avoids a PASS/PARTIAL
+ambiguity; genuine defects (anchor mismatch, CH1 fail, arithmetic fail, mutation) are distinct
+terminal failure statuses.
+
+## G8. Exact-bytes trust model (corrected)
+
+Record separately and never conflate: `wrapper_file_sha256` (computed from current wrapper
+bytes), `source_file_sha256` (computed from current source bytes), `expected_source_ws_sha256`
+(external), `expected_canonical_bound_plan_fingerprint` (external), `expected_source_ws_fingerprint`
+(external), and the recomputed logical fingerprints. "Computed from current file" is evidence
+of *what the bytes are*; "external expected identity" is *what they must be*; both are recorded,
+and review proceeds only if computed == external (and CH1 == external).
+
+## G9. Reproducible symbol source (corrected)
+
+The Forward Record is offline but is **runtime-generated and may be mutated / extended with
+newer dates** — it is NOT necessarily tracked or immutable. Withdraw any FIX1 implication that
+it is. Require ONE of:
+- (a) derive symbols from the Forward Record **for the pinned `run_date`** (NOT
+  `forward_summary.latest_date`) AND require the `<YYYYMMDD>_positions.parquet`
+  (+ `forward_summary.json`) SHA256 to equal the hash recorded in the trusted anchor manifest; OR
+- (b) a REQUIRED `--expected-strategy-symbols-json <PATH>` whose SHA256 / canonical symbol-set
+  fingerprint equals the manifest's `expected_symbol_set_fingerprint`.
+Either way the symbol set is pinned to externally-preserved hashes and stays reproducible after
+newer Forward Record dates exist; CH3 never silently uses whatever `latest_date` happens to be.
+
+## G10. Corrected CLI (M2)
+
+Mode (mutually exclusive with `--ws-bound-plan-only`): `--ws-bound-plan-review-only`. Required:
+`--ws-bound-plan-wrapper-json <IN>`, `--ws-ticker-evidence-json <IN>`,
+`--ws-bound-plan-review-output-json <OUT>`, `--ws-bound-plan-anchor-manifest-json <IN>`
+(trusted external anchors), and the symbol source — pinned Forward Record (default, via the
+manifest-recorded hash + `run_date`) or `--expected-strategy-symbols-json <IN>`. All input and
+output paths pairwise distinct (realpath/normcase); review-out ≠ any input. Output uses the
+existing CH2 race-safe atomic create-if-absent / no-clobber writer. Rejected flags (deterministic
+`_INPUT_INVALID`): `--ws-bound-plan-only`, `--send-orders-to-demo`, `--advance-on-success`,
+`--reconcile-outputs-only`, `--allow-notion-network`, `--allow-discord-network`,
+`--test-injected-actions-json`.
+
+## G11. Corrected envelope fields
+
+Distinguish: current-file computed hashes (`wrapper_file_sha256`, `source_file_sha256`);
+external expected anchors (`expected_source_ws_sha256`, `expected_source_ws_fingerprint`,
+`expected_canonical_bound_plan_fingerprint`, `expected_original_plan_fingerprint`,
+`expected_symbol_set_fingerprint`, `binding_epoch_ns`, `freshness_threshold_ms`,
+`anchor_manifest_fingerprint`); recomputed logical fingerprints (`wrapper_logical_fingerprint`,
+`source_ws_logical_fingerprint`, `canonical_bound_plan_fingerprint`);
+`binding_time_freshness_verified=true`; `current_market_freshness_status=NOT_EVALUATED`,
+`current_market_freshness_checked=false`; `offline_exposure_totals` (long 5,000 / short_abs 5,000
+/ gross 10,000 / net 0); `offline_margin_arithmetic_review_complete=true`;
+`offline_projected_margin_rate_status=UNAVAILABLE_NO_INDEPENDENT_RATE`;
+`offline_projected_margin_review_complete=false`;
+`account_margin_feasibility_status=UNAVAILABLE_NOT_EVALUATED`; `execution_readiness=false`; and
+`readiness_called/execution_gate_called/native_execution_called/pilot_advanced=false` + order/
+sender/reporting counters=0. No complete Plan is embedded (references by fingerprint/SHA only).
+
+## G12. Corrected future test matrix (additions)
+
+source bytes internally valid but external expected SHA wrong → PROVENANCE_FAILED; source
+logical fp internally valid but external expected fp wrong → PROVENANCE_FAILED; wrapper/canonical
+internally valid but external `expected_canonical_bound_plan_fingerprint` wrong → fail; a wrapper
+AND source mutually resealed together are still rejected by the unchanged external anchors;
+missing anchor manifest / required flags → INPUT_INVALID; historical binding freshness PASS while
+`current_market_freshness_status=NOT_EVALUATED`; a review executed hours/days later does not claim
+current freshness; projected-margin rate missing/untrusted →
+`offline_projected_margin_rate_status=UNAVAILABLE_NO_INDEPENDENT_RATE`;
+`offline_projected_margin_review_complete` stays False when the rate is unavailable; a mutable/newer
+Forward Record cannot silently replace the expected symbol set (SHA/run-date pinned); exact symbol
+manifest/hash mismatch → fail; CH3 PASS never implies execution readiness; gross 10,000 / net 0 /
+long 5,000 / short_abs 5,000; signed short notionals remain `-200`; zero readiness/gate/native-exec
+/sender/Pilot/Notion/Discord calls; no REST fallback; default + CH2 byte-unchanged; no output/temp
+on failure; no-clobber race.

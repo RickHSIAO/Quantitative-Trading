@@ -72,18 +72,22 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   **fresh-path, no-clobber** policy (the atomic writer independently refuses an
   existing destination; only the task-created temp is removed on failure).
 - The **default** native-daily behavior (flag absent) is unchanged.
-- CH3A design audit complete, **including the FIX1 external-anchor & margin-semantics
-  correction** (code-read-only): see
-  `docs/research/TASK-014CH3A_REVIEW_MARGIN_FRESHNESS_DESIGN_AUDIT.md` (FIX1 section is
-  authoritative). No runtime wiring changed; CH2 (`--ws-bound-plan-only`) remains the
-  latest executable terminal boundary. Corrected next stage (Option B): a separate
-  `--ws-bound-plan-review-only` mode taking EXACT wrapper + source bytes, with every CH1
-  expected value sourced independently of the wrapper (fixed policy/strategy constants;
-  `--date` cross-checked to the Forward Record; required `--expected-original-plan-fingerprint`,
-  `--ws-binding-epoch-ns`, `--ws-binding-freshness-threshold-ms`; expected 50-symbol set from
-  the offline Forward Record source or explicit JSON). Offline exposure/projected-margin are
-  separated from account feasibility (`UNAVAILABLE_NOT_EVALUATED`); CH3 PASS is never
-  execution-ready. Execution remains unauthorized; Pilot remains 0/7.
+- CH3A design audit complete, including **FIX1** (external anchors & margin semantics) and
+  **FIX2** (historical-artifact anchors & review semantics) — code-read-only; see
+  `docs/research/TASK-014CH3A_REVIEW_MARGIN_FRESHNESS_DESIGN_AUDIT.md` (the **FIX2** section
+  is authoritative). No runtime wiring changed; CH2 (`--ws-bound-plan-only`) remains the
+  latest executable terminal boundary. Corrected next stage (Option B + manifest **M2**): a
+  separate `--ws-bound-plan-review-only` mode taking EXACT wrapper + source bytes plus a
+  trusted external `--ws-bound-plan-anchor-manifest-json` (captured from the CH2 summary).
+  Source/canonical/source-WS SHA+fingerprint identities are **externally pinned** (the
+  wrapper fp is NOT exposed by CH2, so it is only internally self-consistent, not externally
+  anchored). Freshness is **binding-time only** (`binding_time_freshness_verified=True`;
+  `current_market_freshness_status=NOT_EVALUATED`) — a review may run much later and PASS
+  proves only historical validity, not present executability. No independent offline
+  projected-margin rate exists, so `offline_projected_margin_review_complete=False`
+  (`UNAVAILABLE_NO_INDEPENDENT_RATE`); account feasibility `UNAVAILABLE_NOT_EVALUATED`; the
+  expected 50-symbol set is pinned to externally-preserved hashes (run-date, not latest_date).
+  CH3 PASS is never execution-ready. Execution remains unauthorized; Pilot remains 0/7.
 
 ## Repository Cleanup
 
