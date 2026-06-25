@@ -779,6 +779,34 @@ def assert_no_credentials(payload: Any, *, secret_values: Sequence[str] = ()) ->
     _walk(payload)
 
 
+def seal_artifact_fingerprint(
+    artifact: dict[str, Any], *, verify_no_credential_leak: bool = False,
+    secret_values: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Single FINAL sealing boundary for a WS evidence artifact.
+
+    Verifies credentials (optionally including known secret VALUES), persists the
+    ``credential_leak_check`` field when verifying, removes any stale
+    ``artifact_fingerprint``, and computes the canonical fingerprint over the FINAL
+    persisted payload (excluding only ``artifact_fingerprint``). The caller MUST NOT
+    mutate the returned artifact afterward -- the stored fingerprint always equals
+    ``_fingerprint({k: v for k, v in artifact.items() if k != 'artifact_fingerprint'})``.
+
+    On a credential leak, ``assert_no_credentials`` raises ``WsEndpointError`` BEFORE any
+    field is added or any fingerprint is (re)computed, so no falsely-sealed artifact is
+    produced.
+    """
+    if verify_no_credential_leak:
+        assert_no_credentials(artifact, secret_values=secret_values)
+        artifact["credential_leak_check"] = "NO_CREDENTIAL_VALUE_OR_KEY_PRESENT"
+    # Final unconditional credential safety over the COMPLETE persisted payload.
+    assert_no_credentials(artifact, secret_values=secret_values)
+    artifact.pop("artifact_fingerprint", None)
+    artifact["artifact_fingerprint"] = _fingerprint(
+        {k: v for k, v in artifact.items() if k != "artifact_fingerprint"})
+    return artifact
+
+
 def build_subscription_message(symbols: Sequence[str], *, req_id: str | None = None,
                                ) -> dict[str, Any]:
     """Build a deterministic public subscription message.
@@ -1739,11 +1767,12 @@ class PublicWsTickerEvidenceBuilder:
             "cancel_post_count": 0,
             "live_order_post_count": 0,
         }
-        # The artifact must never carry a credential key/value.
-        assert_no_credentials(artifact)
-        artifact["artifact_fingerprint"] = _fingerprint(
-            {k: v for k, v in artifact.items() if k != "artifact_fingerprint"})
-        return artifact
+        # Final seal (single boundary). No credential check flag here: the schema is
+        # byte-identical to before for every non-collector caller. The collector re-seals
+        # via seal_artifact_fingerprint(..., verify_no_credential_leak=True) AFTER adding
+        # the persisted credential_leak_check field, so the stored fingerprint always
+        # covers every persisted field.
+        return seal_artifact_fingerprint(artifact)
 
 
 __all__ = [
@@ -1756,7 +1785,8 @@ __all__ = [
     "WS_SEQUENCE_REGRESSION", "WS_TIMESTAMP_REGRESSION", "WS_SYMBOL_TOPIC_MISMATCH",
     "WS_CONNECTION_GENERATION_CONFLICT", "WS_PRICE_FIELD_SEMANTICS_MISMATCH",
     "WsEndpointError", "assert_public_endpoint_allowed", "assert_public_topic",
-    "assert_no_credentials", "build_subscription_message", "validate_linear_symbol",
+    "assert_no_credentials", "seal_artifact_fingerprint",
+    "build_subscription_message", "validate_linear_symbol",
     "derive_required_symbol_universe", "SymbolEvidence",
     "PublicWsTickerEvidenceBuilder",
     # TASK-014CF_FIX1 authoritative source / gate / dependency

@@ -43,6 +43,20 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
 
 ## WebSocket Evidence Binding
 
+- CH3C2_FIX1: WS evidence artifact integrity fixed. The collector previously set
+  `credential_leak_check` AFTER `build_artifact()` had already computed
+  `artifact_fingerprint`, so the persisted artifact's stored fingerprint did not
+  recompute when `--verify-no-credential-leak` was enabled. Future collector artifacts
+  now seal the fingerprint only after every persisted field is final, via a single
+  boundary `demo_public_ws_ticker_evidence.seal_artifact_fingerprint(...)` (verifies
+  credentials, persists `credential_leak_check`, includes it in the fingerprint material,
+  and forbids post-seal mutation). Old runtime artifacts (e.g.
+  `outputs/ws_ticker_evidence_20260622_fix3.json`, `outputs/ch3c2_20260624/*.json`) were
+  NOT rewritten — they remain immutable historical evidence of the former defect.
+  `authenticated`/`execution_ready`/`execution_batch_authorized`/`sender_reachable` stay
+  false and order/amend/cancel/live counts stay 0; execution remains unauthorized; Pilot
+  remains 0/7.
+
 - CG binding code complete in `src/demo_strategy_native_ws_price_binding.py`
 - Provides `bind_plan_prices_to_ws_evidence()`, `build_ws_bound_plan_artifact()`,
   `canonical_bound_plan_actions()`

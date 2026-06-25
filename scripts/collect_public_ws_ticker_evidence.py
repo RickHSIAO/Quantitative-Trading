@@ -459,15 +459,18 @@ def main(argv: list[str] | None = None) -> int:
         completion_meta=collect_meta.get("completion_meta"),
     )
 
-    # ---- credential-leak verification (hard abort on failure) ----
+    # ---- credential-leak verification + FINAL fingerprint seal (hard abort on
+    # failure). The credential_leak_check field is persisted AND included in the
+    # fingerprint material by re-sealing here, superseding build_artifact's earlier
+    # seal. After this point `artifact` is final -- NO further mutation occurs. ----
     if args.verify_no_credential_leak:
         secret_values = [os.environ.get(n, "") for n in _CREDENTIAL_ENV_NAMES]
         try:
-            ws.assert_no_credentials(artifact, secret_values=secret_values)
+            artifact = ws.seal_artifact_fingerprint(
+                artifact, verify_no_credential_leak=True, secret_values=secret_values)
         except ws.WsEndpointError as exc:
             print(f"ERROR: credential safety failure: {exc}", file=sys.stderr)
             return ws.EXIT_CREDENTIAL_SAFETY
-        artifact["credential_leak_check"] = "NO_CREDENTIAL_VALUE_OR_KEY_PRESENT"
 
     # ---- write artifact (still written on a safe non-zero evidence result) ----
     if args.out:
