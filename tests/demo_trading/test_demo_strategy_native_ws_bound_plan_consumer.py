@@ -79,6 +79,19 @@ def _src_rec(kw, sym):
                if str(r["symbol"]).strip().upper() == str(sym).strip().upper())
 
 
+def _set_authoritative_offset(kw, value):
+    """Set BOTH the top-level and nested authoritative clock offset consistently. The
+    shared CG fixture now carries an authoritative nested ``clock_offset_provenance``
+    block (with the CE source-SHA anchor); a temporal test must move both offsets
+    together so it isolates freshness recomputation instead of tripping the nested
+    duplicate-offset consistency check."""
+    src = kw["source_ws_artifact"]
+    src["clock_offset_seconds"] = str(value)
+    prov = src.get("clock_offset_provenance")
+    if isinstance(prov, dict):
+        prov["estimated_local_vs_exchange_clock_offset_seconds"] = str(value)
+
+
 def _reseal_source(kw):
     """Recompute the source WS artifact's own fingerprint (producer convention)."""
     src = kw["source_ws_artifact"]
@@ -105,7 +118,7 @@ def _rebind_all_temporal(w, kw, *, ts_delta_ms, offset_seconds):
     all fingerprints. The clock offset is artifact-global, so all 50 must agree."""
     binding_ms = int(kw["expected_binding_epoch_ns"] / 1e6)
     new_ts = binding_ms + ts_delta_ms
-    kw["source_ws_artifact"]["clock_offset_seconds"] = str(offset_seconds)
+    _set_authoritative_offset(kw, offset_seconds)
     for tp in w["canonical_bound_plan"]["planner"]["target_positions"]:
         rec = _src_rec(kw, tp["symbol"])
         rec["selected_price_source_ts_ms"] = new_ts
@@ -855,7 +868,7 @@ def test_stale_evidence_with_stored_fresh_retained_fails_closed():
     # EXACT producer age exceed the strict threshold. Every stored FRESH field is
     # retained; the consumer recomputes with the authoritative offset and rejects it.
     w, kw = _correct_bundle()
-    kw["source_ws_artifact"]["clock_offset_seconds"] = "20"
+    _set_authoritative_offset(kw, "20")
     _realign_source(w, kw)
     assert w["execution_grade_freshness_complete"] is True  # stored field retained
     r = _validate(w, kw)
@@ -877,7 +890,7 @@ def test_evidence_timestamp_later_than_binding_fails_closed():
     # A large negative authoritative offset places the estimated-exchange binding time
     # before the evidence -> EXACT age is in the future beyond the tolerance.
     w, kw = _correct_bundle()
-    kw["source_ws_artifact"]["clock_offset_seconds"] = "-20"
+    _set_authoritative_offset(kw, "-20")
     _realign_source(w, kw)
     r = _validate(w, kw)
     _assert_failed(r)
@@ -1035,7 +1048,7 @@ def test_source_clock_offset_field_tampered_fails_closed():
     # Small offset change keeps the exact age under threshold, but the stored age was
     # computed with the original offset -> exact recomputation disagrees -> STALE.
     w, kw = _correct_bundle()
-    kw["source_ws_artifact"]["clock_offset_seconds"] = "0.5"
+    _set_authoritative_offset(kw, "0.5")
     _realign_source(w, kw)
     r = _validate(w, kw)
     _assert_failed(r)
@@ -1064,6 +1077,149 @@ def test_clock_offset_provenance_not_authoritative_fails_closed():
     r = _validate(w, kw)
     _assert_failed(r)
     assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+
+
+# ===========================================================================
+# CH3C2_FIX3 -- OUTER WS file SHA (A) vs INNER CE Plan source SHA (B) lineage
+#
+# A and B are DISTINCT lineage levels. A correct artifact has A != B; the consumer
+# validates each independently and NEVER compares the inner CE SHA to the outer WS
+# SHA. Previously the nested clock-offset CE SHA was compared to the outer WS file
+# SHA, so a correct artifact (A != B) was wrongly rejected.
+# ===========================================================================
+
+def _ce_anchor(kw, block, field, value):
+    """Mutate one nested CE-source SHA anchor on the source WS artifact."""
+    kw["source_ws_artifact"][block][field] = value
+
+
+def test_outer_ws_sha_and_inner_ce_sha_distinct_A_neq_B_passes():
+    w, kw = _correct_bundle()
+    outer_a = kw["expected_ws_artifact_sha256"]   # outer WS evidence file SHA (A)
+    inner_b = cg.CE_SOURCE_SHA                     # inner CE Plan source SHA (B)
+    assert outer_a != inner_b                      # DISTINCT lineage levels by construction
+    ce_sha, probs = consumer.extract_ce_source_artifact_sha256(kw["source_ws_artifact"])
+    assert ce_sha == inner_b and probs == []       # all four nested anchors agree on B
+    r = _validate(w, kw)                           # old conflation would reject this
+    assert r.status == consumer.WS_BOUND_PLAN_CONSUMER_PASS
+    assert len(r.validated_actions) == 50
+    longs = sum(1 for a in r.validated_actions if a.side == "long")
+    shorts = sum(1 for a in r.validated_actions if a.side == "short")
+    assert longs == 25 and shorts == 25
+    assert r.execution_grade_freshness_complete is True
+    assert r.source_ws_artifact_sha256 == outer_a  # result still reports the OUTER WS sha
+
+
+def test_inner_ce_anchors_may_equal_outer_ws_sha_without_being_compared():
+    # Even when every CE anchor coincidentally equals the OUTER WS sha, the consumer
+    # passes because the inner CE SHA is checked for internal agreement, never against A.
+    w, kw = _correct_bundle()
+    a = kw["expected_ws_artifact_sha256"]
+    for block, field in (("clock_offset_provenance", "clock_offset_source_artifact_sha256"),
+                         ("source_evidence", "ce_source_artifact_sha256"),
+                         ("legacy_position_provenance", "ce_source_artifact_sha256"),
+                         ("strategy_source_provenance", "ce_source_artifact_sha256")):
+        _ce_anchor(kw, block, field, a)
+    _realign_source(w, kw)
+    assert _validate(w, kw).status == consumer.WS_BOUND_PLAN_CONSUMER_PASS
+
+
+# --- inner CE lineage tamper (each fails closed) ---------------------------
+
+def test_clock_offset_ce_sha_differs_from_source_evidence_fails_closed():
+    w, kw = _correct_bundle()
+    _ce_anchor(kw, "clock_offset_provenance", "clock_offset_source_artifact_sha256",
+               "sha256:" + "ab" * 32)
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("ce_source_lineage_sha_disagreement" in b for b in r.blockers)
+
+
+def test_legacy_position_ce_sha_differs_fails_closed():
+    w, kw = _correct_bundle()
+    _ce_anchor(kw, "legacy_position_provenance", "ce_source_artifact_sha256",
+               "sha256:" + "cd" * 32)
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("ce_source_lineage_sha_disagreement" in b for b in r.blockers)
+
+
+def test_strategy_provenance_ce_sha_differs_fails_closed():
+    w, kw = _correct_bundle()
+    _ce_anchor(kw, "strategy_source_provenance", "ce_source_artifact_sha256",
+               "sha256:" + "ef" * 32)
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("ce_source_lineage_sha_disagreement" in b for b in r.blockers)
+
+
+def test_source_evidence_ce_anchor_missing_fails_closed():
+    w, kw = _correct_bundle()
+    del kw["source_ws_artifact"]["source_evidence"]
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("ce_source_anchor_block_absent:source_evidence" in b for b in r.blockers)
+
+
+def test_clock_offset_ce_sha_absent_fails_closed():
+    w, kw = _correct_bundle()
+    del kw["source_ws_artifact"]["clock_offset_provenance"][
+        "clock_offset_source_artifact_sha256"]
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("ce_source_sha_absent:clock_offset_provenance" in b for b in r.blockers)
+
+
+def test_noncanonical_ce_sha_fails_closed():
+    w, kw = _correct_bundle()
+    _ce_anchor(kw, "legacy_position_provenance", "ce_source_artifact_sha256", "not-a-sha")
+    _realign_source(w, kw)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("ce_source_sha_not_canonical:legacy_position_provenance" in b
+               for b in r.blockers)
+
+
+# --- outer WS file SHA tamper (each fails closed, independent of CE lineage) --
+
+def test_wrong_caller_outer_ws_sha_fails_closed():
+    w, kw = _correct_bundle()
+    r = _validate(w, kw, expected_ws_artifact_sha256="sha256:" + "a" * 64)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("wrapper_ws_sha256_not_expected" in b for b in r.blockers)
+
+
+def test_wrapper_outer_ws_sha_tamper_fails_closed():
+    w, kw = _correct_bundle()
+    w["source_ws_artifact_sha256"] = "sha256:" + "a" * 64
+    _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("wrapper_ws_sha256_not_expected" in b for b in r.blockers)
+
+
+def test_per_action_outer_ws_sha_tamper_fails_closed():
+    w, kw = _correct_bundle()
+    tp = _first_tp(w)
+    tp["price_evidence"]["source_artifact_sha256"] = "sha256:" + "a" * 64
+    _reseal_action_evidence(tp); _reseal_cbp(w); _reseal_wrapper(w)
+    r = _validate(w, kw)
+    _assert_failed(r)
+    assert r.status == consumer.WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH
+    assert any("source_artifact_sha256_not_expected" in b for b in r.blockers)
 
 
 # --- source artifact identity ----------------------------------------------

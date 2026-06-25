@@ -25,7 +25,16 @@ REQ_ID = "cf-public-ticker"
 DATE = "2026-06-22"
 CAPITAL = 10000
 
-AUTH_LEGACY_PROV = {"symbol_universe_source_status": ws.SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE}
+# INNER CE (current-evidence) Plan source-artifact SHA. This is a DISTINCT lineage
+# level from the OUTER WS evidence file SHA (which is the sha256 of the WS JSON bytes
+# and is computed dynamically per test); the two are deliberately different so the
+# consumer cannot conflate them. All four nested CE anchors carry this exact value.
+CE_SOURCE_SHA = "sha256:" + "ce17" * 16  # canonical 64-hex, != outer WS file sha
+
+AUTH_LEGACY_PROV = {
+    "symbol_universe_source_status": ws.SYMBOL_UNIVERSE_SOURCE_AUTHORITATIVE,
+    "ce_source_artifact_sha256": CE_SOURCE_SHA,
+}
 
 
 def _universe():
@@ -52,10 +61,25 @@ def _auth_strategy_provenance(symbols=None, *, date=DATE, status=None,
         "strategy_symbols": sorted(syms),
         "strategy_symbol_source_fingerprint":
             ws.canonical_strategy_symbol_set_fingerprint(syms),
-        "ce_source_artifact_sha256": "sha256:" + "0" * 64,
+        "ce_source_artifact_sha256": CE_SOURCE_SHA,
         "ce_evidence_fingerprint": None,
         "strategy_provenance_failures": [],
     }
+
+
+def _auth_clock_offset_provenance(*, offset="0.0068", ce_sha=CE_SOURCE_SHA):
+    """Authoritative nested clock-offset provenance carrying the CE source SHA anchor.
+    ``estimated_local_vs_exchange_clock_offset_seconds`` mirrors the top-level offset."""
+    return {
+        "clock_offset_provenance_status": ws.CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE,
+        "estimated_local_vs_exchange_clock_offset_seconds": str(offset),
+        "clock_offset_source_artifact_sha256": ce_sha,
+    }
+
+
+def _auth_source_evidence(*, ce_sha=CE_SOURCE_SHA):
+    """Authoritative source-evidence block carrying the CE source SHA anchor."""
+    return {"ce_source_artifact_sha256": ce_sha}
 
 
 def build_complete_ws_artifact(*, now_ns, last_price="100.5", offset="0.0068",
@@ -81,6 +105,8 @@ def build_complete_ws_artifact(*, now_ns, last_price="100.5", offset="0.0068",
     art = b.build_artifact(
         finalize_epoch_ns=now_ns + 1_000_000, legacy_position_provenance=AUTH_LEGACY_PROV,
         strategy_source_provenance=prov,
+        clock_offset_provenance=_auth_clock_offset_provenance(offset=offset),
+        source_evidence=_auth_source_evidence(),
         dependency_status=ws.WS_CLIENT_DEPENDENCY_AVAILABLE, require_complete=True,
         allow_real_network=True,
         completion_meta={"collection_terminated_reason": ws.TERMINATED_COMPLETE_AND_ACKED})

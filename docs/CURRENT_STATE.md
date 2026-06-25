@@ -76,6 +76,27 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   were NOT rewritten. Execution remains unauthorized; Pilot remains 0/7; all
   order/amend/cancel/live counts stay 0.
 
+- CH3C2_FIX3: WS and CE provenance anchors are now validated as SEPARATE lineage levels.
+  CH1 (`demo_strategy_native_ws_bound_plan_consumer`) previously passed the OUTER WS
+  evidence file SHA into `extract_authoritative_clock_offset` and compared it to the
+  NESTED `clock_offset_provenance.clock_offset_source_artifact_sha256`, which actually
+  holds the INNER CE (current-evidence) Plan source SHA — a distinct lineage level — so a
+  correct wrapper (outer WS SHA `A` ≠ inner CE SHA `B`) was wrongly rejected with
+  `source_ws_artifact_clock_offset_source_artifact_sha256_mismatch`. Now: (1) the outer WS
+  file SHA is still independently checked against the wrapper / canonical Plan / per-action
+  evidence / caller-supplied SHA; (2) a new `extract_ce_source_artifact_sha256` derives the
+  inner CE SHA from the four independent nested anchors
+  (`clock_offset_provenance.clock_offset_source_artifact_sha256`,
+  `source_evidence.ce_source_artifact_sha256`,
+  `legacy_position_provenance.ce_source_artifact_sha256`,
+  `strategy_source_provenance.ce_source_artifact_sha256`), requiring each to be canonical
+  `sha256:<64 hex>`, present and identical; any disagreement, absence or noncanonical value
+  fails closed with a precise code, and the inner CE SHA is cross-checked against the
+  clock-offset anchor only — never against the outer WS SHA. The clock-offset helper's SHA
+  parameter is renamed `expected_ce_source_artifact_sha256` to reflect its real meaning.
+  Old runtime artifacts were NOT rewritten. Execution remains unauthorized; Pilot remains
+  0/7; all order/amend/cancel/live counts stay 0.
+
 - CG binding code complete in `src/demo_strategy_native_ws_price_binding.py`
 - Provides `bind_plan_prices_to_ws_evidence()`, `build_ws_bound_plan_artifact()`,
   `canonical_bound_plan_actions()`

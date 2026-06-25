@@ -417,12 +417,66 @@ def _check_utc(sym: str, pe: Mapping[str, Any]) -> list[str]:
     return probs
 
 
+# The four INDEPENDENT nested anchors that each carry the CE (current-evidence) Plan
+# source-artifact SHA256 the WS provenance was derived from. This is a DISTINCT lineage
+# level from the outer WS evidence file SHA and must NEVER be compared to it.
+_CE_SOURCE_SHA_ANCHORS: tuple[tuple[str, str], ...] = (
+    ("clock_offset_provenance", "clock_offset_source_artifact_sha256"),
+    ("source_evidence", "ce_source_artifact_sha256"),
+    ("legacy_position_provenance", "ce_source_artifact_sha256"),
+    ("strategy_source_provenance", "ce_source_artifact_sha256"),
+)
+
+
+def extract_ce_source_artifact_sha256(
+    source_ws_artifact: Mapping[str, Any],
+) -> tuple[str | None, list[str]]:
+    """Derive the authoritative CE source-artifact SHA256 from the WS artifact's four
+    independent nested lineage anchors (clock-offset / source-evidence / legacy-position
+    / strategy-source provenance). This is the SHA256 of the CE Plan artifact the WS
+    provenance was derived from -- a SEPARATE lineage level from the outer WS evidence
+    file SHA, and it must NEVER be compared to that outer SHA.
+
+    Returns ``(ce_sha | None, problems)``. The CE SHA is returned ONLY when every required
+    anchor is present, canonical ``sha256:<64 hex>`` and identical. Each problem is a
+    precise, stable code; lineage problems are not collapsed into one ambiguous message.
+    Pure; no I/O; never rereads the CE artifact."""
+    src = _as_map(source_ws_artifact)
+    probs: list[str] = []
+    values: list[str] = []
+    for block_name, field in _CE_SOURCE_SHA_ANCHORS:
+        block = src.get(block_name)
+        if not isinstance(block, Mapping) or not block:
+            probs.append(f"ce_source_anchor_block_absent:{block_name}")
+            continue
+        raw = block.get(field)
+        if raw is None:
+            probs.append(f"ce_source_sha_absent:{block_name}.{field}")
+            continue
+        sval = str(raw)
+        if not _is_canonical_sha(sval):
+            probs.append(f"ce_source_sha_not_canonical:{block_name}.{field}")
+            continue
+        values.append(sval)
+    if len(set(values)) > 1:
+        probs.append("ce_source_lineage_sha_disagreement")
+    if probs or not values:
+        return None, probs
+    return values[0], probs
+
+
 def extract_authoritative_clock_offset(
-    source_ws_artifact: Mapping[str, Any], *, expected_ws_artifact_sha256: str,
+    source_ws_artifact: Mapping[str, Any], *,
+    expected_ce_source_artifact_sha256: str | None,
 ) -> tuple[Decimal | None, list[str]]:
     """Extract the producer-authoritative clock offset from the validated source WS
     artifact. Returns ``(Decimal | None, problems)``; the offset is returned only when
-    every requirement holds. Reuses producer constants and Decimal parsing."""
+    every requirement holds. Reuses producer constants and Decimal parsing.
+
+    ``expected_ce_source_artifact_sha256`` is the INNER CE source-artifact SHA (see
+    :func:`extract_ce_source_artifact_sha256`), NOT the outer WS evidence file SHA: the
+    nested ``clock_offset_source_artifact_sha256`` is part of the CE lineage and is
+    cross-checked against the CE anchor, never against the outer WS SHA."""
     probs: list[str] = []
     src = _as_map(source_ws_artifact)
     if str(src.get("clock_offset_status", "")) != ws.CLOCK_OFFSET_AVAILABLE:
@@ -442,7 +496,9 @@ def extract_authoritative_clock_offset(
                 ws.CLOCK_OFFSET_PROVENANCE_AUTHORITATIVE:
             probs.append("clock_offset_provenance_block_not_authoritative")
         nsha = prov.get("clock_offset_source_artifact_sha256")
-        if nsha is not None and str(nsha) != str(expected_ws_artifact_sha256):
+        # The nested clock-offset CE SHA is anchored to the CE source lineage, never to
+        # the outer WS evidence file SHA.
+        if nsha is not None and str(nsha) != str(expected_ce_source_artifact_sha256):
             probs.append("clock_offset_source_artifact_sha256_mismatch")
     return (offset if not probs else None), probs
 
@@ -855,8 +911,14 @@ def validate_ws_bound_plan_artifact(
     for f in ("order_post_count", "amend_post_count", "cancel_post_count", "live_order_post_count"):
         if src.get(f) not in (0, None) and src.get(f) != 0:
             _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, f"source_ws_artifact_{f}_nonzero")
+    # Inner CE source lineage: the four nested CE-source SHA anchors must all be
+    # present, canonical and identical. This CE SHA is a DISTINCT lineage level and is
+    # never compared to the outer WS evidence file SHA (exp_ws_sha) above.
+    ce_source_sha, ce_problems = extract_ce_source_artifact_sha256(src)
+    for p in ce_problems:
+        _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, f"source_ws_artifact_{p}")
     offset, offset_problems = extract_authoritative_clock_offset(
-        src, expected_ws_artifact_sha256=exp_ws_sha)
+        src, expected_ce_source_artifact_sha256=ce_source_sha)
     for p in offset_problems:
         _fail(WS_BOUND_PLAN_WS_ARTIFACT_MISMATCH, f"source_ws_artifact_{p}")
 
@@ -1013,5 +1075,5 @@ __all__ = [
     "WS_BOUND_PLAN_ACTION_INCONSISTENT", "WS_BOUND_PLAN_AUTHORIZATION_PRESENT",
     "WsBoundPlanConsumerError", "ValidatedBoundAction", "BoundPlanConsumerResult",
     "load_ws_bound_plan_artifact", "validate_ws_bound_plan_artifact",
-    "extract_authoritative_clock_offset",
+    "extract_authoritative_clock_offset", "extract_ce_source_artifact_sha256",
 ]

@@ -810,6 +810,53 @@ def _plan_with_rejected_signals(extra_planner=None):
     return plan
 
 
+def test_pure_ch2_pass_with_outer_ws_sha_distinct_from_inner_ce_sha():
+    # CH3C2_FIX3 realistic end-to-end: the outer WS evidence file SHA (A) and the inner
+    # CE Plan source SHA (B) are DISTINCT lineage levels (A != B). The full CH2 Plan-only
+    # path still reaches PASS with a 50-action 25-long/25-short canonical plan and grants
+    # NO execution authorization.
+    kw, source, raw, now = _pure_kwargs()
+    outer_a = wb.compute_file_sha256(raw)
+    inner_b = cg.CE_SOURCE_SHA
+    assert outer_a != inner_b  # separate lineage levels by construction
+    # All four nested CE anchors agree on B; none equals the outer WS file SHA A.
+    ce_sha, ce_probs = consumer.extract_ce_source_artifact_sha256(source)
+    assert ce_sha == inner_b and ce_probs == []
+    r = wsbpo.build_and_validate_ws_bound_plan_only(**kw)
+    assert r.status == wsbpo.WS_BOUND_PLAN_ONLY_PASS
+    assert r.wrapper_artifact is not None
+    assert r.source_ws_artifact_sha256 == outer_a  # CH2 reports the OUTER WS sha
+    tps = r.wrapper_artifact["canonical_bound_plan"]["planner"]["target_positions"]
+    assert len(tps) == 50
+    longs = sum(1 for t in tps if str(t["side"]).strip().lower() == "long")
+    shorts = sum(1 for t in tps if str(t["side"]).strip().lower() == "short")
+    assert longs == 25 and shorts == 25
+    assert r.wrapper_artifact["execution_grade_freshness_complete"] is True
+    assert r.execution_authorized is False and r.pilot_advanced is False
+    for c in ("order_post_count", "amend_post_count", "cancel_post_count",
+              "live_order_post_count"):
+        assert r.wrapper_artifact[c] == 0
+
+
+def test_pure_ch2_inner_ce_lineage_disagreement_fails_closed():
+    # If the WS artifact's nested CE anchors disagree, CH2 fails closed via the CH1
+    # consumer (no wrapper exposed, no execution).
+    now = time.time_ns()
+    source = cg.build_complete_ws_artifact(now_ns=now)
+    source["legacy_position_provenance"]["ce_source_artifact_sha256"] = "sha256:" + "ab" * 32
+    source["artifact_fingerprint"] = ws._fingerprint(
+        {k: v for k, v in source.items() if k != "artifact_fingerprint"})
+    raw = json.dumps(source).encode("utf-8")
+    kw, _s, _r, _n = _pure_kwargs(now=now)
+    kw["source_ws_artifact"] = source
+    kw["source_ws_artifact_bytes"] = raw
+    r = wsbpo.build_and_validate_ws_bound_plan_only(**kw)
+    assert r.status == wsbpo.WS_BOUND_PLAN_ONLY_CONSUMER_FAILED
+    assert r.wrapper_artifact is None
+    assert any("ce_source_lineage_sha_disagreement" in b for b in r.blockers)
+    assert r.execution_authorized is False and r.pilot_advanced is False
+
+
 def test_pure_seed_plan_with_rejected_signals_passes_not_false_positive():
     # Regression: the benign `rejected_signals` Plan field must NOT be misread as a
     # credential. The whole seed Plan reaches the normal PASS binder/consumer result.
