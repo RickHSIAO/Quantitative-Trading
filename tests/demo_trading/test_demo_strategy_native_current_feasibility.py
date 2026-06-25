@@ -155,7 +155,8 @@ def _market_records(symbols, **over):
 
 
 def _account_snapshot(symbols, *, equity="10000", available="9000",
-                      rate="0.1", rate_source="wallet.accountIMRate",
+                      rate="0.1", rate_source="trusted_projected_margin_evidence",
+                      account_im_rate_context=None,
                       positions=None, demo=True, base_url="https://api-demo.bybit.com",
                       live_fallback=False, position_mode="one_way",
                       wallet_present=True, age_ms=1, existing_im="0"):
@@ -169,6 +170,7 @@ def _account_snapshot(symbols, *, equity="10000", available="9000",
         "existing_initial_margin_usd": existing_im,
         "existing_maintenance_margin_usd": "0",
         "applicable_initial_margin_rate": rate, "margin_rate_source": rate_source,
+        "account_im_rate_context": account_im_rate_context,
         "positions": positions if positions is not None else [],
         "snapshot_epoch_ns": _COLLECTION_NS - age_ms * 1_000_000,
     }
@@ -658,6 +660,10 @@ def test_cli_valid_writes_four_artifacts_and_passes(tmp_path, capsys):
     # the review artifact's recorded SHA equals the on-disk file SHA.
     review_bytes = (tmp_path / "review_out.json").read_bytes()
     assert summary["feasibility_review_artifact_sha256"] == wb.compute_file_sha256(review_bytes)
+    # honest bundle completeness: all three core files exist + hashes match.
+    assert summary["bundle_publication_status"] == cf.BUNDLE_COMPLETE
+    assert summary["published_artifacts"]["market_evidence"] == \
+        wb.compute_file_sha256((tmp_path / "market.json").read_bytes())
 
 
 def test_cli_missing_mode_flag_rejected(tmp_path, capsys):
@@ -736,3 +742,205 @@ def test_cli_no_order_endpoint_strings_in_sources():
         for forbidden in ("/v5/order/create", "/v5/order/amend", "/v5/order/cancel",
                           "set-leverage", "set-margin-mode"):
             assert forbidden not in src, (path, forbidden)
+
+
+# ===========================================================================
+# CH4A_FIX1 -- position-mode evidence
+# ===========================================================================
+
+def test_position_mode_proven_one_way_passes():
+    syms = _trusted().symbols
+    a = cf.evaluate_demo_account_evidence(
+        _account_snapshot(syms, position_mode="one_way"), target_symbols=syms,
+        collection_epoch_ns=_COLLECTION_NS)
+    assert a.ok and a.position_mode == "one_way"
+
+
+def test_position_mode_proven_hedge_represented():
+    syms = _trusted().symbols
+    a = cf.evaluate_demo_account_evidence(
+        _account_snapshot(syms, position_mode="hedge"), target_symbols=syms,
+        collection_epoch_ns=_COLLECTION_NS)
+    assert a.ok and a.position_mode == "hedge"
+
+
+def test_position_mode_unknown_blocks():
+    syms = _trusted().symbols
+    a = cf.evaluate_demo_account_evidence(
+        _account_snapshot(syms, position_mode=None), target_symbols=syms,
+        collection_epoch_ns=_COLLECTION_NS)
+    assert not a.ok and any("position_mode_unavailable" in b for b in a.blockers)
+
+
+def test_provider_does_not_hardcode_position_mode_and_derives_from_positionidx():
+    src = open(_SCRIPT, encoding="utf-8").read()
+    # No hardcoded one-way default in the real account provider.
+    assert '"position_mode": "one_way"' not in src
+    assert "_derive_position_mode(" in src
+
+    class _P:  # minimal positionIdx-bearing position stand-ins
+        def __init__(self, idx, qty=1.0):
+            self.position_idx = idx
+            self.quantity = qty
+    assert crun._derive_position_mode([_P(0), _P(0)]) == "one_way"
+    assert crun._derive_position_mode([_P(0), _P(1)]) == "hedge"
+    assert crun._derive_position_mode([]) is None           # no positions -> unprovable
+    assert crun._derive_position_mode([_P(None)]) is None   # idx absent -> unprovable
+
+
+# ===========================================================================
+# CH4A_FIX1 -- protected-position semantics (all pre-existing positions protected)
+# ===========================================================================
+
+def test_unseen_preexisting_position_becomes_protected():
+    syms = _trusted().symbols
+    snap = _account_snapshot(syms, positions=[
+        {"symbol": "NEWCOINUSDT", "side": "long", "size": "2.0", "leverage": "1"}])
+    a = cf.evaluate_demo_account_evidence(snap, target_symbols=syms,
+                                          collection_epoch_ns=_COLLECTION_NS)
+    # Not in the historical list, not a strategy target -> still protected, no anchor match.
+    assert "NEWCOINUSDT" in a.protected_positions
+    assert "NEWCOINUSDT" not in a.historical_protected_anchor
+    assert a.ok
+
+
+def test_historical_protected_symbol_remains_protected_and_anchored():
+    syms = _trusted().symbols
+    snap = _account_snapshot(syms, positions=[
+        {"symbol": "ENAUSDT", "side": "long", "size": "3.0", "leverage": "1"}])
+    a = cf.evaluate_demo_account_evidence(snap, target_symbols=syms,
+                                          collection_epoch_ns=_COLLECTION_NS)
+    assert "ENAUSDT" in a.protected_positions
+    assert "ENAUSDT" in a.historical_protected_anchor
+    assert a.ok
+
+
+def test_flat_positions_ignored_not_protected():
+    syms = _trusted().symbols
+    snap = _account_snapshot(syms, positions=[
+        {"symbol": "FLATUSDT", "side": "long", "size": "0", "leverage": "1"}])
+    a = cf.evaluate_demo_account_evidence(snap, target_symbols=syms,
+                                          collection_epoch_ns=_COLLECTION_NS)
+    assert a.protected_positions == ()
+    assert a.open_position_count == 0
+    assert a.ok
+
+
+def test_all_nonzero_positions_protected_and_overlap_blocks():
+    syms = _trusted().symbols
+    snap = _account_snapshot(syms, positions=[
+        {"symbol": "NEWCOINUSDT", "side": "long", "size": "1.0", "leverage": "1"},
+        {"symbol": syms[0], "side": "long", "size": "1.0", "leverage": "1"}])
+    a = cf.evaluate_demo_account_evidence(snap, target_symbols=syms,
+                                          collection_epoch_ns=_COLLECTION_NS)
+    assert set(a.protected_positions) == {"NEWCOINUSDT", syms[0]}  # both protected
+    assert not a.ok
+    assert any("strategy_target_overlaps_open_position" in b for b in a.blockers)
+
+
+# ===========================================================================
+# CH4A_FIX1 -- margin-rate semantics (accountIMRate is context, not projected rate)
+# ===========================================================================
+
+def test_account_im_rate_alone_is_unavailable_never_pass():
+    syms = _trusted().symbols
+    # accountIMRate supplied as the rate source -> rejected as account-level context.
+    snap = _account_snapshot(syms, rate="0.1", rate_source="wallet.accountIMRate")
+    a = cf.evaluate_demo_account_evidence(snap, target_symbols=syms,
+                                          collection_epoch_ns=_COLLECTION_NS)
+    assert a.applicable_initial_margin_rate is None  # not used as projected rate
+    mg = cf.evaluate_margin_feasibility(account_result=a,
+                                        target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_UNAVAILABLE
+    assert "initial_margin_rate_unknown" in mg.failures
+
+
+def test_account_im_rate_context_preserved_separately():
+    syms = _trusted().symbols
+    snap = _account_snapshot(syms, rate=None, rate_source=None,
+                             account_im_rate_context="0.03")
+    a = cf.evaluate_demo_account_evidence(snap, target_symbols=syms,
+                                          collection_epoch_ns=_COLLECTION_NS)
+    assert a.account_im_rate_context == "0.03"
+    assert a.applicable_initial_margin_rate is None
+
+
+def test_injected_trusted_projected_margin_evidence_may_pass():
+    syms = _trusted().symbols
+    a = cf.evaluate_demo_account_evidence(
+        _account_snapshot(syms, available="9000", rate="0.1",
+                          rate_source="trusted_projected_margin_evidence"),
+        target_symbols=syms, collection_epoch_ns=_COLLECTION_NS)
+    mg = cf.evaluate_margin_feasibility(account_result=a,
+                                        target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_PASS
+
+
+def test_insufficient_balance_blocked_with_valid_projected_evidence():
+    syms = _trusted().symbols
+    a = cf.evaluate_demo_account_evidence(
+        _account_snapshot(syms, available="500", rate="0.1",
+                          rate_source="trusted_projected_margin_evidence"),
+        target_symbols=syms, collection_epoch_ns=_COLLECTION_NS)
+    mg = cf.evaluate_margin_feasibility(account_result=a,
+                                        target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_BLOCKED
+
+
+# ===========================================================================
+# CH4A_FIX1 -- market evidence artifact is replayable (completeness)
+# ===========================================================================
+
+_REQUIRED_ROW_FIELDS = (
+    "symbol", "side", "current_price", "exchange_ts_ms", "local_received_epoch_ns",
+    "evidence_age_ms", "endpoint", "instrument_status", "contract_type", "settle_coin",
+    "trading", "tick_size", "qty_step", "min_order_qty", "min_notional_value",
+    "max_market_order_qty", "raw_quantity", "rounded_quantity", "rounded_notional_usd",
+    "quantity_validation_status", "quantity_validation_failures",
+)
+
+
+def test_market_artifact_rows_retain_all_validated_evidence():
+    t = _trusted()
+    m = cf.evaluate_current_market_and_quantities(
+        _market_records(t.symbols), targets=t.targets, collection_epoch_ns=_COLLECTION_NS)
+    art = cf.build_market_evidence_artifact(
+        trusted=t, market=m, collection_epoch_ns=_COLLECTION_NS, collected_at_utc="t",
+        network_audit=cf.zeroed_network_audit())
+    rows = art["current_actions"]
+    assert len(rows) == 50
+    for row in rows:
+        for f in _REQUIRED_ROW_FIELDS:
+            assert f in row, f
+    # The validation is replayable: each row carries the exact price + rules that produced
+    # the recomputed quantity.
+    r0 = rows[0]
+    assert r0["endpoint"] == _DEMO_TICKERS
+    assert r0["evidence_age_ms"] is not None
+    raw = (Decimal("200") / Decimal(r0["current_price"]))
+    assert Decimal(r0["raw_quantity"]) == raw
+
+
+# ===========================================================================
+# CH4A_FIX1 -- honest bundle publication
+# ===========================================================================
+
+def test_cli_partial_publication_does_not_claim_complete_bundle(tmp_path, capsys, monkeypatch):
+    c = _write_inputs(tmp_path)
+    real_writer = crun.wsbpo.atomic_write_wrapper
+    review_out = str(tmp_path / "review_out.json")
+
+    def _failing(path, artifact):
+        if str(path) == review_out:
+            raise crun.wsbpo.WsBoundPlanOnlyError("simulated mid-bundle failure")
+        return real_writer(path, artifact)
+
+    monkeypatch.setattr(crun.wsbpo, "atomic_write_wrapper", _failing)
+    rc = _run(tmp_path, c)
+    assert rc == crun.EXIT_INPUT_FAILURE
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["bundle_publication_status"] == cf.BUNDLE_INCOMPLETE
+    assert summary["published_artifacts"]["feasibility_review"] is None
+    assert not (tmp_path / "review_out.json").exists()  # no-clobber, atomic: never written
+    # the two earlier core files were individually atomic and DO exist.
+    assert (tmp_path / "market.json").exists() and (tmp_path / "account.json").exists()

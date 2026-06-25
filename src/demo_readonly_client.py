@@ -133,6 +133,9 @@ class PositionSnapshot:
     position_value_usd:     float | None = None
     mark_price:             float | None = None
     liq_price:              float | None = None
+    # TASK-014CH4A_FIX1: Bybit positionIdx (0 = one-way, 1/2 = hedge Buy/Sell), captured
+    # as read-only position-mode EVIDENCE. None when absent; never switches mode.
+    position_idx:           int | None = None
 
 
 @dataclass
@@ -505,6 +508,9 @@ class DemoReadOnlyClient:
                     position_value_usd=_opt_float(item.get("positionValue")),
                     mark_price=_opt_float(item.get("markPrice")),
                     liq_price=_opt_float(item.get("liqPrice")),
+                    position_idx=(int(item["positionIdx"])
+                                  if str(item.get("positionIdx", "")).strip().lstrip("-").isdigit()
+                                  else None),
                 ))
         except (KeyError, TypeError, ValueError):
             pass

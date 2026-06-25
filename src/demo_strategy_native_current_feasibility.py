@@ -36,7 +36,7 @@ HARD INVARIANTS (mirrored by the caller and proven by tests)
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any, Mapping, Sequence
 
@@ -58,11 +58,8 @@ EXPECTED_STRATEGY_ID = wb.EXPECTED_STRATEGY_NAME
 EXPECTED_STRATEGY_SYMBOL_COUNT = consumer.EXPECTED_STRATEGY_SYMBOL_COUNT  # 50
 EXPECTED_LONG_COUNT = consumer.EXPECTED_LONG_COUNT    # 25
 EXPECTED_SHORT_COUNT = consumer.EXPECTED_SHORT_COUNT  # 25
-V1_CAPITAL_BASE_USD = consumer.V1_CAPITAL_BASE_USD                  # Decimal("10000")
-V1_LONG_TARGET_NOTIONAL_USD = consumer.V1_LONG_TARGET_NOTIONAL_USD  # Decimal("200")
-V1_SHORT_TARGET_NOTIONAL_USD = consumer.V1_SHORT_TARGET_NOTIONAL_USD  # Decimal("-200")
-V1_ABS_TARGET_NOTIONAL_USD = Decimal("200")
-V1_GROSS_USD = Decimal("10000")
+V1_ABS_TARGET_NOTIONAL_USD = Decimal("200")           # per-target |signed notional|
+V1_GROSS_USD = Decimal("10000")                       # 50 x 200 gross exposure
 
 # Historical protected symbols -- a CONSISTENCY ANCHOR only. The authoritative
 # currently-protected set is derived from the live Demo account snapshot; this constant
@@ -114,6 +111,14 @@ ACCOUNT_EVIDENCE_BLOCKED = "DEMO_ACCOUNT_EVIDENCE_BLOCKED"
 MARGIN_FEASIBILITY_PASS = "MARGIN_FEASIBILITY_PASS"
 MARGIN_FEASIBILITY_BLOCKED = "MARGIN_FEASIBILITY_BLOCKED"
 MARGIN_FEASIBILITY_UNAVAILABLE = "MARGIN_FEASIBILITY_UNAVAILABLE_NO_INDEPENDENT_RATE"
+
+# Account-LEVEL margin-rate sources (e.g. the wallet ``accountIMRate``) describe overall
+# account health -- they are NOT per-order/projected initial-margin evidence for the 50
+# NEW target positions and must NEVER independently grant a margin PASS (CH4A_FIX1).
+_ACCOUNT_LEVEL_RATE_SOURCES: frozenset[str] = frozenset({
+    "wallet.accountimrate", "accountimrate", "account.accountimrate",
+    "wallet.accountmmrate", "accountmmrate",
+})
 
 CREDENTIAL_LEAK_CLEAR = "NO_CREDENTIAL_VALUE_OR_KEY_PRESENT"
 
@@ -429,19 +434,30 @@ _REQUIRED_MARKET_FIELDS = (
 
 @dataclass(frozen=True)
 class CurrentActionFeasibility:
-    """Immutable per-action current feasibility row (scalar-only; artifact-ready)."""
+    """Immutable per-action current feasibility row (scalar-only; artifact-ready).
+
+    Retains ALL validated market evidence so the market validation can be replayed
+    offline from the artifact alone (TASK-014CH4A_FIX1 completeness)."""
     symbol: str
     side: str
     target_signed_notional_usd: str
     current_price: str
-    raw_quantity: str
-    rounded_quantity: str
-    rounded_notional_usd: str
+    exchange_ts_ms: Any
+    local_received_epoch_ns: Any
+    evidence_age_ms: int | None
+    endpoint: str
+    instrument_status: str
+    contract_type: str
+    settle_coin: str
+    trading: Any
+    tick_size: str
     qty_step: str
     min_order_qty: str
     min_notional_value: str
     max_market_order_qty: str
-    instrument_status: str
+    raw_quantity: str
+    rounded_quantity: str
+    rounded_notional_usd: str
     binding_price: str
     binding_qty: str
     price_drift_pct: str | None
@@ -453,13 +469,21 @@ class CurrentActionFeasibility:
             "symbol": self.symbol, "side": self.side,
             "target_signed_notional_usd": self.target_signed_notional_usd,
             "current_price": self.current_price,
-            "raw_quantity": self.raw_quantity,
-            "rounded_quantity": self.rounded_quantity,
-            "rounded_notional_usd": self.rounded_notional_usd,
+            "exchange_ts_ms": self.exchange_ts_ms,
+            "local_received_epoch_ns": self.local_received_epoch_ns,
+            "evidence_age_ms": self.evidence_age_ms,
+            "endpoint": self.endpoint,
+            "instrument_status": self.instrument_status,
+            "contract_type": self.contract_type,
+            "settle_coin": self.settle_coin,
+            "trading": self.trading,
+            "tick_size": self.tick_size,
             "qty_step": self.qty_step, "min_order_qty": self.min_order_qty,
             "min_notional_value": self.min_notional_value,
             "max_market_order_qty": self.max_market_order_qty,
-            "instrument_status": self.instrument_status,
+            "raw_quantity": self.raw_quantity,
+            "rounded_quantity": self.rounded_quantity,
+            "rounded_notional_usd": self.rounded_notional_usd,
             "binding_price": self.binding_price, "binding_qty": self.binding_qty,
             "price_drift_pct": self.price_drift_pct,
             "quantity_validation_status": self.quantity_validation_status,
@@ -676,22 +700,31 @@ def _evaluate_one_symbol(
         if qty_step is not None and qty_step > 0 and (rounded_q % qty_step) != 0:
             failures.append("qty_not_step_multiple")
 
+    tick_size = _dec(rec.get("tick_size"))
     qty_valid = not failures
     row = CurrentActionFeasibility(
         symbol=sym, side=tgt.side,
         target_signed_notional_usd=tgt.target_signed_notional_usd,
         current_price=str(_canon(price) if price is not None else rec.get("current_price")),
-        raw_quantity=str(_canon(raw_q) if raw_q is not None else ""),
-        rounded_quantity=str(_canon(rounded_q) if rounded_q is not None else ""),
-        rounded_notional_usd=str(_canon(rounded_notional)
-                                 if rounded_notional is not None else ""),
+        exchange_ts_ms=rec.get("exchange_ts_ms"),
+        local_received_epoch_ns=rec.get("local_received_epoch_ns"),
+        evidence_age_ms=age_ms,
+        endpoint=endpoint,
+        instrument_status=str(rec.get("instrument_status", "")),
+        contract_type=str(rec.get("contract_type", "")),
+        settle_coin=str(rec.get("settle_coin", "")),
+        trading=rec.get("trading"),
+        tick_size=str(_canon(tick_size) if tick_size is not None else rec.get("tick_size")),
         qty_step=str(_canon(qty_step) if qty_step is not None else rec.get("qty_step")),
         min_order_qty=str(_canon(min_qty) if min_qty is not None else rec.get("min_order_qty")),
         min_notional_value=str(_canon(min_notional) if min_notional is not None
                                else rec.get("min_notional_value")),
         max_market_order_qty=str(_canon(max_mkt) if max_mkt is not None
                                  else rec.get("max_market_order_qty")),
-        instrument_status=str(rec.get("instrument_status", "")),
+        raw_quantity=str(_canon(raw_q) if raw_q is not None else ""),
+        rounded_quantity=str(_canon(rounded_q) if rounded_q is not None else ""),
+        rounded_notional_usd=str(_canon(rounded_notional)
+                                 if rounded_notional is not None else ""),
         binding_price=tgt.binding_price, binding_qty=tgt.binding_qty,
         price_drift_pct=drift_pct,
         quantity_validation_status=(QTY_VALIDATION_OK if qty_valid else QTY_VALIDATION_FAILED),
@@ -718,9 +751,11 @@ class AccountEvidenceResult:
     existing_maintenance_margin_usd: str | None
     open_position_count: int
     protected_positions: tuple[str, ...]
+    historical_protected_anchor: tuple[str, ...]
     strategy_position_overlaps: tuple[str, ...]
     applicable_initial_margin_rate: str | None
     margin_rate_source: str | None
+    account_im_rate_context: str | None
     account_freshness_age_ms: int | None
 
     @property
@@ -797,8 +832,10 @@ def evaluate_demo_account_evidence(
             available_balance_usd=(_canon(available) if available is not None else None),
             existing_initial_margin_usd=(_canon(existing_im) if existing_im is not None else None),
             existing_maintenance_margin_usd=(_canon(existing_mm) if existing_mm is not None else None),
-            open_position_count=0, protected_positions=(), strategy_position_overlaps=(),
+            open_position_count=0, protected_positions=(), historical_protected_anchor=(),
+            strategy_position_overlaps=(),
             applicable_initial_margin_rate=None, margin_rate_source=None,
+            account_im_rate_context=_opt_str(snap.get("account_im_rate_context")),
             account_freshness_age_ms=age_ms)
 
     # --- Positions ---
@@ -807,7 +844,6 @@ def evaluate_demo_account_evidence(
         blockers.append("positions_malformed")
         positions = []
     held: list[str] = []
-    protected_now: list[str] = []
     overlaps: list[str] = []
     seen_pos: set[str] = set()
     for p in positions:
@@ -822,7 +858,7 @@ def evaluate_demo_account_evidence(
             blockers.append(f"position_size_unparseable:{psym}")
             continue
         if size <= 0:
-            continue  # flat row
+            continue  # flat row -- ignored
         if side not in ("long", "short"):
             blockers.append(f"position_side_invalid:{psym}")
             continue
@@ -831,16 +867,19 @@ def evaluate_demo_account_evidence(
             continue
         seen_pos.add(psym)
         held.append(psym)
-        if psym in _HISTORICAL_PROTECTED_SYMBOLS:
-            protected_now.append(psym)
         if psym in target_set:
             # A current open position that coincides with a strategy target would be
             # silently resized -- fail closed (this task performs NO reconciliation).
             overlaps.append(psym)
 
-    # Protected symbols must never appear among the strategy targets.
-    protected_in_targets = sorted(_HISTORICAL_PROTECTED_SYMBOLS & target_set)
-    for s in protected_in_targets:
+    # EVERY currently non-zero pre-existing position is PROTECTED: this run owns no
+    # positions (read-only, no execution), so any open position is pre-existing and must
+    # default to protected -- not merely the historically-known symbols. The historical
+    # constant is retained ONLY as a consistency anchor.
+    protected_now = sorted(held)
+    historical_anchor = sorted(set(held) & _HISTORICAL_PROTECTED_SYMBOLS)
+    # Protected symbols (historical anchor) must never appear among the strategy targets.
+    for s in sorted(_HISTORICAL_PROTECTED_SYMBOLS & target_set):
         blockers.append(f"protected_symbol_in_strategy_targets:{s}")
     for s in sorted(overlaps):
         blockers.append(f"strategy_target_overlaps_open_position:{s}")
@@ -852,10 +891,15 @@ def evaluate_demo_account_evidence(
     elif position_mode not in ("one_way", "hedge"):
         blockers.append(f"position_mode_unsupported:{position_mode}")
 
-    # --- Optional independent margin-rate evidence (never assumed favourable) ---
+    # --- Optional INDEPENDENT projected-margin evidence (never assumed favourable) ---
+    # ``applicable_initial_margin_rate`` must be per-order/projected evidence for the NEW
+    # positions. An account-LEVEL source (e.g. wallet accountIMRate) is rejected here and
+    # kept only as ``account_im_rate_context`` -- it can never grant a margin PASS.
     rate = _dec(snap.get("applicable_initial_margin_rate"))
     rate_source = _opt_str(snap.get("margin_rate_source"))
-    rate_str = (_canon(rate) if (rate is not None and rate > 0 and rate_source) else None)
+    account_level = bool(rate_source and rate_source.strip().lower() in _ACCOUNT_LEVEL_RATE_SOURCES)
+    rate_str = (_canon(rate) if (rate is not None and rate > 0 and rate_source
+                                 and not account_level) else None)
 
     status = ACCOUNT_EVIDENCE_OK if not blockers else ACCOUNT_EVIDENCE_BLOCKED
     return AccountEvidenceResult(
@@ -868,10 +912,12 @@ def evaluate_demo_account_evidence(
         existing_initial_margin_usd=(_canon(existing_im) if existing_im is not None else None),
         existing_maintenance_margin_usd=(_canon(existing_mm) if existing_mm is not None else None),
         open_position_count=len(held),
-        protected_positions=tuple(sorted(protected_now)),
+        protected_positions=tuple(protected_now),
+        historical_protected_anchor=tuple(historical_anchor),
         strategy_position_overlaps=tuple(sorted(overlaps)),
         applicable_initial_margin_rate=rate_str,
         margin_rate_source=(rate_source if rate_str else None),
+        account_im_rate_context=_opt_str(snap.get("account_im_rate_context")),
         account_freshness_age_ms=age_ms)
 
 
@@ -932,16 +978,16 @@ def evaluate_margin_feasibility(
         conservative_1x_envelope_label="1x_initial_margin_equals_full_gross_notional")
 
     if not account_result.ok:
-        return _replace(base, status=MARGIN_FEASIBILITY_UNAVAILABLE,
+        return replace(base, status=MARGIN_FEASIBILITY_UNAVAILABLE,
                         failures=("account_evidence_not_ok",))
     if available is None or available < 0:
-        return _replace(base, status=MARGIN_FEASIBILITY_UNAVAILABLE,
+        return replace(base, status=MARGIN_FEASIBILITY_UNAVAILABLE,
                         failures=("available_balance_unavailable",))
 
     rate = _dec(account_result.applicable_initial_margin_rate)
     if rate is None or rate <= 0 or not account_result.margin_rate_source:
         # Required margin rate unknown -> never PASS.
-        return _replace(base, status=MARGIN_FEASIBILITY_UNAVAILABLE,
+        return replace(base, status=MARGIN_FEASIBILITY_UNAVAILABLE,
                         failures=("initial_margin_rate_unknown",))
 
     additional_im = (gross * rate)
@@ -958,18 +1004,13 @@ def evaluate_margin_feasibility(
     if remaining < headroom:
         failures.append("safety_headroom_violation")
     status = MARGIN_FEASIBILITY_PASS if not failures else MARGIN_FEASIBILITY_BLOCKED
-    return _replace(
+    return replace(
         base, status=status, failures=tuple(failures),
         projected_additional_initial_margin_usd=_canon(additional_im),
         projected_total_initial_margin_usd=_canon(projected_total),
         safety_headroom_usd=_canon(headroom),
         remaining_available_balance_usd=_canon(remaining),
         margin_rate_source=account_result.margin_rate_source)
-
-
-def _replace(r: MarginFeasibilityResult, **over: Any) -> MarginFeasibilityResult:
-    from dataclasses import replace
-    return replace(r, **over)
 
 
 # ---------------------------------------------------------------------------
@@ -1028,9 +1069,11 @@ def build_account_evidence_artifact(
         "existing_maintenance_margin_usd": account.existing_maintenance_margin_usd,
         "open_position_count": account.open_position_count,
         "protected_positions": list(account.protected_positions),
+        "historical_protected_anchor": list(account.historical_protected_anchor),
         "strategy_position_overlaps": list(account.strategy_position_overlaps),
         "applicable_initial_margin_rate": account.applicable_initial_margin_rate,
         "margin_rate_source": account.margin_rate_source,
+        "account_im_rate_context": account.account_im_rate_context,
         "account_freshness_age_ms": account.account_freshness_age_ms,
         "account_blockers": list(account.blockers),
         "network_audit": dict(network_audit),
@@ -1134,7 +1177,9 @@ def build_current_feasibility_review(
         "live_environment_denied": account.live_environment_denied,
         "position_mode": account.position_mode,
         "protected_positions": list(account.protected_positions),
+        "historical_protected_anchor": list(account.historical_protected_anchor),
         "strategy_position_overlaps": list(account.strategy_position_overlaps),
+        "account_im_rate_context": account.account_im_rate_context,
         # --- Margin feasibility ---
         "account_margin_feasibility_status": margin.status,
         "account_equity_usd": margin.account_equity_usd,
@@ -1160,13 +1205,24 @@ def build_current_feasibility_review(
         market_evidence_artifact=None, account_evidence_artifact=None, margin=margin)
 
 
+BUNDLE_COMPLETE = "BUNDLE_COMPLETE"
+BUNDLE_INCOMPLETE = "BUNDLE_INCOMPLETE"
+
+
 def build_cli_summary(
     *, feasibility: CurrentFeasibilityResult, trusted: TrustedInputsResult,
     market: MarketEvidenceResult, account: AccountEvidenceResult,
     network_audit: Mapping[str, Any], review_artifact_sha256: str | None,
     market_artifact_sha256: str | None, account_artifact_sha256: str | None,
+    bundle_publication_status: str = BUNDLE_INCOMPLETE,
+    published_artifacts: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Artifact D: the short, operator-facing CLI summary JSON."""
+    """Artifact D: the short, operator-facing CLI summary JSON.
+
+    The four artifacts are individually atomic (no-clobber), NOT bundle-atomic.
+    ``bundle_publication_status`` is ``BUNDLE_COMPLETE`` ONLY when the other three files
+    were published AND verified (file exists, on-disk SHA matches the recorded SHA);
+    a partial publication reports ``BUNDLE_INCOMPLETE`` and never claims success."""
     return {
         "schema": "demo_strategy_native_current_feasibility_summary",
         "schema_version": SCHEMA_VERSION, "task_id": TASK_ID,
@@ -1179,6 +1235,8 @@ def build_cli_summary(
         "feasibility_review_artifact_sha256": review_artifact_sha256,
         "market_evidence_artifact_sha256": market_artifact_sha256,
         "account_evidence_artifact_sha256": account_artifact_sha256,
+        "bundle_publication_status": bundle_publication_status,
+        "published_artifacts": dict(published_artifacts or {}),
         "long_count": market.long_count, "short_count": market.short_count,
         "total_target_gross_notional_usd": market.total_target_gross_notional_usd,
         "network_audit": dict(network_audit),
@@ -1199,6 +1257,7 @@ __all__ = [
     "MARKET_EVIDENCE_FRESH", "MARKET_EVIDENCE_STALE", "MARKET_EVIDENCE_INCOMPLETE",
     "ACCOUNT_EVIDENCE_OK", "ACCOUNT_EVIDENCE_UNAVAILABLE", "ACCOUNT_EVIDENCE_BLOCKED",
     "MARGIN_FEASIBILITY_PASS", "MARGIN_FEASIBILITY_BLOCKED", "MARGIN_FEASIBILITY_UNAVAILABLE",
+    "BUNDLE_COMPLETE", "BUNDLE_INCOMPLETE",
     "CurrentTarget", "TrustedInputsResult", "CurrentActionFeasibility",
     "MarketEvidenceResult", "AccountEvidenceResult", "MarginFeasibilityResult",
     "CurrentFeasibilityResult",

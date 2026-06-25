@@ -147,15 +147,21 @@ executable quantity per target from the CURRENT price under Decimal floor-to-ste
 historical binding qty is never reused); collects authenticated Demo-only read-only account
 evidence (wallet/positions/account mode via the audited `DemoReadOnlyClient`/
 `DemoMarketPriceGuard`, GET only) proving the Demo host and denying Live; and evaluates a
-Decimal margin model that never PASSes without an independent initial-margin rate (→
-`UNAVAILABLE`) and reserves configurable safety headroom. The pure core does ALL validation
-offline (injected transports in tests); the CLI is the only impure boundary and writes four
-immutable atomic no-clobber artifacts (market evidence / account evidence / feasibility
-review / summary) carrying a network audit, credential-leak check and fingerprint. The mode
-is terminal and runs before any Pilot-state load; it imports no sender/readiness/gate/native
-execution/Pilot store, calls none of them, and never authorizes or places an order. PASS is
-valid only at the collection timestamp; evidence must be recollected before any later
-execution authorization.
+Decimal margin model that never PASSes without an INDEPENDENT projected-margin rate (→
+`UNAVAILABLE`) and reserves configurable safety headroom. Account semantics (CH4A_FIX1) are
+strict: position mode is derived from real `positionIdx` evidence (never hardcoded; unknown
+→ blocked); every non-zero pre-existing position defaults to protected (historical
+constants are a consistency anchor only); and the account-level wallet `accountIMRate` is
+account-health CONTEXT, not projected new-position margin evidence, so it can never grant a
+margin PASS. The pure core does ALL validation offline (injected transports in tests); the
+CLI is the only impure boundary and writes four **individually-atomic** no-clobber artifacts
+(market evidence / account evidence / feasibility review / summary) carrying a network
+audit, credential-leak check and fingerprint. The artifacts are NOT bundle-atomic; the
+summary records an honest `bundle_publication_status` that is `BUNDLE_COMPLETE` only when
+every core file exists with a matching on-disk SHA. The mode is terminal and runs before any
+Pilot-state load; it imports no sender/readiness/gate/native execution/Pilot store, calls
+none of them, and never authorizes or places an order. PASS is valid only at the collection
+timestamp; evidence must be recollected before any later execution authorization.
 
 CH2_FIX1 isolation hardening: the Plan-only mode-conflict validation runs as the
 FIRST branch of `main()` — before the reconcile/reporting branch, the

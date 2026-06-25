@@ -138,7 +138,7 @@ def _default_account_provider(target_symbols: Sequence[str], allow_real_network:
     audit["private_demo_http_get_count"] += 1
 
     pos = [{"symbol": p.symbol, "side": p.side, "size": str(p.quantity),
-            "leverage": str(p.leverage),
+            "leverage": str(p.leverage), "position_idx": p.position_idx,
             "initial_margin_usd": (None if p.initial_margin_usd is None
                                    else str(p.initial_margin_usd))}
            for p in positions]
@@ -149,7 +149,9 @@ def _default_account_provider(target_symbols: Sequence[str], allow_real_network:
         "live_endpoint_fallback_detected": bool(proof.live_endpoint_fallback_detected),
         "account_mode": proof.account_mode,
         "margin_mode": (info.margin_mode if info.response_present else None),
-        "position_mode": "one_way",  # Demo strategy account is one-way (validated downstream)
+        # Position mode is DERIVED from real position evidence (Bybit positionIdx), never
+        # hardcoded; None when it cannot be proven (the core then blocks/UNAVAILABLE).
+        "position_mode": _derive_position_mode(positions),
         "wallet_evidence_present": bool(wallet.api_key_present),
         "account_equity_usd": str(wallet.equity_usd),
         "available_balance_usd": str(wallet.available_balance_usd),
@@ -157,14 +159,32 @@ def _default_account_provider(target_symbols: Sequence[str], allow_real_network:
                                         else str(wallet.total_initial_margin_usd)),
         "existing_maintenance_margin_usd": (None if wallet.total_maintenance_margin_usd is None
                                             else str(wallet.total_maintenance_margin_usd)),
-        "applicable_initial_margin_rate": (None if wallet.account_im_rate is None
-                                           else str(wallet.account_im_rate)),
-        "margin_rate_source": ("wallet.accountIMRate" if wallet.account_im_rate is not None
-                               else None),
+        # accountIMRate is account-LEVEL health context, NOT projected per-order margin
+        # evidence for the 50 NEW targets -> it is recorded as context only and never used
+        # as the applicable initial-margin rate (so it can never grant a margin PASS).
+        "applicable_initial_margin_rate": None,
+        "margin_rate_source": None,
+        "account_im_rate_context": (None if wallet.account_im_rate is None
+                                    else str(wallet.account_im_rate)),
         "positions": pos,
         "snapshot_epoch_ns": time.time_ns(),
     }
     return snapshot, audit
+
+
+def _derive_position_mode(positions) -> str | None:
+    """Derive account position mode ONLY from real position evidence (Bybit positionIdx:
+    0 = one-way, 1/2 = hedge). Returns None when unprovable (no positions, or idx absent)
+    so the core fails closed; never assumes one-way."""
+    idxs = [p.position_idx for p in positions
+            if getattr(p, "quantity", 0) and p.position_idx is not None]
+    if not idxs:
+        return None
+    if any(i in (1, 2) for i in idxs):
+        return "hedge"
+    if all(i == 0 for i in idxs):
+        return "one_way"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -351,29 +371,53 @@ def main(argv: Sequence[str] | None = None, *,
         account=account, collection_epoch_ns=collection_epoch_ns,
         collected_at_utc=now_iso, network_audit=network_audit)
 
-    # --- Atomic no-clobber publication. Each artifact's recorded SHA is the SHA of the
-    # ACTUAL on-disk bytes (read back after the write), so downstream references and the
-    # summary always match the published files exactly (platform-newline independent). ---
+    # --- Individually-atomic no-clobber publication (NOT bundle-atomic). The three core
+    # artifacts are written + verified first; the summary then records an honest
+    # bundle_publication_status that is COMPLETE only when all three exist and their
+    # on-disk SHAs match the recorded SHAs. A partial failure never claims success. ---
+    published: dict[str, Any] = {
+        "market_evidence": None, "account_evidence": None, "feasibility_review": None}
+    publish_failure: str | None = None
+    market_sha = account_sha = review_sha = None
     try:
         market_sha = _write_and_sha(args.market_out, market_art)
+        published["market_evidence"] = market_sha
         account_sha = _write_and_sha(args.account_out, account_art)
-        feasibility = cf.build_current_feasibility_review(
-            trusted=trusted, market=market, account=account, margin=margin,
-            collection_epoch_ns=collection_epoch_ns, reviewed_at_utc=now_iso,
-            network_audit=network_audit,
-            market_evidence_artifact_sha256=market_sha,
-            account_evidence_artifact_sha256=account_sha)
-        review_sha = _write_and_sha(args.review_out, feasibility.review_artifact)
-        summary = cf.build_cli_summary(
-            feasibility=feasibility, trusted=trusted, market=market, account=account,
-            network_audit=network_audit, review_artifact_sha256=review_sha,
-            market_artifact_sha256=market_sha, account_artifact_sha256=account_sha)
+        published["account_evidence"] = account_sha
+    except wsbpo.WsBoundPlanOnlyError as exc:
+        publish_failure = f"output_write_failed:{exc}"
+
+    feasibility = cf.build_current_feasibility_review(
+        trusted=trusted, market=market, account=account, margin=margin,
+        collection_epoch_ns=collection_epoch_ns, reviewed_at_utc=now_iso,
+        network_audit=network_audit,
+        market_evidence_artifact_sha256=market_sha,
+        account_evidence_artifact_sha256=account_sha)
+    if publish_failure is None:
+        try:
+            review_sha = _write_and_sha(args.review_out, feasibility.review_artifact)
+            published["feasibility_review"] = review_sha
+        except wsbpo.WsBoundPlanOnlyError as exc:
+            publish_failure = f"output_write_failed:{exc}"
+
+    core_verified = _verify_published(
+        (args.market_out, market_sha), (args.account_out, account_sha),
+        (args.review_out, review_sha))
+    bundle_status = (cf.BUNDLE_COMPLETE if (publish_failure is None and core_verified)
+                     else cf.BUNDLE_INCOMPLETE)
+    summary = cf.build_cli_summary(
+        feasibility=feasibility, trusted=trusted, market=market, account=account,
+        network_audit=network_audit, review_artifact_sha256=review_sha,
+        market_artifact_sha256=market_sha, account_artifact_sha256=account_sha,
+        bundle_publication_status=bundle_status, published_artifacts=published)
+    try:
         _write_and_sha(args.summary_out, summary)
     except wsbpo.WsBoundPlanOnlyError as exc:
-        _emit(_invalid(cf.CURRENT_FEASIBILITY_INPUT_INVALID, f"output_write_failed:{exc}"))
-        return EXIT_INPUT_FAILURE
+        publish_failure = publish_failure or f"summary_write_failed:{exc}"
 
     _emit(summary)
+    if publish_failure is not None or bundle_status != cf.BUNDLE_COMPLETE:
+        return EXIT_INPUT_FAILURE
     if feasibility.status == cf.CURRENT_FEASIBILITY_PASS:
         return EXIT_OK
     if feasibility.status in (cf.CURRENT_FEASIBILITY_BLOCKED,
@@ -390,6 +434,18 @@ def _write_and_sha(path: str, artifact: Mapping[str, Any]) -> str:
     from src.demo_strategy_native_ws_price_binding import compute_file_sha256
     wsbpo.atomic_write_wrapper(path, artifact)
     return compute_file_sha256(Path(path).read_bytes())
+
+
+def _verify_published(*items: "tuple[str, str | None]") -> bool:
+    """True iff every (path, recorded_sha) names an existing file whose on-disk SHA256
+    matches the recorded SHA. Used to honestly confirm full bundle publication."""
+    from src.demo_strategy_native_ws_price_binding import compute_file_sha256
+    for path, recorded in items:
+        if not recorded or not os.path.isfile(path):
+            return False
+        if compute_file_sha256(Path(path).read_bytes()) != recorded:
+            return False
+    return True
 
 
 if __name__ == "__main__":  # pragma: no cover

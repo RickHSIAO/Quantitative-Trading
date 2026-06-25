@@ -117,12 +117,31 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   network is GET-only public reads + authenticated Demo GET reads (no POST/PUT/PATCH/
   DELETE, no order/leverage/margin-mode/position-mode mutation, no Live endpoint). It
   imports no sender / readiness / execution gate / native execution / Pilot store, calls
-  none of them, and writes four immutable atomic no-clobber artifacts (current market
-  evidence / Demo account evidence / feasibility review / CLI summary), each carrying a
-  network audit + credential-leak check + fingerprint. **PASS means technically/account-
-  feasible AT THE COLLECTION TIMESTAMP ONLY**; current evidence must be recollected before
-  any later execution authorization. `execution_readiness`/`execution_authorized` stay
-  False even on PASS; all order/amend/cancel/live counters stay 0; Pilot remains 0/7.
+  none of them, and writes four **individually-atomic** no-clobber artifacts (current
+  market evidence / Demo account evidence / feasibility review / CLI summary), each
+  carrying a network audit + credential-leak check + fingerprint. **PASS means technically/
+  account-feasible AT THE COLLECTION TIMESTAMP ONLY**; current evidence must be recollected
+  before any later execution authorization. `execution_readiness`/`execution_authorized`
+  stay False even on PASS; all order/amend/cancel/live counters stay 0; Pilot remains 0/7.
+- **CH4A_FIX1 account-semantics & auditability corrections:** (1) position mode is no
+  longer hardcoded to one-way — it is DERIVED from real position evidence (Bybit
+  `positionIdx`, surfaced read-only on `PositionSnapshot`); when it cannot be proven the
+  account evidence is `UNAVAILABLE`/`BLOCKED`, never silently one-way. (2) EVERY currently
+  non-zero pre-existing position now defaults to **protected** (this run owns no
+  positions); the historical protected-symbol constant is retained only as a consistency
+  anchor (`historical_protected_anchor`), and any strategy-target ∩ open-position overlap
+  fails closed. (3) The account-level wallet `accountIMRate` is recorded only as
+  `account_im_rate_context` and is NEVER used as the projected per-order initial-margin
+  rate; margin feasibility stays `UNAVAILABLE` unless an INDEPENDENT projected-margin rate
+  (non-account-level source) is supplied — `accountIMRate` alone can never produce PASS.
+  (4) Each per-symbol market row now retains all validated evidence (exchange/local
+  timestamps, evidence age, endpoint, contract type, settle coin, trading flag, tick size,
+  rules, raw/rounded quantity + notional, validation status/failures) so the market
+  validation is replayable offline. (5) The four files are individually atomic, not
+  bundle-atomic; the summary reports an honest `bundle_publication_status`
+  (`BUNDLE_COMPLETE` only when all core files exist and their on-disk SHAs match, else
+  `BUNDLE_INCOMPLETE`), and a partial publication returns failure without claiming success.
+  Execution remains unauthorized; Pilot remains 0/7.
 
 - CG binding code complete in `src/demo_strategy_native_ws_price_binding.py`
 - Provides `bind_plan_prices_to_ws_evidence()`, `build_ws_bound_plan_artifact()`,

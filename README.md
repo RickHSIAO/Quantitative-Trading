@@ -180,13 +180,19 @@ python scripts/run_demo_strategy_current_feasibility.py \
 - 對 50 檔標的收集**當前**公開線性市場價格 + instrument rules，並以**當前價格**用 Decimal
   floor-to-step 重新計算當前可執行數量（**不沿用歷史綁定數量**）。
 - 以認證的 **Demo-only 唯讀 GET** 收集錢包 / 持倉 / 帳戶模式證據，證明 Demo 主機並拒絕 Live。
-- Decimal 保證金模型：在缺少獨立 initial-margin rate 時**永不判 PASS**（→ `UNAVAILABLE`），
-  並保留可設定的安全餘裕。
+- 倉位模式由真實持倉證據（Bybit `positionIdx`）推導，**絕不硬編一律 one-way**；無法證明時
+  回 `UNAVAILABLE`/`BLOCKED`。每一筆當前非零既有持倉皆**預設受保護**（歷史名單僅作一致性
+  錨點），任何策略標的與既有持倉重疊一律 fail closed。
+- Decimal 保證金模型：帳戶層級 `accountIMRate` 僅作帳戶健康**情境**（`account_im_rate_context`），
+  **不**作為 50 個新標的的投影保證金率；在缺少**獨立**投影保證金率時**永不判 PASS**（→
+  `UNAVAILABLE`），並保留可設定的安全餘裕。
 - 僅 GET 唯讀讀取（無 POST/PUT/PATCH/DELETE、無下單 / 改單 / 撤單 / 槓桿 / 保證金模式 /
   倉位模式變更、無 Live 端點）；不 import 也不呼叫 sender / readiness / gate / native
   execution / Pilot，永不核可或送出訂單。所有 order 計數器恆為 0，Pilot 維持 0/7。
-- 輸出四份不可變、atomic、no-clobber 工件（當前市場證據 / Demo 帳戶證據 / 可行性審查 /
-  摘要），各含 network audit、credential-leak check、fingerprint。
+- 輸出四份**各自 atomic**、no-clobber 工件（當前市場證據 / Demo 帳戶證據 / 可行性審查 /
+  摘要），各含 network audit、credential-leak check、fingerprint；四者**非 bundle-atomic**，
+  摘要會誠實標示 `bundle_publication_status`（僅當全部核心檔案存在且雜湊相符才為
+  `BUNDLE_COMPLETE`）。每份市場證據列保留可離線重播的完整驗證資訊。
 - **PASS 僅代表「在收集時間點」技術/帳戶可行**；任何後續執行核可前都必須重新收集當前證據。
 
 ## 安全性
