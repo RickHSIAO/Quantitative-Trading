@@ -135,6 +135,28 @@ validation/binder helpers + the no-clobber writer — no native-daily runner, Pi
 readiness, gate, execution, sender, reporting or network — and does not run review-only,
 query market data, check account margin, or authorize execution.
 
+CH4A adds a NEW read-only evidence boundary: the CURRENT market + Demo-account
+feasibility revalidation (`src/demo_strategy_native_current_feasibility.py`, CLI
+`scripts/run_demo_strategy_current_feasibility.py
+--current-market-demo-account-feasibility-read-only`). Unlike CH3 (which reviews the
+HISTORICAL binding evidence), CH4A re-derives feasibility from FRESH evidence collected at
+run time. It pins the trusted CH3C2 chain (final Review artifact, Anchor Manifest,
+canonical wrapper, strategy-symbol source) by exact bytes + caller-owned canonical SHA256;
+collects current public linear market prices + instrument rules and recomputes the current
+executable quantity per target from the CURRENT price under Decimal floor-to-step (the
+historical binding qty is never reused); collects authenticated Demo-only read-only account
+evidence (wallet/positions/account mode via the audited `DemoReadOnlyClient`/
+`DemoMarketPriceGuard`, GET only) proving the Demo host and denying Live; and evaluates a
+Decimal margin model that never PASSes without an independent initial-margin rate (→
+`UNAVAILABLE`) and reserves configurable safety headroom. The pure core does ALL validation
+offline (injected transports in tests); the CLI is the only impure boundary and writes four
+immutable atomic no-clobber artifacts (market evidence / account evidence / feasibility
+review / summary) carrying a network audit, credential-leak check and fingerprint. The mode
+is terminal and runs before any Pilot-state load; it imports no sender/readiness/gate/native
+execution/Pilot store, calls none of them, and never authorizes or places an order. PASS is
+valid only at the collection timestamp; evidence must be recollected before any later
+execution authorization.
+
 CH2_FIX1 isolation hardening: the Plan-only mode-conflict validation runs as the
 FIRST branch of `main()` — before the reconcile/reporting branch, the
 `PilotStateStore` RUNNING gate, provider construction, source read and output
@@ -197,6 +219,7 @@ an existing destination and removes only the task-created temp on failure).
 | WS-bound Plan review core | `src/demo_strategy_native_ws_bound_plan_review.py` | CH3B1 pure offline review |
 | WS-bound Plan review CLI | `scripts/run_demo_strategy_pilot_native_daily.py --ws-bound-plan-review-only` | CH3B2 terminal review-only mode |
 | Review anchor-bundle builder | `src/demo_strategy_native_ws_review_anchor_bundle.py` + `scripts/build_demo_strategy_ws_review_anchor_bundle.py` | CH3C1 trusted manifest builder |
+| Current feasibility (read-only) | `src/demo_strategy_native_current_feasibility.py` + `scripts/run_demo_strategy_current_feasibility.py --current-market-demo-account-feasibility-read-only` | CH4A terminal read-only current market + Demo account revalidation |
 | Daily orchestrator | `src/demo_strategy_pilot_daily_runner.py` | DRY-RUN only |
 | Readiness state machine | `src/demo_strategy_pilot_readiness.py` | 7-day gate |
 | Current state | `docs/CURRENT_STATE.md` | Updated per cleanup task |

@@ -97,6 +97,33 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   Old runtime artifacts were NOT rewritten. Execution remains unauthorized; Pilot remains
   0/7; all order/amend/cancel/live counts stay 0.
 
+- **CH4A: read-only CURRENT market + Demo-account feasibility revalidation.**
+  CH3 completed the HISTORICAL binding-time review and deliberately left
+  `current_market_freshness_status = NOT_EVALUATED` /
+  `account_margin_feasibility_status = UNAVAILABLE_NOT_EVALUATED`. CH4A
+  (`src/demo_strategy_native_current_feasibility.py`, CLI
+  `scripts/run_demo_strategy_current_feasibility.py
+  --current-market-demo-account-feasibility-read-only`) is an explicit, terminal,
+  **read-only** mode that revalidates the CURRENT market and Demo account only. It pins
+  the trusted CH3C2 inputs (final Review artifact, Anchor Manifest, canonical wrapper,
+  strategy-symbol source) by EXACT bytes + externally-supplied canonical SHA256 and
+  cross-checks the lineage chain; collects FRESH public linear market evidence +
+  instrument rules for the 50 symbols and recomputes the CURRENT executable quantity per
+  target from the CURRENT price (Decimal floor-to-step; the historical binding qty is
+  NEVER reused); collects authenticated Demo-only read-only account evidence (wallet /
+  positions / account mode) proving the Demo host and denying Live; and evaluates a
+  Decimal margin-feasibility model that NEVER claims PASS when the required initial-margin
+  rate is unknown (→ `UNAVAILABLE`) and reserves a configurable safety headroom. Allowed
+  network is GET-only public reads + authenticated Demo GET reads (no POST/PUT/PATCH/
+  DELETE, no order/leverage/margin-mode/position-mode mutation, no Live endpoint). It
+  imports no sender / readiness / execution gate / native execution / Pilot store, calls
+  none of them, and writes four immutable atomic no-clobber artifacts (current market
+  evidence / Demo account evidence / feasibility review / CLI summary), each carrying a
+  network audit + credential-leak check + fingerprint. **PASS means technically/account-
+  feasible AT THE COLLECTION TIMESTAMP ONLY**; current evidence must be recollected before
+  any later execution authorization. `execution_readiness`/`execution_authorized` stay
+  False even on PASS; all order/amend/cancel/live counters stay 0; Pilot remains 0/7.
+
 - CG binding code complete in `src/demo_strategy_native_ws_price_binding.py`
 - Provides `bind_plan_prices_to_ws_evidence()`, `build_ws_bound_plan_artifact()`,
   `canonical_bound_plan_actions()`
