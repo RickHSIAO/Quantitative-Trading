@@ -96,14 +96,61 @@ _PRIVATE_TOPIC_PREFIXES: tuple[str, ...] = (
     "position", "order", "wallet", "execution", "greek", "dcp",
 )
 
-# Forbidden keys anywhere in an outbound payload / artifact (credential guard).
-_FORBIDDEN_CREDENTIAL_KEY_FRAGMENTS: tuple[str, ...] = (
-    "api_key", "apikey", "api-key", "secret", "sign", "signature",
+# Forbidden credential keys anywhere in an outbound payload / artifact.
+#
+# Two tiers, because the credential vocabulary contains both long distinctive
+# fragments and one dangerously short token. A broad ``"sign" in key`` substring
+# test falsely rejected benign keys such as ``rejected_signals`` / ``design_version``
+# (TASK-014CH3C2_FIX2), so the short token is matched on word boundaries only.
+#
+#   * SUBSTRING tier -- long, distinctive fragments that cannot plausibly occur
+#     inside a benign field name; substring matching keeps strict detection of
+#     forms such as ``mysecret`` / ``xapikey``.
+#   * TOKEN tier -- the short, ambiguous token ``sign`` that must match ONLY as a
+#     discrete credential token (after delimiter + camelCase normalization), never
+#     as arbitrary characters inside a normal word.
+_FORBIDDEN_CREDENTIAL_KEY_SUBSTRINGS: tuple[str, ...] = (
+    "api_key", "apikey", "api-key", "secret", "signature",
     "x-bapi-api-key", "x-bapi-sign", "passphrase",
 )
+_FORBIDDEN_CREDENTIAL_KEY_TOKENS: frozenset[str] = frozenset({"sign"})
+
+# camelCase / PascalCase word boundaries (``apiKey`` -> ``api Key``,
+# ``XBapiSign`` -> ``X Bapi Sign``); split everything else on non-alphanumerics.
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
 # The op that would authenticate a private stream. It must be impossible here.
 _FORBIDDEN_OPS: frozenset[str] = frozenset({"auth"})
+
+
+def _credential_key_tokens(key: str) -> list[str]:
+    """Split ``key`` into lowercase tokens on delimiter AND camelCase boundaries.
+
+    ``rejected_signals`` -> ``['rejected', 'signals']``; ``apiKey`` -> ``['api', 'key']``;
+    ``x-bapi-sign`` -> ``['x', 'bapi', 'sign']``. Pure; no I/O.
+    """
+    spaced = _CAMEL_BOUNDARY_RE.sub(" ", str(key))
+    return [t for t in _NON_ALNUM_RE.split(spaced.lower()) if t]
+
+
+def _find_forbidden_credential_key(key: str) -> str | None:
+    """Classify ``key`` and return the matched forbidden fragment, else ``None``.
+
+    Long distinctive fragments match as substrings (strict). The short token
+    ``sign`` matches ONLY as a discrete token so benign keys such as
+    ``rejected_signals``, ``signal_count`` and ``design_version`` are accepted.
+    Pure; no I/O; never reveals any value.
+    """
+    low = str(key).strip().lower()
+    for frag in _FORBIDDEN_CREDENTIAL_KEY_SUBSTRINGS:
+        if frag in low:
+            return frag
+    tokens = set(_credential_key_tokens(key))
+    for tok in _FORBIDDEN_CREDENTIAL_KEY_TOKENS:
+        if tok in tokens:
+            return tok
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -762,10 +809,9 @@ def assert_no_credentials(payload: Any, *, secret_values: Sequence[str] = ()) ->
         if isinstance(obj, Mapping):
             for k, v in obj.items():
                 kl = str(k).strip().lower()
-                for frag in _FORBIDDEN_CREDENTIAL_KEY_FRAGMENTS:
-                    if frag in kl:
-                        raise WsEndpointError(
-                            f"forbidden credential key in payload: {k!r}")
+                if _find_forbidden_credential_key(k) is not None:
+                    raise WsEndpointError(
+                        f"forbidden credential key in payload: {k!r}")
                 if kl == "op" and str(v).strip().lower() in _FORBIDDEN_OPS:
                     raise WsEndpointError("forbidden auth op in payload")
                 _walk(v)

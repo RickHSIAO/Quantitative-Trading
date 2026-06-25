@@ -57,6 +57,25 @@ Architecture source of truth: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md)
   false and order/amend/cancel/live counts stay 0; execution remains unauthorized; Pilot
   remains 0/7.
 
+- CH3C2_FIX2: credential-key false positive removed. `assert_no_credentials` previously
+  matched forbidden key fragments by broad substring, so the short token `sign` matched
+  the character sequence inside benign Plan fields such as `rejected_signals`,
+  `accepted_signals`, `signal_count` and `design_version` — wrongly classifying them as
+  credentials and raising `WsEndpointError` inside `build_ws_bound_plan_artifact()`'s
+  final wrapper guard. Credential-key matching is now token/boundary aware
+  (`demo_public_ws_ticker_evidence._find_forbidden_credential_key`): long distinctive
+  fragments (`api_key`, `apikey`, `api-key`, `secret`, `signature`, `x-bapi-*`,
+  `passphrase`) still match as substrings, while the short token `sign` matches ONLY as a
+  discrete token after delimiter + camelCase normalization. Genuine credential keys and
+  known secret VALUES remain fail-closed; secret-value scanning is unchanged and never
+  echoes the secret. CH2 (`demo_strategy_native_ws_bound_plan_only`) now handles
+  `ws.WsEndpointError` (a `ValueError` subclass) BEFORE the generic handler, so a WS
+  safety violation retains a safe, sanitized, length-bounded actionable reason
+  (`binder_error:WsEndpointError:...`) instead of collapsing to `binder_error:ValueError`.
+  Old artifacts (`outputs/ch3c2_20260624/*`, `outputs/ws_ticker_evidence_20260622*.json`)
+  were NOT rewritten. Execution remains unauthorized; Pilot remains 0/7; all
+  order/amend/cancel/live counts stay 0.
+
 - CG binding code complete in `src/demo_strategy_native_ws_price_binding.py`
 - Provides `bind_plan_prices_to_ws_evidence()`, `build_ws_bound_plan_artifact()`,
   `canonical_bound_plan_actions()`

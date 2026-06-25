@@ -789,6 +789,100 @@ def test_atomic_writer_rejects_dangling_symlink_destination(tmp_path):
     assert not any(p.suffix == ".tmp" for p in tmp_path.iterdir())
 
 
+# ===========================================================================
+# FIX2 -- credential-key matching is token/boundary aware (TASK-014CH3C2_FIX2)
+#
+# A broad ``"sign" in key`` test falsely rejected a benign ``rejected_signals``
+# Plan field as a credential, so the binder's final ``assert_no_credentials``
+# raised WsEndpointError and CH2 discarded the actionable reason.
+# ===========================================================================
+
+def _plan_with_rejected_signals(extra_planner=None):
+    """Realistic Strategy-native seed Plan carrying a benign ``rejected_signals``
+    list inside the planner block (it propagates into the canonical bound plan)."""
+    plan = _signed_plan()
+    plan["planner"]["rejected_signals"] = [
+        {"symbol": "ZZZUSDT", "reason": "below_score_threshold", "signal_count": 0}]
+    plan["planner"]["accepted_signals"] = ["SYM00USDT"]
+    plan["planner"]["strategy_signal_count"] = 50
+    if extra_planner:
+        plan["planner"].update(extra_planner)
+    return plan
+
+
+def test_pure_seed_plan_with_rejected_signals_passes_not_false_positive():
+    # Regression: the benign `rejected_signals` Plan field must NOT be misread as a
+    # credential. The whole seed Plan reaches the normal PASS binder/consumer result.
+    kw, source, raw, now = _pure_kwargs()
+    kw["seed_plan"] = _plan_with_rejected_signals()
+    r = wsbpo.build_and_validate_ws_bound_plan_only(**kw)
+    assert r.status == wsbpo.WS_BOUND_PLAN_ONLY_PASS
+    assert r.wrapper_artifact is not None
+    # The benign field really did propagate into the sealed wrapper (true regression).
+    assert "rejected_signals" in r.wrapper_artifact["canonical_bound_plan"]["planner"]
+    assert r.execution_authorized is False and r.pilot_advanced is False
+    assert r.wrapper_artifact["order_post_count"] == 0
+
+
+def test_binder_directly_seals_wrapper_with_rejected_signals():
+    # The binder's own final assert_no_credentials no longer false-positives.
+    now = time.time_ns()
+    ws_art = cg.build_complete_ws_artifact(now_ns=now)
+    raw = json.dumps(ws_art).encode("utf-8")
+    wrapper = wb.build_ws_bound_plan_artifact(
+        plan_artifact=_plan_with_rejected_signals(), ws_artifact=ws_art,
+        ws_artifact_path="ws.json", ws_artifact_sha256=wb.compute_file_sha256(raw),
+        binding_epoch_ns=now + 2_000_000,
+        binding_freshness_threshold_ms=wsbpo.DEFAULT_FRESHNESS_THRESHOLD_MS)
+    assert wrapper["canonical_bound_plan"] is not None
+    assert "rejected_signals" in wrapper["canonical_bound_plan"]["planner"]
+
+
+def test_pure_seed_plan_with_real_credential_key_fails_closed():
+    # A genuine forbidden credential KEY in the Plan still fails closed, and CH2
+    # now RETAINS the actionable WsEndpointError reason (subclass of ValueError).
+    kw, source, raw, now = _pure_kwargs()
+    kw["seed_plan"] = _plan_with_rejected_signals(extra_planner={"api_key": "AKIA-LEAK"})
+    r = wsbpo.build_and_validate_ws_bound_plan_only(**kw)
+    assert r.status == wsbpo.WS_BOUND_PLAN_ONLY_BINDING_FAILED
+    assert r.wrapper_artifact is None  # no wrapper exposed on failure
+    joined = " ".join(r.blockers)
+    assert "binder_error:WsEndpointError:" in joined
+    assert "forbidden credential key" in joined
+    assert "api_key" in joined  # actionable; only the KEY name, never a value
+    assert "AKIA-LEAK" not in joined  # the secret value never leaks
+
+
+def test_ch2_retains_ws_safety_reason_sanitized_and_bounded(monkeypatch):
+    # The retained reason is single-line, control-char-free, and length-bounded.
+    long_key = "api_key" + "x" * 500
+
+    def _raise(**kw):
+        raise ws.WsEndpointError(
+            f"forbidden credential key in payload: {long_key!r}\nwith\tcontrol\x07chars")
+
+    monkeypatch.setattr(wsbpo.wb, "build_ws_bound_plan_artifact", _raise)
+    kw, source, raw, now = _pure_kwargs()
+    r = wsbpo.build_and_validate_ws_bound_plan_only(**kw)
+    assert r.status == wsbpo.WS_BOUND_PLAN_ONLY_BINDING_FAILED
+    reason = next(b for b in r.blockers if b.startswith("binder_error:WsEndpointError:"))
+    assert "\n" not in reason and "\t" not in reason and "\x07" not in reason
+    assert len(reason) <= len("binder_error:WsEndpointError:") + 210
+
+
+def test_ch2_generic_valueerror_still_fails_closed_by_type_only(monkeypatch):
+    # A non-WS ValueError must still be reduced to its type name (no message leak).
+    def _raise(**kw):
+        raise ValueError("sensitive internal detail SHOULD-NOT-APPEAR")
+
+    monkeypatch.setattr(wsbpo.wb, "build_ws_bound_plan_artifact", _raise)
+    kw, source, raw, now = _pure_kwargs()
+    r = wsbpo.build_and_validate_ws_bound_plan_only(**kw)
+    assert r.status == wsbpo.WS_BOUND_PLAN_ONLY_BINDING_FAILED
+    assert "binder_error:ValueError" in " ".join(r.blockers)
+    assert "SHOULD-NOT-APPEAR" not in " ".join(r.blockers)
+
+
 def test_cli_publication_race_returns_output_failed_no_clobber(tmp_path, monkeypatch, capsys):
     # Full CLI PASS path, but the destination is created during publication (race).
     _install_seed_mocks(monkeypatch)

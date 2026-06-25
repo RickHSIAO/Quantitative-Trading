@@ -83,6 +83,26 @@ def _is_pos_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
+# Upper bound on the retained WS-safety diagnostic reason. The ``WsEndpointError``
+# message only ever names a key (never a value), but the reason is still sanitized
+# defensively: control characters stripped and length bounded.
+_MAX_WS_SAFETY_REASON_LEN = 200
+
+
+def _safe_ws_safety_reason(exc: ws.WsEndpointError) -> str:
+    """Return a single-line, length-bounded, control-character-free reason string.
+
+    Preserves the actionable ``WsEndpointError`` text (e.g. the offending key name)
+    while guaranteeing no control characters and a bounded length. The WS guard
+    never embeds a secret VALUE in its message, so no value can leak here."""
+    raw = str(exc)
+    cleaned = "".join(ch for ch in raw if ch.isprintable())
+    cleaned = " ".join(cleaned.split())
+    if len(cleaned) > _MAX_WS_SAFETY_REASON_LEN:
+        cleaned = cleaned[:_MAX_WS_SAFETY_REASON_LEN] + "..."
+    return cleaned
+
+
 # ---------------------------------------------------------------------------
 # Pure build + validation core (no file / network / clock)
 # ---------------------------------------------------------------------------
@@ -169,6 +189,12 @@ def build_and_validate_ws_bound_plan_only(
             binding_freshness_threshold_ms=freshness_threshold_ms)
     except wb.WsPriceBindingError as exc:
         return _fail(WS_BOUND_PLAN_ONLY_BINDING_FAILED, f"binder_error:{exc}")
+    except ws.WsEndpointError as exc:
+        # WS safety guard fired inside the binder (e.g. forbidden credential key).
+        # ``WsEndpointError`` subclasses ``ValueError``, so it MUST be handled before
+        # the generic handler below or its actionable reason would be discarded.
+        return _fail(WS_BOUND_PLAN_ONLY_BINDING_FAILED,
+                     f"binder_error:WsEndpointError:{_safe_ws_safety_reason(exc)}")
     except (KeyError, TypeError, ValueError) as exc:  # noqa: BLE001
         return _fail(WS_BOUND_PLAN_ONLY_BINDING_FAILED, f"binder_error:{type(exc).__name__}")
 
