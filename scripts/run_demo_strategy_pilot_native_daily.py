@@ -33,8 +33,10 @@ client / sizer verbatim; imports neither main, src.risk nor BybitExecutor.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import hmac
+import io
 import json
 import os
 import re
@@ -42,6 +44,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -998,6 +1001,36 @@ def build_parser() -> argparse.ArgumentParser:
                    help="path to CH4A demo_account_evidence.json (prepare mode)")
     p.add_argument("--prepare-output-json", default=None,
                    help="optional no-clobber path to write the full 50-payload preview (prepare mode)")
+    # TASK-014: explicit, execution-capable batch mode (separate from the non-sending prepare
+    # mode). Real dispatch additionally requires --send-orders-to-demo + a date+payload-bound
+    # manual authorization token + Demo credentials + Demo host. Reuses execute_daily_native().
+    p.add_argument("--execute-prepared-demo-batch", dest="execute_prepared_demo_batch",
+                   action="store_true",
+                   help="opt-in EXECUTION-CAPABLE mode: recollect CH4A, re-prepare the 50 "
+                        "payloads, and (only with --send-orders-to-demo + matching token + Demo "
+                        "credentials) dispatch them via the existing execute_daily_native engine")
+    p.add_argument("--batch-authorization-token", dest="batch_authorization_token", default=None,
+                   help="exact date+payload-bound manual authorization token "
+                        "(CONFIRM_DEMO_NATIVE_BATCH_<YYYYMMDD>_<fingerprint16>) for execution mode")
+    # CH4A trusted-anchor inputs forwarded VERBATIM to the existing current-feasibility runner,
+    # which the execution mode invokes fresh (--allow-real-network) into the no-clobber
+    # preflight dir below. These are NOT consumed directly; only CH4A's fresh outputs are read.
+    p.add_argument("--review-artifact-json", dest="review_artifact_json", default=None,
+                   help="(execute mode) CH4A trusted review-artifact JSON path")
+    p.add_argument("--review-artifact-sha256", dest="review_artifact_sha256", default=None,
+                   help="(execute mode) expected review-artifact sha256")
+    p.add_argument("--anchor-manifest-json", dest="anchor_manifest_json", default=None,
+                   help="(execute mode) CH4A trusted anchor-manifest JSON path")
+    p.add_argument("--anchor-manifest-sha256", dest="anchor_manifest_sha256", default=None,
+                   help="(execute mode) expected anchor-manifest sha256")
+    p.add_argument("--wrapper-json", dest="wrapper_json", default=None,
+                   help="(execute mode) CH4A trusted wrapper JSON path")
+    p.add_argument("--strategy-symbols-json", dest="strategy_symbols_json", default=None,
+                   help="(execute mode) CH4A trusted strategy-symbols JSON path")
+    p.add_argument("--strategy-symbols-sha256", dest="strategy_symbols_sha256", default=None,
+                   help="(execute mode) expected strategy-symbols sha256")
+    p.add_argument("--ch4a-preflight-dir", dest="ch4a_preflight_dir", default=None,
+                   help="(execute mode) NEW no-clobber directory for the fresh CH4A outputs")
     return p
 
 
@@ -1384,6 +1417,18 @@ def _run_prepare_from_current_feasibility_artifacts(args: Any) -> int:
         feasibility_review=review, current_actions=current_actions,
         account_evidence=account, pilot_id=args.pilot_id, date=args.date)
 
+    # Manual-authorization handshake: when PREPARED, publish the deterministic payload
+    # fingerprint and the exact token the operator must pass back to --execute-prepared-demo-batch.
+    # Derived with the SAME helpers execution uses (no duplicated fingerprint logic). The token
+    # is a confirmation phrase, not a secret. Execution recomputes both from a FRESH CH4A run and
+    # only proceeds if they still match -- so a quantity change since preparation rejects.
+    if result.get("verdict") == nx.BATCH_PREP_PREPARED:
+        _fp = batch_payload_fingerprint(
+            _actions_from_prepared(result), pilot_id=args.pilot_id, date=args.date)
+        result["payload_fingerprint"] = _fp
+        result["expected_batch_authorization_token"] = expected_batch_authorization_token(
+            args.date, _fp)
+
     if args.prepare_output_json:
         if os.path.lexists(args.prepare_output_json):
             print(json.dumps({"verdict": nx.BATCH_PREP_REJECTED,
@@ -1395,6 +1440,279 @@ def _run_prepare_from_current_feasibility_artifacts(args: Any) -> int:
 
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return EXIT_OK if result["verdict"] == nx.BATCH_PREP_PREPARED else EXIT_BLOCKED
+
+
+# ---------------------------------------------------------------------------
+# TASK-014: explicit, fail-closed, Demo-only batch EXECUTION wiring.
+#
+# Wires the canonical runner to the existing 50-order execute_daily_native() engine behind
+# one manual authorization token that is BOTH date-bound and payload(fingerprint)-bound, so
+# an old token can authorize neither a different day nor a different set of 50 order bodies.
+# Every gate below runs BEFORE any transport is constructed; the engine is invoked at most
+# once. No new sender / engine / artifact schema / authorization framework is introduced.
+# ---------------------------------------------------------------------------
+
+BATCH_AUTH_TOKEN_PREFIX = "CONFIRM_DEMO_NATIVE_BATCH_"
+
+EXEC_BATCH_DISPATCHED = "DEMO_BATCH_DISPATCHED"
+EXEC_BATCH_AMBIGUOUS = "DEMO_BATCH_AMBIGUOUS_FAIL_CLOSED"
+EXEC_BATCH_REJECTED = "DEMO_BATCH_REJECTED_PRE_SEND"
+
+
+def _compact_date(date: str) -> str:
+    return str(date).replace("-", "").strip()
+
+
+def batch_payload_fingerprint(actions: Any, *, pilot_id: str, date: str) -> str:
+    """Deterministic SHA-256 over the EXACT final order bodies execute_daily_native() will
+    POST (the same build_order_body / orderLinkId the engine uses), in dispatch order."""
+    bodies = [nx.build_order_body(a, order_link_id=a.order_link_id(pilot_id, date))
+              for a in actions]
+    blob = json.dumps(bodies, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def expected_batch_authorization_token(date: str, fingerprint: str) -> str:
+    """Date-bound + payload-bound manual token (no secret); follows the existing
+    CONFIRM_DEMO_*_<date>_<bound> convention."""
+    return f"{BATCH_AUTH_TOKEN_PREFIX}{_compact_date(date)}_{fingerprint[:16]}"
+
+
+def _actions_from_prepared(prepared: Mapping[str, Any]) -> list[Any]:
+    """Rebuild the canonical StrategyNativeAction list from the prepared payloads (same
+    construction prepare_strategy_native_batch_dry_run() used internally)."""
+    return [nx.StrategyNativeAction(
+                symbol=p["symbol"], side=p["side"], qty=p["qty"], intent=nx.INTENT_OPEN,
+                reduce_only=False, notional_usdt=p.get("rounded_notional_usd", ""),
+                source_reference=p["symbol"])
+            for p in prepared.get("order_payloads", [])]
+
+
+class FreshCh4aError(RuntimeError):
+    """The in-command fresh CH4A read-only collection failed (non-zero exit / unreadable)."""
+
+
+def _utc_today() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _invoke_real_ch4a(argv: list[str]) -> int:
+    """Call the EXISTING CH4A current-feasibility runner's main() (no duplication of its
+    validation). Imported lazily to avoid import-time coupling."""
+    import importlib
+    ch4a = importlib.import_module("scripts.run_demo_strategy_current_feasibility")
+    return ch4a.main(argv)
+
+
+_CH4A_PREFLIGHT_FILES = {
+    "review": "current_feasibility_review.json",
+    "market": "current_market_evidence.json",
+    "account": "demo_account_evidence.json",
+    "summary": "current_feasibility_summary.json",
+}
+
+
+def _collect_fresh_ch4a(args: Any, *, invoke=None) -> tuple[Mapping[str, Any], list, Mapping[str, Any]]:
+    """Run the EXISTING CH4A read-only current-feasibility flow EXACTLY ONCE with
+    --allow-real-network into a fresh NO-CLOBBER preflight directory, require exit 0, and read
+    ONLY the artifacts that run produced. Execution NEVER trusts pre-existing artifact files;
+    arbitrary old --current-*-json paths (used by the non-sending prepare mode) are ignored."""
+    invoke = invoke or _invoke_real_ch4a
+    required = {
+        "--review-artifact-json": args.review_artifact_json,
+        "--review-artifact-sha256": args.review_artifact_sha256,
+        "--anchor-manifest-json": args.anchor_manifest_json,
+        "--anchor-manifest-sha256": args.anchor_manifest_sha256,
+        "--wrapper-json": args.wrapper_json,
+        "--strategy-symbols-json": args.strategy_symbols_json,
+        "--strategy-symbols-sha256": args.strategy_symbols_sha256,
+        "--ch4a-preflight-dir": args.ch4a_preflight_dir,
+    }
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        raise ValueError("missing_ch4a_arg:" + ",".join(missing))
+    preflight = args.ch4a_preflight_dir
+    if os.path.lexists(preflight):
+        raise ValueError("ch4a_preflight_dir_exists:" + str(preflight))
+    os.makedirs(preflight)
+    out = {k: os.path.join(preflight, v) for k, v in _CH4A_PREFLIGHT_FILES.items()}
+    ch4a_argv = [
+        "--current-market-demo-account-feasibility-read-only",
+        "--review-artifact-json", args.review_artifact_json,
+        "--review-artifact-sha256", args.review_artifact_sha256,
+        "--anchor-manifest-json", args.anchor_manifest_json,
+        "--anchor-manifest-sha256", args.anchor_manifest_sha256,
+        "--wrapper-json", args.wrapper_json,
+        "--strategy-symbols-json", args.strategy_symbols_json,
+        "--strategy-symbols-sha256", args.strategy_symbols_sha256,
+        "--market-evidence-output-json", out["market"],
+        "--account-evidence-output-json", out["account"],
+        "--feasibility-review-output-json", out["review"],
+        "--summary-output-json", out["summary"],
+        "--allow-real-network",
+    ]
+    # Capture CH4A's own printed JSON so it never contaminates the single final execution
+    # summary on stdout. The exit status (return value) and the written artifacts are preserved.
+    ch4a_stdout = io.StringIO()
+    with contextlib.redirect_stdout(ch4a_stdout):
+        rc = invoke(ch4a_argv)
+    if rc != 0:
+        raise FreshCh4aError(f"ch4a_exit_nonzero:{rc}")
+    with open(out["review"], encoding="utf-8") as f:
+        review = json.load(f)
+    with open(out["market"], encoding="utf-8") as f:
+        market = json.load(f)
+    with open(out["account"], encoding="utf-8") as f:
+        account = json.load(f)
+    current_actions = market.get("current_actions") if isinstance(market, Mapping) else None
+    if not isinstance(current_actions, list):
+        raise ValueError("market_evidence_missing_current_actions")
+    return review, current_actions, account
+
+
+def _build_real_demo_transport(*, credentials: Any, env: Mapping[str, str] | None = None) -> Any:
+    """Construct the REAL Demo transport from BYBIT_DEMO_* env credentials. Only ever called
+    AFTER every authorization gate passes."""
+    src = env if env is not None else os.environ
+    return RealDemoOrderTransport(
+        api_key=src.get("BYBIT_DEMO_API_KEY", "") or "",
+        api_secret=src.get("BYBIT_DEMO_API_SECRET", "") or "",
+        recv_window=credentials.recv_window)
+
+
+def _run_execute_prepared_demo_batch(
+    args: Any, *,
+    collect_feasibility=None, build_transport=None, executor=None,
+    env: Mapping[str, str] | None = None, base_url: str | None = None,
+    today: str | None = None,
+) -> int:
+    """Explicit, fail-closed, Demo-only batch execution. See the module section header.
+    Injection seams (collect_feasibility / build_transport / executor / env / base_url / today)
+    exist ONLY so the wiring is fully testable offline; production uses the real defaults,
+    which recollect fresh CH4A evidence inside this very command."""
+    collect_feasibility = collect_feasibility or _collect_fresh_ch4a
+    build_transport = build_transport or _build_real_demo_transport
+    executor = executor or nx.execute_daily_native
+    base_url = base_url or DEMO_BASE_URL
+    today = today or _utc_today()
+    output_root = args.test_output_root
+
+    state: dict[str, Any] = {"transport_constructed": False, "executor_called": 0}
+
+    def _reject(blocker: str, *, exit_code: int, extra: Mapping[str, Any] | None = None) -> int:
+        out = {
+            "status": EXEC_BATCH_REJECTED, "mode": "EXECUTE_PREPARED_DEMO_BATCH",
+            "pilot_id": args.pilot_id, "date": args.date, "blockers": [blocker],
+            "execution_authorized": False, "execution_batch_authorized": False,
+            "transport_constructed": state["transport_constructed"],
+            "execute_daily_native_called": state["executor_called"],
+            "order_post_count": 0, "amend_post_count": 0, "cancel_post_count": 0,
+            "live_order_post_count": 0, "live_trading_authorized": False,
+            "pilot_advanced": False,
+        }
+        if extra:
+            out.update(extra)
+        print(json.dumps(out, ensure_ascii=False, sort_keys=True))
+        return exit_code
+
+    # --- 1. Required flags (execution + send) -------------------------------------------
+    if not args.send_orders_to_demo:
+        return _reject("missing_send_orders_to_demo_flag", exit_code=EXIT_INVALID)
+    # --- 2. Mode conflicts (incl. Pilot-advancement, which this mode must never trigger) --
+    conflicts = [n for n, v in (
+        ("prepare_from_current_feasibility_artifacts", args.prepare_from_ch4a),
+        ("ws_bound_plan_only", args.ws_bound_plan_only),
+        ("ws_bound_plan_review_only", args.ws_bound_plan_review_only),
+        ("reconcile_outputs_only", args.reconcile_outputs_only),
+        ("advance_on_success", args.advance_on_success),
+    ) if v]
+    if conflicts:
+        return _reject(f"incompatible_flag:{conflicts[0]}", exit_code=EXIT_INVALID)
+    # --- 3. --date must equal the current UTC date (no stale-day execution) ---------------
+    if str(args.date).strip() != str(today).strip():
+        return _reject(f"execution_date_not_current_utc:{today}", exit_code=EXIT_INVALID)
+    # --- 4. Token must be supplied -------------------------------------------------------
+    if not args.batch_authorization_token:
+        return _reject("missing_authorization_token", exit_code=EXIT_INVALID)
+    # --- 5. Demo host only; live endpoint permanently rejected ---------------------------
+    try:
+        assert_demo_url(base_url + EP_ORDER_REALTIME)
+        host_ok = host_of(base_url) == DEMO_HOST and base_url.startswith(DEMO_BASE_URL)
+    except Exception:  # noqa: BLE001 -- any guard rejection denies the endpoint
+        host_ok = False
+    if not host_ok:
+        return _reject("non_demo_base_url_or_live_endpoint", exit_code=EXIT_INVALID)
+    # --- 6. Demo credentials present (presence only; never the secret value) -------------
+    creds = load_demo_credentials(env)
+    if not (creds.api_key_present and creds.api_secret_present):
+        return _reject("demo_credentials_missing", exit_code=EXIT_INVALID)
+    # --- 7. Recollect fresh CH4A evidence INSIDE this command (no stale artifacts) --------
+    try:
+        review, current_actions, account = collect_feasibility(args)
+    except (OSError, ValueError, FreshCh4aError) as exc:
+        return _reject(f"feasibility_recollection_failed:{type(exc).__name__}",
+                       exit_code=EXIT_INPUT_FAILURE, extra={"detail": str(exc)})
+    # --- 8. Re-prepare + validate (CH4A PASS, 50, 25/25, no protected, qty/leverage/margin)
+    prepared = nx.prepare_strategy_native_batch_dry_run(
+        feasibility_review=review, current_actions=current_actions,
+        account_evidence=account, pilot_id=args.pilot_id, date=args.date)
+    if prepared["verdict"] != nx.BATCH_PREP_PREPARED:
+        return _reject("preparation_not_prepared", exit_code=EXIT_BLOCKED,
+                       extra={"preparation_blockers": prepared.get("blockers", [])})
+    # --- 9. Fingerprint the exact 50 bodies; token must match this date + payload ---------
+    actions = _actions_from_prepared(prepared)
+    fingerprint = batch_payload_fingerprint(actions, pilot_id=args.pilot_id, date=args.date)
+    expected_token = expected_batch_authorization_token(args.date, fingerprint)
+    token_extra = {"payload_fingerprint": fingerprint, "expected_authorization_token": expected_token}
+    if args.batch_authorization_token != expected_token:
+        return _reject("authorization_token_mismatch", exit_code=EXIT_INVALID, extra=token_extra)
+    # --- 10. Pilot state must be RUNNING + Demo-authorized + Live denied ------------------
+    pstate = rd.PilotStateStore(args.pilot_id, output_root).read_state()
+    if not (pstate is not None and pstate.get("lifecycle_state") == rd.RUNNING
+            and pstate.get("order_execution_authorized") is True
+            and pstate.get("live_trading_authorized") is False):
+        return _reject("pilot_state_incompatible", exit_code=EXIT_BLOCKED, extra=token_extra)
+    # --- 11. A prior ambiguous batch for this date must be reconciled first ---------------
+    prior = nx.NativeExecutionStore(args.pilot_id, args.date, output_root).read_state()
+    if prior is not None and prior.get("day_verdict") == nx.DAY_AMBIGUOUS:
+        return _reject("prior_ambiguous_requires_reconciliation", exit_code=EXIT_BLOCKED,
+                       extra=token_extra)
+
+    # ===== All fail-closed gates passed: construct the transport and dispatch ONCE. =====
+    transport = build_transport(credentials=creds, env=env)
+    state["transport_constructed"] = True
+    result = executor(pilot_id=args.pilot_id, date=args.date, actions=actions,
+                      transport=transport, output_root=output_root, base_url=base_url)
+    state["executor_called"] += 1
+
+    day_verdict = result.day_verdict
+    # Pilot advancement is intentionally NOT performed here: it remains owned by the existing
+    # reporting / Excel / daily-success workflow. --advance-on-success is rejected above.
+    pilot_advanced = False
+
+    if day_verdict == nx.DAY_SUCCESS:
+        status, exit_code = EXEC_BATCH_DISPATCHED, EXIT_OK
+    elif day_verdict == nx.DAY_AMBIGUOUS:
+        status, exit_code = EXEC_BATCH_AMBIGUOUS, EXIT_AMBIGUOUS
+    else:                                   # DAY_NOT_RUNNING / DAY_ENDPOINT -> fail closed
+        status, exit_code = EXEC_BATCH_REJECTED, EXIT_BLOCKED
+
+    out = {
+        "status": status, "mode": "EXECUTE_PREPARED_DEMO_BATCH",
+        "pilot_id": args.pilot_id, "date": args.date, "day_verdict": day_verdict,
+        "blockers": [], "payload_fingerprint": fingerprint,
+        "execution_authorized": True, "execution_batch_authorized": True,
+        "transport_constructed": state["transport_constructed"],
+        "execute_daily_native_called": state["executor_called"],
+        "accepted_count": len(result.accepted), "rejected_count": len(result.rejected),
+        "ambiguous_count": len(result.ambiguous),
+        "sender_call_count": result.sender_call_count,
+        "order_post_count": result.order_post_count,
+        "amend_post_count": 0, "cancel_post_count": 0, "live_order_post_count": 0,
+        "live_trading_authorized": False, "pilot_advanced": pilot_advanced,
+    }
+    print(json.dumps(out, ensure_ascii=False, sort_keys=True))
+    return exit_code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1423,6 +1741,12 @@ def main(argv: list[str] | None = None) -> int:
     # authorization marker, or Pilot advance is ever reached.
     if args.prepare_from_ch4a:
         return _run_prepare_from_current_feasibility_artifacts(args)
+
+    # TASK-014: explicit, execution-capable batch dispatch. Every fail-closed gate (flags,
+    # token, fingerprint, host, credentials, Pilot state, prep PASS) is checked BEFORE any
+    # transport is constructed or any order is sent; execute_daily_native() runs at most once.
+    if args.execute_prepared_demo_batch:
+        return _run_execute_prepared_demo_batch(args)
 
     if args.ws_bound_plan_review_only:
         return _run_ws_bound_plan_review_only(args)
