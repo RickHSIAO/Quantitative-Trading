@@ -261,6 +261,192 @@ def build_order_body(action: StrategyNativeAction, *, order_link_id: str) -> dic
 
 
 # ---------------------------------------------------------------------------
+# TASK-014: terminal dry-run batch preparation (NO send; reuses the builders above)
+# ---------------------------------------------------------------------------
+#
+# Consumes a PASS from the existing CH4A current-feasibility flow
+# (``demo_strategy_native_current_feasibility``) -- which already recollects fresh prices,
+# rules, Demo wallet/positions/mode and per-symbol leverage, recomputes all 50 current
+# quantities, requires 50/50 leverage coverage + margin PASS, and rejects protected overlap
+# -- and produces the EXACT 50 Bybit order payloads via the same ``StrategyNativeAction`` /
+# ``classify_action`` / ``build_order_body`` / ``order_link_id`` the live engine uses. It
+# NEVER touches a transport, calls an order endpoint, writes an authorization marker, or
+# advances the Pilot. Residuals are NOT redistributed: gross/net are the natural
+# exchange-rule sums. CH4A already proves freshness/account validity/per-symbol sizing, so
+# only the small set of final fail-closed assertions below is re-checked here.
+
+DRY_RUN_REQUIRED_FEASIBILITY_STATUS = "CURRENT_FEASIBILITY_PASS"
+DRY_RUN_REQUIRED_MARGIN_STATUS = "MARGIN_FEASIBILITY_PASS"
+DRY_RUN_REQUIRED_LEVERAGE_STATUS = "TARGET_LEVERAGE_EVIDENCE_OK"
+
+EXPECTED_BATCH_ORDER_COUNT = 50
+EXPECTED_BATCH_SIDE_COUNT = 25  # 25 Buy / 25 Sell
+
+BATCH_PREP_PREPARED = "BATCH_DRY_RUN_PREPARED"
+BATCH_PREP_REJECTED = "BATCH_DRY_RUN_REJECTED"
+
+# Fixed terminal safety posture echoed into every preparation result (nothing is ever sent).
+_BATCH_DRY_RUN_SAFE_POSTURE = {
+    "execution_authorized": False, "execution_batch_authorized": False,
+    "order_endpoint_called": False, "transport_touched": False,
+    "sender_call_count": 0, "order_post_count": 0, "amend_post_count": 0,
+    "cancel_post_count": 0, "live_order_post_count": 0,
+}
+
+
+def _dec_or_none(value: Any) -> "Decimal | None":
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _canon_dec(value: Decimal) -> str:
+    """Canonical, residual-faithful decimal string (no redistribution, no padding)."""
+    normalized = value.normalize()
+    if normalized == 0:
+        normalized = Decimal("0")
+    return format(normalized, "f")
+
+
+def prepare_strategy_native_batch_dry_run(
+    *,
+    feasibility_review: Mapping[str, Any],
+    current_actions: Sequence[Mapping[str, Any]],
+    account_evidence: Mapping[str, Any],
+    pilot_id: str,
+    date: str,
+) -> dict[str, Any]:
+    """Build the EXACT 50 Demo order payloads from a CH4A PASS, WITHOUT sending anything.
+
+    Inputs are the three parsed CH4A artifacts (feasibility review, the market-evidence
+    ``current_actions`` rows, the Demo account evidence). Returns an ordinary dict. Fails
+    closed (verdict REJECTED, no payloads -- never a partial batch) unless: feasibility PASS,
+    margin PASS, leverage OK, exactly 50 actions, 25 Buy / 25 Sell, no protected-position
+    overlap, and every action eligible. Reuses ``classify_action`` / ``build_order_body`` /
+    ``order_link_id``; never touches a transport or order endpoint."""
+    fr = feasibility_review if isinstance(feasibility_review, Mapping) else {}
+    acct = account_evidence if isinstance(account_evidence, Mapping) else {}
+    rows = list(current_actions or [])
+    position_mode = str(acct.get("position_mode", "") or "")
+    protected = [str(s) for s in (acct.get("protected_positions") or [])]
+    leverage_by_symbol = acct.get("target_configured_leverage_by_symbol") or {}
+    im_by_symbol = {str(r.get("symbol", "")): r
+                    for r in (fr.get("per_symbol_initial_margin") or [])
+                    if isinstance(r, Mapping)}
+
+    blockers: list[str] = []
+    if str(fr.get("status", "")) != DRY_RUN_REQUIRED_FEASIBILITY_STATUS:
+        blockers.append(f"feasibility_status_not_pass:{fr.get('status')}")
+    if str(fr.get("account_margin_feasibility_status", "")) != DRY_RUN_REQUIRED_MARGIN_STATUS:
+        blockers.append(f"margin_status_not_pass:{fr.get('account_margin_feasibility_status')}")
+    if str(acct.get("target_leverage_evidence_status", "")) != DRY_RUN_REQUIRED_LEVERAGE_STATUS:
+        blockers.append(f"leverage_status_not_ok:{acct.get('target_leverage_evidence_status')}")
+    overlaps = [str(s) for s in (acct.get("strategy_position_overlaps") or [])]
+    if overlaps:
+        blockers.append(f"strategy_position_overlap:{sorted(overlaps)}")
+    if len(rows) != EXPECTED_BATCH_ORDER_COUNT:
+        blockers.append(f"action_count_not_fifty:{len(rows)}")
+
+    payloads: list[dict[str, Any]] = []
+    gross = net = total_im = Decimal("0")
+    buys = sells = 0
+    seen_symbols: set[str] = set()
+    for row in rows:
+        row = row if isinstance(row, Mapping) else {}
+        symbol = str(row.get("symbol", "")).strip().upper()
+
+        # --- per-symbol fail-closed validation ---
+        if not symbol:
+            blockers.append("empty_symbol")
+            continue
+        if symbol in seen_symbols:
+            blockers.append(f"duplicate_symbol:{symbol}")
+            continue
+        seen_symbols.add(symbol)
+
+        qty_status = str(row.get("quantity_validation_status", ""))
+        if qty_status != "QUANTITY_VALIDATION_OK":
+            blockers.append(f"quantity_not_valid:{symbol}")
+            continue
+
+        lev_raw = leverage_by_symbol.get(symbol)
+        if lev_raw is None or str(lev_raw).strip() == "":
+            blockers.append(f"missing_configured_leverage:{symbol}")
+            continue
+        lev_dec = _dec_or_none(lev_raw)
+        if lev_dec is None or lev_dec <= 0:
+            blockers.append(f"invalid_configured_leverage:{symbol}")
+            continue
+
+        im_row = im_by_symbol.get(symbol)
+        if im_row is None:
+            blockers.append(f"missing_projected_initial_margin:{symbol}")
+            continue
+        projected_im_raw = im_row.get("projected_initial_margin_usd", "")
+        projected_im_dec = _dec_or_none(projected_im_raw)
+        if projected_im_dec is None or projected_im_dec <= 0:
+            blockers.append(f"invalid_projected_initial_margin:{symbol}")
+            continue
+
+        side = _norm_side(row.get("side"))
+        qty = str(row.get("rounded_quantity", ""))
+        notional = str(row.get("rounded_notional_usd", ""))
+        action = StrategyNativeAction(
+            symbol=symbol, side=side, qty=qty, intent=INTENT_OPEN, reduce_only=False,
+            notional_usdt=notional, source_reference=symbol)
+        elig = classify_action(action)        # rejects protected symbols / invalid actions
+        if elig.eligibility != ELIGIBLE:
+            blockers.append(f"action_not_eligible:{symbol}:{elig.eligibility}")
+            continue
+
+        link_id = action.order_link_id(pilot_id, date)
+        n = _dec_or_none(notional) or Decimal("0")
+        gross += n
+        if side == "Buy":
+            buys += 1
+            net += n
+        else:
+            sells += 1
+            net -= n
+        total_im += projected_im_dec
+        payloads.append({
+            "symbol": symbol, "side": side, "qty": qty,
+            "current_reference_price": str(row.get("current_price", "")),
+            "rounded_notional_usd": notional,
+            "configured_leverage": str(lev_raw),
+            "projected_initial_margin_usd": str(projected_im_raw),
+            "instrument_rule_validation": {
+                "status": qty_status,
+                "tick_size": row.get("tick_size"), "qty_step": row.get("qty_step"),
+                "min_order_qty": row.get("min_order_qty"),
+                "min_notional_value": row.get("min_notional_value"),
+            },
+            "order_link_id": link_id,          # client/order correlation identifier
+            "order_body": build_order_body(action, order_link_id=link_id),  # exact payload (NOT sent)
+        })
+
+    if buys != EXPECTED_BATCH_SIDE_COUNT or sells != EXPECTED_BATCH_SIDE_COUNT:
+        blockers.append(f"buy_sell_not_25_25:{buys}/{sells}")
+
+    prepared = not blockers
+    short_bias = (-net) if net < 0 else Decimal("0")
+    return {
+        "verdict": BATCH_PREP_PREPARED if prepared else BATCH_PREP_REJECTED,
+        "blockers": blockers, "pilot_id": pilot_id, "date": date,
+        "order_count": len(payloads) if prepared else 0,
+        "buy_count": buys, "sell_count": sells,
+        "gross_notional_usd": _canon_dec(gross) if prepared else "0",
+        "net_notional_usd": _canon_dec(net) if prepared else "0",
+        "short_bias_usd": _canon_dec(short_bias) if prepared else "0",
+        "total_projected_initial_margin_usd": _canon_dec(total_im) if prepared else "0",
+        "protected_positions": protected, "position_mode": position_mode,
+        "order_payloads": payloads if prepared else [],
+        **_BATCH_DRY_RUN_SAFE_POSTURE,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Per-date execution store (append-only journal + ledgers + atomic state)
 # ---------------------------------------------------------------------------
 

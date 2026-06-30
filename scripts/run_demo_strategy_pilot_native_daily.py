@@ -984,6 +984,20 @@ def build_parser() -> argparse.ArgumentParser:
                    help="path to the existing CH2 wrapper JSON to review (required for review-only)")
     p.add_argument("--ws-bound-plan-review-output-json", default=None,
                    help="output path for the single review envelope (required for review-only)")
+    # TASK-014: terminal, explicitly NON-SENDING dry-run preparation of the 50-order batch
+    # from the three CH4A current-feasibility artifacts. No transport, no execution, no Pilot.
+    p.add_argument("--prepare-from-current-feasibility-artifacts", dest="prepare_from_ch4a",
+                   action="store_true",
+                   help="opt-in terminal dry-run: build the 50 order payload previews from CH4A "
+                        "artifacts (NO order is sent; no Pilot change; no network)")
+    p.add_argument("--current-feasibility-review-json", default=None,
+                   help="path to CH4A current_feasibility_review.json (prepare mode)")
+    p.add_argument("--current-market-evidence-json", default=None,
+                   help="path to CH4A current_market_evidence.json (prepare mode)")
+    p.add_argument("--demo-account-evidence-json", default=None,
+                   help="path to CH4A demo_account_evidence.json (prepare mode)")
+    p.add_argument("--prepare-output-json", default=None,
+                   help="optional no-clobber path to write the full 50-payload preview (prepare mode)")
     return p
 
 
@@ -1313,6 +1327,76 @@ def _run_ws_bound_plan_only(args: Any, output_root: str | None) -> int:
                     exit_code=EXIT_OK, result=result, output=args.ws_bound_plan_output_json)
 
 
+def _run_prepare_from_current_feasibility_artifacts(args: Any) -> int:
+    """TASK-014 terminal DRY-RUN preparation. Reads ONLY the three CH4A artifacts
+    (current_feasibility_review / current_market_evidence / demo_account_evidence) and builds
+    the EXACT 50 order payload previews via ``nx.prepare_strategy_native_batch_dry_run``. It
+    constructs no transport, never calls ``execute_daily_native`` / ``post_order_create``,
+    writes no authorization marker, and never advances the Pilot.
+
+    Conflicting flags are rejected before any artifact read, Pilot state read, provider
+    construction, transport construction, or execution call."""
+    incompatible = [n for n, v in (
+        ("send_orders_to_demo", args.send_orders_to_demo),
+        ("reconcile_outputs_only", args.reconcile_outputs_only),
+        ("advance_on_success", args.advance_on_success),
+        ("ws_bound_plan_only", args.ws_bound_plan_only),
+        ("ws_bound_plan_review_only", args.ws_bound_plan_review_only),
+    ) if v]
+    if incompatible:
+        print(json.dumps({"verdict": nx.BATCH_PREP_REJECTED,
+                          "blockers": [f"incompatible_flag:{f}" for f in incompatible]},
+                         ensure_ascii=False, sort_keys=True))
+        return EXIT_INVALID
+
+    required = {
+        "--current-feasibility-review-json": args.current_feasibility_review_json,
+        "--current-market-evidence-json": args.current_market_evidence_json,
+        "--demo-account-evidence-json": args.demo_account_evidence_json,
+    }
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        print(json.dumps({"verdict": nx.BATCH_PREP_REJECTED,
+                          "blockers": [f"missing_arg:{k}" for k in missing]},
+                         ensure_ascii=False, sort_keys=True))
+        return EXIT_INVALID
+    try:
+        with open(args.current_feasibility_review_json, encoding="utf-8") as f:
+            review = json.load(f)
+        with open(args.current_market_evidence_json, encoding="utf-8") as f:
+            market = json.load(f)
+        with open(args.demo_account_evidence_json, encoding="utf-8") as f:
+            account = json.load(f)
+    except (OSError, ValueError) as exc:
+        print(json.dumps({"verdict": nx.BATCH_PREP_REJECTED,
+                          "blockers": [f"input_unreadable:{type(exc).__name__}"]},
+                         ensure_ascii=False, sort_keys=True))
+        return EXIT_INVALID
+
+    current_actions = market.get("current_actions") if isinstance(market, Mapping) else None
+    if not isinstance(current_actions, list):
+        print(json.dumps({"verdict": nx.BATCH_PREP_REJECTED,
+                          "blockers": ["market_evidence_missing_current_actions"]},
+                         ensure_ascii=False, sort_keys=True))
+        return EXIT_INVALID
+
+    result = nx.prepare_strategy_native_batch_dry_run(
+        feasibility_review=review, current_actions=current_actions,
+        account_evidence=account, pilot_id=args.pilot_id, date=args.date)
+
+    if args.prepare_output_json:
+        if os.path.lexists(args.prepare_output_json):
+            print(json.dumps({"verdict": nx.BATCH_PREP_REJECTED,
+                              "blockers": [f"output_exists:{args.prepare_output_json}"]},
+                             ensure_ascii=False, sort_keys=True))
+            return EXIT_INVALID
+        with open(args.prepare_output_json, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, sort_keys=True)
+
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    return EXIT_OK if result["verdict"] == nx.BATCH_PREP_PREPARED else EXIT_BLOCKED
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     output_root = args.test_output_root
@@ -1332,6 +1416,14 @@ def main(argv: list[str] | None = None) -> int:
     # mode-conflict + path preflight precede every side-effecting branch. It reviews an
     # existing wrapper offline and stops; no execution/readiness/gate/native-execution/
     # Pilot/reporting/REST.
+    # TASK-014: terminal, NON-SENDING dry-run preparation from CH4A artifacts. Dispatched
+    # among the first branches (before reconcile/reporting, the RUNNING gate / PilotStateStore,
+    # provider construction, and any transport): it only reads the three supplied artifacts and
+    # builds the 50 order payload previews. No transport, execute_daily_native, POST,
+    # authorization marker, or Pilot advance is ever reached.
+    if args.prepare_from_ch4a:
+        return _run_prepare_from_current_feasibility_artifacts(args)
+
     if args.ws_bound_plan_review_only:
         return _run_ws_bound_plan_review_only(args)
 
