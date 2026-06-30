@@ -48,6 +48,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+class DemoPaginationError(RuntimeError):
+    """A paginated read-only collection could not be completed safely. Raised fail-closed
+    (never returning partial pages) on: a non-success retCode on any page, a malformed
+    response, a repeated/cyclic nextPageCursor, or exceeding the max-page safety cap."""
+
+
 # ---------------------------------------------------------------------------
 # URL constants
 # ---------------------------------------------------------------------------
@@ -289,11 +295,32 @@ class DemoReadOnlyClient:
         self._key_present    = False
         self._secret_present = False
 
+        # Network-audit counters. Every issued GET is read-only (the client can only reach
+        # _ALLOWED_PATHS and only ever uses HTTP GET), so the mutating counter is structurally
+        # zero. Counts accumulate across paginated reads (one per page).
+        self._private_read_only_request_count = 0
+        self._public_read_only_request_count = 0
+        self._mutating_request_count = 0
+        # Provenance of the most recent paginated position read (consumed by the post-fill audit).
+        self._last_positions_page_count = 0
+        self._last_positions_termination = ""
+        self._last_positions_raw_row_count = 0
+        self._last_positions_nonzero_count = 0
+
         if allow_real_network:
             self._api_key        = os.environ.get("BYBIT_DEMO_API_KEY",    "")
             self._api_secret     = os.environ.get("BYBIT_DEMO_API_SECRET", "")
             self._key_present    = bool(self._api_key)
             self._secret_present = bool(self._api_secret)
+
+    def network_audit_counters(self) -> dict[str, int]:
+        """Read-only / mutating GET counters accumulated by this client instance. The mutating
+        count is structurally zero (no non-GET path exists and only _ALLOWED_PATHS are reachable)."""
+        return {
+            "private_read_only_request_count": self._private_read_only_request_count,
+            "public_read_only_request_count": self._public_read_only_request_count,
+            "private_mutating_request_count": self._mutating_request_count,
+        }
 
     # ------------------------------------------------------------------
     # Public API
@@ -316,8 +343,26 @@ class DemoReadOnlyClient:
 
     def get_open_positions(self) -> list[PositionSnapshot]:
         if not self._allow_real:
+            self._last_positions_page_count = 1
+            self._last_positions_termination = "fixture_no_pagination"
+            self._last_positions_raw_row_count = len(FIXTURE_POSITIONS)
+            self._last_positions_nonzero_count = len(FIXTURE_POSITIONS)
             return list(FIXTURE_POSITIONS)
         return self._positions_real()
+
+    def get_open_positions_paginated(self) -> tuple[list[PositionSnapshot], dict[str, Any]]:
+        """Complete, cursor-paginated open positions plus read provenance (page count, cursor
+        termination reason, raw vs nonzero row counts). Fails closed via DemoPaginationError if
+        any page cannot be safely retrieved. Used by the post-fill audit to prove no page was
+        truncated (the original single-page read undercounted a >20-position account)."""
+        positions = self.get_open_positions()
+        provenance = {
+            "page_count": self._last_positions_page_count,
+            "termination_reason": self._last_positions_termination,
+            "api_position_rows": self._last_positions_raw_row_count,
+            "nonzero_position_count": self._last_positions_nonzero_count,
+        }
+        return positions, provenance
 
     def get_instruments_info(
         self, symbols: list[str] | None = None,
@@ -423,6 +468,12 @@ class DemoReadOnlyClient:
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if signed and self._api_key:
             headers.update(self._make_signed_headers(query_str))
+        # Count every actually-issued GET (read-only by construction; this method only ever
+        # builds method="GET" and the path is constrained to _ALLOWED_PATHS above).
+        if signed:
+            self._private_read_only_request_count += 1
+        else:
+            self._public_read_only_request_count += 1
         req = urllib.request.Request(url, headers=headers, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
@@ -496,15 +547,57 @@ class DemoReadOnlyClient:
             account_mm_rate=acc_mm_rate,
         )
 
+    def _paginate_get(
+        self, path: str, base_params: dict[str, str], *,
+        signed: bool = True, result_key: str = "list", max_pages: int = 200,
+    ) -> tuple[list[dict[str, Any]], int, str]:
+        """Fetch ALL pages of a cursor-paginated read-only GET, merging ``result[result_key]``
+        in page order. Termination is driven by Bybit cursor semantics (empty/missing
+        ``nextPageCursor``), NOT by ``len(page) < limit``. Fails closed (raises
+        DemoPaginationError, never returns partial data) on a non-success retCode, malformed
+        response, repeated/cyclic cursor, or exceeding ``max_pages``. Returns
+        (merged_rows, page_count, termination_reason)."""
+        rows: list[dict[str, Any]] = []
+        seen_cursors: set[str] = set()
+        cursor = ""
+        page_count = 0
+        while True:
+            if page_count >= max_pages:
+                raise DemoPaginationError(f"max_page_cap_exceeded:{path}:{max_pages}")
+            params = dict(base_params)
+            if cursor:
+                params["cursor"] = cursor
+            data = self._get(path, params, signed=signed)
+            page_count += 1
+            if not isinstance(data, dict) or data.get("retCode") != 0:
+                ret = (data or {}).get("retCode") if isinstance(data, dict) else "NA"
+                raise DemoPaginationError(
+                    f"page_request_failed:{path}:page{page_count}:retCode={ret}")
+            result = data.get("result")
+            if not isinstance(result, dict):
+                raise DemoPaginationError(f"malformed_result_not_object:{path}:page{page_count}")
+            page_rows = result.get(result_key)
+            if not isinstance(page_rows, list):
+                raise DemoPaginationError(f"malformed_list_not_array:{path}:page{page_count}")
+            rows.extend(page_rows)
+            next_cursor = str(result.get("nextPageCursor", "") or "")
+            if not next_cursor:
+                return rows, page_count, "empty_cursor"
+            if next_cursor == cursor or next_cursor in seen_cursors:
+                raise DemoPaginationError(
+                    f"repeated_cursor_detected:{path}:page{page_count}:{next_cursor[:16]}")
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+
     def _positions_real(self) -> list[PositionSnapshot]:
-        data = self._get(
-            _EP_POSITIONS,
-            {"category": "linear", "settleCoin": "USDT"},
-            signed=True,
-        )
+        rows, page_count, termination = self._paginate_get(
+            _EP_POSITIONS, {"category": "linear", "settleCoin": "USDT"}, signed=True)
+        self._last_positions_page_count = page_count
+        self._last_positions_termination = termination
+        self._last_positions_raw_row_count = len(rows)
         out: list[PositionSnapshot] = []
         try:
-            for item in data["result"]["list"]:
+            for item in rows:
                 size = float(item.get("size", 0) or 0)
                 if size == 0:
                     continue
@@ -536,6 +629,7 @@ class DemoReadOnlyClient:
                 ))
         except (KeyError, TypeError, ValueError):
             pass
+        self._last_positions_nonzero_count = len(out)
         return out
 
     def _position_leverage_real(
