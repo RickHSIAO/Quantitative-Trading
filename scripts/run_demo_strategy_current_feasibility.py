@@ -137,6 +137,14 @@ def _default_account_provider(target_symbols: Sequence[str], allow_real_network:
     info = client.get_account_info()
     audit["private_demo_http_get_count"] += 1
 
+    # TASK-014CH4A_FIX2 (Source A): EXACT per-symbol configured-leverage evidence for the 50
+    # targets. position/list accepts only a single ``symbol`` per request (settleCoin returns
+    # only ACTIVE positions, so it cannot cover the flat targets), so one read-only GET per
+    # symbol is issued; the size-0 row still carries the configured leverage. Read-only only.
+    target_leverage_evidence = client.get_position_leverage(list(target_symbols))
+    if allow_real_network:
+        audit["private_demo_http_get_count"] += len(target_symbols)
+
     pos = [{"symbol": p.symbol, "side": p.side, "size": str(p.quantity),
             "leverage": str(p.leverage), "position_idx": p.position_idx,
             "initial_margin_usd": (None if p.initial_margin_usd is None
@@ -167,6 +175,8 @@ def _default_account_provider(target_symbols: Sequence[str], allow_real_network:
         "account_im_rate_context": (None if wallet.account_im_rate is None
                                     else str(wallet.account_im_rate)),
         "positions": pos,
+        # TASK-014CH4A_FIX2: {symbol: per-symbol configured-leverage evidence record}.
+        "target_leverage_evidence": target_leverage_evidence,
         "snapshot_epoch_ns": time.time_ns(),
     }
     return snapshot, audit
@@ -362,6 +372,7 @@ def main(argv: Sequence[str] | None = None, *,
         account_freshness_threshold_ms=args.account_freshness_threshold_ms)
     margin = cf.evaluate_margin_feasibility(
         account_result=account, target_gross_notional_usd=cf.V1_GROSS_USD,
+        market_result=market,
         safety_headroom_fraction=headroom, fees_buffer_usd=fees)
 
     market_art = cf.build_market_evidence_artifact(

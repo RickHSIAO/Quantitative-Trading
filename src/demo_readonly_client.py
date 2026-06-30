@@ -69,6 +69,11 @@ _ALLOWED_PATHS: frozenset[str] = frozenset({
     _EP_ACCOUNT_INFO, _EP_MARKET_TIME, _EP_RISK_LIMIT,
 })
 
+# TASK-014CH4A_FIX2: minimum spacing between the real per-symbol position/list leverage
+# reads. Bybit's documented UID limit for GET /v5/position/list is 50 req/s; 0.03 s spacing
+# caps the rate at ~33 req/s, clearly below the limit (~30x slower paths are unnecessary).
+_PER_SYMBOL_LEVERAGE_MIN_INTERVAL_S = 0.03
+
 # Explicitly forbidden write/mutation paths. These are NEVER added to _ALLOWED_PATHS
 # and this client only ever issues GET. Declared as named sentinels so tests can prove
 # they are denied (no generic "allow all account endpoints" rule exists).
@@ -366,6 +371,23 @@ class DemoReadOnlyClient:
             return {}
         return self._risk_limit_real(symbol=symbol, category=category)
 
+    def get_position_leverage(
+        self, symbols: list[str], category: str = "linear",
+    ) -> dict[str, dict[str, Any]]:
+        """TASK-014CH4A_FIX2: EXACT per-symbol configured-leverage evidence (read-only).
+
+        For each symbol, issue ONE signed GET /v5/position/list?symbol=SYM and read the
+        configured ``leverage`` from the returned row(s) -- Bybit returns the row (with the
+        symbol's configured leverage) even when size is 0. Returns
+        ``{symbol: {"symbol", "evidence_symbols", "leverage_values",
+        "position_idx_values", "row_count"}}``; consumers tie each leverage to the EXACT
+        symbol and reject missing/zero/ambiguous/cross-symbol evidence. This is the
+        already-allowed position/list endpoint; it NEVER calls set-leverage or any mutation.
+        Fixture mode returns ``{}`` (no I/O)."""
+        if not self._allow_real:
+            return {}
+        return self._position_leverage_real(symbols, category=category)
+
     # ------------------------------------------------------------------
     # Real-mode internals (only reached when allow_real_network=True)
     # ------------------------------------------------------------------
@@ -514,6 +536,58 @@ class DemoReadOnlyClient:
                 ))
         except (KeyError, TypeError, ValueError):
             pass
+        return out
+
+    def _position_leverage_real(
+        self, symbols: list[str], *, category: str,
+    ) -> dict[str, dict[str, Any]]:
+        """One signed GET /v5/position/list per EXACT symbol; collect the configured
+        leverage tied to that symbol. Never mutates; never sets leverage.
+
+        The per-symbol reads are paced to >= _PER_SYMBOL_LEVERAGE_MIN_INTERVAL_S apart so the
+        endpoint request rate stays clearly below Bybit's 50 req/s UID limit. A rate-limit or
+        transport failure for ANY single symbol leaves that symbol without leverage evidence
+        (empty record -> downstream UNAVAILABLE) without aborting the rest of the batch."""
+        out: dict[str, dict[str, Any]] = {}
+        last_request_monotonic: float | None = None
+        for sym in symbols:
+            if last_request_monotonic is not None:
+                wait = _PER_SYMBOL_LEVERAGE_MIN_INTERVAL_S - (
+                    time.monotonic() - last_request_monotonic)
+                if wait > 0:
+                    time.sleep(wait)
+            last_request_monotonic = time.monotonic()
+            lev_values: list[str] = []
+            idx_values: list[int] = []
+            ev_symbols: set[str] = set()
+            rows: list[Any] = []
+            try:
+                data = self._get(
+                    _EP_POSITIONS,
+                    {"category": category, "symbol": sym},
+                    signed=True,
+                )
+                rows = (data.get("result", {}) or {}).get("list", []) or []
+                for item in rows:
+                    row_sym = str(item.get("symbol", "") or "").strip().upper()
+                    if row_sym:
+                        ev_symbols.add(row_sym)
+                    lev_raw = item.get("leverage")
+                    if lev_raw is not None and str(lev_raw).strip():
+                        lev_values.append(str(lev_raw))
+                    idx_raw = item.get("positionIdx")
+                    if str(idx_raw).strip().lstrip("-").isdigit():
+                        idx_values.append(int(idx_raw))
+            except Exception:  # noqa: BLE001  per-symbol fail-closed; never abort the batch
+                rows = []
+                lev_values, idx_values, ev_symbols = [], [], set()
+            out[sym] = {
+                "symbol": sym,
+                "evidence_symbols": sorted(ev_symbols),
+                "leverage_values": lev_values,
+                "position_idx_values": idx_values,
+                "row_count": len(rows),
+            }
         return out
 
     def _instruments_real(self, symbols: list[str]) -> dict[str, InstrumentSnapshot]:

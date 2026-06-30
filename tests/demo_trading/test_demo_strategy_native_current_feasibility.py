@@ -944,3 +944,236 @@ def test_cli_partial_publication_does_not_claim_complete_bundle(tmp_path, capsys
     assert not (tmp_path / "review_out.json").exists()  # no-clobber, atomic: never written
     # the two earlier core files were individually atomic and DO exist.
     assert (tmp_path / "market.json").exists() and (tmp_path / "account.json").exists()
+
+
+# ===========================================================================
+# CH4A_FIX2 -- Source A: EXACT per-symbol configured-leverage projected margin
+# ===========================================================================
+
+def _leverage_evidence(symbols, leverage="10", **over):
+    """One per-symbol position/list leverage record per target (size-0 rows still carry
+    the configured leverage)."""
+    base = {s: {"symbol": s, "evidence_symbols": [s],
+                "leverage_values": [str(leverage)], "position_idx_values": [0],
+                "row_count": 1} for s in symbols}
+    for s, patch in over.items():
+        base[s] = {**base.get(s, {"symbol": s}), **patch}
+    return base
+
+
+def _account_with_leverage(syms, *, leverage="10", available="9000", lev_over=None, **over):
+    snap = _account_snapshot(syms, available=available, rate=None, rate_source=None, **over)
+    snap["target_leverage_evidence"] = _leverage_evidence(syms, leverage, **(lev_over or {}))
+    return cf.evaluate_demo_account_evidence(
+        snap, target_symbols=syms, collection_epoch_ns=_COLLECTION_NS)
+
+
+def test_margin_per_symbol_leverage_passes_independently():
+    t = _trusted(); syms = t.symbols
+    m = _market(syms)  # price 100 -> rounded notional 200 per symbol
+    a = _account_with_leverage(syms, leverage="10", available="9000")
+    assert a.target_leverage_evidence_status == cf.LEVERAGE_EVIDENCE_OK
+    assert len(a.target_configured_leverage_by_symbol) == 50
+    mg = cf.evaluate_margin_feasibility(
+        account_result=a, market_result=m, target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_PASS
+    assert mg.margin_basis == cf.MARGIN_BASIS_PER_SYMBOL
+    assert mg.margin_rate_source == cf.PER_SYMBOL_LEVERAGE_RATE_SOURCE
+    assert mg.projected_additional_initial_margin_usd == "1000"  # 50 * (200 / 10)
+    assert len(mg.per_symbol_initial_margin) == 50
+    r0 = mg.per_symbol_initial_margin[0]
+    assert r0["configured_leverage"] == "10"
+    assert r0["rounded_notional_usd"] == "200"
+    assert r0["projected_initial_margin_usd"] == "20"
+
+
+def test_margin_per_symbol_uses_leverage_not_account_rate():
+    # An account-level/single rate must NOT influence the per-symbol projection.
+    t = _trusted(); syms = t.symbols
+    m = _market(syms)
+    snap = _account_snapshot(syms, available="9000", rate="0.1",
+                             rate_source="trusted_projected_margin_evidence")
+    snap["target_leverage_evidence"] = _leverage_evidence(syms, "5")  # IM = 200/5 = 40 each
+    a = cf.evaluate_demo_account_evidence(snap, target_symbols=syms,
+                                          collection_epoch_ns=_COLLECTION_NS)
+    mg = cf.evaluate_margin_feasibility(
+        account_result=a, market_result=m, target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.margin_basis == cf.MARGIN_BASIS_PER_SYMBOL
+    # 50 * 40 = 2000 (from leverage 5), NOT 1000 (which a 0.1 single rate would give).
+    assert mg.projected_additional_initial_margin_usd == "2000"
+
+
+def test_margin_per_symbol_missing_symbol_unavailable_lists_it():
+    t = _trusted(); syms = t.symbols
+    m = _market(syms)
+    ev = _leverage_evidence(syms, "10")
+    del ev[syms[3]]
+    snap = _account_snapshot(syms, available="9000", rate=None, rate_source=None)
+    snap["target_leverage_evidence"] = ev
+    a = cf.evaluate_demo_account_evidence(snap, target_symbols=syms,
+                                          collection_epoch_ns=_COLLECTION_NS)
+    assert a.target_leverage_evidence_status == cf.LEVERAGE_EVIDENCE_UNAVAILABLE
+    assert syms[3] in a.target_leverage_missing_symbols
+    assert a.ok  # leverage coverage failure does NOT block the account
+    mg = cf.evaluate_margin_feasibility(
+        account_result=a, market_result=m, target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_UNAVAILABLE
+    assert f"leverage_missing:{syms[3]}" in mg.failures
+
+
+@pytest.mark.parametrize("bad", [
+    {"leverage_values": ["0"]},          # zero
+    {"leverage_values": ["-3"]},         # negative
+    {"leverage_values": ["abc"]},        # unparseable
+    {"leverage_values": []},             # absent
+    {"leverage_values": ["10", "20"]},   # ambiguous (disagreeing rows)
+    {"evidence_symbols": ["OTHERUSDT"]}, # cross-symbol
+])
+def test_margin_per_symbol_invalid_leverage_unavailable(bad):
+    t = _trusted(); syms = t.symbols
+    m = _market(syms)
+    a = _account_with_leverage(syms, leverage="10", lev_over={syms[0]: bad})
+    assert a.target_leverage_evidence_status == cf.LEVERAGE_EVIDENCE_UNAVAILABLE
+    assert syms[0] in a.target_leverage_missing_symbols
+    mg = cf.evaluate_margin_feasibility(
+        account_result=a, market_result=m, target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_UNAVAILABLE
+    assert f"leverage_missing:{syms[0]}" in mg.failures
+
+
+def test_margin_per_symbol_insufficient_balance_blocks():
+    t = _trusted(); syms = t.symbols
+    m = _market(syms)
+    a = _account_with_leverage(syms, leverage="1", available="9000")  # IM 200 each = 10000
+    mg = cf.evaluate_margin_feasibility(
+        account_result=a, market_result=m, target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_BLOCKED
+    assert "insufficient_available_balance" in mg.failures
+
+
+def test_margin_one_rate_limited_symbol_blocks_partial_approval():
+    # A single failed/rate-limited per-symbol read (empty evidence record, exactly what the
+    # client emits on transport failure) must keep the whole 50-symbol batch UNAVAILABLE --
+    # never a partial margin approval.
+    t = _trusted(); syms = t.symbols
+    m = _market(syms)
+    a = _account_with_leverage(syms, leverage="10", lev_over={
+        syms[7]: {"evidence_symbols": [], "leverage_values": [], "row_count": 0}})
+    assert a.target_leverage_evidence_status == cf.LEVERAGE_EVIDENCE_UNAVAILABLE
+    assert syms[7] in a.target_leverage_missing_symbols
+    mg = cf.evaluate_margin_feasibility(
+        account_result=a, market_result=m, target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_UNAVAILABLE
+    assert mg.status != cf.MARGIN_FEASIBILITY_PASS
+    assert f"leverage_missing:{syms[7]}" in mg.failures
+
+
+def test_margin_per_symbol_requires_market_notional():
+    # Leverage evidence OK but no market result -> cannot project -> UNAVAILABLE.
+    t = _trusted(); syms = t.symbols
+    a = _account_with_leverage(syms, leverage="10")
+    mg = cf.evaluate_margin_feasibility(
+        account_result=a, market_result=None, target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_UNAVAILABLE
+    assert "per_symbol_notional_unavailable" in mg.failures
+
+
+def test_margin_per_symbol_determinism():
+    t = _trusted(); syms = t.symbols
+    m = _market(syms)
+    a = _account_with_leverage(syms, leverage="7")
+    r1 = cf.evaluate_margin_feasibility(account_result=a, market_result=m,
+                                        target_gross_notional_usd=cf.V1_GROSS_USD)
+    r2 = cf.evaluate_margin_feasibility(account_result=a, market_result=m,
+                                        target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert r1 == r2
+
+
+def test_no_leverage_evidence_falls_back_to_legacy_single_rate_path():
+    # Backward compat: when no per-symbol evidence is supplied, the FIX1 path is unchanged.
+    syms = _trusted().symbols
+    a = _account_ok(syms, available="9000", rate="0.1")
+    assert a.target_leverage_evidence_status == cf.LEVERAGE_EVIDENCE_NOT_SUPPLIED
+    mg = cf.evaluate_margin_feasibility(account_result=a,
+                                        target_gross_notional_usd=cf.V1_GROSS_USD)
+    assert mg.status == cf.MARGIN_FEASIBILITY_PASS
+    assert mg.margin_basis == cf.MARGIN_BASIS_SINGLE_RATE
+
+
+def test_account_artifact_records_per_symbol_leverage_evidence():
+    t = _trusted(); syms = t.symbols
+    a = _account_with_leverage(syms, leverage="10")
+    art = cf.build_account_evidence_artifact(
+        account=a, collection_epoch_ns=_COLLECTION_NS, collected_at_utc="t",
+        network_audit=cf.zeroed_network_audit())
+    assert art["target_leverage_evidence_status"] == cf.LEVERAGE_EVIDENCE_OK
+    assert len(art["target_configured_leverage_by_symbol"]) == 50
+    assert art["target_configured_leverage_by_symbol"][syms[0]] == "10"
+    # fingerprint recomputes (artifact remains sealed/replayable).
+    assert art["artifact_fingerprint"] == wb._fingerprint(
+        {k: v for k, v in art.items() if k != "artifact_fingerprint"})
+
+
+def test_review_artifact_records_per_symbol_margin_breakdown():
+    t = _trusted(); syms = t.symbols
+    m = _market(syms)
+    a = _account_with_leverage(syms, leverage="10")
+    mg = cf.evaluate_margin_feasibility(account_result=a, market_result=m,
+                                        target_gross_notional_usd=cf.V1_GROSS_USD)
+    fr = cf.build_current_feasibility_review(
+        trusted=t, market=m, account=a, margin=mg, collection_epoch_ns=_COLLECTION_NS,
+        reviewed_at_utc="t", network_audit=cf.zeroed_network_audit())
+    assert fr.status == cf.CURRENT_FEASIBILITY_PASS
+    rev = fr.review_artifact
+    assert rev["margin_basis"] == cf.MARGIN_BASIS_PER_SYMBOL
+    assert rev["account_margin_feasibility_status"] == cf.MARGIN_FEASIBILITY_PASS
+    assert len(rev["per_symbol_initial_margin"]) == 50
+    assert rev["target_leverage_evidence_status"] == cf.LEVERAGE_EVIDENCE_OK
+    # still never execution-ready.
+    assert rev["execution_readiness"] is False and rev["order_post_count"] == 0
+
+
+def test_client_get_position_leverage_fixture_is_pure_and_no_setleverage():
+    from src.demo_readonly_client import DemoReadOnlyClient
+    c = DemoReadOnlyClient(allow_real_network=False)
+    assert c.get_position_leverage(["BTCUSDT", "ETHUSDT"]) == {}  # fixture: no I/O
+    src = open(os.path.join(_ROOT, "src", "demo_readonly_client.py"), encoding="utf-8").read()
+    # the new evidence path must use the read-only position/list endpoint only.
+    assert "get_position_leverage" in src
+    assert "_EP_POSITIONS" in src
+
+
+def test_provider_collects_per_symbol_leverage_evidence_source():
+    src = open(_SCRIPT, encoding="utf-8").read()
+    assert "get_position_leverage(" in src
+    assert '"target_leverage_evidence"' in src
+
+
+def _fake_account_provider_with_leverage(symbols, allow_real_network):
+    assert allow_real_network is False
+    now_ns = time.time_ns()
+    audit = cf.zeroed_network_audit()
+    audit["private_demo_http_get_count"] = 4 + len(symbols)
+    snap = _account_snapshot(symbols, rate=None, rate_source=None)
+    snap["snapshot_epoch_ns"] = now_ns - 1_000_000
+    snap["target_leverage_evidence"] = _leverage_evidence(symbols, "10")
+    return snap, audit
+
+
+def test_cli_per_symbol_leverage_passes_and_writes_breakdown(tmp_path, capsys):
+    c = _write_inputs(tmp_path)
+    rc = crun.main(_argv(tmp_path, c),
+                   market_provider=_fake_market_provider,
+                   account_provider=_fake_account_provider_with_leverage)
+    assert rc == crun.EXIT_OK
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["status"] == cf.CURRENT_FEASIBILITY_PASS
+    assert summary["account_margin_feasibility_status"] == cf.MARGIN_FEASIBILITY_PASS
+    rev = json.loads((tmp_path / "review_out.json").read_bytes())
+    assert rev["margin_basis"] == cf.MARGIN_BASIS_PER_SYMBOL
+    assert rev["margin_rate_source"] == cf.PER_SYMBOL_LEVERAGE_RATE_SOURCE
+    assert len(rev["per_symbol_initial_margin"]) == 50
+    assert rev["projected_additional_initial_margin_usd"] == "1000"
+    # safety posture intact.
+    assert summary["execution_authorized"] is False
+    assert summary["network_audit"]["private_mutating_request_count"] == 0

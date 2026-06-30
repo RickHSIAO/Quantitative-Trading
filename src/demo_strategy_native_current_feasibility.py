@@ -36,7 +36,7 @@ HARD INVARIANTS (mirrored by the caller and proven by tests)
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Any, Mapping, Sequence
 
@@ -111,6 +111,22 @@ ACCOUNT_EVIDENCE_BLOCKED = "DEMO_ACCOUNT_EVIDENCE_BLOCKED"
 MARGIN_FEASIBILITY_PASS = "MARGIN_FEASIBILITY_PASS"
 MARGIN_FEASIBILITY_BLOCKED = "MARGIN_FEASIBILITY_BLOCKED"
 MARGIN_FEASIBILITY_UNAVAILABLE = "MARGIN_FEASIBILITY_UNAVAILABLE_NO_INDEPENDENT_RATE"
+
+# --- TASK-014CH4A_FIX2: per-symbol Source-A projected-margin vocabulary ----
+# Source A resolves ``margin:initial_margin_rate_unknown`` using the EXACT per-symbol
+# configured leverage read (read-only) from authenticated Demo ``position/list`` evidence:
+#   projected_initial_margin[sym] = current_rounded_notional[sym] / configured_leverage[sym]
+# Each symbol is computed INDEPENDENTLY; the 50 rates are never collapsed into one
+# account-wide rate, and accountIMRate / maxLeverage / assumed leverage / another symbol's
+# leverage are never used. Missing/zero/invalid/ambiguous/cross-symbol coverage for ANY
+# target -> MARGIN_FEASIBILITY_UNAVAILABLE (with the missing symbols listed).
+LEVERAGE_EVIDENCE_OK = "TARGET_LEVERAGE_EVIDENCE_OK"
+LEVERAGE_EVIDENCE_UNAVAILABLE = "TARGET_LEVERAGE_EVIDENCE_UNAVAILABLE"
+LEVERAGE_EVIDENCE_NOT_SUPPLIED = "TARGET_LEVERAGE_EVIDENCE_NOT_SUPPLIED"
+PER_SYMBOL_LEVERAGE_RATE_SOURCE = "demo_position_list_symbol_configured_leverage"
+MARGIN_BASIS_PER_SYMBOL = "per_symbol_configured_leverage"
+MARGIN_BASIS_SINGLE_RATE = "single_independent_rate"
+MARGIN_BASIS_UNAVAILABLE = "unavailable"
 
 # Account-LEVEL margin-rate sources (e.g. the wallet ``accountIMRate``) describe overall
 # account health -- they are NOT per-order/projected initial-margin evidence for the 50
@@ -757,10 +773,74 @@ class AccountEvidenceResult:
     margin_rate_source: str | None
     account_im_rate_context: str | None
     account_freshness_age_ms: int | None
+    # TASK-014CH4A_FIX2: per-symbol Source-A configured-leverage evidence (read-only).
+    # ``target_configured_leverage_by_symbol`` is populated ONLY for symbols with valid,
+    # exact-symbol, unambiguous leverage evidence; coverage failure never blocks the
+    # account (it surfaces as MARGIN_FEASIBILITY_UNAVAILABLE in the margin model instead).
+    target_leverage_evidence_status: str = LEVERAGE_EVIDENCE_NOT_SUPPLIED
+    target_configured_leverage_by_symbol: dict[str, str] = field(default_factory=dict)
+    target_leverage_missing_symbols: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
         return self.status == ACCOUNT_EVIDENCE_OK
+
+
+def _validate_target_leverage_evidence(
+    evidence: Any, target_set: set[str],
+) -> tuple[str, dict[str, str], tuple[str, ...]]:
+    """TASK-014CH4A_FIX2 (Source A). Validate EXACT per-symbol configured-leverage evidence
+    for every one of the target symbols. Pure; never raises.
+
+    Returns ``(status, leverage_by_symbol, missing_symbols)``. A symbol qualifies ONLY when
+    its record carries leverage tied to that EXACT symbol (no cross-symbol), a single
+    unambiguous positive value (hedge Buy/Sell rows must agree), and parses to Decimal > 0.
+    Any missing / zero / invalid / ambiguous / cross-symbol target makes the whole result
+    UNAVAILABLE and is listed in ``missing_symbols`` (sorted). Never reads maxLeverage,
+    accountIMRate, an assumed leverage, or another symbol's leverage."""
+    # Accept either {symbol: record} or [record, ...] (each record carrying ``symbol``).
+    ev_map: dict[str, Any] = {}
+    if isinstance(evidence, Mapping):
+        ev_map = {str(k).strip().upper(): v for k, v in evidence.items()}
+    elif isinstance(evidence, (list, tuple)):
+        for rec in evidence:
+            rec_m = _as_map(rec)
+            s = str(rec_m.get("symbol", "")).strip().upper()
+            if s:
+                ev_map[s] = rec_m
+
+    leverage_by_symbol: dict[str, str] = {}
+    missing: list[str] = []
+    for sym in sorted(target_set):
+        rec = _as_map(ev_map.get(sym))
+        if not rec:
+            missing.append(sym)
+            continue
+        # Cross-symbol guard: every symbol named by the evidence must be exactly ``sym``.
+        ev_syms = rec.get("evidence_symbols")
+        if not isinstance(ev_syms, (list, tuple)) or not ev_syms:
+            one = rec.get("evidence_symbol")
+            ev_syms = [one] if one else []
+        if not ev_syms or any(str(x).strip().upper() != sym for x in ev_syms):
+            missing.append(sym)
+            continue
+        lev_values = rec.get("leverage_values")
+        if not isinstance(lev_values, (list, tuple)) or not lev_values:
+            missing.append(sym)
+            continue
+        decs = [_dec(v) for v in lev_values]
+        if any(d is None or d <= 0 for d in decs):
+            missing.append(sym)
+            continue
+        distinct = {_canon(d) for d in decs}
+        if len(distinct) != 1:          # ambiguous (disagreeing leverage rows)
+            missing.append(sym)
+            continue
+        leverage_by_symbol[sym] = next(iter(distinct))
+
+    covered = (not missing) and len(leverage_by_symbol) == len(target_set)
+    status = LEVERAGE_EVIDENCE_OK if covered else LEVERAGE_EVIDENCE_UNAVAILABLE
+    return status, leverage_by_symbol, tuple(sorted(missing))
 
 
 def evaluate_demo_account_evidence(
@@ -778,6 +858,16 @@ def evaluate_demo_account_evidence(
     blockers: list[str] = []
     snap = _as_map(snapshot)
     target_set = {s.strip().upper() for s in target_symbols}
+
+    # --- TASK-014CH4A_FIX2: per-symbol Source-A configured-leverage evidence ---
+    # Validated independently of wallet/position checks. A coverage failure does NOT block
+    # the account (the account can still be OK); it only denies a margin PASS downstream.
+    if "target_leverage_evidence" in snap:
+        lev_status, lev_by_symbol, lev_missing = _validate_target_leverage_evidence(
+            snap.get("target_leverage_evidence"), target_set)
+    else:
+        lev_status, lev_by_symbol, lev_missing = (
+            LEVERAGE_EVIDENCE_NOT_SUPPLIED, {}, ())
 
     # --- Demo environment proof / Live denial ---
     endpoint_family = str(snap.get("endpoint_family", ""))
@@ -836,7 +926,10 @@ def evaluate_demo_account_evidence(
             strategy_position_overlaps=(),
             applicable_initial_margin_rate=None, margin_rate_source=None,
             account_im_rate_context=_opt_str(snap.get("account_im_rate_context")),
-            account_freshness_age_ms=age_ms)
+            account_freshness_age_ms=age_ms,
+            target_leverage_evidence_status=lev_status,
+            target_configured_leverage_by_symbol=dict(lev_by_symbol),
+            target_leverage_missing_symbols=lev_missing)
 
     # --- Positions ---
     positions = snap.get("positions")
@@ -918,7 +1011,10 @@ def evaluate_demo_account_evidence(
         applicable_initial_margin_rate=rate_str,
         margin_rate_source=(rate_source if rate_str else None),
         account_im_rate_context=_opt_str(snap.get("account_im_rate_context")),
-        account_freshness_age_ms=age_ms)
+        account_freshness_age_ms=age_ms,
+        target_leverage_evidence_status=lev_status,
+        target_configured_leverage_by_symbol=dict(lev_by_symbol),
+        target_leverage_missing_symbols=lev_missing)
 
 
 def _opt_str(value: Any) -> str | None:
@@ -944,25 +1040,43 @@ class MarginFeasibilityResult:
     margin_rate_source: str | None
     conservative_1x_envelope_usd: str
     conservative_1x_envelope_label: str
+    # TASK-014CH4A_FIX2: which evidence basis produced the projection, and the per-symbol
+    # Source-A breakdown (sorted by symbol) so the margin verdict replays offline.
+    margin_basis: str = MARGIN_BASIS_UNAVAILABLE
+    target_leverage_evidence_status: str = LEVERAGE_EVIDENCE_NOT_SUPPLIED
+    per_symbol_initial_margin: tuple[Mapping[str, Any], ...] = ()
 
 
 def evaluate_margin_feasibility(
     *,
     account_result: AccountEvidenceResult,
     target_gross_notional_usd: Decimal,
+    market_result: "MarketEvidenceResult | None" = None,
     safety_headroom_fraction: Decimal = DEFAULT_SAFETY_HEADROOM_FRACTION,
     fees_buffer_usd: Decimal = DEFAULT_FEES_BUFFER_USD,
 ) -> MarginFeasibilityResult:
     """Decimal margin-feasibility model. Never claims PASS when the required initial
     margin rate is unknown (-> UNAVAILABLE). A conservative 1x envelope is always
-    reported and clearly labelled, but never used to grant PASS without an independent
-    rate. Reserves a configurable safety headroom of available balance."""
+    reported and clearly labelled, but never used to grant PASS without independent
+    evidence. Reserves a configurable safety headroom of available balance.
+
+    TASK-014CH4A_FIX2 (Source A): when per-symbol configured-leverage evidence was supplied
+    (``account_result.target_leverage_evidence_status != NOT_SUPPLIED``), the projection is
+    computed INDEPENDENTLY per target as ``current_rounded_notional / configured_leverage``
+    and summed -- never collapsed to one account-wide rate, never using accountIMRate /
+    maxLeverage / an assumed leverage. Full 50-symbol coverage is required; otherwise the
+    status is UNAVAILABLE and the uncovered symbols are listed. When no leverage evidence is
+    supplied, the legacy single independent-rate path (CH4A_FIX1) is used unchanged."""
     available = _dec(account_result.available_balance_usd)
     equity = _dec(account_result.account_equity_usd)
     existing_im = _dec(account_result.existing_initial_margin_usd) or Decimal("0")
     fees = fees_buffer_usd if fees_buffer_usd is not None and fees_buffer_usd >= 0 else Decimal("0")
     gross = target_gross_notional_usd
     one_x_envelope = gross  # 1x initial margin == full gross notional (worst case)
+    headroom_frac = (safety_headroom_fraction
+                     if (safety_headroom_fraction is not None
+                         and Decimal("0") <= safety_headroom_fraction < Decimal("1"))
+                     else DEFAULT_SAFETY_HEADROOM_FRACTION)
 
     base = MarginFeasibilityResult(
         status=MARGIN_FEASIBILITY_UNAVAILABLE, failures=(),
@@ -975,7 +1089,9 @@ def evaluate_margin_feasibility(
         safety_headroom_usd=None, remaining_available_balance_usd=None,
         margin_rate_source=None,
         conservative_1x_envelope_usd=_canon(one_x_envelope),
-        conservative_1x_envelope_label="1x_initial_margin_equals_full_gross_notional")
+        conservative_1x_envelope_label="1x_initial_margin_equals_full_gross_notional",
+        margin_basis=MARGIN_BASIS_UNAVAILABLE,
+        target_leverage_evidence_status=account_result.target_leverage_evidence_status)
 
     if not account_result.ok:
         return replace(base, status=MARGIN_FEASIBILITY_UNAVAILABLE,
@@ -984,6 +1100,14 @@ def evaluate_margin_feasibility(
         return replace(base, status=MARGIN_FEASIBILITY_UNAVAILABLE,
                         failures=("available_balance_unavailable",))
 
+    # --- Source A (preferred): per-symbol configured leverage, computed independently ---
+    if account_result.target_leverage_evidence_status != LEVERAGE_EVIDENCE_NOT_SUPPLIED:
+        return _per_symbol_margin_feasibility(
+            base, account_result=account_result, market_result=market_result,
+            available=available, existing_im=existing_im, fees=fees,
+            headroom_frac=headroom_frac)
+
+    # --- Legacy single independent-rate path (CH4A_FIX1; unchanged) ---
     rate = _dec(account_result.applicable_initial_margin_rate)
     if rate is None or rate <= 0 or not account_result.margin_rate_source:
         # Required margin rate unknown -> never PASS.
@@ -992,10 +1116,6 @@ def evaluate_margin_feasibility(
 
     additional_im = (gross * rate)
     projected_total = existing_im + additional_im
-    headroom_frac = (safety_headroom_fraction
-                     if (safety_headroom_fraction is not None
-                         and Decimal("0") <= safety_headroom_fraction < Decimal("1"))
-                     else DEFAULT_SAFETY_HEADROOM_FRACTION)
     headroom = (available * headroom_frac)
     remaining = available - additional_im - fees
     failures: list[str] = []
@@ -1005,12 +1125,84 @@ def evaluate_margin_feasibility(
         failures.append("safety_headroom_violation")
     status = MARGIN_FEASIBILITY_PASS if not failures else MARGIN_FEASIBILITY_BLOCKED
     return replace(
-        base, status=status, failures=tuple(failures),
+        base, status=status, failures=tuple(failures), margin_basis=MARGIN_BASIS_SINGLE_RATE,
         projected_additional_initial_margin_usd=_canon(additional_im),
         projected_total_initial_margin_usd=_canon(projected_total),
         safety_headroom_usd=_canon(headroom),
         remaining_available_balance_usd=_canon(remaining),
         margin_rate_source=account_result.margin_rate_source)
+
+
+def _per_symbol_margin_feasibility(
+    base: MarginFeasibilityResult, *,
+    account_result: AccountEvidenceResult,
+    market_result: "MarketEvidenceResult | None",
+    available: Decimal, existing_im: Decimal, fees: Decimal, headroom_frac: Decimal,
+) -> MarginFeasibilityResult:
+    """Source A core. Projects initial margin PER SYMBOL from the exact configured leverage
+    and the current rounded notional, summing independently. Requires complete coverage for
+    every target; otherwise UNAVAILABLE with the uncovered symbols listed."""
+    leverage_by_symbol = account_result.target_configured_leverage_by_symbol
+
+    # Leverage coverage must be complete for ALL targets (no missing/zero/invalid/ambiguous/
+    # cross-symbol evidence).
+    if account_result.target_leverage_evidence_status != LEVERAGE_EVIDENCE_OK:
+        miss = account_result.target_leverage_missing_symbols
+        return replace(
+            base, status=MARGIN_FEASIBILITY_UNAVAILABLE, margin_basis=MARGIN_BASIS_PER_SYMBOL,
+            margin_rate_source=PER_SYMBOL_LEVERAGE_RATE_SOURCE,
+            failures=("target_leverage_evidence_incomplete",
+                      *(f"leverage_missing:{s}" for s in miss)))
+
+    # Current rounded notional per symbol comes from the validated market evidence.
+    notional_by_symbol: dict[str, Decimal] = {}
+    if market_result is not None:
+        for a in market_result.actions:
+            rn = _dec(a.rounded_notional_usd)
+            if rn is not None and rn > 0:
+                notional_by_symbol[a.symbol] = rn
+
+    lev_syms = set(leverage_by_symbol)
+    missing_notional = sorted(lev_syms - set(notional_by_symbol))
+    if market_result is None or not lev_syms or missing_notional:
+        return replace(
+            base, status=MARGIN_FEASIBILITY_UNAVAILABLE, margin_basis=MARGIN_BASIS_PER_SYMBOL,
+            margin_rate_source=PER_SYMBOL_LEVERAGE_RATE_SOURCE,
+            failures=("per_symbol_notional_unavailable",
+                      *(f"notional_missing:{s}" for s in missing_notional)))
+
+    breakdown: list[dict[str, Any]] = []
+    additional_im = Decimal("0")
+    for sym in sorted(lev_syms):
+        lev = _dec(leverage_by_symbol[sym])
+        rn = notional_by_symbol[sym]
+        im = rn / lev                       # projected_initial_margin = notional / leverage
+        additional_im += im
+        breakdown.append({
+            "symbol": sym,
+            "rounded_notional_usd": _canon(rn),
+            "configured_leverage": _canon(lev),
+            "initial_margin_rate": _canon(Decimal(1) / lev),
+            "projected_initial_margin_usd": _canon(im),
+        })
+
+    projected_total = existing_im + additional_im
+    headroom = (available * headroom_frac)
+    remaining = available - additional_im - fees
+    failures: list[str] = []
+    if remaining < 0:
+        failures.append("insufficient_available_balance")
+    if remaining < headroom:
+        failures.append("safety_headroom_violation")
+    status = MARGIN_FEASIBILITY_PASS if not failures else MARGIN_FEASIBILITY_BLOCKED
+    return replace(
+        base, status=status, failures=tuple(failures), margin_basis=MARGIN_BASIS_PER_SYMBOL,
+        projected_additional_initial_margin_usd=_canon(additional_im),
+        projected_total_initial_margin_usd=_canon(projected_total),
+        safety_headroom_usd=_canon(headroom),
+        remaining_available_balance_usd=_canon(remaining),
+        margin_rate_source=PER_SYMBOL_LEVERAGE_RATE_SOURCE,
+        per_symbol_initial_margin=tuple(breakdown))
 
 
 # ---------------------------------------------------------------------------
@@ -1075,6 +1267,11 @@ def build_account_evidence_artifact(
         "margin_rate_source": account.margin_rate_source,
         "account_im_rate_context": account.account_im_rate_context,
         "account_freshness_age_ms": account.account_freshness_age_ms,
+        # TASK-014CH4A_FIX2: per-symbol Source-A configured-leverage evidence (replayable).
+        "target_leverage_evidence_status": account.target_leverage_evidence_status,
+        "target_configured_leverage_by_symbol":
+            dict(sorted(account.target_configured_leverage_by_symbol.items())),
+        "target_leverage_missing_symbols": list(account.target_leverage_missing_symbols),
         "account_blockers": list(account.blockers),
         "network_audit": dict(network_audit),
         **safe_safety_counters(),
@@ -1193,6 +1390,11 @@ def build_current_feasibility_review(
         "margin_rate_source": margin.margin_rate_source,
         "conservative_1x_envelope_usd": margin.conservative_1x_envelope_usd,
         "conservative_1x_envelope_label": margin.conservative_1x_envelope_label,
+        # TASK-014CH4A_FIX2: per-symbol Source-A projection basis + breakdown (replayable).
+        "margin_basis": margin.margin_basis,
+        "target_leverage_evidence_status": account.target_leverage_evidence_status,
+        "target_leverage_missing_symbols": list(account.target_leverage_missing_symbols),
+        "per_symbol_initial_margin": [dict(r) for r in margin.per_symbol_initial_margin],
         "margin_feasibility_failures": list(margin.failures),
         # --- Network audit + terminal safety posture ---
         "network_audit": dict(network_audit),
@@ -1257,6 +1459,9 @@ __all__ = [
     "MARKET_EVIDENCE_FRESH", "MARKET_EVIDENCE_STALE", "MARKET_EVIDENCE_INCOMPLETE",
     "ACCOUNT_EVIDENCE_OK", "ACCOUNT_EVIDENCE_UNAVAILABLE", "ACCOUNT_EVIDENCE_BLOCKED",
     "MARGIN_FEASIBILITY_PASS", "MARGIN_FEASIBILITY_BLOCKED", "MARGIN_FEASIBILITY_UNAVAILABLE",
+    "LEVERAGE_EVIDENCE_OK", "LEVERAGE_EVIDENCE_UNAVAILABLE", "LEVERAGE_EVIDENCE_NOT_SUPPLIED",
+    "PER_SYMBOL_LEVERAGE_RATE_SOURCE", "MARGIN_BASIS_PER_SYMBOL", "MARGIN_BASIS_SINGLE_RATE",
+    "MARGIN_BASIS_UNAVAILABLE",
     "BUNDLE_COMPLETE", "BUNDLE_INCOMPLETE",
     "CurrentTarget", "TrustedInputsResult", "CurrentActionFeasibility",
     "MarketEvidenceResult", "AccountEvidenceResult", "MarginFeasibilityResult",

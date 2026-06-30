@@ -632,3 +632,57 @@ class TestPaginationAndTargetedLookup:
         client = _fixture_client()
         rules = client.get_instruments_info()
         assert "SOLUSDT" in rules
+
+
+# ===========================================================================
+# TASK-014CH4A_FIX2 -- per-symbol leverage reads are rate-paced + fail-closed
+# ===========================================================================
+
+class TestPerSymbolLeveragePacing:
+    def test_real_per_symbol_reads_are_paced_below_uid_limit(self, monkeypatch):
+        """Consecutive real position/list leverage reads are spaced >= the min interval,
+        keeping the request rate clearly below Bybit's 50 req/s UID limit."""
+        client = _fixture_client()
+        monkeypatch.setattr(client, "_get", lambda path, params, signed=True: {
+            "result": {"list": [{"symbol": params["symbol"], "leverage": "10",
+                                 "positionIdx": 0}]}})
+        sleeps: list[float] = []
+        monkeypatch.setattr(drc.time, "sleep", lambda s: sleeps.append(s))
+        out = client._position_leverage_real(
+            ["AUSDT", "BUSDT", "CUSDT"], category="linear")
+        assert set(out) == {"AUSDT", "BUSDT", "CUSDT"}
+        assert out["AUSDT"]["leverage_values"] == ["10"]
+        # n-1 paced gaps between n consecutive real reads.
+        assert len(sleeps) == 2
+        assert all(0 < s <= drc._PER_SYMBOL_LEVERAGE_MIN_INTERVAL_S + 1e-9 for s in sleeps)
+        # 0.03 s spacing == ~33 req/s, clearly below the 50 req/s endpoint limit.
+        assert drc._PER_SYMBOL_LEVERAGE_MIN_INTERVAL_S <= 0.03
+        assert 1.0 / drc._PER_SYMBOL_LEVERAGE_MIN_INTERVAL_S < 50
+
+    def test_fixture_mode_does_not_sleep(self, monkeypatch):
+        """Offline/fixture mode returns {} and NEVER sleeps."""
+        client = _fixture_client()
+        sleeps: list[float] = []
+        monkeypatch.setattr(drc.time, "sleep", lambda s: sleeps.append(s))
+        assert client.get_position_leverage(["AUSDT", "BUSDT"]) == {}
+        assert sleeps == []
+
+    def test_single_failed_symbol_is_fail_closed_without_aborting_batch(self, monkeypatch):
+        """A rate-limit/transport failure for one symbol yields an EMPTY evidence record
+        for that symbol (downstream UNAVAILABLE) while the rest of the batch still reads."""
+        client = _fixture_client()
+
+        def _fake_get(path, params, signed=True):
+            if params["symbol"] == "BUSDT":
+                raise RuntimeError("simulated rate limit / transport error")
+            return {"result": {"list": [{"symbol": params["symbol"], "leverage": "10",
+                                         "positionIdx": 0}]}}
+
+        monkeypatch.setattr(client, "_get", _fake_get)
+        monkeypatch.setattr(drc.time, "sleep", lambda s: None)
+        out = client._position_leverage_real(
+            ["AUSDT", "BUSDT", "CUSDT"], category="linear")
+        assert out["AUSDT"]["leverage_values"] == ["10"]
+        assert out["BUSDT"]["leverage_values"] == []   # failed symbol: no evidence
+        assert out["BUSDT"]["row_count"] == 0
+        assert out["CUSDT"]["leverage_values"] == ["10"]  # batch continued
