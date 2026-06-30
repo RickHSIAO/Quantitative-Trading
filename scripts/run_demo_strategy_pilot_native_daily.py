@@ -45,7 +45,9 @@ import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from decimal import Decimal, InvalidOperation
+from types import SimpleNamespace
+from typing import Any, Mapping, Sequence
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -54,6 +56,8 @@ if ROOT not in sys.path:
 from src import demo_strategy_pilot_action_planner as planner  # noqa: E402
 from src import demo_strategy_pilot_execution_gate as gate  # noqa: E402 (ISOLATED one-shot test utility)
 from src import demo_strategy_native_v1_portfolio as v1  # noqa: E402 (ACTIVE V1 policy)
+from src import demo_strategy_native_current_feasibility as cf  # noqa: E402 (CH4A feasibility model)
+from src import demo_strategy_native_ws_price_binding as wb  # noqa: E402 (canonical qty rounding)
 from src import demo_strategy_native_margin_freshness_audit as md  # noqa: E402 (TASK-014CD evidence)
 from src import demo_strategy_native_account_mode_risk_tier_audit as ce  # noqa: E402 (TASK-014CE evidence)
 from src import demo_strategy_pilot_forward_source as fs  # noqa: E402
@@ -1006,12 +1010,18 @@ def build_parser() -> argparse.ArgumentParser:
     # manual authorization token + Demo credentials + Demo host. Reuses execute_daily_native().
     p.add_argument("--execute-prepared-demo-batch", dest="execute_prepared_demo_batch",
                    action="store_true",
-                   help="opt-in EXECUTION-CAPABLE mode: recollect CH4A, re-prepare the 50 "
-                        "payloads, and (only with --send-orders-to-demo + matching token + Demo "
-                        "credentials) dispatch them via the existing execute_daily_native engine")
+                   help="opt-in EXECUTION-CAPABLE mode: dispatch the IMMUTABLE 50 payloads from "
+                        "--prepared-batch-json (only with --send-orders-to-demo + matching token + "
+                        "Demo credentials) via the existing execute_daily_native engine, after a "
+                        "fresh CH4A re-validates those exact fixed payloads against current evidence")
+    p.add_argument("--prepared-batch-json", dest="prepared_batch_json", default=None,
+                   help="(execute mode) path to the IMMUTABLE prepared-batch artifact written by "
+                        "--prepare-from-current-feasibility-artifacts; its exact 50 order bodies are "
+                        "dispatched (fresh market prices NEVER regenerate the authorized quantities)")
     p.add_argument("--batch-authorization-token", dest="batch_authorization_token", default=None,
                    help="exact date+payload-bound manual authorization token "
-                        "(CONFIRM_DEMO_NATIVE_BATCH_<YYYYMMDD>_<fingerprint16>) for execution mode")
+                        "(CONFIRM_DEMO_NATIVE_BATCH_<YYYYMMDD>_<fingerprint16>) bound to the "
+                        "immutable prepared-batch fingerprint")
     # CH4A trusted-anchor inputs forwarded VERBATIM to the existing current-feasibility runner,
     # which the execution mode invokes fresh (--allow-real-network) into the no-clobber
     # preflight dir below. These are NOT consumed directly; only CH4A's fresh outputs are read.
@@ -1417,17 +1427,34 @@ def _run_prepare_from_current_feasibility_artifacts(args: Any) -> int:
         feasibility_review=review, current_actions=current_actions,
         account_evidence=account, pilot_id=args.pilot_id, date=args.date)
 
-    # Manual-authorization handshake: when PREPARED, publish the deterministic payload
-    # fingerprint and the exact token the operator must pass back to --execute-prepared-demo-batch.
-    # Derived with the SAME helpers execution uses (no duplicated fingerprint logic). The token
-    # is a confirmation phrase, not a secret. Execution recomputes both from a FRESH CH4A run and
-    # only proceeds if they still match -- so a quantity change since preparation rejects.
+    # Manual-authorization handshake: when PREPARED, authorize an IMMUTABLE ALLOCATION INTENT
+    # (per-symbol side + target quote-notional + the fixed strategy capital-base snapshot used for
+    # sizing), NOT immutable final quantities. The strategy capital base is the sum of the
+    # strategy's own |target notionals| (price-independent weight x capital_base_usd, currently
+    # V1_CAPITAL_BASE_USD == 10000, cross-validated from config + state artifact) -- account
+    # equity / unrealized PnL never enters the sizing basis. Execution recomputes executable
+    # quantities from these targets + fresh price, so the fingerprint/token stay stable when only
+    # price moves. No automatic post-close compounding is implemented.
     if result.get("verdict") == nx.BATCH_PREP_PREPARED:
-        _fp = batch_payload_fingerprint(
-            _actions_from_prepared(result), pilot_id=args.pilot_id, date=args.date)
-        result["payload_fingerprint"] = _fp
-        result["expected_batch_authorization_token"] = expected_batch_authorization_token(
-            args.date, _fp)
+        _allocs, _capital = _allocations_from_market_targets(
+            result.get("order_payloads", []), current_actions)
+        if _allocs is None:
+            result["verdict"] = nx.BATCH_PREP_REJECTED
+            result["blockers"] = list(result.get("blockers", [])) + [
+                "missing_target_signed_notional_usd"]
+            result["order_payloads"] = []
+        else:
+            _capital_str = _runner_canon(_capital)
+            for _p, _a in zip(result["order_payloads"], _allocs):
+                _p["target_notional_usd"] = _a["target_notional_usd"]
+            result["strategy_capital_base_usd"] = _capital_str
+            _fp = allocation_intent_fingerprint(
+                _allocs, pilot_id=args.pilot_id, date=args.date,
+                strategy_capital_base_usd=_capital_str)
+            result["payload_fingerprint"] = _fp
+            result["allocation_intent_fingerprint"] = _fp
+            result["expected_batch_authorization_token"] = expected_batch_authorization_token(
+                args.date, _fp)
 
     if args.prepare_output_json:
         if os.path.lexists(args.prepare_output_json):
@@ -1457,39 +1484,356 @@ BATCH_AUTH_TOKEN_PREFIX = "CONFIRM_DEMO_NATIVE_BATCH_"
 EXEC_BATCH_DISPATCHED = "DEMO_BATCH_DISPATCHED"
 EXEC_BATCH_AMBIGUOUS = "DEMO_BATCH_AMBIGUOUS_FAIL_CLOSED"
 EXEC_BATCH_REJECTED = "DEMO_BATCH_REJECTED_PRE_SEND"
+EXEC_BATCH_ALREADY_ATTEMPTED = "DEMO_BATCH_ALREADY_ATTEMPTED_REQUIRES_RECONCILIATION"
+
+# Durable exactly-once guard for ONE authorized allocation batch. The stable identity is
+# (pilot_id, date, allocation_intent_fingerprint) -- a fresh-price / qty change NEVER changes
+# it (the fingerprint is price-independent). The record lives inside the existing
+# NativeExecutionStore output directory; it is claimed atomically (exclusive create + fsync)
+# immediately BEFORE the first order send, so a crash after some orders were accepted -- or
+# before the final summary was written -- still blocks every later invocation for that identity.
+BATCH_ATTEMPT_FILENAME = "batch_attempt.json"
+BATCH_ATTEMPT_SCHEMA = "demo_strategy_native_batch_attempt"
+BATCH_ATTEMPT_SENDING = "SENDING_PHASE_ENTERED"
 
 
 def _compact_date(date: str) -> str:
     return str(date).replace("-", "").strip()
 
 
-def batch_payload_fingerprint(actions: Any, *, pilot_id: str, date: str) -> str:
-    """Deterministic SHA-256 over the EXACT final order bodies execute_daily_native() will
-    POST (the same build_order_body / orderLinkId the engine uses), in dispatch order."""
-    bodies = [nx.build_order_body(a, order_link_id=a.order_link_id(pilot_id, date))
-              for a in actions]
-    blob = json.dumps(bodies, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
-
-
 def expected_batch_authorization_token(date: str, fingerprint: str) -> str:
-    """Date-bound + payload-bound manual token (no secret); follows the existing
-    CONFIRM_DEMO_*_<date>_<bound> convention."""
+    """Date-bound + intent-bound manual token (no secret); follows the existing
+    CONFIRM_DEMO_*_<date>_<bound> convention. ``fingerprint`` is the price-independent
+    allocation-intent fingerprint (see allocation_intent_fingerprint)."""
     return f"{BATCH_AUTH_TOKEN_PREFIX}{_compact_date(date)}_{fingerprint[:16]}"
 
 
-def _actions_from_prepared(prepared: Mapping[str, Any]) -> list[Any]:
-    """Rebuild the canonical StrategyNativeAction list from the prepared payloads (same
-    construction prepare_strategy_native_batch_dry_run() used internally)."""
-    return [nx.StrategyNativeAction(
-                symbol=p["symbol"], side=p["side"], qty=p["qty"], intent=nx.INTENT_OPEN,
-                reduce_only=False, notional_usdt=p.get("rounded_notional_usd", ""),
-                source_reference=p["symbol"])
-            for p in prepared.get("order_payloads", [])]
+def _runner_dec(value: Any) -> "Decimal | None":
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _runner_canon(value: Decimal) -> str:
+    normalized = value.normalize()
+    if normalized == 0:
+        normalized = Decimal("0")
+    return format(normalized, "f")
+
+
+def _load_prepared_batch_artifact(path: str) -> Mapping[str, Any]:
+    """Read the IMMUTABLE prepared-batch artifact written by the non-sending preparation mode.
+    Raises ValueError if absent/unparseable/not an object."""
+    if not path:
+        raise ValueError("prepared_batch_json_not_supplied")
+    if not os.path.isfile(path):
+        raise ValueError(f"prepared_batch_json_missing:{path}")
+    with open(path, encoding="utf-8") as f:
+        artifact = json.load(f)
+    if not isinstance(artifact, Mapping):
+        raise ValueError("prepared_batch_json_not_object")
+    return artifact
+
+
+def allocation_intent_fingerprint(
+    allocations: Sequence[Mapping[str, Any]], *, pilot_id: str, date: str,
+    strategy_capital_base_usd: Any,
+) -> str:
+    """Deterministic SHA-256 over the IMMUTABLE allocation INTENT, which is PRICE-INDEPENDENT:
+    pilot/date, the strategy capital-base snapshot (V1_CAPITAL_BASE_USD == 10000, cross-validated
+    from config + state artifact; NOT account equity or unrealized PnL), and per symbol the side
+    + target quote-notional. It binds WHAT to allocate (and against what capital base), NEVER the
+    price-dependent executable quantity or order body -- so it stays stable when only fresh market
+    price changes between preparation and execution."""
+    canon = {
+        "pilot_id": str(pilot_id), "date": str(date),
+        "strategy_capital_base_usd": str(strategy_capital_base_usd),
+        "allocations": sorted(
+            ({"symbol": str(a["symbol"]).strip().upper(), "side": str(a["side"]),
+              "target_notional_usd": str(a["target_notional_usd"])} for a in allocations),
+            key=lambda d: d["symbol"]),
+    }
+    blob = json.dumps(canon, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _allocations_from_market_targets(
+    payloads: Sequence[Mapping[str, Any]], market_rows: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]] | None, "Decimal | None"]:
+    """Derive the per-symbol authorized allocation INTENT (symbol/side/|target notional|) and
+    the strategy capital-base snapshot (= sum of |target notional|) from the strategy's own
+    ``target_signed_notional_usd`` in the market evidence. The capital basis comes from the
+    strategy targets (price-independent weight x capital_base_usd), NOT from account equity /
+    unrealized PnL. Returns (None, None) when any target is missing."""
+    target_by_symbol: dict[str, Decimal] = {}
+    for r in (market_rows or []):
+        if not isinstance(r, Mapping):
+            continue
+        sym = str(r.get("symbol", "")).strip().upper()
+        t = _runner_dec(r.get("target_signed_notional_usd"))
+        if sym and t is not None:
+            target_by_symbol[sym] = t.copy_abs()
+    allocations: list[dict[str, Any]] = []
+    capital = Decimal("0")
+    for p in payloads:
+        sym = str(p.get("symbol", "")).strip().upper()
+        tgt = target_by_symbol.get(sym)
+        if tgt is None or tgt <= 0:
+            return None, None
+        allocations.append({"symbol": sym, "side": str(p.get("side", "")),
+                            "target_notional_usd": _runner_canon(tgt)})
+        capital += tgt
+    return allocations, capital
+
+
+def verify_immutable_prepared_artifact(
+    artifact: Mapping[str, Any], *, pilot_id: str, date: str, token: str,
+) -> tuple[bool, list[str], str, list[dict[str, Any]], str]:
+    """Verify the supplied prepared-batch artifact authorizes THIS execution, WITHOUT any fresh
+    market input. The authorization binds the IMMUTABLE allocation INTENT (per-symbol side +
+    target quote-notional + strategy capital-base snapshot), recomputed from the artifact's own
+    fields; the supplied token must bind that price-independent intent fingerprint + date.
+    Executable quantities are NOT part of the artifact's authority (they are recomputed fresh).
+    Returns (ok, blockers, intent_fingerprint, allocations, strategy_capital_base_usd)."""
+    blockers: list[str] = []
+    if str(artifact.get("verdict", "")) != nx.BATCH_PREP_PREPARED:
+        blockers.append(f"artifact_verdict_not_prepared:{artifact.get('verdict')}")
+    if str(artifact.get("pilot_id", "")) != str(pilot_id):
+        blockers.append("artifact_pilot_id_mismatch")
+    if str(artifact.get("date", "")) != str(date):
+        blockers.append("artifact_date_mismatch")
+
+    payloads = artifact.get("order_payloads") or []
+    if not isinstance(payloads, list) or len(payloads) != nx.EXPECTED_BATCH_ORDER_COUNT:
+        blockers.append(f"artifact_order_count_not_fifty:"
+                        f"{len(payloads) if isinstance(payloads, list) else 'NA'}")
+        return False, blockers, "", [], "0"
+
+    seen_symbols: set[str] = set()
+    buys = sells = 0
+    allocations: list[dict[str, Any]] = []
+    capital_sum = Decimal("0")
+    for p in payloads:
+        symbol = str(p.get("symbol", "")).strip().upper()
+        if not symbol:
+            blockers.append("artifact_empty_symbol")
+        elif symbol in seen_symbols:
+            blockers.append(f"artifact_duplicate_symbol:{symbol}")
+        seen_symbols.add(symbol)
+        side = str(p.get("side", ""))
+        if side == "Buy":
+            buys += 1
+        elif side == "Sell":
+            sells += 1
+        target = _runner_dec(p.get("target_notional_usd"))
+        if target is None or target <= 0:
+            blockers.append(f"artifact_missing_target_notional:{symbol or '?'}")
+            continue
+        allocations.append({"symbol": symbol, "side": side,
+                            "target_notional_usd": _runner_canon(target)})
+        capital_sum += target
+
+    if buys != nx.EXPECTED_BATCH_SIDE_COUNT or sells != nx.EXPECTED_BATCH_SIDE_COUNT:
+        blockers.append(f"artifact_buy_sell_not_25_25:{buys}/{sells}")
+
+    # The recorded strategy capital-base snapshot must equal the sum of the |target notionals|
+    # it authorizes (no equity / unrealized-PnL leakage into the sizing basis).
+    stored_capital = _runner_dec(artifact.get("strategy_capital_base_usd"))
+    if stored_capital is None or stored_capital != capital_sum:
+        blockers.append("artifact_capital_inconsistent_with_targets")
+
+    # Recompute the price-independent intent fingerprint from the artifact's OWN capital + intent.
+    capital_str = artifact.get("strategy_capital_base_usd")
+    fingerprint = allocation_intent_fingerprint(
+        allocations, pilot_id=pilot_id, date=date, strategy_capital_base_usd=capital_str)
+    stored_fp = artifact.get("payload_fingerprint")
+    if stored_fp is not None and str(stored_fp) != fingerprint:
+        blockers.append("artifact_fingerprint_recompute_mismatch")
+    expected_token = expected_batch_authorization_token(date, fingerprint)
+    if token != expected_token:
+        blockers.append("authorization_token_mismatch")
+
+    return (not blockers), blockers, fingerprint, allocations, _runner_canon(capital_sum)
+
+
+def build_executable_actions_from_authorized_intent(
+    *, allocations: Sequence[Mapping[str, Any]], pilot_id: str, date: str,
+    review: Mapping[str, Any], current_actions: Sequence[Mapping[str, Any]],
+    account: Mapping[str, Any],
+) -> tuple[bool, list[str], list[Any], dict[str, Any]]:
+    """Recompute the FINAL executable quantity for each AUTHORIZED allocation from its IMMUTABLE
+    target quote-notional + FRESH market price + current instrument rules, using the canonical
+    floor-to-step rounding (``wb._floor_qty`` -- the same the whole pipeline uses). The
+    authorized ``target_notional_usd`` is NEVER changed; only the executable quantity moves with
+    price, so the resulting actual notional tracks the authorized target (it does NOT inflate
+    with price). The recomputed actual notionals then feed the EXISTING margin-feasibility model
+    (account equity / available balance / existing margin are SAFETY inputs only, never the
+    sizing basis). Returns (ok, blockers, actions, evidence)."""
+    review = review if isinstance(review, Mapping) else {}
+    account = account if isinstance(account, Mapping) else {}
+    rows_by_symbol = {str(r.get("symbol", "")).strip().upper(): r
+                      for r in (current_actions or []) if isinstance(r, Mapping)}
+    blockers: list[str] = []
+
+    # --- Account-level fresh gates (same status constants CH4A / prepare require) ---
+    if str(review.get("status", "")) != cf.CURRENT_FEASIBILITY_PASS:
+        blockers.append(f"fresh_feasibility_not_pass:{review.get('status')}")
+    if review.get("live_environment_denied") is False or account.get("live_environment_denied") is False:
+        blockers.append("fresh_live_environment_not_denied")
+    if str(account.get("target_leverage_evidence_status", "")) != cf.LEVERAGE_EVIDENCE_OK:
+        blockers.append(f"fresh_leverage_evidence_not_ok:{account.get('target_leverage_evidence_status')}")
+    overlaps = sorted(str(s).upper() for s in (account.get("strategy_position_overlaps") or []))
+    if overlaps:
+        blockers.append(f"fresh_strategy_position_overlap:{overlaps}")
+    protected = {str(s).strip().upper() for s in (account.get("protected_positions") or [])}
+    leverage_by_symbol = {str(k).strip().upper(): str(v)
+                          for k, v in (account.get("target_configured_leverage_by_symbol") or {}).items()}
+
+    actions: list[Any] = []
+    fresh_market_actions: list[Any] = []
+    target_gross = Decimal("0")
+    actual_gross = Decimal("0")
+    for a in allocations:
+        symbol = str(a["symbol"]).strip().upper()
+        side = str(a["side"])
+        target = _runner_dec(a["target_notional_usd"])
+        row = rows_by_symbol.get(symbol)
+        if row is None:
+            blockers.append(f"symbol_absent_from_fresh_evidence:{symbol or '?'}")
+            continue
+        if str(row.get("instrument_status", "")) != cf.ACCEPTED_INSTRUMENT_STATUS or row.get("trading") is not True:
+            blockers.append(f"symbol_not_trading:{symbol}")
+        if symbol in protected:
+            blockers.append(f"fresh_protected_position_overlap:{symbol}")
+        price = _runner_dec(row.get("current_price"))
+        qty_step = _runner_dec(row.get("qty_step"))
+        min_qty = _runner_dec(row.get("min_order_qty"))
+        min_notional = _runner_dec(row.get("min_notional_value"))
+        max_mkt = _runner_dec(row.get("max_market_order_qty"))
+        if target is None or target <= 0:
+            blockers.append(f"authorized_target_not_positive:{symbol}")
+            continue
+        if price is None or price <= 0:
+            blockers.append(f"fresh_price_not_positive:{symbol}")
+            continue
+        target_gross += target
+        # Canonical floor-to-step quantity from the AUTHORIZED target + FRESH price.
+        qty = wb._floor_qty(target, price, qty_step)
+        actual = qty * price
+        if qty <= 0:
+            blockers.append(f"zero_quantity_after_rounding:{symbol}")
+            continue
+        if min_qty is not None and min_qty >= 0 and qty < min_qty:
+            blockers.append(f"below_min_order_qty:{symbol}")
+        if min_notional is not None and actual < min_notional:
+            blockers.append(f"below_min_notional:{symbol}")
+        if max_mkt is not None and max_mkt > 0 and qty > max_mkt:
+            blockers.append(f"above_max_market_order_qty:{symbol}")
+        if qty_step is not None and qty_step > 0 and (qty % qty_step) != 0:
+            blockers.append(f"qty_not_step_multiple:{symbol}")
+        # Consistency: floor rounding never EXCEEDS the target and loses < one qty-step of
+        # notional -> the executed allocation stays ~ the authorized target after exchange
+        # rounding (this is the existing exchange boundary, not an arbitrary drift tolerance).
+        if actual > target:
+            blockers.append(f"actual_notional_exceeds_target:{symbol}")
+        elif qty_step is not None and qty_step > 0 and (target - actual) >= (qty_step * price):
+            blockers.append(f"rounding_inconsistent_with_target:{symbol}")
+        if symbol not in leverage_by_symbol:
+            blockers.append(f"fresh_leverage_missing:{symbol}")
+        actual_gross += actual
+        actions.append(nx.StrategyNativeAction(
+            symbol=symbol, side=side, qty=_runner_canon(qty), intent=nx.INTENT_OPEN,
+            reduce_only=False, notional_usdt=_runner_canon(actual), source_reference=symbol))
+        fresh_market_actions.append(SimpleNamespace(symbol=symbol,
+                                                    rounded_notional_usd=_runner_canon(actual)))
+
+    # --- Aggregate margin feasibility on the RECOMPUTED notionals (reuse the existing model).
+    # Account equity / available balance are SAFETY inputs here -- never the sizing basis. ---
+    acct_standin = SimpleNamespace(
+        ok=True,
+        available_balance_usd=(review.get("available_balance_usd")
+                               or account.get("available_balance_usd")),
+        account_equity_usd=(review.get("account_equity_usd")
+                            or account.get("account_equity_usd")),
+        existing_initial_margin_usd=(review.get("existing_initial_margin_usd")
+                                     or account.get("existing_initial_margin_usd")),
+        target_leverage_evidence_status=str(account.get("target_leverage_evidence_status", "")),
+        target_configured_leverage_by_symbol=leverage_by_symbol,
+        target_leverage_missing_symbols=(),
+        applicable_initial_margin_rate=None, margin_rate_source=None)
+    market_standin = SimpleNamespace(actions=fresh_market_actions)
+    margin = cf.evaluate_margin_feasibility(
+        account_result=acct_standin, target_gross_notional_usd=cf.V1_GROSS_USD,
+        market_result=market_standin,
+        safety_headroom_fraction=cf.DEFAULT_SAFETY_HEADROOM_FRACTION,
+        fees_buffer_usd=cf.DEFAULT_FEES_BUFFER_USD)
+    if margin.status != cf.MARGIN_FEASIBILITY_PASS:
+        blockers.append(f"fresh_margin_not_pass:{margin.status}")
+        blockers.extend(f"margin_failure:{f}" for f in margin.failures)
+
+    evidence = {
+        "fresh_feasibility_status": review.get("status"),
+        "authorized_target_gross_notional_usd": _runner_canon(target_gross),
+        "executed_actual_gross_notional_usd": _runner_canon(actual_gross),
+        "fresh_projected_total_initial_margin_usd": margin.projected_total_initial_margin_usd,
+        "fresh_remaining_available_balance_usd": margin.remaining_available_balance_usd,
+        "fresh_safety_headroom_usd": margin.safety_headroom_usd,
+        "fresh_margin_feasibility_status": margin.status,
+    }
+    return (not blockers), blockers, actions, evidence
 
 
 class FreshCh4aError(RuntimeError):
     """The in-command fresh CH4A read-only collection failed (non-zero exit / unreadable)."""
+
+
+def _batch_attempt_path(store: Any):
+    """Path of the durable batch-attempt guard, inside the existing NativeExecutionStore dir."""
+    return store.dir / BATCH_ATTEMPT_FILENAME
+
+
+def _read_batch_attempt(store: Any) -> dict[str, Any] | None:
+    """Return the durable batch-attempt record for this (pilot, date) if one exists."""
+    path = _batch_attempt_path(store)
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _claim_batch_attempt(store: Any, record: Mapping[str, Any]) -> bool:
+    """Atomically CLAIM the durable batch-attempt guard. Returns True iff THIS call created it
+    (caller may proceed to send); False if a record already exists (caller must fail closed).
+    Uses exclusive create + fsync so the claim survives process / VPS restart and a crash after
+    some orders were accepted but before the final summary was written."""
+    store.dir.mkdir(parents=True, exist_ok=True)
+    path = str(_batch_attempt_path(store))
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(dict(record), ensure_ascii=False, indent=2, sort_keys=True))
+        fh.flush()
+        os.fsync(fh.fileno())
+    return True
+
+
+def _finalize_batch_attempt(store: Any, **fields: Any) -> None:
+    """Best-effort terminal annotation of the already-claimed guard (atomic). Never relaxes the
+    guard: the SENDING record alone already blocks retries even if this update never runs."""
+    try:
+        record = _read_batch_attempt(store) or {}
+        record.update(fields)
+        store._atomic_write(_batch_attempt_path(store),
+                            json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True))
+    except OSError:
+        pass
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _utc_today() -> str:
@@ -1586,10 +1930,16 @@ def _run_execute_prepared_demo_batch(
     env: Mapping[str, str] | None = None, base_url: str | None = None,
     today: str | None = None,
 ) -> int:
-    """Explicit, fail-closed, Demo-only batch execution. See the module section header.
-    Injection seams (collect_feasibility / build_transport / executor / env / base_url / today)
-    exist ONLY so the wiring is fully testable offline; production uses the real defaults,
-    which recollect fresh CH4A evidence inside this very command."""
+    """Explicit, fail-closed, Demo-only batch execution of an IMMUTABLE prepared batch.
+
+    The authorized 50 order bodies come ONLY from --prepared-batch-json (the artifact the
+    non-sending preparation mode wrote) and are NEVER regenerated from fresh market prices.
+    Fresh CH4A still runs in-process immediately before dispatch, but solely to RE-VALIDATE
+    those exact fixed payloads against current evidence (price / instrument rules / trading /
+    leverage / balance); it never alters a quantity or the payload fingerprint. Transport is
+    constructed only after BOTH the immutable-artifact authorization AND the fresh-feasibility
+    validation pass. Injection seams (collect_feasibility / build_transport / executor / env /
+    base_url / today) exist ONLY so the wiring is fully testable offline."""
     collect_feasibility = collect_feasibility or _collect_fresh_ch4a
     build_transport = build_transport or _build_real_demo_transport
     executor = executor or nx.execute_daily_native
@@ -1631,9 +1981,11 @@ def _run_execute_prepared_demo_batch(
     # --- 3. --date must equal the current UTC date (no stale-day execution) ---------------
     if str(args.date).strip() != str(today).strip():
         return _reject(f"execution_date_not_current_utc:{today}", exit_code=EXIT_INVALID)
-    # --- 4. Token must be supplied -------------------------------------------------------
+    # --- 4. Token + immutable prepared-batch artifact must be supplied -------------------
     if not args.batch_authorization_token:
         return _reject("missing_authorization_token", exit_code=EXIT_INVALID)
+    if not args.prepared_batch_json:
+        return _reject("missing_prepared_batch_json", exit_code=EXIT_INVALID)
     # --- 5. Demo host only; live endpoint permanently rejected ---------------------------
     try:
         assert_demo_url(base_url + EP_ORDER_REALTIME)
@@ -1646,26 +1998,44 @@ def _run_execute_prepared_demo_batch(
     creds = load_demo_credentials(env)
     if not (creds.api_key_present and creds.api_secret_present):
         return _reject("demo_credentials_missing", exit_code=EXIT_INVALID)
-    # --- 7. Recollect fresh CH4A evidence INSIDE this command (no stale artifacts) --------
+    # --- 7. Load + verify the IMMUTABLE ALLOCATION INTENT artifact (no fresh input yet) ---
+    try:
+        artifact = _load_prepared_batch_artifact(args.prepared_batch_json)
+    except (OSError, ValueError) as exc:
+        return _reject(f"prepared_batch_artifact_unreadable:{type(exc).__name__}",
+                       exit_code=EXIT_INPUT_FAILURE, extra={"detail": str(exc)})
+    ok, art_blockers, fingerprint, allocations, capital = verify_immutable_prepared_artifact(
+        artifact, pilot_id=args.pilot_id, date=args.date, token=args.batch_authorization_token)
+    expected_token = expected_batch_authorization_token(args.date, fingerprint)
+    token_extra = {"payload_fingerprint": fingerprint, "expected_authorization_token": expected_token,
+                   "strategy_capital_base_usd": capital}
+    if not ok:
+        return _reject("prepared_artifact_authorization_failed", exit_code=EXIT_INVALID,
+                       extra={**token_extra, "artifact_blockers": art_blockers})
+    # --- 7b. Durable exactly-once guard READ: if this stable batch identity (pilot/date/intent
+    #         fingerprint) already ENTERED the sending phase, fail closed now -- before fresh
+    #         CH4A, transport, or any order dispatch. Survives restart / crash-after-send. ----
+    store = nx.NativeExecutionStore(args.pilot_id, args.date, output_root)
+    existing_attempt = _read_batch_attempt(store)
+    if existing_attempt is not None:
+        return _reject(EXEC_BATCH_ALREADY_ATTEMPTED, exit_code=EXIT_BLOCKED,
+                       extra={**token_extra, "requires_reconciliation": True,
+                              "prior_batch_attempt": existing_attempt})
+    # --- 8. Run fresh CH4A INSIDE this command (read-only) for the feasibility evidence ---
     try:
         review, current_actions, account = collect_feasibility(args)
     except (OSError, ValueError, FreshCh4aError) as exc:
         return _reject(f"feasibility_recollection_failed:{type(exc).__name__}",
-                       exit_code=EXIT_INPUT_FAILURE, extra={"detail": str(exc)})
-    # --- 8. Re-prepare + validate (CH4A PASS, 50, 25/25, no protected, qty/leverage/margin)
-    prepared = nx.prepare_strategy_native_batch_dry_run(
-        feasibility_review=review, current_actions=current_actions,
-        account_evidence=account, pilot_id=args.pilot_id, date=args.date)
-    if prepared["verdict"] != nx.BATCH_PREP_PREPARED:
-        return _reject("preparation_not_prepared", exit_code=EXIT_BLOCKED,
-                       extra={"preparation_blockers": prepared.get("blockers", [])})
-    # --- 9. Fingerprint the exact 50 bodies; token must match this date + payload ---------
-    actions = _actions_from_prepared(prepared)
-    fingerprint = batch_payload_fingerprint(actions, pilot_id=args.pilot_id, date=args.date)
-    expected_token = expected_batch_authorization_token(args.date, fingerprint)
-    token_extra = {"payload_fingerprint": fingerprint, "expected_authorization_token": expected_token}
-    if args.batch_authorization_token != expected_token:
-        return _reject("authorization_token_mismatch", exit_code=EXIT_INVALID, extra=token_extra)
+                       exit_code=EXIT_INPUT_FAILURE, extra={**token_extra, "detail": str(exc)})
+    # --- 9. Recompute executable qty from the IMMUTABLE targets + fresh price, then validate
+    #        feasibility of those recomputed allocations (targets NEVER change) ------------
+    feas_ok, feas_blockers, actions, feas_evidence = build_executable_actions_from_authorized_intent(
+        allocations=allocations, pilot_id=args.pilot_id, date=args.date,
+        review=review, current_actions=current_actions, account=account)
+    if not feas_ok:
+        return _reject("fresh_feasibility_validation_failed", exit_code=EXIT_BLOCKED,
+                       extra={**token_extra, "fresh_feasibility_blockers": feas_blockers,
+                              **feas_evidence})
     # --- 10. Pilot state must be RUNNING + Demo-authorized + Live denied ------------------
     pstate = rd.PilotStateStore(args.pilot_id, output_root).read_state()
     if not (pstate is not None and pstate.get("lifecycle_state") == rd.RUNNING
@@ -1673,12 +2043,27 @@ def _run_execute_prepared_demo_batch(
             and pstate.get("live_trading_authorized") is False):
         return _reject("pilot_state_incompatible", exit_code=EXIT_BLOCKED, extra=token_extra)
     # --- 11. A prior ambiguous batch for this date must be reconciled first ---------------
-    prior = nx.NativeExecutionStore(args.pilot_id, args.date, output_root).read_state()
+    prior = store.read_state()
     if prior is not None and prior.get("day_verdict") == nx.DAY_AMBIGUOUS:
         return _reject("prior_ambiguous_requires_reconciliation", exit_code=EXIT_BLOCKED,
                        extra=token_extra)
+    # --- 12. CLAIM the durable exactly-once guard ATOMICALLY -- the LAST step before the first
+    #         possible order send. A pre-send rejection above never reaches here, so it never
+    #         consumes the authorization; a concurrent racer that already claimed loses here. ---
+    claimed = _claim_batch_attempt(store, {
+        "schema": BATCH_ATTEMPT_SCHEMA, "pilot_id": args.pilot_id, "date": args.date,
+        "allocation_intent_fingerprint": fingerprint,
+        "strategy_capital_base_usd": capital,
+        "status": BATCH_ATTEMPT_SENDING, "claimed_at_utc": _utc_now_iso(),
+    })
+    if not claimed:
+        return _reject(EXEC_BATCH_ALREADY_ATTEMPTED, exit_code=EXIT_BLOCKED,
+                       extra={**token_extra, "requires_reconciliation": True,
+                              "prior_batch_attempt": _read_batch_attempt(store)})
 
-    # ===== All fail-closed gates passed: construct the transport and dispatch ONCE. =====
+    # ===== BOTH gates passed + guard claimed (immutable allocation-intent authorization + fresh
+    # feasibility of the recomputed executable quantities): construct the transport and dispatch
+    # ONCE. The dispatched bodies carry the freshly recomputed qty (target notional unchanged). =
     transport = build_transport(credentials=creds, env=env)
     state["transport_constructed"] = True
     result = executor(pilot_id=args.pilot_id, date=args.date, actions=actions,
@@ -1697,6 +2082,11 @@ def _run_execute_prepared_demo_batch(
     else:                                   # DAY_NOT_RUNNING / DAY_ENDPOINT -> fail closed
         status, exit_code = EXEC_BATCH_REJECTED, EXIT_BLOCKED
 
+    # Terminal annotation of the durable guard (it already blocks retries regardless; this only
+    # records the outcome for the reconciliation process). The guard is NEVER cleared here.
+    _finalize_batch_attempt(store, status=status, day_verdict=day_verdict,
+                            completed_at_utc=_utc_now_iso())
+
     out = {
         "status": status, "mode": "EXECUTE_PREPARED_DEMO_BATCH",
         "pilot_id": args.pilot_id, "date": args.date, "day_verdict": day_verdict,
@@ -1710,6 +2100,7 @@ def _run_execute_prepared_demo_batch(
         "order_post_count": result.order_post_count,
         "amend_post_count": 0, "cancel_post_count": 0, "live_order_post_count": 0,
         "live_trading_authorized": False, "pilot_advanced": pilot_advanced,
+        **feas_evidence,
     }
     print(json.dumps(out, ensure_ascii=False, sort_keys=True))
     return exit_code
