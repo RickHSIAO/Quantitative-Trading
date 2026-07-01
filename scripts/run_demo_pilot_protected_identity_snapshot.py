@@ -195,10 +195,25 @@ def run_verify_continuity(args, *, positions_provider=None) -> int:
         snapshot = _read_json(args.protected_snapshot_json)
         binding = _read_json(args.protected_binding_json)
         allocation = _read_json(args.day1_allocation_intent_json)
+        alloc_sha = _sha256_file(args.day1_allocation_intent_json)
     except (OSError, ValueError) as exc:
         return _emit({"mode": mode, "blockers": [f"input_unreadable:{type(exc).__name__}"],
                       "detail": str(exc)}, EXIT_INPUT_FAILURE)
-    # Strategy symbols come from the FORMAL allocation artifact (never a free-text list).
+
+    # Validate the FORMAL allocation artifact BEFORE any network read: recompute its fingerprint,
+    # exact-match the binding's bound allocation fingerprint + file SHA256, and only then take the
+    # strategy allowlist from the VALIDATED payloads. On failure NO client is built / no read occurs.
+    alloc_ok, alloc_reasons, alloc_fp = pib.validate_day1_allocation_artifact(
+        allocation, pilot_id=args.pilot_id, day1_date=args.day1_date)
+    pre: list[str] = list(alloc_reasons)
+    if alloc_ok and alloc_fp != str((binding or {}).get("allocation_intent_fingerprint", "")):
+        pre.append("continuity_binding_allocation_fingerprint_mismatch")
+    if alloc_sha != str((binding or {}).get("allocation_artifact_source_sha256", "")):
+        pre.append("continuity_allocation_source_sha256_mismatch")
+    if pre:
+        return _emit({"mode": mode, "blockers": sorted(set(pre)),
+                      "allocation_intent_fingerprint": alloc_fp}, EXIT_BLOCKED)
+
     strategy_symbols = [str(p.get("symbol", "")) for p in (allocation.get("order_payloads") or [])
                         if isinstance(p, dict)]
     try:
@@ -217,7 +232,8 @@ def run_verify_continuity(args, *, positions_provider=None) -> int:
         pilot_id=args.pilot_id, day1_date=args.day1_date, snapshot_artifact=snapshot,
         binding_artifact=binding, post_fill_positions=positions, post_fill_provenance=provenance,
         network_counter_components={"post_fill_position_collector": counters},
-        strategy_symbols=strategy_symbols, generated_at=_utc_now_iso())
+        strategy_symbols=strategy_symbols, allocation_intent_fingerprint=alloc_fp,
+        allocation_artifact_source_sha256=alloc_sha, generated_at=_utc_now_iso())
     return _publish(mode, artifact, args, ok=artifact["continuity_pass"])
 
 

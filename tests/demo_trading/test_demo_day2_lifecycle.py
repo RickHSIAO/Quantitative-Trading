@@ -749,7 +749,13 @@ def _protected_ctr():
 
 def _protected_prov(n):
     return {"termination_reason": "empty_cursor", "page_count": 1,
-            "api_position_rows": n, "nonzero_position_count": n}
+            "api_position_rows": n, "nonzero_position_count": n,
+            "position_page_request_evidence": [{
+                "page_number": 1, "endpoint": "/v5/position/list",
+                "request_started_at_utc": "2026-06-30T00:00:00Z",
+                "response_received_at_utc": "2026-06-30T00:00:01Z", "request_elapsed_ms": 4.0,
+                "request_cursor_present": False, "response_next_cursor_present": False,
+                "raw_row_count": n, "nonzero_row_count": n}]}
 
 
 def _protected_alloc(pilot_id, day1_date):
@@ -777,7 +783,9 @@ def _protected_chain(pilot_id=NEWPILOT, day1_date=DAY1, edu_qty="5", edu_idx=0):
     cont = pib.verify_post_fill_protected_continuity(
         pilot_id=pilot_id, day1_date=day1_date, snapshot_artifact=snap, binding_artifact=binding,
         post_fill_positions=edu, post_fill_provenance=_protected_prov(1),
-        network_counter_components=comps, strategy_symbols=SYMS, generated_at="2026-06-30T23:00:00+00:00")
+        network_counter_components=comps, strategy_symbols=SYMS,
+        allocation_intent_fingerprint=alloc["allocation_intent_fingerprint"],
+        generated_at="2026-06-30T23:00:00+00:00")
     return snap, binding, cont, alloc
 
 
@@ -819,6 +827,64 @@ def test_o_day2_edu_identity_change_blocks():                                  #
                 day1_protected_continuity=cont)
     assert art["verdict"] == d2.DRY_RUN_BLOCKED
     assert any("current_protected_identity_mismatch" in b for b in art["blockers"])
+    assert art["protected_identity_chain_verified"] is False
+
+
+def _protected_page(n):
+    return [{"page_number": 1, "endpoint": "/v5/position/list",
+             "request_started_at_utc": "2026-06-30T00:00:00Z",
+             "response_received_at_utc": "2026-06-30T00:00:01Z", "request_elapsed_ms": 4.0,
+             "request_cursor_present": False, "response_next_cursor_present": False,
+             "raw_row_count": n, "nonzero_row_count": n}]
+
+
+def test_day2_forged_binding_execution_ready_still_blocks():                   # FIX3 (8A)
+    import copy
+    # 51-position snapshot: evidence valid, NOT bootstrap-ready (50 inherited non-protected).
+    edu = [{"symbol": "EDUUSDT", "side": "Sell", "qty": "5", "position_idx": 0,
+            "entry_price": "9", "leverage": "3"}]
+    nonprot = [{"symbol": f"X{i:02d}USDT", "side": "Buy", "qty": "1", "position_idx": 0,
+                "entry_price": "10", "leverage": "2"} for i in range(50)]
+    acct = {"account_mode": "demo", "demo_flag": True, "endpoint_family": "bybit_demo",
+            "live_endpoint_fallback_detected": False}
+    comps = {"protected_position_collector": _protected_ctr()}
+    prov = {"termination_reason": "empty_cursor", "page_count": 1, "api_position_rows": 51,
+            "nonzero_position_count": 51, "position_page_request_evidence": _protected_page(51)}
+    snap = pib.build_pre_day1_protected_snapshot(
+        pilot_id=NEWPILOT, day1_date=DAY1, positions=edu + nonprot, positions_provenance=prov,
+        network_counter_components=comps, account_evidence=acct,
+        source_endpoint="/v5/position/list", generated_at="2026-06-30T00:00:00+00:00")
+    alloc = _protected_alloc(NEWPILOT, DAY1)
+    binding = pib.build_day1_protected_binding(
+        pilot_id=NEWPILOT, day1_date=DAY1, day1_allocation_artifact=alloc, snapshot_artifact=snap)
+    forged = copy.deepcopy(binding)
+    forged["execution_ready"] = True
+    forged["binding_fingerprint"] = pib.canonical_binding_fingerprint(forged)
+    forged["binding_digest"] = pib.canonical_binding_digest(forged)
+    cont = pib.verify_post_fill_protected_continuity(
+        pilot_id=NEWPILOT, day1_date=DAY1, snapshot_artifact=snap, binding_artifact=binding,
+        post_fill_positions=edu, post_fill_provenance=prov,
+        network_counter_components=comps, strategy_symbols=SYMS,
+        allocation_intent_fingerprint=alloc["allocation_intent_fingerprint"])
+    art = _plan(pilot_id=NEWPILOT, day1_allocation_intent=alloc,
+                current_positions=_current(include_edu=True, edu_side="short"),
+                day1_protected_snapshot=snap, day1_protected_binding=forged,
+                day1_protected_continuity=cont)
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    assert art["protected_identity_chain_verified"] is False
+
+
+def test_day2_forged_continuity_pass_still_blocks():                           # FIX3 (8D)
+    import copy
+    snap, binding, cont, alloc = _protected_chain(NEWPILOT, DAY1)
+    forged = copy.deepcopy(cont)
+    forged["network_audit_counters"]["private_mutating_request_count"] = 1
+    forged["post_fill_continuity_digest"] = pib.canonical_continuity_digest(forged)
+    art = _plan(pilot_id=NEWPILOT, day1_allocation_intent=alloc,
+                current_positions=_current(include_edu=True),
+                day1_protected_snapshot=snap, day1_protected_binding=binding,
+                day1_protected_continuity=forged)
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
     assert art["protected_identity_chain_verified"] is False
 
 

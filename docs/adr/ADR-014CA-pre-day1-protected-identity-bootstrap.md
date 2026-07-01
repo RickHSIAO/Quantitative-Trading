@@ -69,6 +69,59 @@ changed-current-identity chain fails closed with a specific `day1_protected_chai
 retired Pilot supplies no chain, so its Day-2 result remains `DAY2_LIFECYCLE_DRY_RUN_BLOCKED` with the
 same core blocker; no old artifact is modified.
 
+## Readiness and continuity are semantically self-verifying (FIX3)
+
+FIX2 stored `bootstrap_ready` / `execution_ready` as booleans that `_snapshot_is_sealed` /
+`_binding_is_sealed` trusted; a flipped flag plus a re-derived outer digest could have made an
+ownership-unresolved account look ready. FIX3 makes readiness and continuity **derived and replayed**,
+never trusted:
+
+- **Snapshot readiness is re-derived.** `derive_snapshot_readiness` computes the expected
+  `readiness_blockers` / `bootstrap_ready` / `bootstrap_verdict` from the canonical non-protected
+  classification. `_snapshot_is_sealed` re-derives and EXACT-matches the stored values, and the
+  snapshot fingerprint binds a `bootstrap_readiness_fingerprint` over the protected + non-protected
+  classification and counts. Flipping `bootstrap_ready`, clearing `readiness_blockers`, or deleting a
+  non-protected row (without a fully-consistent re-seal) all fail closed
+  (`snapshot_bootstrap_ready_derivation_mismatch`, `snapshot_readiness_blockers_derivation_mismatch`,
+  `snapshot_pagination_nonzero_mismatch`).
+
+- **Binding execution readiness is bound to the snapshot's derived readiness.**
+  `build_day1_protected_binding` and `_binding_is_sealed` take the FORMAL snapshot artifact (not a
+  bare fp/digest), re-derive `execution_ready = binding_evidence_valid AND snapshot.bootstrap_ready`
+  and the readiness blockers, and exact-match the stored binding values;
+  `canonical_binding_fingerprint` binds `binding_evidence_valid` / `execution_ready` /
+  `snapshot_bootstrap_ready` / `readiness_blockers`. A 51-position (ownership-unresolved) binding can
+  never be validated as execution-ready even with a full re-seal.
+
+- **Continuity carries full integrity + semantic replay.** A `post_fill_continuity_digest` +
+  expanded `post_fill_continuity_fingerprint` bind pilot/date/environment, the snapshot/binding/
+  allocation fingerprints, the canonical strategy allowlist, the canonical post-fill positions, the
+  protected continuity rows, pagination + page-evidence digest + network counters + mutating count,
+  the counts, blockers, and verdict. `_continuity_is_sealed` recomputes both AND re-runs
+  `_derive_continuity_semantics` (identity comparison, unauthorized detection, pagination, page
+  evidence, network) from the canonical evidence — a PASS must replay to zero blockers, so a flipped
+  `continuity_pass`, a zeroed mutating count, or an incomplete-pagination-marked-PASS all fail closed.
+
+- **Page request evidence is required and validated.** `validate_position_page_request_evidence`
+  enforces per-page shape (sequential page numbers, exact `/v5/position/list` endpoint, non-empty
+  timestamps, non-negative numeric elapsed, boolean cursor flags, `nonzero <= raw`), first-page
+  `request_cursor_present=false`, last-page `response_next_cursor_present=false`, middle-page
+  `=true`, and that raw/nonzero row totals equal the pagination summary. It records/inspects no api
+  key / signature / header / raw query. Missing or inconsistent evidence is an evidence /
+  continuity blocker.
+
+- **Continuity CLI validates allocation before any network read.**
+  `--verify-post-fill-protected-continuity` recomputes the formal allocation fingerprint, exact-
+  matches the binding's bound allocation fingerprint AND the allocation file SHA-256, and only then
+  takes the strategy allowlist from the validated payloads — on any failure NO `DemoReadOnlyClient`
+  is built and no read occurs.
+
+- **Allocation metadata.** The current production allocation-intent artifact carries only
+  `pilot_id` / `date` / `strategy_capital_base_usd` / `order_payloads` / `payload_fingerprint` /
+  `allocation_intent_fingerprint`; it has no `schema_version` / `verdict` / `digest` field, so those
+  are NOT validated (only `environment` is checked when present). The binding records the allocation
+  artifact path + file SHA-256 + recomputed fingerprint, not just a caller-supplied SHA.
+
 ## Evidence validity is separate from bootstrap readiness (FIX2)
 
 FIX1 conflated two questions under a single `snapshot_valid = not blockers`, so the ownership
