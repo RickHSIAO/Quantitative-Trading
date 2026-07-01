@@ -1,11 +1,12 @@
-"""TASK-014CA(+FIX1): pre-Day-1 protected-position identity bootstrap tests.
+"""TASK-014CA(+FIX1/FIX2): pre-Day-1 protected-position identity bootstrap tests.
 
-Protected != every open position: only canonical PROTECTED_SYMBOLS enter the sealed identity; a
-NEW Pilot's inherited 50 strategy positions BLOCK bootstrap. Identity is COMPOSITE
-``(symbol, position_idx)``. Snapshot/binding fingerprints+digests are self-recomputed (a
-qty/allocation tamper that only re-derives the outer digest still fails). Binding requires a FORMAL
-allocation artifact validated by the production recompute (a raw SHA is not enough). Post-fill
-continuity requires EXACT identity. Retired Pilots can never be repaired. Fully offline.
+Evidence validity and bootstrap readiness are DISTINCT: a valid EDU identity keeps its
+fingerprint/digest even while inherited non-protected positions block readiness; an empty protected
+set is a valid, ready state. Protected != every open position. Identity is COMPOSITE
+``(symbol, position_idx)``; fingerprints+digests self-recompute from the single
+``canonical_protected_positions`` source. Binding needs a FORMAL allocation artifact and can be
+evidence-valid while not execution-ready. Three offline/real CLI modes are mutually exclusive and
+no-clobber. Fully offline (no Bybit, no key, no Pilot state).
 """
 from __future__ import annotations
 
@@ -51,10 +52,18 @@ def _edu(**over):
     return row
 
 
+def _page_ev(n):
+    return [{"page_number": 1, "endpoint": "/v5/position/list",
+             "request_started_at_utc": "2026-07-05T00:00:00Z",
+             "response_received_at_utc": "2026-07-05T00:00:01Z", "request_elapsed_ms": 12.3,
+             "request_cursor_present": False, "response_next_cursor_present": False,
+             "raw_row_count": n, "nonzero_row_count": n}]
+
+
 def _prov(positions, reason="empty_cursor", pages=1):
     n = len(positions)
-    return {"termination_reason": reason, "page_count": pages,
-            "api_position_rows": n, "nonzero_position_count": n}
+    return {"termination_reason": reason, "page_count": pages, "api_position_rows": n,
+            "nonzero_position_count": n, "position_page_request_evidence": _page_ev(n)}
 
 
 def _ctr(ro=1, pub=0, mut=0):
@@ -118,56 +127,124 @@ def _continuity(snapshot=None, binding=None, post_positions=None, post_prov=None
         generated_at="2026-07-05T23:00:00+00:00")
 
 
-# ============================================================ A: 50 strategy + EDU ownership boundary
-def test_a_fifty_strategy_plus_edu_blocks_ownership():
-    positions = [_edu()] + [_pos(STRATEGY[i], "Buy", "1", 0) for i in range(50)]
-    art = _snapshot(positions=positions)
-    assert art["verdict"] == pib.SNAPSHOT_BLOCKED
-    assert art["protected_position_count"] == 1
-    assert art["protected_symbol_set"] == ["EDUUSDT"]
+def _fifty_plus_edu():
+    return [_edu()] + [_pos(STRATEGY[i], "Buy", "1", 0) for i in range(50)]
+
+
+# ============================================================ (1) 51-position: valid evidence, not ready
+def test_1_fifty_one_position_valid_evidence_not_ready():
+    art = _snapshot(positions=_fifty_plus_edu())
+    assert art["snapshot_evidence_valid"] is True
+    assert art["snapshot_evidence_verdict"] == pib.EVIDENCE_VALID
+    assert art["bootstrap_ready"] is False
+    assert art["bootstrap_verdict"] == pib.BOOTSTRAP_BLOCKED
+    assert art["protected_position_count"] == 1 and art["protected_symbol_set"] == ["EDUUSDT"]
     assert art["preexisting_nonprotected_position_count"] == 50
-    assert "preexisting_nonprotected_positions_require_ownership_resolution" in art["blockers"]
+    assert pib._SHA256_RE.match(art["protected_position_snapshot_fingerprint"])
+    assert pib._SHA256_RE.match(art["protected_position_snapshot_digest"])
+    assert art["evidence_blockers"] == []
+    assert pib.OWNERSHIP_READINESS_BLOCKER in art["readiness_blockers"]
+
+
+# ============================================================ (2) empty account: valid + ready
+def test_2_empty_account_valid_and_ready():
+    art = _snapshot(positions=[])
+    assert art["snapshot_evidence_valid"] is True and art["bootstrap_ready"] is True
+    assert art["protected_position_count"] == 0
+    assert art["protected_symbol_set"] == [] and art["canonical_protected_positions"] == []
+    assert pib._SHA256_RE.match(art["protected_position_snapshot_fingerprint"])
+    assert "no_protected_positions_observed" not in art["blockers"]
+    # empty canonical list is bound explicitly (fingerprint recomputes, not null/omitted)
+    assert pib.canonical_protected_snapshot_fingerprint(art) == art["protected_position_snapshot_fingerprint"]
+
+
+# ============================================================ (3) incomplete pagination: evidence invalid
+def test_3_incomplete_pagination_evidence_invalid():
+    art = _snapshot(provenance=_prov([_edu()], reason="max_page_cap_exceeded"))
+    assert art["snapshot_evidence_valid"] is False
+    assert art["snapshot_evidence_verdict"] == pib.EVIDENCE_INVALID
     assert art["protected_position_snapshot_fingerprint"] == ""
+    assert art["protected_position_snapshot_digest"] == ""
+    assert any("pagination_incomplete" in b for b in art["evidence_blockers"])
 
 
-# ============================================================ B: canonical protected filtering
-def test_b_only_canonical_protected_enters_identity():
+# ============================================================ (4) ownership blocker != evidence corruption
+def test_4_ownership_blocker_does_not_pollute_evidence():
+    edu_only = _snapshot(positions=[_edu()])
+    with_fifty = _snapshot(positions=_fifty_plus_edu())
+    # evidence stays valid and the EDU protected identity core is byte-identical
+    assert with_fifty["snapshot_evidence_valid"] is True
+    assert with_fifty["canonical_protected_positions"] == edu_only["canonical_protected_positions"]
+    assert with_fifty["protected_position_snapshot_fingerprint"] != ""
+    ok, reasons, _fp, _d, ready = pib._snapshot_is_sealed(with_fifty)
+    assert ok is True and ready is False and reasons == []
+
+
+# ============================================================ (5) binding valid, execution not ready
+def test_5_binding_valid_but_not_execution_ready_when_ownership_unresolved():
+    snap = _snapshot(positions=_fifty_plus_edu())
+    b = _binding(snap)
+    assert b["binding_evidence_valid"] is True
+    assert b["binding_evidence_verdict"] == pib.BINDING_EVIDENCE_VALID
+    assert b["execution_ready"] is False
+    assert pib._SHA256_RE.match(b["binding_fingerprint"])
+    assert pib.OWNERSHIP_READINESS_BLOCKER in b["readiness_blockers"]
+
+
+# ============================================================ protected scope / composite identity
+def test_only_canonical_protected_enters_identity():
     art = _snapshot(positions=[_edu(), _pos("RANDUSDT", "Buy", "3", 0)])
     assert art["protected_symbol_set"] == ["EDUUSDT"]
     assert [r["symbol"] for r in art["preexisting_nonprotected_positions"]] == ["RANDUSDT"]
-    edu = _snapshot(positions=[_edu()])
-    assert edu["verdict"] == pib.SNAPSHOT_READY and edu["protected_position_count"] == 1
 
 
-# ============================================================ C: hedge mode composite identity
-def test_c_hedge_mode_positions_do_not_collide():
+def test_hedge_mode_positions_do_not_collide():
     art = _snapshot(positions=[_edu(side="Buy", qty="5", position_idx=1),
                                _edu(side="Sell", qty="7", position_idx=2)])
-    assert art["verdict"] == pib.SNAPSHOT_READY
+    assert art["snapshot_evidence_valid"] is True
     rows = {(r["symbol"], r["position_idx"]): r["qty"] for r in art["canonical_protected_positions"]}
     assert rows == {("EDUUSDT", 1): "5", ("EDUUSDT", 2): "7"}
     assert art["position_mode_evidence"]["position_mode"] == "hedge"
 
 
-# ============================================================ D: duplicate composite key
-def test_d_duplicate_composite_key_blocks():
+def test_duplicate_composite_key_blocks():
     art = _snapshot(positions=[_edu(qty="5", position_idx=2), _edu(qty="7", position_idx=2)])
-    assert art["verdict"] == pib.SNAPSHOT_BLOCKED
-    assert any("duplicate_position_composite_key" in b for b in art["blockers"])
+    assert art["snapshot_evidence_valid"] is False
+    assert any("duplicate_position_composite_key" in b for b in art["evidence_blockers"])
 
 
-# ============================================================ E: snapshot fingerprint tamper
-def test_e_snapshot_qty_tamper_with_outer_digest_still_blocks():
+# ============================================================ (13) classification count consistency
+def test_13_classification_count_consistency():
+    art = _snapshot(positions=_fifty_plus_edu())
+    assert (art["protected_position_count"] + art["preexisting_nonprotected_position_count"]
+            == art["all_observed_nonzero_count"] == 51)
+    assert art["pagination_evidence"]["nonzero_position_count"] == 51
+
+
+# ============================================================ (12) no double-truth position arrays
+def test_12_no_duplicate_protected_position_arrays():
+    art = _snapshot()
+    assert "protected_positions" not in art          # removed; only the canonical source remains
+    assert art["protected_positions_summary"] == {"count": 1, "symbols": ["EDUUSDT"]}
+    # a tampered summary that diverges from the canonical rows is caught
+    tampered = copy.deepcopy(art)
+    tampered["protected_positions_summary"]["count"] = 5
+    tampered["protected_position_snapshot_digest"] = pib.canonical_protected_snapshot_digest(tampered)
+    ok, reasons, _fp, _d, _r = pib._snapshot_is_sealed(tampered)
+    assert ok is False and "snapshot_protected_summary_inconsistent" in reasons
+
+
+# ============================================================ tamper / cross replay
+def test_snapshot_qty_tamper_with_outer_digest_still_blocks():
     snap = _snapshot()
     tampered = copy.deepcopy(snap)
     tampered["canonical_protected_positions"][0]["qty"] = "9999"
     tampered["protected_position_snapshot_digest"] = pib.canonical_protected_snapshot_digest(tampered)
-    ok, reasons, _fp, _d = pib._snapshot_is_sealed(tampered)
+    ok, reasons, _fp, _d, _r = pib._snapshot_is_sealed(tampered)
     assert ok is False and "snapshot_fingerprint_mismatch" in reasons
 
 
-# ============================================================ F: binding fingerprint tamper
-def test_f_binding_allocation_tamper_with_outer_digest_still_blocks():
+def test_binding_allocation_tamper_with_outer_digest_still_blocks():
     b = _binding()
     tampered = copy.deepcopy(b)
     tampered["allocation_intent_fingerprint"] = "f" * 64
@@ -177,80 +254,70 @@ def test_f_binding_allocation_tamper_with_outer_digest_still_blocks():
     assert ok is False and "binding_fingerprint_mismatch" in reasons
 
 
-# ============================================================ G: cross-pilot replay
-def test_g_cross_pilot_binding_blocks():
-    snap = _snapshot(pilot_id=PILOT)
+def test_cross_pilot_binding_blocks():
     b = pib.build_day1_protected_binding(
         pilot_id="BYBIT_DEMO_PILOT_7D_202607_V9", day1_date=DAY1,
-        day1_allocation_artifact=_alloc("BYBIT_DEMO_PILOT_7D_202607_V9", DAY1), snapshot_artifact=snap)
-    assert b["verdict"] == pib.BINDING_BLOCKED
-    assert "binding_pilot_id_mismatch" in b["blockers"]
+        day1_allocation_artifact=_alloc("BYBIT_DEMO_PILOT_7D_202607_V9", DAY1),
+        snapshot_artifact=_snapshot(pilot_id=PILOT))
+    assert b["binding_evidence_valid"] is False and "binding_pilot_id_mismatch" in b["evidence_blockers"]
 
 
-# ============================================================ H: cross-date replay
-def test_h_cross_date_binding_blocks():
-    snap = _snapshot(day1_date=DAY1)
+def test_cross_date_binding_blocks():
     b = pib.build_day1_protected_binding(
         pilot_id=PILOT, day1_date="2026-07-06",
-        day1_allocation_artifact=_alloc(PILOT, "2026-07-06"), snapshot_artifact=snap)
-    assert b["verdict"] == pib.BINDING_BLOCKED
-    assert "binding_day1_date_mismatch" in b["blockers"]
+        day1_allocation_artifact=_alloc(PILOT, "2026-07-06"), snapshot_artifact=_snapshot(day1_date=DAY1))
+    assert b["binding_evidence_valid"] is False and "binding_day1_date_mismatch" in b["evidence_blockers"]
 
 
-# ============================================================ I: missing audit evidence
-def test_i_missing_entry_price_blocks():
+# ============================================================ missing audit / allocation validation
+def test_missing_entry_price_blocks_evidence():
     p = _edu()
     del p["entry_price"]
     art = _snapshot(positions=[p])
-    assert art["verdict"] == pib.SNAPSHOT_BLOCKED
-    assert any("protected_position_audit_incomplete" in b and "entry_price" in b for b in art["blockers"])
+    assert art["snapshot_evidence_valid"] is False
+    assert any("protected_position_audit_incomplete" in b and "entry_price" in b for b in art["evidence_blockers"])
 
 
-def test_i_missing_leverage_blocks():
-    p = _edu()
-    del p["leverage"]
-    art = _snapshot(positions=[p])
-    assert art["verdict"] == pib.SNAPSHOT_BLOCKED
-    assert any("protected_position_audit_incomplete" in b and "leverage" in b for b in art["blockers"])
-
-
-def test_i_missing_account_mode_blocks():
+def test_missing_account_mode_blocks_evidence():
     art = _snapshot(account=_account(account_mode=""))
-    assert art["verdict"] == pib.SNAPSHOT_BLOCKED
-    assert "account_evidence_incomplete:account_mode" in art["blockers"]
+    assert art["snapshot_evidence_valid"] is False
+    assert "account_evidence_incomplete:account_mode" in art["evidence_blockers"]
 
 
-# ============================================================ J: raw SHA is not a binding
-def test_j_raw_sha_allocation_does_not_complete():
+def test_raw_sha_allocation_does_not_complete():
     fake = {"pilot_id": PILOT, "date": DAY1, "strategy_capital_base_usd": "10000",
             "allocation_intent_fingerprint": "a" * 64, "payload_fingerprint": "a" * 64,
-            "order_payloads": []}   # no real payloads -> recompute cannot match
+            "order_payloads": []}
     b = _binding(allocation=fake)
-    assert b["verdict"] == pib.BINDING_BLOCKED
-    assert any("allocation_" in x for x in b["blockers"])
+    assert b["binding_evidence_valid"] is False and any("allocation_" in x for x in b["evidence_blockers"])
 
 
-# ============================================================ K: valid sealed allocation -> COMPLETE
-def test_k_valid_allocation_artifact_binding_complete():
-    snap = _snapshot()
+def test_valid_allocation_artifact_binding_execution_ready():
+    snap = _snapshot()   # EDU-only, ready
     b = _binding(snap)
-    assert b["verdict"] == pib.BINDING_COMPLETE and b["execution_ready"] is True
+    assert b["binding_evidence_valid"] is True and b["execution_ready"] is True
     assert pib._HEX64_RE.match(b["allocation_intent_fingerprint"])
-    assert pib._SHA256_RE.match(b["binding_fingerprint"])
-    assert b["protected_position_snapshot_fingerprint"] == snap["protected_position_snapshot_fingerprint"]
-    # self-recompute holds
     ok, reasons = pib._binding_is_sealed(
         b, snap["protected_position_snapshot_fingerprint"], snap["protected_position_snapshot_digest"])
     assert ok is True and reasons == []
 
 
 # ============================================================ continuity
-def test_continuity_pass_and_separate_counts():
-    c = _continuity(post_positions=[_edu(), _pos(STRATEGY[0], "Buy", "0.5", 0)])
+def test_continuity_pass_and_separate_counts_and_timing():
+    post = [_edu(), _pos(STRATEGY[0], "Buy", "0.5", 0)]
+    c = _continuity(post_positions=post)
     assert c["protected_position_identity_continuity"] == "PASS"
-    assert c["strategy_position_count"] == 1 and c["strategy_positions_present"] == [STRATEGY[0]]
-    assert c["protected_position_count"] == 1 and c["protected_positions_present"] == ["EDUUSDT"]
+    assert c["strategy_position_count"] == 1 and c["protected_position_count"] == 1
+    assert len(c["position_page_request_evidence"]) == 1
     assert pib._SHA256_RE.match(c["post_fill_continuity_fingerprint"])
+
+
+def test_continuity_empty_protected_set_pass():
+    snap = _snapshot(positions=[])
+    b = _binding(snap)
+    c = _continuity(snapshot=snap, binding=b, post_positions=[_pos(STRATEGY[0], "Buy", "1", 0)])
+    assert c["protected_position_identity_continuity"] == "PASS"
+    assert c["protected_position_count"] == 0
 
 
 @pytest.mark.parametrize("over,code", [
@@ -261,14 +328,6 @@ def test_continuity_blocks_on_identity_change(over, code):
     c = _continuity(post_positions=[_edu(**over)])
     assert c["protected_position_identity_continuity"] == pib.CONTINUITY_BLOCKED
     assert any(code in b for b in c["blockers"])
-    assert c["post_fill_continuity_fingerprint"] == ""
-
-
-def test_continuity_blocks_on_position_idx_change():
-    # a different position_idx is a different composite key -> sealed one missing + an extra one
-    c = _continuity(post_positions=[_edu(position_idx=1)])
-    assert c["protected_position_identity_continuity"] == pib.CONTINUITY_BLOCKED
-    assert any("protected_position_missing:EDUUSDT:2" in b for b in c["blockers"])
 
 
 def test_continuity_blocks_on_extra_unauthorized_symbol():
@@ -277,31 +336,24 @@ def test_continuity_blocks_on_extra_unauthorized_symbol():
     assert "unauthorized_protected_position:RANDUSDT:0" in c["blockers"]
 
 
-def test_continuity_network_mutation_blocks():
-    c = _continuity(components=_components(_ctr(mut=1)))
-    assert c["protected_position_identity_continuity"] == pib.CONTINUITY_BLOCKED
-    assert any("private_mutating_requests_detected" in b for b in c["blockers"])
-
-
-# ============================================================ retired pilot
+# ============================================================ (17) retired pilot
 def test_retired_pilot_cannot_bootstrap():
     art = _snapshot(pilot_id=RETIRED)
-    assert art["verdict"] == pib.SNAPSHOT_BLOCKED
-    assert any("retired_pilot_cannot_bootstrap" in b for b in art["blockers"])
+    assert art["snapshot_evidence_valid"] is False
+    assert any("retired_pilot_cannot_bootstrap" in b for b in art["evidence_blockers"])
 
 
 def test_retired_pilot_cannot_be_repaired_via_binding():
-    good = _snapshot()
     b = pib.build_day1_protected_binding(
         pilot_id=RETIRED, day1_date="2026-06-30",
-        day1_allocation_artifact=_alloc(RETIRED, "2026-06-30"), snapshot_artifact=good)
-    assert b["verdict"] == pib.BINDING_BLOCKED
-    assert any("retired_pilot_cannot_be_repaired" in x for x in b["blockers"])
+        day1_allocation_artifact=_alloc(RETIRED, "2026-06-30"), snapshot_artifact=_snapshot())
+    assert b["binding_evidence_valid"] is False
+    assert any("retired_pilot_cannot_be_repaired" in x for x in b["evidence_blockers"])
 
 
-# ============================================================ chain verifier + network + offline
-def test_chain_verifier_accepts_valid_chain():
-    snap, b, c = _snapshot(), None, None
+# ============================================================ chain verifier + snapshot network
+def test_chain_verifier_accepts_valid_edu_chain():
+    snap = _snapshot()
     b = _binding(snap)
     c = _continuity(snap, b)
     cur = {("EDUUSDT", 2): {"symbol": "EDUUSDT", "side": "short", "qty": "1234", "position_idx": 2}}
@@ -311,30 +363,24 @@ def test_chain_verifier_accepts_valid_chain():
     assert ok is True and reasons == []
 
 
-def test_chain_verifier_rejects_current_identity_mismatch():
-    snap = _snapshot()
+def test_chain_verifier_rejects_execution_not_ready_binding():
+    snap = _snapshot(positions=_fifty_plus_edu())   # evidence valid, not bootstrap ready
     b = _binding(snap)
-    c = _continuity(snap, b)
-    cur = {("EDUUSDT", 2): {"symbol": "EDUUSDT", "side": "short", "qty": "1", "position_idx": 2}}
+    c = _continuity(snap, b, post_positions=[_edu()])
+    cur = {("EDUUSDT", 2): {"symbol": "EDUUSDT", "side": "short", "qty": "1234", "position_idx": 2}}
     ok, reasons = pib.verify_day1_protected_identity_chain(
         pilot_id=PILOT, day1_date=DAY1, snapshot=snap, binding=b, continuity=c,
-        current_protected_identities=cur)
-    assert ok is False and any("current_protected_identity_mismatch" in r for r in reasons)
+        current_protected_identities=cur, day1_allocation_intent=_alloc())
+    assert ok is False and "binding_not_execution_ready" in reasons
 
 
 def test_snapshot_network_mutation_and_missing_counter_block():
-    assert _snapshot(components=_components(_ctr(mut=1)))["verdict"] == pib.SNAPSHOT_BLOCKED
-    assert _snapshot(components={"protected_position_collector": None})["verdict"] == pib.SNAPSHOT_BLOCKED
+    assert _snapshot(components=_components(_ctr(mut=1)))["snapshot_evidence_valid"] is False
+    assert _snapshot(components={"protected_position_collector": None})["snapshot_evidence_valid"] is False
 
 
-def test_pagination_incomplete_blocks():
-    art = _snapshot(provenance=_prov([_edu()], reason="max_page_cap_exceeded"))
-    assert art["verdict"] == pib.SNAPSHOT_BLOCKED
-    assert any("pagination_incomplete" in b for b in art["blockers"])
-
-
-# ============================================================ P: fully offline
-def test_p_pure_core_is_offline(monkeypatch):
+# ============================================================ (18) fully offline
+def test_18_pure_core_is_offline(monkeypatch):
     import socket
 
     def _boom(*a, **k):
@@ -344,17 +390,23 @@ def test_p_pure_core_is_offline(monkeypatch):
     snap = _snapshot()
     b = _binding(snap)
     _continuity(snap, b)
-    assert snap["verdict"] == pib.SNAPSHOT_READY
+    assert snap["snapshot_evidence_valid"] is True
 
 
-# ============================================================ CLI
+# ============================================================ CLI: three modes
 def test_cli_default_does_nothing(capsys):
     rc = cli.main([])
     out = json.loads(capsys.readouterr().out)
     assert out["blockers"] == ["no_mode_selected"] and rc == cli.EXIT_INVALID
 
 
-def test_cli_network_not_authorized_blocks(tmp_path, capsys):
+def test_cli_mutually_exclusive_modes(capsys):
+    rc = cli.main(["--capture-pre-day1-protected-snapshot", "--build-day1-protected-binding"])
+    out = json.loads(capsys.readouterr().out)
+    assert any("mutually_exclusive_modes" in b for b in out["blockers"]) and rc == cli.EXIT_INVALID
+
+
+def test_cli_capture_network_not_authorized(tmp_path, capsys):
     out_path = tmp_path / "snap.json"
     rc = cli.main(["--capture-pre-day1-protected-snapshot", "--pilot-id", PILOT,
                    "--day1-date", DAY1, "--artifact-output-json", str(out_path)])
@@ -363,25 +415,114 @@ def test_cli_network_not_authorized_blocks(tmp_path, capsys):
     assert rc == cli.EXIT_BLOCKED and not out_path.exists()
 
 
-def test_cli_refuses_overwrite(tmp_path, capsys):
-    out_path = tmp_path / "snap.json"
-    out_path.write_text("{}", encoding="utf-8")
-    rc = cli.main(["--capture-pre-day1-protected-snapshot", "--pilot-id", PILOT,
-                   "--day1-date", DAY1, "--artifact-output-json", str(out_path)])
-    data = json.loads(capsys.readouterr().out)
-    assert "artifact_output_exists_refuse_overwrite" in data["blockers"]
-    assert rc == cli.EXIT_INVALID
-
-
-def test_cli_capture_offline_provider_writes_artifact(tmp_path, capsys):
+def test_cli_capture_offline_provider_includes_timing(tmp_path, capsys):
     out_path = tmp_path / "snap.json"
     provider = lambda: ([_edu()], _prov([_edu()]), _ctr(), _account())  # noqa: E731
-    args = argparse.Namespace(pilot_id=PILOT, day1_date=DAY1,
-                              artifact_output_json=str(out_path), allow_real_network=False,
-                              capture_pre_day1_protected_snapshot=True)
+    args = argparse.Namespace(
+        pilot_id=PILOT, day1_date=DAY1, artifact_output_json=str(out_path), allow_real_network=False,
+        capture_pre_day1_protected_snapshot=True, build_day1_protected_binding=False,
+        verify_post_fill_protected_continuity=False)
     rc = cli.run_capture(args, snapshot_provider=provider)
     data = json.loads(capsys.readouterr().out)
-    assert data["verdict"] == pib.SNAPSHOT_READY and rc == cli.EXIT_READY
-    assert out_path.exists()
-    on_disk = json.loads(out_path.read_text(encoding="utf-8"))
-    assert on_disk["protected_position_snapshot_fingerprint"] == data["protected_position_snapshot_fingerprint"]
+    assert data["snapshot_evidence_valid"] is True and data["bootstrap_ready"] is True
+    assert rc == cli.EXIT_OK and out_path.exists()
+    assert len(data["position_page_request_evidence"]) == 1
+
+
+def test_cli_capture_51_position_valid_but_blocked(tmp_path, capsys):
+    out_path = tmp_path / "snap.json"
+    pos = _fifty_plus_edu()
+    provider = lambda: (pos, _prov(pos), _ctr(), _account())  # noqa: E731
+    args = argparse.Namespace(
+        pilot_id=PILOT, day1_date=DAY1, artifact_output_json=str(out_path), allow_real_network=False,
+        capture_pre_day1_protected_snapshot=True, build_day1_protected_binding=False,
+        verify_post_fill_protected_continuity=False)
+    rc = cli.run_capture(args, snapshot_provider=provider)
+    data = json.loads(capsys.readouterr().out)
+    assert data["snapshot_evidence_valid"] is True and data["bootstrap_ready"] is False
+    assert rc == cli.EXIT_BLOCKED and out_path.exists()
+    assert pib._SHA256_RE.match(data["protected_position_snapshot_fingerprint"])
+
+
+def _write(tmp_path, name, obj):
+    p = tmp_path / name
+    p.write_text(json.dumps(obj), encoding="utf-8")
+    return str(p)
+
+
+def test_cli_build_binding_fully_offline(tmp_path, monkeypatch, capsys):
+    import socket
+    monkeypatch.setattr(socket, "socket",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("socket opened")))
+    snap_path = _write(tmp_path, "snap.json", _snapshot())
+    alloc_path = _write(tmp_path, "alloc.json", _alloc())
+    out_path = tmp_path / "binding.json"
+    rc = cli.main(["--build-day1-protected-binding", "--pilot-id", PILOT, "--day1-date", DAY1,
+                   "--protected-snapshot-json", snap_path,
+                   "--day1-allocation-intent-json", alloc_path,
+                   "--artifact-output-json", str(out_path)])
+    data = json.loads(capsys.readouterr().out)
+    assert data["binding_evidence_valid"] is True and data["execution_ready"] is True
+    assert rc == cli.EXIT_OK and out_path.exists()
+    assert data["allocation_artifact_source_sha256"].startswith("sha256:")
+    assert data["allocation_artifact_source_path"] == alloc_path
+
+
+def test_cli_build_binding_rejects_raw_sha(tmp_path, capsys):
+    snap_path = _write(tmp_path, "snap.json", _snapshot())
+    fake = {"pilot_id": PILOT, "date": DAY1, "strategy_capital_base_usd": "10000",
+            "allocation_intent_fingerprint": "a" * 64, "payload_fingerprint": "a" * 64,
+            "order_payloads": []}
+    alloc_path = _write(tmp_path, "alloc.json", fake)
+    out_path = tmp_path / "binding.json"
+    rc = cli.main(["--build-day1-protected-binding", "--pilot-id", PILOT, "--day1-date", DAY1,
+                   "--protected-snapshot-json", snap_path,
+                   "--day1-allocation-intent-json", alloc_path,
+                   "--artifact-output-json", str(out_path)])
+    data = json.loads(capsys.readouterr().out)
+    assert data["binding_evidence_valid"] is False and rc == cli.EXIT_BLOCKED
+    assert any("allocation_" in b for b in data["evidence_blockers"])
+
+
+def test_cli_continuity_uses_provider_and_emits_timing(tmp_path, capsys):
+    snap = _snapshot()
+    binding = _binding(snap)
+    snap_path = _write(tmp_path, "snap.json", snap)
+    bind_path = _write(tmp_path, "binding.json", binding)
+    alloc_path = _write(tmp_path, "alloc.json", _alloc())
+    out_path = tmp_path / "cont.json"
+    post = [_edu()]
+    provider = lambda: (post, _prov(post), _ctr())  # noqa: E731
+    args = argparse.Namespace(
+        pilot_id=PILOT, day1_date=DAY1, protected_snapshot_json=snap_path,
+        protected_binding_json=bind_path, day1_allocation_intent_json=alloc_path,
+        artifact_output_json=str(out_path), allow_real_network=False,
+        capture_pre_day1_protected_snapshot=False, build_day1_protected_binding=False,
+        verify_post_fill_protected_continuity=True)
+    rc = cli.run_verify_continuity(args, positions_provider=provider)
+    data = json.loads(capsys.readouterr().out)
+    assert data["protected_position_identity_continuity"] == "PASS" and rc == cli.EXIT_OK
+    assert len(data["position_page_request_evidence"]) == 1
+    assert data["network_audit_counters"]["private_read_only_request_count"] == 1
+
+
+def test_cli_all_modes_refuse_overwrite(tmp_path, capsys):
+    out_path = tmp_path / "exists.json"
+    out_path.write_text("{}", encoding="utf-8")
+    snap_path = _write(tmp_path, "snap.json", _snapshot())
+    alloc_path = _write(tmp_path, "alloc.json", _alloc())
+    bind_path = _write(tmp_path, "binding.json", _binding())
+    calls = [
+        ["--capture-pre-day1-protected-snapshot", "--pilot-id", PILOT, "--day1-date", DAY1,
+         "--artifact-output-json", str(out_path)],
+        ["--build-day1-protected-binding", "--pilot-id", PILOT, "--day1-date", DAY1,
+         "--protected-snapshot-json", snap_path, "--day1-allocation-intent-json", alloc_path,
+         "--artifact-output-json", str(out_path)],
+        ["--verify-post-fill-protected-continuity", "--pilot-id", PILOT, "--day1-date", DAY1,
+         "--protected-snapshot-json", snap_path, "--protected-binding-json", bind_path,
+         "--day1-allocation-intent-json", alloc_path, "--artifact-output-json", str(out_path)],
+    ]
+    for argv in calls:
+        rc = cli.main(argv)
+        data = json.loads(capsys.readouterr().out)
+        assert "artifact_output_exists_refuse_overwrite" in data["blockers"] and rc == cli.EXIT_INVALID

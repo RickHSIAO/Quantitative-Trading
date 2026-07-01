@@ -306,6 +306,8 @@ class DemoReadOnlyClient:
         self._last_positions_termination = ""
         self._last_positions_raw_row_count = 0
         self._last_positions_nonzero_count = 0
+        self._last_pagination_page_evidence: list[dict[str, Any]] = []
+        self._last_positions_page_evidence: list[dict[str, Any]] = []
 
         if allow_real_network:
             self._api_key        = os.environ.get("BYBIT_DEMO_API_KEY",    "")
@@ -347,6 +349,14 @@ class DemoReadOnlyClient:
             self._last_positions_termination = "fixture_no_pagination"
             self._last_positions_raw_row_count = len(FIXTURE_POSITIONS)
             self._last_positions_nonzero_count = len(FIXTURE_POSITIONS)
+            now = _utc_now_iso()
+            self._last_positions_page_evidence = [{
+                "page_number": 1, "endpoint": _EP_POSITIONS,
+                "request_started_at_utc": now, "response_received_at_utc": now,
+                "request_elapsed_ms": 0.0, "request_cursor_present": False,
+                "response_next_cursor_present": False,
+                "raw_row_count": len(FIXTURE_POSITIONS),
+                "nonzero_row_count": len(FIXTURE_POSITIONS)}]
             return list(FIXTURE_POSITIONS)
         return self._positions_real()
 
@@ -361,6 +371,7 @@ class DemoReadOnlyClient:
             "termination_reason": self._last_positions_termination,
             "api_position_rows": self._last_positions_raw_row_count,
             "nonzero_position_count": self._last_positions_nonzero_count,
+            "position_page_request_evidence": list(self._last_positions_page_evidence),
         }
         return positions, provenance
 
@@ -561,13 +572,20 @@ class DemoReadOnlyClient:
         seen_cursors: set[str] = set()
         cursor = ""
         page_count = 0
+        # Per-page read-only request provenance (NO api key / signature / header / raw query is
+        # ever recorded here -- only timing, cursor-presence flags, and row counts).
+        self._last_pagination_page_evidence = []
         while True:
             if page_count >= max_pages:
                 raise DemoPaginationError(f"max_page_cap_exceeded:{path}:{max_pages}")
             params = dict(base_params)
             if cursor:
                 params["cursor"] = cursor
+            started = _utc_now_iso()
+            t0 = time.perf_counter()
             data = self._get(path, params, signed=signed)
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            received = _utc_now_iso()
             page_count += 1
             if not isinstance(data, dict) or data.get("retCode") != 0:
                 ret = (data or {}).get("retCode") if isinstance(data, dict) else "NA"
@@ -579,8 +597,17 @@ class DemoReadOnlyClient:
             page_rows = result.get(result_key)
             if not isinstance(page_rows, list):
                 raise DemoPaginationError(f"malformed_list_not_array:{path}:page{page_count}")
-            rows.extend(page_rows)
             next_cursor = str(result.get("nextPageCursor", "") or "")
+            nonzero = sum(1 for r in page_rows
+                          if isinstance(r, dict) and float(r.get("size", 0) or 0) != 0)
+            self._last_pagination_page_evidence.append({
+                "page_number": page_count, "endpoint": path,
+                "request_started_at_utc": started, "response_received_at_utc": received,
+                "request_elapsed_ms": elapsed_ms,
+                "request_cursor_present": bool(cursor),
+                "response_next_cursor_present": bool(next_cursor),
+                "raw_row_count": len(page_rows), "nonzero_row_count": nonzero})
+            rows.extend(page_rows)
             if not next_cursor:
                 return rows, page_count, "empty_cursor"
             if next_cursor == cursor or next_cursor in seen_cursors:
@@ -595,6 +622,7 @@ class DemoReadOnlyClient:
         self._last_positions_page_count = page_count
         self._last_positions_termination = termination
         self._last_positions_raw_row_count = len(rows)
+        self._last_positions_page_evidence = list(self._last_pagination_page_evidence)
         out: list[PositionSnapshot] = []
         try:
             for item in rows:

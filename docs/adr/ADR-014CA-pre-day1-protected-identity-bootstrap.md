@@ -69,6 +69,61 @@ changed-current-identity chain fails closed with a specific `day1_protected_chai
 retired Pilot supplies no chain, so its Day-2 result remains `DAY2_LIFECYCLE_DRY_RUN_BLOCKED` with the
 same core blocker; no old artifact is modified.
 
+## Evidence validity is separate from bootstrap readiness (FIX2)
+
+FIX1 conflated two questions under a single `snapshot_valid = not blockers`, so the ownership
+readiness blocker (`preexisting_nonprotected_positions_require_ownership_resolution`) wrongly emptied
+a legitimately-sealed protected fingerprint/digest. They are now orthogonal:
+
+- **`snapshot_evidence_valid`** (`snapshot_evidence_verdict` = `PROTECTED_IDENTITY_EVIDENCE_VALID` /
+  `..._INVALID`) — the sealed protected identity is trustworthy. ONLY an evidence-integrity failure
+  clears the fingerprint/digest: incomplete pagination, missing/malformed network counters,
+  `private_mutating > 0`, a duplicate composite key, a protected identity/audit field missing,
+  invalid Demo/account evidence, a live-endpoint fallback, or a retired Pilot. These populate
+  `evidence_blockers`.
+- **`bootstrap_ready`** (`bootstrap_verdict` = `NEW_PILOT_BOOTSTRAP_READY` / `..._BLOCKED`) — the NEW
+  Pilot may begin Day 1. Inherited non-protected strategy positions put
+  `preexisting_nonprotected_positions_require_ownership_resolution` in `readiness_blockers`; that is
+  NOT evidence corruption and never empties an otherwise-valid sealed fingerprint/digest.
+
+So the real 51-position account (50 strategy + 1 EDUUSDT) yields `snapshot_evidence_valid = true`
+with a valid `protected_position_snapshot_fingerprint`/`_digest`, `protected_position_count = 1`,
+`protected_symbol_set = ["EDUUSDT"]`, `preexisting_nonprotected_position_count = 50`, and
+`bootstrap_ready = false`. An **empty** protected set is itself a valid, ready state — the removed
+`no_protected_positions_observed` blocker is gone, and the fingerprint binds an explicit empty
+canonical list (never null / an omitted field).
+
+## Binding evidence vs execution readiness (FIX2)
+
+Binding is likewise split: `binding_evidence_valid` (snapshot evidence valid + formal allocation
+artifact valid + fingerprint/digest links valid) versus `execution_ready` (also requires the
+snapshot's ownership readiness to be resolved). A 51-position snapshot therefore yields a binding
+with a valid `binding_fingerprint` but `execution_ready = false`, carrying the ownership readiness
+blocker — the identity evidence is preserved, yet no Day-1 execution authorization can form. The
+Day-2 chain verifier requires an **execution-ready** binding, so an ownership-unresolved account is
+never treated as ready to start.
+
+## Single source of truth + request timing (FIX2)
+
+`canonical_protected_positions` is the SOLE protected-rows array; the former duplicate
+`protected_positions` array is replaced by a `protected_positions_summary` (count + symbols), and
+`_snapshot_is_sealed` re-checks that the summary and the all/nonprotected classification counts stay
+consistent with the canonical rows (so two arrays can never diverge yet still pass). The read-only
+`DemoReadOnlyClient` pagination now records per-page provenance
+(`position_page_request_evidence`: page_number, request/response UTC timestamps, elapsed ms,
+cursor-present flags, raw/nonzero row counts, endpoint) — never any api key / signature / header /
+raw query — and both the snapshot and continuity artifacts carry it.
+
+## Operational three-stage CLI (FIX2)
+
+`scripts/run_demo_pilot_protected_identity_snapshot.py` exposes three mutually-exclusive, default-off
+modes, each create-exclusive (no-clobber) and side-effect-free (no Pilot state, sender, or execution
+adapter): `--capture-pre-day1-protected-snapshot` (real read needs `--allow-real-network`),
+`--build-day1-protected-binding` (fully offline; validates a formal allocation artifact and records
+its file path + SHA-256 + the recomputed fingerprint — never just a caller SHA), and
+`--verify-post-fill-protected-continuity` (real read needs `--allow-real-network`; strategy symbols
+come from the formal allocation artifact).
+
 ## Why protected identity must be sealed BEFORE Day 1
 
 A new Pilot owns no positions on Day 0, so **every** pre-existing nonzero position is a protected

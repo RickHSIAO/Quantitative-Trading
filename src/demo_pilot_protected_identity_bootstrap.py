@@ -6,30 +6,32 @@ formal Bybit Demo PRIVATE read-only, fully-paginated snapshot. It NEVER sends / 
 closes / resizes anything, never changes leverage or position mode, never initializes a sender,
 never calls an execution adapter, never advances a Pilot, and never authorizes execution.
 
-"Protected" is NOT "every open position". A NEW Pilot's account may still hold the previous Pilot's
-50 strategy positions; those are ``preexisting_nonprotected_positions`` this run does NOT own, and
-their presence BLOCKS bootstrap (``preexisting_nonprotected_positions_require_ownership_resolution``)
-until a separate, formal, immutable inherited-strategy-baseline artifact resolves them. This task
-never fabricates such an artifact.
+Two ORTHOGONAL states (FIX2):
 
-Three pure stages:
+  * ``snapshot_evidence_valid`` -- the sealed protected identity is trustworthy (complete pagination,
+    accounted counters, no mutation, no duplicate composite key, complete protected identity + audit,
+    valid Demo/account evidence, not a retired Pilot). ONLY an evidence-integrity failure clears the
+    fingerprint/digest.
+  * ``bootstrap_ready`` -- the NEW Pilot may begin Day 1. A valid snapshot is NOT ready while the
+    account still holds the previous Pilot's non-protected strategy positions
+    (``preexisting_nonprotected_positions_require_ownership_resolution``). That readiness blocker is
+    NOT evidence corruption and never empties an already-sealed protected fingerprint/digest. An
+    EMPTY protected set is itself a VALID, ready state.
+
+Three pure stages + a Day-2 chain verifier:
 
   1. ``build_pre_day1_protected_snapshot`` -- classify observed positions into all / protected /
-     nonprotected, canonicalize each protected position by COMPOSITE identity ``(symbol,
-     position_idx)`` (``symbol/side/qty/position_idx`` bound into the fingerprint; entry_price /
-     leverage / mode / timing kept as audit evidence), and seal
-     ``protected_position_snapshot_fingerprint`` + ``..._digest`` (both self-recomputable).
+     preexisting-nonprotected; canonicalize each PROTECTED position by COMPOSITE identity
+     ``(symbol, position_idx)``; seal ``protected_position_snapshot_fingerprint`` + ``..._digest``
+     (both self-recomputable from the single ``canonical_protected_positions`` source of truth).
   2. ``build_day1_protected_binding`` -- validate a FORMAL Day-1 allocation artifact with the
-     production allocation-fingerprint recompute, then bind that fingerprint to the sealed snapshot
-     via ``binding_fingerprint`` (a raw SHA string alone can never make a binding COMPLETE).
-  3. ``verify_post_fill_protected_continuity`` -- re-read positions and require EXACT protected
-     identity continuity by composite key; only exact continuity is
-     ``protected_position_identity_continuity = PASS``.
+     production allocation-fingerprint recompute, then bind it to the sealed snapshot. Binding
+     evidence can be VALID while ``execution_ready`` is False (ownership unresolved).
+  3. ``verify_post_fill_protected_continuity`` -- require EXACT protected identity continuity by
+     composite key.
 
-``verify_day1_protected_identity_chain`` re-validates the whole chain (self-recomputed
-fingerprints/digests, exact cross-artifact pilot/date/environment, continuity PASS, current
-protected identity == sealed identity) for the Day-2 lifecycle. Retired Pilots can neither bootstrap
-nor be repaired. The immutable side/qty/position_idx come ONLY from the read-only API snapshot.
+Retired Pilots can neither bootstrap nor be repaired. Immutable side/qty/position_idx come ONLY from
+the read-only API snapshot.
 """
 from __future__ import annotations
 
@@ -54,12 +56,17 @@ STRATEGY_CAPITAL_BASE_USD = "10000"
 EXPECTED_STRATEGY_SYMBOLS = 50
 EXPECTED_SIDE_COUNT = 25
 
-SNAPSHOT_READY = "PROTECTED_IDENTITY_SNAPSHOT_READY"
-SNAPSHOT_BLOCKED = "PROTECTED_IDENTITY_SNAPSHOT_BLOCKED"
-BINDING_COMPLETE = "PROTECTED_IDENTITY_BINDING_COMPLETE"
-BINDING_BLOCKED = "PROTECTED_IDENTITY_BINDING_BLOCKED"
+# Evidence-validity vs bootstrap-readiness verdicts are DISTINCT (FIX2).
+EVIDENCE_VALID = "PROTECTED_IDENTITY_EVIDENCE_VALID"
+EVIDENCE_INVALID = "PROTECTED_IDENTITY_EVIDENCE_INVALID"
+BOOTSTRAP_READY = "NEW_PILOT_BOOTSTRAP_READY"
+BOOTSTRAP_BLOCKED = "NEW_PILOT_BOOTSTRAP_BLOCKED"
+BINDING_EVIDENCE_VALID = "PROTECTED_IDENTITY_BINDING_EVIDENCE_VALID"
+BINDING_EVIDENCE_INVALID = "PROTECTED_IDENTITY_BINDING_EVIDENCE_INVALID"
 CONTINUITY_PASS = "PASS"
 CONTINUITY_BLOCKED = "PROTECTED_IDENTITY_CONTINUITY_BLOCKED"
+
+OWNERSHIP_READINESS_BLOCKER = "preexisting_nonprotected_positions_require_ownership_resolution"
 
 # The only cursor-pagination termination that proves a COMPLETE read (Bybit empty nextPageCursor).
 PAGINATION_COMPLETE_REASONS = frozenset({"empty_cursor"})
@@ -70,8 +77,11 @@ CANONICAL_PROTECTED_ANCHOR = frozenset(_NX_PROTECTED_SYMBOLS)
 # Retired Pilots may never be repaired with a newly captured snapshot (no back-dated evidence).
 RETIRED_PILOT_IDS = frozenset({"BYBIT_DEMO_PILOT_7D_202606_V1"})
 
-# Required non-sensitive account/runtime audit fields (missing => fail closed).
 _REQUIRED_ACCOUNT_FIELDS = ("account_mode", "demo_flag", "endpoint_family")
+_PAGE_EVIDENCE_FIELDS = ("page_number", "request_started_at_utc", "response_received_at_utc",
+                         "request_elapsed_ms", "request_cursor_present",
+                         "response_next_cursor_present", "raw_row_count", "nonzero_row_count",
+                         "endpoint")
 
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")           # bare production allocation fingerprint
@@ -205,6 +215,20 @@ def _account_audit_evidence(account_evidence: Any) -> tuple[dict[str, Any], str,
     return safe, _digest(safe), account_identifier_available, reasons
 
 
+def _canonical_page_evidence(provenance: Any) -> list[dict[str, Any]]:
+    """Canonical per-page request provenance (timing / cursor flags / row counts). Never carries
+    any api key / signature / header / raw query."""
+    if not isinstance(provenance, Mapping):
+        return []
+    pages = provenance.get("position_page_request_evidence")
+    out: list[dict[str, Any]] = []
+    if isinstance(pages, list):
+        for pg in pages:
+            if isinstance(pg, Mapping):
+                out.append({f: pg.get(f) for f in _PAGE_EVIDENCE_FIELDS})
+    return out
+
+
 def _pagination_evidence(provenance: Any, *, prefix: str) -> tuple[dict[str, Any], list[str]]:
     reasons: list[str] = []
     if not isinstance(provenance, Mapping):
@@ -236,10 +260,12 @@ def _position_mode_evidence(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]
 
 # --------------------------------------------------------------------------- canonical recompute
 def canonical_protected_snapshot_fingerprint(snapshot: Mapping[str, Any]) -> str:
-    """Recompute the immutable-identity fingerprint from the snapshot's OWN audit fields (so a
-    value tampered in ``canonical_protected_positions`` no longer matches the stored fingerprint,
-    even if the outer digest was re-derived)."""
-    rows = snapshot.get("canonical_protected_positions") or []
+    """Recompute the immutable-identity fingerprint from the snapshot's SINGLE
+    ``canonical_protected_positions`` source (so a tampered value no longer matches the stored
+    fingerprint even if the outer digest was re-derived). An empty protected set binds an explicit
+    empty list -- never null / an omitted field."""
+    rows = snapshot.get("canonical_protected_positions")
+    rows = rows if isinstance(rows, list) else []
     cores = sorted((_identity_core(r) for r in rows if isinstance(r, Mapping)),
                    key=lambda r: (r["symbol"], r["position_idx"] if r["position_idx"] is not None else -1))
     return _digest({
@@ -273,7 +299,8 @@ def canonical_binding_digest(binding: Mapping[str, Any]) -> str:
 
 
 def canonical_continuity_fingerprint(continuity: Mapping[str, Any]) -> str:
-    rows = continuity.get("protected_continuity_evidence") or []
+    rows = continuity.get("protected_continuity_evidence")
+    rows = rows if isinstance(rows, list) else []
     cores = sorted((_identity_core(r) for r in rows if isinstance(r, Mapping)),
                    key=lambda r: (r["symbol"], r["position_idx"] if r["position_idx"] is not None else -1))
     return _digest({
@@ -289,8 +316,9 @@ def validate_day1_allocation_artifact(
     allocation_artifact: Any, *, pilot_id: str, day1_date: str,
 ) -> tuple[bool, list[str], str]:
     """Validate a FORMAL Day-1 allocation artifact with the production allocation-fingerprint
-    recompute (schema / pilot / date / capital base / 50 symbols / 25-25 sides / symbol uniqueness /
-    stored == recomputed). Returns (ok, reasons, recomputed_fingerprint)."""
+    recompute (pilot / date / capital base / 50 symbols / 25-25 sides / symbol uniqueness /
+    stored == recomputed). Any present formal ``environment`` field must be consistent. Returns
+    (ok, reasons, recomputed_fingerprint)."""
     reasons: list[str] = []
     if not isinstance(allocation_artifact, Mapping):
         return False, ["allocation_artifact_not_object"], ""
@@ -300,6 +328,9 @@ def validate_day1_allocation_artifact(
         reasons.append("allocation_date_mismatch")
     if str(allocation_artifact.get("strategy_capital_base_usd", "")) != STRATEGY_CAPITAL_BASE_USD:
         reasons.append("allocation_capital_base_mismatch")
+    # Present formal fields must be self-consistent (never silently ignored).
+    if "environment" in allocation_artifact and str(allocation_artifact.get("environment")) not in ("", ENVIRONMENT, "BYBIT_DEMO"):
+        reasons.append("allocation_environment_unexpected")
     payloads = allocation_artifact.get("order_payloads")
     if not isinstance(payloads, list) or len(payloads) != EXPECTED_STRATEGY_SYMBOLS:
         reasons.append(f"allocation_symbol_count_not_50:"
@@ -351,26 +382,30 @@ def build_pre_day1_protected_snapshot(
     account_evidence: Mapping[str, Any], source_endpoint: str, generated_at: str,
 ) -> dict[str, Any]:
     """Seal the immutable identity of every pre-existing PROTECTED nonzero position BEFORE any
-    NEW-Pilot Day-1 order is authorized. Read-only; ``trading_authorized`` is always False."""
-    blockers: list[str] = []
+    NEW-Pilot Day-1 order is authorized. Read-only; ``trading_authorized`` is always False. Evidence
+    validity and bootstrap readiness are DISTINCT: an ownership readiness blocker never empties an
+    otherwise-valid sealed protected fingerprint/digest."""
+    evidence_blockers: list[str] = []
+    readiness_blockers: list[str] = []
     pilot_id = str(pilot_id or "").strip()
     if not pilot_id:
-        blockers.append("pilot_id_missing")
+        evidence_blockers.append("pilot_id_missing")
     if pilot_id in RETIRED_PILOT_IDS:
-        blockers.append(f"retired_pilot_cannot_bootstrap:{pilot_id}")
+        evidence_blockers.append(f"retired_pilot_cannot_bootstrap:{pilot_id}")
     if not _valid_date(day1_date):
-        blockers.append("day1_date_invalid")
+        evidence_blockers.append("day1_date_invalid")
 
     merged, net_blockers, breakdown = merge_network_counters(network_counter_components)
-    blockers.extend(net_blockers)
+    evidence_blockers.extend(net_blockers)
 
     pagination_evidence, pag_blockers = _pagination_evidence(
         positions_provenance, prefix="protected_snapshot")
-    blockers.extend(pag_blockers)
+    evidence_blockers.extend(pag_blockers)
+    page_request_evidence = _canonical_page_evidence(positions_provenance)
 
     account_safe, account_identity_digest, account_identifier_available, acct_blockers = \
         _account_audit_evidence(account_evidence)
-    blockers.extend(acct_blockers)
+    evidence_blockers.extend(acct_blockers)
 
     all_observed: list[dict[str, Any]] = []
     protected_rows: list[dict[str, Any]] = []
@@ -380,37 +415,42 @@ def build_pre_day1_protected_snapshot(
         row, miss_id, miss_audit = _position_row(p)
         key = (row["symbol"], row["position_idx"])
         if key in composite_seen:
-            blockers.append(f"duplicate_position_composite_key:{row['symbol'] or '?'}:{row['position_idx']}")
+            evidence_blockers.append(
+                f"duplicate_position_composite_key:{row['symbol'] or '?'}:{row['position_idx']}")
             continue
         composite_seen.add(key)
         all_observed.append(row)
         if row["symbol"] in CANONICAL_PROTECTED_ANCHOR:
             if miss_id:
-                blockers.append(f"protected_position_incomplete:{row['symbol'] or '?'}:{'+'.join(miss_id)}")
+                evidence_blockers.append(
+                    f"protected_position_incomplete:{row['symbol'] or '?'}:{'+'.join(miss_id)}")
                 continue
             if miss_audit:
-                blockers.append(f"protected_position_audit_incomplete:{row['symbol']}:{'+'.join(miss_audit)}")
+                evidence_blockers.append(
+                    f"protected_position_audit_incomplete:{row['symbol']}:{'+'.join(miss_audit)}")
             protected_rows.append(row)
         elif row["symbol"]:
             nonprotected_rows.append(row)
         else:
-            blockers.append("observed_position_missing_symbol")
+            evidence_blockers.append("observed_position_missing_symbol")
 
     protected_rows.sort(key=lambda r: (r["symbol"], r["position_idx"]))
     nonprotected_rows.sort(key=lambda r: (r["symbol"], r["position_idx"] if r["position_idx"] is not None else -1))
 
-    # A NEW Pilot does not own the previous Pilot's strategy positions; they must be resolved first.
-    if nonprotected_rows:
-        blockers.append("preexisting_nonprotected_positions_require_ownership_resolution")
-    if not protected_rows and not blockers:
-        blockers.append("no_protected_positions_observed")
-
+    # Classification total must equal the observed nonzero set and the paginated nonzero count.
     nonzero = pagination_evidence.get("nonzero_position_count")
     if nonzero is not None and not pag_blockers and nonzero != len(all_observed):
-        blockers.append(f"protected_snapshot_row_count_mismatch:{len(all_observed)}!={nonzero}")
+        evidence_blockers.append(f"protected_snapshot_row_count_mismatch:{len(all_observed)}!={nonzero}")
+    if len(protected_rows) + len(nonprotected_rows) != len(all_observed):
+        evidence_blockers.append("protected_snapshot_classification_count_inconsistent")
+
+    # An inherited non-protected position is a READINESS blocker -- NOT evidence corruption.
+    if nonprotected_rows:
+        readiness_blockers.append(OWNERSHIP_READINESS_BLOCKER)
 
     protected_symbol_set = sorted({r["symbol"] for r in protected_rows})
-    snapshot_valid = not blockers
+    snapshot_evidence_valid = not evidence_blockers
+    bootstrap_ready = snapshot_evidence_valid and not readiness_blockers
     generated_snapshot_evidence = {"source_endpoint": str(source_endpoint or ""),
                                    "generated_at": str(generated_at or "")}
 
@@ -419,18 +459,22 @@ def build_pre_day1_protected_snapshot(
         "environment": ENVIRONMENT, "pilot_id": pilot_id, "day1_date": day1_date,
         "generated_at": str(generated_at or ""), "source_endpoint": str(source_endpoint or ""),
         "trading_authorized": False, "execution_ready": False,
-        "snapshot_valid": snapshot_valid,
-        "verdict": SNAPSHOT_READY if snapshot_valid else SNAPSHOT_BLOCKED,
-        "blockers": sorted(blockers),
+        "snapshot_evidence_valid": snapshot_evidence_valid,
+        "bootstrap_ready": bootstrap_ready,
+        "snapshot_evidence_verdict": EVIDENCE_VALID if snapshot_evidence_valid else EVIDENCE_INVALID,
+        "bootstrap_verdict": BOOTSTRAP_READY if bootstrap_ready else BOOTSTRAP_BLOCKED,
+        "evidence_blockers": sorted(evidence_blockers),
+        "readiness_blockers": sorted(readiness_blockers),
+        "blockers": sorted(evidence_blockers + readiness_blockers),
         "account_identity_evidence": account_safe,
         "account_identity_digest": account_identity_digest,
         "account_identifier_available": account_identifier_available,
         "demo_runtime_proof": account_safe,
         "position_mode_evidence": _position_mode_evidence(all_observed),
-        "all_observed_nonzero_positions": all_observed,
-        "protected_positions": protected_rows,
-        "canonical_protected_positions": protected_rows,
+        "canonical_protected_positions": protected_rows,   # single source of truth
+        "protected_positions_summary": {"count": len(protected_rows), "symbols": protected_symbol_set},
         "preexisting_nonprotected_positions": nonprotected_rows,
+        "all_observed_nonzero_positions": all_observed,
         "protected_symbol_set": protected_symbol_set,
         "canonical_protected_anchor": sorted(CANONICAL_PROTECTED_ANCHOR),
         "all_observed_nonzero_count": len(all_observed),
@@ -438,27 +482,29 @@ def build_pre_day1_protected_snapshot(
         "preexisting_nonprotected_position_count": len(nonprotected_rows),
         "generated_snapshot_evidence": generated_snapshot_evidence,
         "pagination_evidence": pagination_evidence,
+        "position_page_request_evidence": page_request_evidence,
         "network_audit_counters": {**merged, "component_breakdown": breakdown},
         "private_mutating_request_count": merged["private_mutating_request_count"],
     }
     artifact["protected_position_snapshot_fingerprint"] = (
-        canonical_protected_snapshot_fingerprint(artifact) if snapshot_valid else "")
+        canonical_protected_snapshot_fingerprint(artifact) if snapshot_evidence_valid else "")
     artifact["protected_position_snapshot_digest"] = (
-        canonical_protected_snapshot_digest(artifact) if snapshot_valid else "")
+        canonical_protected_snapshot_digest(artifact) if snapshot_evidence_valid else "")
     return artifact
 
 
-def _snapshot_is_sealed(snapshot: Any) -> tuple[bool, list[str], str, str]:
-    """Validate a snapshot is READY and self-consistent: RECOMPUTE both the immutable-identity
-    fingerprint and the artifact digest and exact-match the stored values (never a format-only
-    check). Returns (ok, reasons, snapshot_fingerprint, snapshot_digest)."""
+def _snapshot_is_sealed(snapshot: Any) -> tuple[bool, list[str], str, str, bool]:
+    """Validate a snapshot has VALID EVIDENCE and is self-consistent: RECOMPUTE both the
+    immutable-identity fingerprint and the artifact digest, exact-match the stored values, and check
+    the single-source classification is internally consistent (no double-truth divergence). Returns
+    (ok, reasons, snapshot_fingerprint, snapshot_digest, bootstrap_ready)."""
     reasons: list[str] = []
     if not isinstance(snapshot, Mapping):
-        return False, ["snapshot_not_object"], "", ""
+        return False, ["snapshot_not_object"], "", "", False
     if snapshot.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
         reasons.append("snapshot_schema_version_unexpected")
-    if not snapshot.get("snapshot_valid") or snapshot.get("verdict") != SNAPSHOT_READY:
-        reasons.append("snapshot_not_valid")
+    if not snapshot.get("snapshot_evidence_valid") or snapshot.get("snapshot_evidence_verdict") != EVIDENCE_VALID:
+        reasons.append("snapshot_evidence_invalid")
     if snapshot.get("environment") != ENVIRONMENT:
         reasons.append("snapshot_environment_unexpected")
     fp = str(snapshot.get("protected_position_snapshot_fingerprint", ""))
@@ -472,62 +518,85 @@ def _snapshot_is_sealed(snapshot: Any) -> tuple[bool, list[str], str, str]:
             reasons.append("snapshot_fingerprint_mismatch")
         if canonical_protected_snapshot_digest(snapshot) != digest:
             reasons.append("snapshot_digest_mismatch")
-    return (not reasons), reasons, fp, digest
+        canon = snapshot.get("canonical_protected_positions") or []
+        summary = snapshot.get("protected_positions_summary") or {}
+        canon_syms = sorted({r.get("symbol") for r in canon if isinstance(r, Mapping)})
+        if summary.get("count") != len(canon) or sorted(summary.get("symbols") or []) != canon_syms:
+            reasons.append("snapshot_protected_summary_inconsistent")
+        nonprot = snapshot.get("preexisting_nonprotected_positions") or []
+        allobs = snapshot.get("all_observed_nonzero_positions") or []
+        if len(canon) + len(nonprot) != len(allobs):
+            reasons.append("snapshot_classification_count_inconsistent")
+    bootstrap_ready = bool(snapshot.get("bootstrap_ready")) if isinstance(snapshot, Mapping) else False
+    return (not reasons), reasons, fp, digest, bootstrap_ready
 
 
 # --------------------------------------------------------------------------- stage 2: binding
 def build_day1_protected_binding(
     *, pilot_id: str, day1_date: str, day1_allocation_artifact: Mapping[str, Any],
-    snapshot_artifact: Mapping[str, Any],
+    snapshot_artifact: Mapping[str, Any], allocation_source_path: str | None = None,
+    allocation_source_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Bind a FORMAL Day-1 allocation artifact (validated by production recompute) to the sealed
-    PRE_DAY1 snapshot. Only a COMPLETE binding makes the Pilot execution-ready."""
-    blockers: list[str] = []
+    PRE_DAY1 snapshot. ``binding_evidence_valid`` can be True while ``execution_ready`` is False when
+    the snapshot's ownership readiness is unresolved -- the binding identity is NOT discarded, but no
+    Day-1 execution authorization forms."""
+    evidence_blockers: list[str] = []
     pilot_id = str(pilot_id or "").strip()
     if pilot_id in RETIRED_PILOT_IDS:
-        blockers.append(f"retired_pilot_cannot_be_repaired:{pilot_id}")
+        evidence_blockers.append(f"retired_pilot_cannot_be_repaired:{pilot_id}")
 
-    ok, snap_reasons, snapshot_fp, snapshot_digest = _snapshot_is_sealed(snapshot_artifact)
+    ok, snap_reasons, snapshot_fp, snapshot_digest, snap_bootstrap_ready = _snapshot_is_sealed(snapshot_artifact)
     if not ok:
-        blockers.extend(snap_reasons)
+        evidence_blockers.extend(snap_reasons)
     snap = snapshot_artifact if isinstance(snapshot_artifact, Mapping) else {}
     if ok and str(snap.get("pilot_id", "")) != pilot_id:
-        blockers.append("binding_pilot_id_mismatch")
+        evidence_blockers.append("binding_pilot_id_mismatch")
     if ok and str(snap.get("day1_date", "")) != str(day1_date):
-        blockers.append("binding_day1_date_mismatch")
+        evidence_blockers.append("binding_day1_date_mismatch")
 
     alloc_ok, alloc_reasons, alloc_fp = validate_day1_allocation_artifact(
         day1_allocation_artifact, pilot_id=pilot_id, day1_date=day1_date)
     if not alloc_ok:
-        blockers.extend(alloc_reasons)
+        evidence_blockers.extend(alloc_reasons)
 
+    readiness_blockers = sorted(snap.get("readiness_blockers") or []) if ok else []
     protected_symbols = sorted(snap.get("protected_symbol_set") or []) if ok else []
-    binding_valid = not blockers
+    binding_evidence_valid = not evidence_blockers
+    execution_ready = binding_evidence_valid and not readiness_blockers
 
     artifact: dict[str, Any] = {
         "schema_version": BINDING_SCHEMA_VERSION, "environment": ENVIRONMENT,
         "pilot_id": pilot_id, "day1_date": str(day1_date),
-        "allocation_intent_fingerprint": alloc_fp if binding_valid else "",
-        "protected_position_snapshot_fingerprint": snapshot_fp if binding_valid else "",
-        "protected_position_snapshot_digest": snapshot_digest if binding_valid else "",
+        "allocation_intent_fingerprint": alloc_fp if binding_evidence_valid else "",
+        "allocation_artifact_source_path": str(allocation_source_path or ""),
+        "allocation_artifact_source_sha256": str(allocation_source_sha256 or ""),
+        "protected_position_snapshot_fingerprint": snapshot_fp if binding_evidence_valid else "",
+        "protected_position_snapshot_digest": snapshot_digest if binding_evidence_valid else "",
         "protected_symbols": protected_symbols,
-        "binding_valid": binding_valid, "execution_ready": binding_valid,
-        "verdict": BINDING_COMPLETE if binding_valid else BINDING_BLOCKED,
-        "blockers": sorted(blockers),
+        "binding_evidence_valid": binding_evidence_valid,
+        "binding_evidence_verdict": BINDING_EVIDENCE_VALID if binding_evidence_valid else BINDING_EVIDENCE_INVALID,
+        "execution_ready": execution_ready,
+        "evidence_blockers": sorted(evidence_blockers),
+        "readiness_blockers": readiness_blockers,
+        "blockers": sorted(evidence_blockers + readiness_blockers),
     }
-    artifact["binding_fingerprint"] = canonical_binding_fingerprint(artifact) if binding_valid else ""
-    artifact["binding_digest"] = canonical_binding_digest(artifact) if binding_valid else ""
+    artifact["binding_fingerprint"] = canonical_binding_fingerprint(artifact) if binding_evidence_valid else ""
+    artifact["binding_digest"] = canonical_binding_digest(artifact) if binding_evidence_valid else ""
     return artifact
 
 
-def _binding_is_sealed(binding: Any, snapshot_fp: str, snapshot_digest: str) -> tuple[bool, list[str]]:
+def _binding_is_sealed(binding: Any, snapshot_fp: str, snapshot_digest: str, *,
+                       require_execution_ready: bool = True) -> tuple[bool, list[str]]:
     reasons: list[str] = []
     if not isinstance(binding, Mapping):
         return False, ["binding_not_object"]
     if binding.get("schema_version") != BINDING_SCHEMA_VERSION:
         reasons.append("binding_schema_version_unexpected")
-    if not binding.get("binding_valid") or binding.get("verdict") != BINDING_COMPLETE:
-        reasons.append("binding_not_complete")
+    if not binding.get("binding_evidence_valid") or binding.get("binding_evidence_verdict") != BINDING_EVIDENCE_VALID:
+        reasons.append("binding_evidence_invalid")
+    if require_execution_ready and not binding.get("execution_ready"):
+        reasons.append("binding_not_execution_ready")
     if binding.get("environment") != ENVIRONMENT:
         reasons.append("binding_environment_unexpected")
     if str(binding.get("protected_position_snapshot_fingerprint", "")) != snapshot_fp:
@@ -553,13 +622,14 @@ def verify_post_fill_protected_continuity(
 ) -> dict[str, Any]:
     """Re-read positions post-fill and require EXACT protected identity continuity by COMPOSITE key
     ``(symbol, position_idx)``. Strategy and protected positions are counted/reported separately.
-    Fail-closed on any change, a missing protected position, or an extra unauthorized position."""
+    Fail-closed on any change, a missing protected position, or an extra unauthorized position. An
+    empty protected set is a valid PASS state."""
     blockers: list[str] = []
     pilot_id = str(pilot_id or "").strip()
     if pilot_id in RETIRED_PILOT_IDS:
         blockers.append(f"retired_pilot_cannot_be_repaired:{pilot_id}")
 
-    ok, snap_reasons, snapshot_fp, snapshot_digest = _snapshot_is_sealed(snapshot_artifact)
+    ok, snap_reasons, snapshot_fp, snapshot_digest, _ready = _snapshot_is_sealed(snapshot_artifact)
     if not ok:
         blockers.extend(snap_reasons)
     bok, bind_reasons = _binding_is_sealed(binding_artifact, snapshot_fp, snapshot_digest)
@@ -582,6 +652,7 @@ def verify_post_fill_protected_continuity(
 
     pagination_evidence, pag_blockers = _pagination_evidence(post_fill_provenance, prefix="post_fill")
     blockers.extend(pag_blockers)
+    page_request_evidence = _canonical_page_evidence(post_fill_provenance)
 
     strategy_set = {_sym(s) for s in (strategy_symbols or [])}
     expected_protected = {(_identity_core(r)["symbol"], _identity_core(r)["position_idx"]): _identity_core(r)
@@ -638,6 +709,7 @@ def verify_post_fill_protected_continuity(
             sorted(protected_checked, key=lambda r: (r["symbol"], r["position_idx"]))
             if continuity_ok else []),
         "pagination_evidence": pagination_evidence,
+        "position_page_request_evidence": page_request_evidence,
         "network_audit_counters": {**merged, "component_breakdown": breakdown},
         "private_mutating_request_count": merged["private_mutating_request_count"],
     }
@@ -674,9 +746,10 @@ def verify_day1_protected_identity_chain(
     day1_allocation_intent: Any = None,
 ) -> tuple[bool, list[str]]:
     """Re-validate the whole PRE_DAY1 -> binding -> continuity chain for Day-2. Every artifact is
-    self-recomputed (fingerprint + digest), cross-checked for exact pilot/date/environment, the
-    continuity must be PASS, and the CURRENT protected identity must EXACTLY equal the sealed
-    identity by composite key. Returns (ok, sorted_reasons)."""
+    self-recomputed (fingerprint + digest), the binding must be EXECUTION-READY (ownership resolved),
+    the continuity must be PASS, cross-artifact pilot/date/environment must match exactly, and the
+    CURRENT protected identity must EXACTLY equal the sealed identity by composite key. Returns
+    (ok, sorted_reasons)."""
     reasons: list[str] = []
     pilot_id = str(pilot_id or "").strip()
     if pilot_id in RETIRED_PILOT_IDS:
@@ -685,7 +758,7 @@ def verify_day1_protected_identity_chain(
         reasons.append("protected_identity_chain_incomplete")
         return False, sorted(set(reasons))
 
-    ok, snap_reasons, snapshot_fp, snapshot_digest = _snapshot_is_sealed(snapshot)
+    ok, snap_reasons, snapshot_fp, snapshot_digest, _ready = _snapshot_is_sealed(snapshot)
     reasons.extend(snap_reasons)
     bok, bind_reasons = _binding_is_sealed(binding, snapshot_fp, snapshot_digest)
     reasons.extend(bind_reasons)

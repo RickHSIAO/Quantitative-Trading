@@ -822,6 +822,14 @@ def test_o_day2_edu_identity_change_blocks():                                  #
     assert art["protected_identity_chain_verified"] is False
 
 
+def test_empty_protected_day2_no_edu_no_blocker():                             # FIX2 (14)
+    # No EDUUSDT open at all: the identity block is not even reached; no EDU blocker is produced
+    # and no fake EDU row is required.
+    art = _plan(pilot_id=NEWPILOT, current_positions=_current())
+    assert "day1_eduusdt_position_identity_evidence_unavailable" not in art["blockers"]
+    assert not any(b.startswith("day1_protected_chain:") for b in art["blockers"])
+
+
 def test_no_manual_edu_side_input_on_builder():
     import inspect
     assert "day1_protected_evidence" not in set(
