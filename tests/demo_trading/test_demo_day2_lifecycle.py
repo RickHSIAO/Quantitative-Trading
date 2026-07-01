@@ -633,6 +633,50 @@ def test_planner_fixture_keeps_signed_strategy_contract():
     assert tps[25]["side"] == "short" and tps[25]["target_notional"] == "-200"
 
 
+# --- FIX4: a REAL provider's complete counters are not flagged unaccounted by Day-2 ---
+
+def test_day2_real_provider_counters_not_unaccounted():
+    class _Client:
+        def get_wallet_balance(self):
+            return SimpleNamespace(equity_usd=1e4, available_balance_usd=1e4)
+
+        def get_open_positions(self):
+            return []
+
+        def get_instruments_info(self):
+            return {}
+
+        def get_account_info(self):
+            return SimpleNamespace()
+
+        def get_server_time(self):
+            return SimpleNamespace()
+
+        def network_audit_counters(self):
+            return {"private_read_only_request_count": 3, "public_read_only_request_count": 2,
+                    "private_mutating_request_count": 0}
+
+    class _MP:
+        realtime_market_price = 100.0
+        price_timestamp_utc = ""
+
+        def is_usable(self):
+            return True
+
+    class _Guard:
+        def fetch_market_prices(self, symbols):
+            return {s: _MP() for s in symbols}
+
+    provider = crun._build_production_provider(_client=_Client(), _guard=_Guard())
+    provider.market_price("BTCUSDT")
+    prov_ctr = provider.network_audit_counters()
+    assert prov_ctr is not None
+    art = _plan(network_counter_components=_components(provider=prov_ctr))
+    assert not any("unaccounted_network_component:production_forward_provider" in b
+                   for b in art["blockers"])
+    assert art["network_audit_counters"]["private_read_only_request_count"] == 5   # 3 + collector 2
+
+
 # ============================================================ runner safety
 
 def _write_inputs(tmp_path):

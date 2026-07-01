@@ -484,3 +484,122 @@ def test_account_read_stage_handles_fifty_missing_stops():
                                   1.0, 100.0, None) for i in range(50)]
     out = _provider_with(positions).open_positions()
     assert len(out) == 50 and all(p.stop_price == 0.0 for p in out)
+
+
+# ===========================================================================
+# TASK-014BY_FIX4: production provider must report COMPLETE, fail-closed transport
+# counters (canonical DemoReadOnlyClient counts + separate ticker public GETs).
+# ===========================================================================
+
+from src import demo_strategy_native_day2_lifecycle as _d2   # noqa: E402
+
+
+class _CounterClient(_FakeReadOnlyClient):
+    def __init__(self, counters, positions=None):
+        super().__init__(positions or [])
+        self._counters = counters
+
+    def network_audit_counters(self):
+        return self._counters
+
+
+class _TickerMP:
+    def __init__(self, price=100.0):
+        self.realtime_market_price = price
+        self.price_timestamp_utc = ""
+
+    def is_usable(self):
+        return True
+
+
+class _TickerGuard:
+    def __init__(self, boom=False, price=100.0):
+        self._boom = boom
+        self._price = price
+
+    def fetch_market_prices(self, symbols):
+        if self._boom:
+            raise RuntimeError("ticker transport failed")
+        return {s: _TickerMP(self._price) for s in symbols}
+
+
+def _client_counters(ro=3, pub=2, mut=0):
+    return {"private_read_only_request_count": ro, "public_read_only_request_count": pub,
+            "private_mutating_request_count": mut}
+
+
+def _counter_provider(counters, guard=None):
+    prov = daily_cli._build_production_provider(
+        _client=_CounterClient(counters), _guard=guard or _TickerGuard())
+    assert prov is not None
+    return prov
+
+
+def test_provider_counters_merge_client_and_one_ticker():                       # (A)
+    prov = _counter_provider(_client_counters(ro=3, pub=2, mut=0))
+    prov.market_price("BTCUSDT")
+    c = prov.network_audit_counters()
+    assert c["private_read_only_request_count"] == 3
+    assert c["public_read_only_request_count"] == 3        # 2 client public + 1 ticker public
+    assert c["private_mutating_request_count"] == 0
+    assert c["ticker_http_request_count"] == 1
+
+
+def test_provider_counters_two_distinct_symbols():                              # (B)
+    prov = _counter_provider(_client_counters(ro=3, pub=2))
+    prov.market_price("BTCUSDT")
+    prov.market_price("ETHUSDT")
+    c = prov.network_audit_counters()
+    assert c["public_read_only_request_count"] == 4        # 2 + 2 ticker GETs
+    assert c["ticker_http_request_count"] == 2 and c["ticker_unique_symbol_count"] == 2
+
+
+def test_provider_counters_cache_hit_not_double_counted():                      # (C)
+    prov = _counter_provider(_client_counters(ro=3, pub=2))
+    prov.market_price("BTCUSDT")
+    prov.market_price("BTCUSDT")                            # cache hit -> no new HTTP GET
+    c = prov.network_audit_counters()
+    assert c["ticker_requested_symbol_count"] == 2 and c["ticker_http_request_count"] == 1
+    assert c["ticker_cache_hit_count"] == 1
+    assert c["public_read_only_request_count"] == 3        # only +1 for the single HTTP GET
+
+
+def test_provider_counters_failed_ticker_still_accounted():                     # (D)
+    prov = _counter_provider(_client_counters(ro=1, pub=0), guard=_TickerGuard(boom=True))
+    value = prov.market_price("ETHUSDT")
+    c = prov.network_audit_counters()
+    assert value is None                                   # fail-closed price behavior preserved
+    assert c["ticker_http_request_count"] == 1             # attempt still audited
+    assert c["public_read_only_request_count"] == 1        # 0 client + 1 ticker attempt
+
+
+def test_provider_counters_mutating_passthrough():                             # (E)
+    prov = _counter_provider(_client_counters(ro=1, pub=0, mut=1))
+    assert prov.network_audit_counters()["private_mutating_request_count"] == 1
+
+
+def test_day2_merge_blocks_provider_mutating():                                # (E, downstream)
+    prov = _counter_provider(_client_counters(ro=1, pub=0, mut=1))
+    _merged, blockers, _bd = _d2.merge_network_counters({
+        "production_forward_provider": prov.network_audit_counters(),
+        "current_position_collector": _client_counters(ro=1, pub=0, mut=0)})
+    assert any("private_mutating_requests_detected:1" in b for b in blockers)
+
+
+@pytest.mark.parametrize("bad", [
+    None,
+    {"private_read_only_request_count": 1},                                     # missing keys
+    {"private_read_only_request_count": "x", "public_read_only_request_count": 0,
+     "private_mutating_request_count": 0},                                      # non-numeric
+    {"private_read_only_request_count": -1, "public_read_only_request_count": 0,
+     "private_mutating_request_count": 0}])                                     # negative
+def test_provider_counters_missing_or_malformed_fail_closed(bad):              # (F)
+    prov = _counter_provider(bad)
+    assert prov.network_audit_counters() is None           # None -> Day-2 marks it unaccounted
+
+
+def test_provider_missing_accessor_fails_closed():                             # (F, no accessor)
+    class _NoAccessor(_FakeReadOnlyClient):
+        pass
+    prov = daily_cli._build_production_provider(_client=_NoAccessor([]), _guard=_TickerGuard())
+    assert prov is not None and prov.network_audit_counters() is None

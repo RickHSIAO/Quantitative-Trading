@@ -193,6 +193,18 @@ def _canonical_network_top_level(*, review, planner_phase_audit, instrument_meta
     return out
 
 
+def _nonneg_int(value: Any) -> "int | None":
+    """Parse a counter value to a non-negative int, or None if it is missing / non-numeric /
+    boolean / negative. Used to fail closed on incomplete canonical transport counters."""
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
 def _normalize_stop_price(value: Any) -> float:
     """Normalize a Demo position stop_price to the ``DemoOpenPosition.stop_price`` float contract.
 
@@ -357,10 +369,13 @@ def _build_production_provider(_client=None, _guard=None):
                 return self._price_cache[symbol]
             value: float | None = None
             req_start = time.time()
+            # Record the ticker HTTP request ATTEMPT before calling the guard transport, so a
+            # public GET that raises after being issued is never silently unaccounted. (A cache
+            # hit returned above never reaches here, so it never increments the HTTP count.)
+            self._ticker_get_count += 1
+            self._ticker_http_request_count += 1
             try:
                 prices = self._guard.fetch_market_prices([symbol])
-                self._ticker_get_count += 1
-                self._ticker_http_request_count += 1
                 mp = prices.get(symbol)
                 value = float(mp.realtime_market_price) if mp and mp.is_usable() else None
                 # The guard's price_timestamp_utc is a LOCAL fetch time (NOT an
@@ -385,9 +400,29 @@ def _build_production_provider(_client=None, _guard=None):
         def price_observation(self, symbol: str) -> dict | None:
             return self._price_observation.get(symbol)
 
-        def network_audit_counters(self) -> dict:
+        def network_audit_counters(self):
+            """Complete, auditable, fail-closed transport counters for THIS provider.
+
+            The generic private/public/mutating counts come from the DemoReadOnlyClient's own
+            canonical accessor (wallet / positions / account-info private GETs; instrument-info /
+            server-time / risk-limit public GETs; mutating structurally 0). The ticker public GETs
+            are issued by the SEPARATE DemoMarketPriceGuard, so they are ADDED to the client's
+            canonical public count. If the canonical counters are missing/malformed, this returns
+            None so the Day-2 audit marks the component unaccounted (never a fabricated 3x0)."""
+            accessor = getattr(self._client, "network_audit_counters", None)
+            cc = accessor() if callable(accessor) else None
+            if not isinstance(cc, Mapping):
+                return None
+            priv_ro = _nonneg_int(cc.get("private_read_only_request_count"))
+            pub_ro = _nonneg_int(cc.get("public_read_only_request_count"))
+            mut = _nonneg_int(cc.get("private_mutating_request_count"))
+            if priv_ro is None or pub_ro is None or mut is None:
+                return None
             priced = [s for s, v in self._price_cache.items() if v is not None]
             return {
+                "private_read_only_request_count": priv_ro,
+                "public_read_only_request_count": pub_ro + self._ticker_http_request_count,
+                "private_mutating_request_count": mut,   # canonical passthrough; never hardcoded 0
                 "ticker_http_request_count": self._ticker_http_request_count,
                 "ticker_requested_symbol_count": self._ticker_requested_count,
                 "ticker_unique_symbol_count": len(self._price_cache),
@@ -688,13 +723,14 @@ def build_active_v1_review(*, provider: Any, plan: Any, pilot_id: str, date: str
         strat_priced = sum(1 for s in price_by_symbol if price_by_symbol.get(s) is not None)
         legacy_priced = sum(1 for s in legacy_symbols
                             if legacy_mark_price_by_symbol.get(s) is not None)
-        ticker_price_network_audit = md.build_network_audit(
-            ticker_http_request_count=ctr["ticker_http_request_count"],
-            ticker_requested_symbol_count=ctr["ticker_requested_symbol_count"],
-            ticker_unique_symbol_count=ctr["ticker_unique_symbol_count"],
-            ticker_cache_hit_count=ctr["ticker_cache_hit_count"],
-            strategy_target_priced_symbol_count=strat_priced,
-            legacy_mark_priced_symbol_count=legacy_priced)
+        if ctr is not None:   # None == fail-closed (incomplete canonical counters)
+            ticker_price_network_audit = md.build_network_audit(
+                ticker_http_request_count=ctr["ticker_http_request_count"],
+                ticker_requested_symbol_count=ctr["ticker_requested_symbol_count"],
+                ticker_unique_symbol_count=ctr["ticker_unique_symbol_count"],
+                ticker_cache_hit_count=ctr["ticker_cache_hit_count"],
+                strategy_target_priced_symbol_count=strat_priced,
+                legacy_mark_priced_symbol_count=legacy_priced)
 
     # --- TASK-014CE authoritative account-mode / risk-tier / exchange-clock ----
     # Account margin mode from /v5/account/info (read-only). Per-action margin tiers
