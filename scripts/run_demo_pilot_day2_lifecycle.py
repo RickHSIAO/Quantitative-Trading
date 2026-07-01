@@ -133,7 +133,7 @@ def resolve_production_forward_target(args, *, provider=None) -> dict:
     if not getattr(plan, "available", False) or not plan.sizing_verification.get("verified", False):
         raise fs.ForwardSourceError(f"production planner unavailable/unverified: {plan.status}")
     allocations = []
-    for tp in plan.targets:
+    for tp in plan.target_positions:
         allocations.append({
             "symbol": str(tp.get("symbol", "")).strip().upper(),
             "side": tp.get("side"),

@@ -18,6 +18,7 @@ import pytest
 
 from src import demo_strategy_native_day2_lifecycle as d2
 from src import demo_strategy_native_postfill_audit as au
+from src import demo_strategy_pilot_action_planner as ap
 from src import demo_strategy_pilot_forward_source as fs
 from src import demo_strategy_pilot_native_execution as nx
 from src import demo_strategy_pilot_readiness as rd
@@ -417,11 +418,18 @@ def _fake_loader(run_date, repo_root, forward_source_root):
                            market_data_date=run_date)
 
 
-def _fake_plan():
-    return SimpleNamespace(available=True, sizing_verification={"verified": True},
-                           targets=[{"symbol": SYMS[i], "side": SIDES_LS[i],
-                                     "target_notional": "200", "qty": "2", "qty_step": "0.001"}
-                                    for i in range(N)])
+def _target_positions(n=N):
+    return [{"symbol": SYMS[i], "side": SIDES_LS[i], "target_notional": "200", "qty": "2",
+             "qty_step": "0.001"} for i in range(n)]
+
+
+def _real_plan(target_positions=None, status=None, verified=True):
+    """Build the REAL PlannerResult (with the canonical ``target_positions`` field, NOT a made-up
+    ``targets``) so the resolver is exercised against the actual dataclass contract."""
+    return ap.PlannerResult(
+        status=status if status is not None else ap.STATUS_PLANNED, actions=[],
+        target_positions=target_positions if target_positions is not None else _target_positions(),
+        current_positions=[], rejected_signals=[], sizing_verification={"verified": verified})
 
 
 def _patch_chain(monkeypatch, plan=None):
@@ -429,7 +437,7 @@ def _patch_chain(monkeypatch, plan=None):
                         lambda *, run_date, repo_root, forward_source_root:
                         _fake_loader(run_date, repo_root, forward_source_root))
     monkeypatch.setattr(d2run.planner, "plan_strategy_native_actions",
-                        lambda *, forward_result, provider: plan or _fake_plan())
+                        lambda *, forward_result, provider: plan if plan is not None else _real_plan())
 
 
 def test_resolve_production_forward_target_four_roles_pass(tmp_path, monkeypatch):
@@ -491,15 +499,61 @@ def test_resolver_with_authorization_builds_provider_once(tmp_path, monkeypatch)
 
 
 def test_resolver_planner_unverified_raises(tmp_path, monkeypatch):
+    # sizing_verification.verified=False (real PlannerResult) -> fail closed before target loop.
     _seed_forward_files(tmp_path)
-    _patch_chain(monkeypatch, plan=SimpleNamespace(available=False,
-                                                   sizing_verification={"verified": False},
-                                                   status="UNVERIFIED", targets=[]))
+    _patch_chain(monkeypatch, plan=_real_plan(verified=False))
     args = _args(tmp_path)
     args.forward_source_root = str(tmp_path / "fwd")
     with pytest.raises(fs.ForwardSourceError):
         d2run.resolve_production_forward_target(args, provider=SimpleNamespace(
             network_audit_counters=lambda: _rc()))
+
+
+def test_resolver_planner_unavailable_raises(tmp_path, monkeypatch):
+    # status != STATUS_PLANNED -> PlannerResult.available is False -> fail closed.
+    _seed_forward_files(tmp_path)
+    _patch_chain(monkeypatch, plan=_real_plan(status=ap.STATUS_PLANNER_UNAVAILABLE))
+    args = _args(tmp_path)
+    args.forward_source_root = str(tmp_path / "fwd")
+    with pytest.raises(fs.ForwardSourceError):
+        d2run.resolve_production_forward_target(args, provider=SimpleNamespace(
+            network_audit_counters=lambda: _rc()))
+
+
+def test_resolver_reads_target_positions_not_targets(tmp_path, monkeypatch):
+    # Regression for TASK-014BY_FIX2: the REAL PlannerResult has no ``targets`` attribute; the
+    # resolver must read ``target_positions``. If it read plan.targets this would AttributeError.
+    root = _seed_forward_files(tmp_path)
+    tps = _target_positions(3)
+    _patch_chain(monkeypatch, plan=_real_plan(target_positions=tps))
+    assert not hasattr(ap.PlannerResult(status=ap.STATUS_PLANNED, actions=[], target_positions=[],
+                                        current_positions=[], rejected_signals=[],
+                                        sizing_verification={}), "targets")
+    args = _args(tmp_path)
+    args.forward_source_root = root
+    prod = d2run.resolve_production_forward_target(args, provider=SimpleNamespace(
+        network_audit_counters=lambda: _rc()))
+    assert len(prod["allocations"]) == 3                       # one per target_positions row
+    a0 = prod["allocations"][0]
+    assert a0["symbol"] == "S00USDT" and a0["side"] == "long"
+    assert a0["target_notional_usd"] == "200" and a0["qty"] == "2" and a0["qty_step"] == "0.001"
+
+
+def test_resolver_allocations_map_each_target_position(tmp_path, monkeypatch):
+    root = _seed_forward_files(tmp_path)
+    tps = [{"symbol": "abcusdt", "side": "short", "target_notional": "137.5", "qty": "1.25",
+            "qty_step": "0.01"},
+           {"symbol": "XYZUSDT", "side": "long", "target_notional": "200", "qty": "2",
+            "qty_step": "0.001"}]
+    _patch_chain(monkeypatch, plan=_real_plan(target_positions=tps))
+    args = _args(tmp_path)
+    args.forward_source_root = root
+    prod = d2run.resolve_production_forward_target(args, provider=SimpleNamespace(
+        network_audit_counters=lambda: _rc()))
+    assert [a["symbol"] for a in prod["allocations"]] == ["ABCUSDT", "XYZUSDT"]   # upper-cased
+    assert prod["allocations"][0]["side"] == "short"
+    assert prod["allocations"][0]["target_notional_usd"] == "137.5"
+    assert prod["allocations"][0]["qty"] == "1.25" and prod["allocations"][0]["qty_step"] == "0.01"
 
 
 # ============================================================ runner safety
