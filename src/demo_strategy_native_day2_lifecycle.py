@@ -46,7 +46,7 @@ from src import demo_strategy_pilot_native_execution as nx
 DRY_RUN_READY = "DAY2_LIFECYCLE_DRY_RUN_READY"
 DRY_RUN_BLOCKED = "DAY2_LIFECYCLE_DRY_RUN_BLOCKED"
 
-SCHEMA_VERSION = "demo_strategy_native_day2_lifecycle_dry_run_v1"
+SCHEMA_VERSION = "demo_strategy_native_day2_lifecycle_dry_run_v2"
 # v2 separates the IMMUTABLE target intent (symbol/side/notional only) from the volatile runtime
 # sizing translation (price/qty/qty_step). v1 artifacts are NEVER silently upgraded (see ADR).
 TARGET_SCHEMA_VERSION = "demo_strategy_native_day2_target_intent_v2"
@@ -735,6 +735,83 @@ def _snapshot_fingerprint(current_rows) -> str:
     return _digest({"kind": "current_position_snapshot", "positions": canon})
 
 
+def _canonical_source_artifacts(sources: Any) -> dict[str, dict[str, Any]]:
+    """The four canonical Forward source roles as {role: {path, sha256}} from ALREADY-VALIDATED
+    artifact data (never re-hashed / re-guessed here)."""
+    out: dict[str, dict[str, Any]] = {}
+    if isinstance(sources, Mapping):
+        for role in REQUIRED_SOURCE_ROLES:
+            entry = sources.get(role)
+            if isinstance(entry, Mapping):
+                out[role] = {"path": entry.get("path"), "sha256": entry.get("sha256")}
+    return out
+
+
+def _build_target_intent_evidence(*, sealed_target, production_recompute, t_ok, t_reasons,
+                                  signal_date, target_symbol_count, pilot_id, lifecycle_date):
+    """Immutable Target-Intent v2 evidence. Present in EVERY artifact; on a provenance failure it
+    is explicitly ``validated=False`` with empty fingerprint/digest/source_artifacts (never a
+    misleading validated object)."""
+    sealed = sealed_target if isinstance(sealed_target, Mapping) else {}
+    prod = production_recompute if isinstance(production_recompute, Mapping) else {}
+    ev = {
+        "validated": t_ok,
+        "schema_version": sealed.get("schema_version"),
+        "pilot_id": pilot_id, "lifecycle_date": lifecycle_date,
+        "strategy_capital_base_usd": STRATEGY_CAPITAL_BASE_USD,
+        "source_identifier": sealed.get("source_identifier"),
+        "production_strategy": prod.get("strategy"),
+        "validation_reasons": list(t_reasons),
+    }
+    if t_ok:
+        ev.update({
+            "target_intent_fingerprint": str(sealed.get(TARGET_FINGERPRINT_FIELD, "")),
+            "target_digest": sealed.get(TARGET_DIGEST_FIELD),
+            "signal_date": signal_date,
+            "target_symbol_count": target_symbol_count,
+            "source_artifacts": _canonical_source_artifacts(sealed.get("source_artifacts")),
+            "source_artifacts_match_production": True,
+        })
+    else:
+        ev.update({
+            "target_intent_fingerprint": "", "target_digest": None,
+            "signal_date": signal_date or "", "target_symbol_count": 0,
+            "source_artifacts": {}, "source_artifacts_match_production": False,
+        })
+    return ev
+
+
+def _build_runtime_translation_evidence(*, production_recompute, t_ok, t_reasons, runtime_fp,
+                                        target_fp):
+    """Volatile runtime-translation evidence. The ``canonical_runtime_translation`` rows are the
+    EXACT rows fed to ``runtime_translation_fingerprint`` (same canonicalization, no re-rounding).
+    Present in every artifact; empty/``validated=False`` on failure."""
+    prod = production_recompute if isinstance(production_recompute, Mapping) else {}
+    ev = {
+        "validated": t_ok,
+        "source": "formal_production_recompute_current_run",
+        "validation_reasons": list(t_reasons),
+    }
+    if t_ok:
+        rt = prod.get("runtime_translation") or []
+        canon = _canon_runtime_translation(rt)
+        observations = {str(r.get("symbol", "")).strip().upper(): r.get("price_observation")
+                        for r in rt if isinstance(r, Mapping)}
+        ev.update({
+            "runtime_translation_fingerprint": runtime_fp,
+            "target_intent_fingerprint": target_fp,
+            "runtime_symbol_count": len(canon),
+            "canonical_runtime_translation": canon,
+            "price_observations": observations,
+        })
+    else:
+        ev.update({
+            "runtime_translation_fingerprint": "", "target_intent_fingerprint": "",
+            "runtime_symbol_count": 0, "canonical_runtime_translation": [], "price_observations": {},
+        })
+    return ev
+
+
 def _plan_fingerprint(pilot_id, lifecycle_date, snapshot_fp, target_fp, runtime_fp, actions) -> str:
     canon = sorted(({
         "symbol": a["symbol"], "current_side": a["current_side"], "current_qty": a["current_qty"],
@@ -748,7 +825,7 @@ def _plan_fingerprint(pilot_id, lifecycle_date, snapshot_fp, target_fp, runtime_
     return _digest({"kind": "day2_lifecycle_plan", "pilot_id": pilot_id,
                     "lifecycle_date": lifecycle_date,
                     "current_position_snapshot_fingerprint": snapshot_fp,
-                    "target_allocation_intent_fingerprint": target_fp,
+                    "target_intent_fingerprint": target_fp,
                     "runtime_translation_fingerprint": runtime_fp, "actions": canon})
 
 
@@ -895,7 +972,7 @@ def build_day2_lifecycle_dry_run(
                                 actions) if actions else ""
     identity_core = {"pilot_id": pilot_id, "lifecycle_date": lifecycle_date,
                      "current_position_snapshot_fingerprint": snapshot_fp,
-                     "target_allocation_intent_fingerprint": target_fp,
+                     "target_intent_fingerprint": target_fp,
                      "runtime_translation_fingerprint": runtime_fp,
                      "lifecycle_plan_fingerprint": plan_fp}
     exactly_once_identity = {
@@ -912,20 +989,21 @@ def build_day2_lifecycle_dry_run(
         "day1_date": day1_date, "strategy_capital_base_usd": STRATEGY_CAPITAL_BASE_USD,
         "lifecycle_policy": lifecycle_policy, "signal_date": signal_date,
         "current_position_snapshot_fingerprint": snapshot_fp,
-        "target_allocation_intent_fingerprint": target_fp,
+        "target_intent_fingerprint": target_fp,
         "runtime_translation_fingerprint": runtime_fp,
         "lifecycle_plan_fingerprint": plan_fp,
         "exactly_once_identity_design": exactly_once_identity,
         "day1_evidence": {"validated": d1_ok, "day1_fingerprint": day1_fingerprint,
                           "day1_strategy_symbol_count": len(day1_symbols),
                           "validation_reasons": d1_reasons},
-        "target_intent_evidence": {
-            "validated": t_ok, "signal_date": signal_date,
-            "source_identifier": (sealed_target.get("source_identifier")
-                                  if isinstance(sealed_target, Mapping) else None),
-            "production_strategy": (production_target_recompute.get("strategy")
-                                    if isinstance(production_target_recompute, Mapping) else None),
-            "target_symbol_count": len(target_by_symbol), "validation_reasons": t_reasons},
+        "target_intent_evidence": _build_target_intent_evidence(
+            sealed_target=sealed_target, production_recompute=production_target_recompute,
+            t_ok=t_ok, t_reasons=t_reasons, signal_date=signal_date,
+            target_symbol_count=len(target_by_symbol), pilot_id=pilot_id,
+            lifecycle_date=lifecycle_date),
+        "runtime_translation_evidence": _build_runtime_translation_evidence(
+            production_recompute=production_target_recompute, t_ok=t_ok, t_reasons=t_reasons,
+            runtime_fp=runtime_fp, target_fp=target_fp),
         "pagination_evidence": {
             "page_count": positions_provenance.get("page_count"),
             "termination_reason": positions_provenance.get("termination_reason"),

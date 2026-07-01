@@ -58,6 +58,40 @@ value, or a v1 artifact that still carries the qty-bearing `allocations` field) 
 `unsupported_target_intent_schema_version`. There is no implicit migration path and no way for a
 legacy artifact to reach a v2 READY verdict.
 
+## v2 lifecycle evidence artifact contract
+
+The lifecycle dry-run artifact schema is bumped to
+`demo_strategy_native_day2_lifecycle_dry_run_v2` — the field meanings below never change silently
+under the old version, and historical v1 artifacts are neither migrated nor overwritten.
+
+- **Naming.** The single canonical key is `target_intent_fingerprint`; the legacy
+  `target_allocation_intent_fingerprint` is gone (no dual alias) from the `_plan_fingerprint`
+  digest payload, `identity_core`, `exactly_once_identity_design`, and the top-level artifact.
+  Renaming changes the digest inputs, so `lifecycle_plan_fingerprint` and the close/open batch
+  identities take new values — that is expected.
+
+- **`target_intent_evidence`** (the immutable intent, always present) carries: `validated`,
+  `schema_version`, `target_intent_fingerprint`, `target_digest`, `pilot_id`, `lifecycle_date`,
+  `signal_date`, `strategy_capital_base_usd`, `source_identifier`, `production_strategy`,
+  `target_symbol_count`, `validation_reasons`, the four Forward `source_artifacts`
+  (`positions` / `forward_stats` / `pnl` / `forward_summary`, each `{path, sha256}`), and
+  `source_artifacts_match_production`. The digest and source hashes are taken from the
+  already-validated sealed v2 artifact / production recompute — never re-hashed here.
+  `source_artifacts_match_production` is `true` only when provenance passed.
+
+- **`runtime_translation_evidence`** (the volatile sizing, always present, never null) carries:
+  `validated`, `runtime_translation_fingerprint`, `target_intent_fingerprint`,
+  `source = "formal_production_recompute_current_run"`, `runtime_symbol_count`,
+  `validation_reasons`, `canonical_runtime_translation` (each row exactly
+  `symbol` / `side` / `target_notional_usd` / `price_snapshot` / `qty_step` / `qty` — the exact
+  rows fed to the runtime fingerprint, no re-rounding), and `price_observations` (per symbol
+  price-source / exchange & request / response timestamps). The price observation is evidence only
+  and is **not** part of the runtime fingerprint field set.
+
+- **Fail-closed.** When provenance fails, both evidence objects still exist with
+  `validated=false`, non-empty `validation_reasons`, empty-string fingerprints, and empty
+  source-artifact / canonical-row collections — never a null object and never a fake-validated one.
+
 ## Consequences
 
 - A normal price move between sealing and execution no longer blocks Day-2; the intent stays

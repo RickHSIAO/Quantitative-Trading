@@ -593,6 +593,101 @@ def test_resolver_no_nearest_round_acceptance_of_unverified_qty(tmp_path, monkey
         _resolve_qty(tmp_path, monkeypatch, "1.454")
 
 
+# ============================================ FIX4: lifecycle v2 evidence artifact contract
+
+def test_lifecycle_schema_version_is_v2():                                     # FIX4 (A)
+    assert d2.SCHEMA_VERSION == "demo_strategy_native_day2_lifecycle_dry_run_v2"
+    assert _plan()["schema_version"] == "demo_strategy_native_day2_lifecycle_dry_run_v2"
+
+
+def test_top_level_uses_target_intent_fingerprint_name():                      # FIX4 (B)
+    art = _plan()
+    assert art["target_intent_fingerprint"] == _sealed()[d2.TARGET_FINGERPRINT_FIELD]
+    assert "target_allocation_intent_fingerprint" not in art
+    assert "target_allocation_intent_fingerprint" not in art["exactly_once_identity_design"]
+
+
+def test_target_intent_fp_change_changes_plan_and_batch_identities():          # FIX4 (C)
+    base = _plan()
+    alt = _plan(sealed_target=_sealed(_intent({"S00USDT": {"target_notional_usd": "300"}})),
+                production_target_recompute=_production(
+                    intent=_intent({"S00USDT": {"target_notional_usd": "300"}}),
+                    runtime=_runtime({"S00USDT": {"target_notional_usd": "300", "qty": "3"}})))
+    assert base["target_intent_fingerprint"] != alt["target_intent_fingerprint"]
+    assert base["lifecycle_plan_fingerprint"] != alt["lifecycle_plan_fingerprint"]
+    bi, ai = base["exactly_once_identity_design"], alt["exactly_once_identity_design"]
+    assert bi["close_batch_identity"] != ai["close_batch_identity"]
+    assert bi["open_batch_identity"] != ai["open_batch_identity"]
+
+
+def test_target_intent_evidence_complete():                                    # FIX4 (D)
+    ev = _plan()["target_intent_evidence"]
+    assert ev["validated"] is True
+    assert ev["schema_version"] == d2.TARGET_SCHEMA_VERSION
+    assert ev["target_intent_fingerprint"] == _sealed()[d2.TARGET_FINGERPRINT_FIELD]
+    assert ev["target_digest"] == _sealed()[d2.TARGET_DIGEST_FIELD]
+    assert ev["strategy_capital_base_usd"] == "10000"
+    assert ev["source_artifacts_match_production"] is True
+    assert set(ev["source_artifacts"]) == set(d2.REQUIRED_SOURCE_ROLES)
+    for role in d2.REQUIRED_SOURCE_ROLES:
+        assert d2._SHA256_RE.match(ev["source_artifacts"][role]["sha256"])
+        assert ev["source_artifacts"][role]["path"]
+
+
+def test_runtime_translation_evidence_complete():                             # FIX4 (E)
+    art = _plan()
+    ev = art["runtime_translation_evidence"]
+    assert ev is not None and ev["validated"] is True
+    assert ev["source"] == "formal_production_recompute_current_run"
+    assert ev["runtime_translation_fingerprint"] == art["runtime_translation_fingerprint"]
+    assert ev["target_intent_fingerprint"] == art["target_intent_fingerprint"]
+    assert ev["runtime_symbol_count"] == N == len(ev["canonical_runtime_translation"])
+    row = ev["canonical_runtime_translation"][0]
+    assert set(row) == {"symbol", "side", "target_notional_usd", "price_snapshot", "qty_step", "qty"}
+    # rows are exactly the canonical rows the fingerprint was computed over
+    assert ev["canonical_runtime_translation"] == d2._canon_runtime_translation(_runtime())
+
+
+def test_runtime_evidence_and_plan_fp_change_with_runtime():                   # FIX4 (F)
+    base = _plan()
+    alt = _plan(production_target_recompute=_production(
+        runtime=_runtime({"S00USDT": {"price_snapshot": "40", "qty": "5"}})))   # 200/40 -> 5
+    assert (base["runtime_translation_evidence"]["runtime_translation_fingerprint"]
+            != alt["runtime_translation_evidence"]["runtime_translation_fingerprint"])
+    assert base["runtime_translation_fingerprint"] != alt["runtime_translation_fingerprint"]
+    assert base["lifecycle_plan_fingerprint"] != alt["lifecycle_plan_fingerprint"]
+
+
+def test_evidence_present_and_fail_closed_on_invalid_provenance():             # FIX4 (G)
+    art = _plan(sealed_target=_sealed(sources=_source_artifacts({"pnl": "sha256:" + "e" * 64})))
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    tev = art["target_intent_evidence"]
+    rev = art["runtime_translation_evidence"]
+    assert tev is not None and rev is not None
+    assert tev["validated"] is False and rev["validated"] is False
+    assert tev["validation_reasons"] and rev["validation_reasons"]
+    assert tev["target_intent_fingerprint"] == "" and tev["source_artifacts_match_production"] is False
+    assert rev["runtime_translation_fingerprint"] == "" and rev["canonical_runtime_translation"] == []
+
+
+def test_edu_blocker_preserved_with_valid_evidence():                         # FIX4 (H)
+    art = _plan(current_positions=_current(include_edu=True))
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    assert "day1_eduusdt_position_identity_evidence_unavailable" in art["blockers"]
+    # provenance itself PASSED, so the evidence objects are validated even though the plan is blocked
+    assert art["target_intent_evidence"]["validated"] is True
+    assert art["runtime_translation_evidence"]["validated"] is True
+
+
+def test_network_accounting_regression_in_v2_artifact():                      # FIX4 (I)
+    art = _plan(network_counter_components=_components(provider=_rc(ro=3, pub=2),
+                                                      collector=_rc(ro=4, pub=1)))
+    nac = art["network_audit_counters"]
+    assert nac["private_mutating_request_count"] == 0
+    assert set(nac["component_breakdown"]) == {"production_forward_provider", "current_position_collector"}
+    assert _plan(network_counter_components=_components(provider=_rc(mut=1)))["verdict"] == d2.DRY_RUN_BLOCKED
+
+
 def test_arith_short_uses_positive_magnitude():                                # (E)
     ok, reasons, *_ = _verify_single("200", "137", "0.01", "1.45", side="short")
     assert ok, reasons
@@ -618,7 +713,7 @@ def test_arith_lifecycle_uses_current_runtime_qty_not_sealed():               # 
                     runtime=_runtime({"S00USDT": {"qty": "5", "price_snapshot": "40"}})))
     assert art["verdict"] == d2.DRY_RUN_READY, art["blockers"]
     assert _act(art, "S00USDT")["proposed_action"] == "INCREASE"   # target qty 5 > current 2
-    assert "qty" not in art["target_allocation_intent_fingerprint"]  # intent fp is not a qty carrier
+    assert "qty" not in art["target_intent_fingerprint"]   # intent fp is not a qty carrier
 
 
 def test_intent_notional_non_finite_blocked():
