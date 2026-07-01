@@ -419,8 +419,10 @@ def _fake_loader(run_date, repo_root, forward_source_root):
 
 
 def _target_positions(n=N):
-    return [{"symbol": SYMS[i], "side": SIDES_LS[i], "target_notional": "200", "qty": "2",
-             "qty_step": "0.001"} for i in range(n)]
+    # PlannerResult keeps direction in the SIGN of target_notional (long > 0, short < 0).
+    return [{"symbol": SYMS[i], "side": SIDES_LS[i],
+             "target_notional": ("200" if i < 25 else "-200"), "qty": "2", "qty_step": "0.001"}
+            for i in range(n)]
 
 
 def _real_plan(target_positions=None, status=None, verified=True):
@@ -541,7 +543,7 @@ def test_resolver_reads_target_positions_not_targets(tmp_path, monkeypatch):
 
 def test_resolver_allocations_map_each_target_position(tmp_path, monkeypatch):
     root = _seed_forward_files(tmp_path)
-    tps = [{"symbol": "abcusdt", "side": "short", "target_notional": "137.5", "qty": "1.25",
+    tps = [{"symbol": "abcusdt", "side": "short", "target_notional": "-137.5", "qty": "1.25",
             "qty_step": "0.01"},
            {"symbol": "XYZUSDT", "side": "long", "target_notional": "200", "qty": "2",
             "qty_step": "0.001"}]
@@ -551,9 +553,84 @@ def test_resolver_allocations_map_each_target_position(tmp_path, monkeypatch):
     prod = d2run.resolve_production_forward_target(args, provider=SimpleNamespace(
         network_audit_counters=lambda: _rc()))
     assert [a["symbol"] for a in prod["allocations"]] == ["ABCUSDT", "XYZUSDT"]   # upper-cased
-    assert prod["allocations"][0]["side"] == "short"
-    assert prod["allocations"][0]["target_notional_usd"] == "137.5"
+    assert prod["allocations"][0]["side"] == "short"                              # side unchanged
+    assert prod["allocations"][0]["target_notional_usd"] == "137.5"              # magnitude, positive
     assert prod["allocations"][0]["qty"] == "1.25" and prod["allocations"][0]["qty_step"] == "0.01"
+
+
+def _resolve_single(tmp_path, monkeypatch, side, target_notional):
+    root = _seed_forward_files(tmp_path)
+    tps = [{"symbol": "ABCUSDT", "side": side, "target_notional": target_notional, "qty": "2",
+            "qty_step": "0.001"}]
+    _patch_chain(monkeypatch, plan=_real_plan(target_positions=tps))
+    args = _args(tmp_path)
+    args.forward_source_root = root
+    return d2run.resolve_production_forward_target(
+        args, provider=SimpleNamespace(network_audit_counters=lambda: _rc()))
+
+
+# --- FIX3: signed planner notional -> positive Day-2 target magnitude ---
+
+def test_short_signed_notional_normalized_to_positive_magnitude(tmp_path, monkeypatch):
+    prod = _resolve_single(tmp_path, monkeypatch, "short", "-200")
+    a = prod["allocations"][0]
+    assert a["side"] == "short"                        # direction preserved in side
+    assert a["target_notional_usd"] == "200"           # positive magnitude
+    assert a["target_notional_usd"] != "-200"
+
+
+def test_long_notional_preserved_positive(tmp_path, monkeypatch):
+    prod = _resolve_single(tmp_path, monkeypatch, "long", "200")
+    assert prod["allocations"][0]["target_notional_usd"] == "200"
+
+
+def test_notional_magnitude_is_decimal_exact(tmp_path, monkeypatch):
+    prod = _resolve_single(tmp_path, monkeypatch, "short", "-137.5000")
+    tn = prod["allocations"][0]["target_notional_usd"]
+    assert tn == "137.5"                               # Decimal-safe, no float artifact
+    assert "999" not in tn and "137.4" not in tn
+
+
+def _sealed_from_production(prod):
+    return d2.seal_target_intent_artifact(
+        pilot_id=PILOT, lifecycle_date=LIFE, signal_date=prod["signal_date"],
+        source_identifier=prod["strategy"], source_artifacts=prod["source_artifacts"],
+        allocations=prod["allocations"])
+
+
+def test_full_provenance_pass_with_long_and_short(tmp_path, monkeypatch):
+    root = _seed_forward_files(tmp_path)
+    _patch_chain(monkeypatch)                          # default 50: 25 long (+200), 25 short (-200)
+    args = _args(tmp_path)
+    args.forward_source_root = root
+    prod = d2run.resolve_production_forward_target(args, provider=SimpleNamespace(
+        network_audit_counters=lambda: _rc()))
+    assert all(float(a["target_notional_usd"]) > 0 for a in prod["allocations"])   # all positive
+    sealed = _sealed_from_production(prod)
+    ok, reasons, _tbs, _sd = d2.verify_production_target_provenance(
+        sealed_target=sealed, production_recompute=prod, pilot_id=PILOT, lifecycle_date=LIFE)
+    assert ok, reasons
+
+
+@pytest.mark.parametrize("bad", [None, "", "NaN", "Infinity", "0", "not-a-number"])
+def test_invalid_notional_never_passes_via_abs(tmp_path, monkeypatch, bad):
+    prod = _resolve_single(tmp_path, monkeypatch, "long", bad)
+    sealed = d2.seal_target_intent_artifact(
+        pilot_id=PILOT, lifecycle_date=LIFE, signal_date=prod["signal_date"],
+        source_identifier=prod["strategy"], source_artifacts=prod["source_artifacts"],
+        allocations=[{"symbol": "ABCUSDT", "side": "long", "target_notional_usd": "200",
+                      "qty": "2", "qty_step": "0.001"}])
+    ok, reasons, _tbs, _sd = d2.verify_production_target_provenance(
+        sealed_target=sealed, production_recompute=prod, pilot_id=PILOT, lifecycle_date=LIFE)
+    assert not ok
+    assert any("production_target_invalid_notional:ABCUSDT" in r for r in reasons)
+
+
+def test_planner_fixture_keeps_signed_strategy_contract():
+    # The planner contract is UNCHANGED: long +200, short -200. Only the resolver OUTPUT is abs.
+    tps = _target_positions()
+    assert tps[0]["side"] == "long" and tps[0]["target_notional"] == "200"
+    assert tps[25]["side"] == "short" and tps[25]["target_notional"] == "-200"
 
 
 # ============================================================ runner safety

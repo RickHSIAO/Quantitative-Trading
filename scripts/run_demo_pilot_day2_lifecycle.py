@@ -27,6 +27,7 @@ import os
 import pathlib
 import sys
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -90,6 +91,26 @@ def _load_daily_runner():
     return mod
 
 
+def _positive_notional_magnitude(raw):
+    """Convert a planner SIGNED strategy notional to the positive Day-2 ``target_notional_usd``
+    magnitude at the resolver schema boundary. The planner keeps direction in the SIGN
+    (long > 0, short < 0); the Day-2 artifact keeps direction in ``side`` and requires the notional
+    field to be a finite positive magnitude. Uses pure Decimal (no binary-float round-trip), so a
+    value like -137.5000 becomes exactly 137.5 with no float artifact.
+
+    Invalid values (None / empty / NaN / Infinity / non-numeric) are returned UNCHANGED so the
+    existing Day-2 validator fails them closed -- ``copy_abs()`` never turns an invalid value into a
+    legal target. A magnitude of 0 stays 0 (rejected downstream as ``<= 0``)."""
+    try:
+        d = Decimal(str(raw))
+    except (InvalidOperation, TypeError, ValueError):
+        return raw
+    if not d.is_finite():
+        return raw
+    mag = d.copy_abs()
+    return format(mag.normalize() if mag != 0 else Decimal(0), "f")
+
+
 def _hash_source_artifacts(args) -> dict:
     """Hash EXACTLY the four canonical Forward source-artifact roles for ``lifecycle_date``. Each
     file must still exist and be a regular file at hash time; a missing role fails closed."""
@@ -137,7 +158,10 @@ def resolve_production_forward_target(args, *, provider=None) -> dict:
         allocations.append({
             "symbol": str(tp.get("symbol", "")).strip().upper(),
             "side": tp.get("side"),
-            "target_notional_usd": tp.get("target_notional", tp.get("target_notional_usd")),
+            # Planner notional is SIGNED (short < 0); the Day-2 schema keeps direction in ``side``
+            # and requires a positive magnitude here. Invalid values pass through -> fail closed.
+            "target_notional_usd": _positive_notional_magnitude(
+                tp.get("target_notional", tp.get("target_notional_usd"))),
             "qty": tp.get("qty"), "qty_step": tp.get("qty_step")})
     # Every provider network request (wallet / positions / market / instrument) must be counted.
     counters_fn = getattr(provider, "network_audit_counters", None)
