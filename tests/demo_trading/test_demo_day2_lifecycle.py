@@ -22,6 +22,7 @@ from src import demo_strategy_pilot_action_planner as ap
 from src import demo_strategy_pilot_forward_source as fs
 from src import demo_strategy_pilot_native_execution as nx
 from src import demo_strategy_pilot_readiness as rd
+from src.demo_instrument_rules import round_qty_down
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(os.path.dirname(_HERE))
@@ -126,13 +127,13 @@ def _day1_audit_and_alloc(payloads=None, fp=DAY1_FP):
     return audit, alloc
 
 
-def _allocs(overrides=None, add=None, drop=None):
+def _intent(overrides=None, add=None, drop=None):
+    """Immutable intent view: symbol / side / target_notional_usd only."""
     out = []
     for i in range(N):
         if drop and SYMS[i] in drop:
             continue
-        a = {"symbol": SYMS[i], "side": SIDES_LS[i], "target_notional_usd": "200",
-             "qty": "2", "qty_step": "0.001"}
+        a = {"symbol": SYMS[i], "side": SIDES_LS[i], "target_notional_usd": "200"}
         if overrides and SYMS[i] in overrides:
             a.update(overrides[SYMS[i]])
         out.append(a)
@@ -141,22 +142,39 @@ def _allocs(overrides=None, add=None, drop=None):
     return out
 
 
-def _production(allocs=None, signal_date=LIFE, strategy=STRATEGY, sources=None,
+def _runtime(overrides=None, add=None, drop=None):
+    """Volatile runtime translation: symbol / side / notional / price / qty_step / qty."""
+    out = []
+    for i in range(N):
+        if drop and SYMS[i] in drop:
+            continue
+        r = {"symbol": SYMS[i], "side": SIDES_LS[i], "target_notional_usd": "200",
+             "price_snapshot": "100", "qty_step": "0.001", "qty": "2"}
+        if overrides and SYMS[i] in overrides:
+            r.update(overrides[SYMS[i]])
+        out.append(r)
+    if add:
+        out.extend(add)
+    return out
+
+
+def _production(intent=None, runtime=None, signal_date=LIFE, strategy=STRATEGY, sources=None,
                 loader_validation="PASS", counters=None, **extra):
     prod = {"strategy": strategy, "requested_run_date": LIFE, "signal_date": signal_date,
             "loader_validation": loader_validation,
             "source_artifacts": sources if sources is not None else _source_artifacts(),
             "network_audit_counters": counters if counters is not None else _rc(),
-            "allocations": allocs if allocs is not None else _allocs()}
+            "intent_allocations": intent if intent is not None else _intent(),
+            "runtime_translation": runtime if runtime is not None else _runtime()}
     prod.update(extra)
     return prod
 
 
-def _sealed(allocs=None, signal_date=LIFE, source_id=STRATEGY, sources=None):
+def _sealed(intent=None, signal_date=LIFE, source_id=STRATEGY, sources=None):
     return d2.seal_target_intent_artifact(
         pilot_id=PILOT, lifecycle_date=LIFE, signal_date=signal_date, source_identifier=source_id,
         source_artifacts=sources if sources is not None else _source_artifacts(),
-        allocations=allocs if allocs is not None else _allocs())
+        intent_allocations=intent if intent is not None else _intent())
 
 
 def _current(overrides=None, drop=None, extra=None, include_edu=False, edu_side="short"):
@@ -217,21 +235,28 @@ def test_close_and_open_identities_distinct():
 
 
 def test_partial_close_estimate_nonzero():
-    art = _plan(sealed_target=_sealed(_allocs(drop={"S00USDT"})),
-                production_target_recompute=_production(_allocs(drop={"S00USDT"})))
+    art = _plan(sealed_target=_sealed(_intent(drop={"S00USDT"})),
+                production_target_recompute=_production(intent=_intent(drop={"S00USDT"}),
+                                                        runtime=_runtime(drop={"S00USDT"})))
     assert _act(art, "S00USDT")["proposed_action"] == "CLOSE"
     assert _act(art, "S00USDT")["close_notional_estimate_usd"] == "200"
 
 
 def test_increase_decrease_reverse():
-    inc = _plan(sealed_target=_sealed(_allocs({"S00USDT": {"qty": "5"}})),
-                production_target_recompute=_production(_allocs({"S00USDT": {"qty": "5"}})))
+    # INCREASE / DECREASE are driven by the RUNTIME qty (intent notional unchanged). The runtime
+    # qty must satisfy floor(notional/price/step)*step, so the price is set accordingly:
+    #   notional 200 / price 40  -> qty 5 (INCREASE from current 2)
+    #   notional 200 / price 200 -> qty 1 (DECREASE from current 2)
+    inc = _plan(production_target_recompute=_production(
+        runtime=_runtime({"S00USDT": {"qty": "5", "price_snapshot": "40"}})))
     assert _act(inc, "S00USDT")["proposed_action"] == "INCREASE"
-    dec = _plan(sealed_target=_sealed(_allocs({"S00USDT": {"qty": "1"}})),
-                production_target_recompute=_production(_allocs({"S00USDT": {"qty": "1"}})))
+    dec = _plan(production_target_recompute=_production(
+        runtime=_runtime({"S00USDT": {"qty": "1", "price_snapshot": "200"}})))
     assert _act(dec, "S00USDT")["proposed_action"] == "DECREASE"
-    rev = _plan(sealed_target=_sealed(_allocs({"S00USDT": {"side": "short"}})),
-                production_target_recompute=_production(_allocs({"S00USDT": {"side": "short"}})),
+    rev = _plan(sealed_target=_sealed(_intent({"S00USDT": {"side": "short"}})),
+                production_target_recompute=_production(
+                    intent=_intent({"S00USDT": {"side": "short"}}),
+                    runtime=_runtime({"S00USDT": {"side": "short"}})),
                 current_positions=_current({"S00USDT": {"side": "long"}}))
     a = _act(rev, "S00USDT")
     assert a["proposed_action"] == "REVERSE"
@@ -312,12 +337,67 @@ def test_production_extra_source_role_blocked():
     assert any("production_source_artifact_role_unexpected" in b for b in art["blockers"])
 
 
-# ============================================================ provenance / allocation validation (kept)
+# ==================================================== v2 intent / runtime separation provenance
 
-def test_recompute_vs_sealed_differ_one_qty_blocked():
-    art = _plan(production_target_recompute=_production(_allocs({"S00USDT": {"qty": "7"}})))
+def test_runtime_qty_differs_from_seal_time_still_passes_provenance():
+    # T1 sealed intent (symbol/side/notional). T2 production runtime has a DIFFERENT qty; because
+    # the immutable intent is unchanged, provenance PASSES and the runtime qty is used.
+    sealed = _sealed()
+    # T2: a slightly different price legitimately yields a different valid qty (200/100.5 -> 1.99).
+    ok, reasons, tbs, _sd, _rfp = d2.verify_production_target_provenance(
+        sealed_target=sealed,
+        production_recompute=_production(
+            runtime=_runtime({"S00USDT": {"qty": "1.99", "price_snapshot": "100.5"}})),
+        pilot_id=PILOT, lifecycle_date=LIFE)
+    assert ok, reasons
+    assert str(tbs["S00USDT"]["qty"]) == "1.99"     # runtime qty from THIS run is used
+
+
+def test_intent_fingerprint_independent_of_price_and_qty():
+    fp_a = d2.target_intent_fingerprint(pilot_id=PILOT, lifecycle_date=LIFE, signal_date=LIFE,
+                                        source_identifier=STRATEGY, intent_allocations=_intent())
+    # add price/qty/qty_step noise to the intent rows -> fingerprint must be unchanged
+    noisy = [dict(a, qty="9", qty_step="0.5", price_snapshot="137") for a in _intent()]
+    fp_b = d2.target_intent_fingerprint(pilot_id=PILOT, lifecycle_date=LIFE, signal_date=LIFE,
+                                        source_identifier=STRATEGY, intent_allocations=noisy)
+    assert fp_a == fp_b
+
+
+def test_runtime_fingerprint_changes_with_price_and_qty():
+    def rfp(runtime):
+        return d2.verify_production_target_provenance(
+            sealed_target=_sealed(), production_recompute=_production(runtime=runtime),
+            pilot_id=PILOT, lifecycle_date=LIFE)[4]
+    base = rfp(_runtime())
+    diff_qty = rfp(_runtime({"S00USDT": {"qty": "1.99"}}))
+    diff_price = rfp(_runtime({"S00USDT": {"price_snapshot": "137"}}))
+    assert len({base, diff_qty, diff_price}) == 3
+
+
+def test_runtime_change_changes_lifecycle_plan_fingerprint():
+    a = _plan()["lifecycle_plan_fingerprint"]
+    # A different (still valid) runtime sizing: 200/133.33 floors to qty 1.5.
+    b = _plan(production_target_recompute=_production(
+        runtime=_runtime({"S00USDT": {"qty": "1.5", "price_snapshot": "133.33"}})))[
+        "lifecycle_plan_fingerprint"]
+    assert a and b and a != b
+
+
+def test_intent_notional_mismatch_blocked():
+    art = _plan(production_target_recompute=_production(
+        intent=_intent({"S00USDT": {"target_notional_usd": "999"}}),
+        runtime=_runtime({"S00USDT": {"target_notional_usd": "999"}})))
     assert art["verdict"] == d2.DRY_RUN_BLOCKED
-    assert any("target_qty_mismatch_production:S00USDT" in b for b in art["blockers"])
+    assert any("target_target_notional_usd_mismatch_production:S00USDT" in b for b in art["blockers"])
+
+
+def test_v1_target_artifact_rejected():
+    v1 = _sealed()
+    v1["schema_version"] = d2.TARGET_SCHEMA_VERSION_V1
+    v1[d2.TARGET_DIGEST_FIELD] = d2.canonical_target_digest(v1)   # re-seal to isolate schema check
+    art = _plan(sealed_target=v1)
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    assert any("unsupported_target_intent_schema_version" in b for b in art["blockers"])
 
 
 def test_loader_validation_not_pass_blocks():
@@ -327,20 +407,227 @@ def test_loader_validation_not_pass_blocks():
     assert any("production_loader_validation_not_pass" in b for b in art["blockers"])
 
 
-def test_sealed_duplicate_symbol_blocked():
-    dup = _allocs() + [{"symbol": "S00USDT", "side": "long", "target_notional_usd": "200",
-                        "qty": "2", "qty_step": "0.001"}]
+def test_sealed_intent_duplicate_symbol_blocked():
+    dup = _intent() + [{"symbol": "S00USDT", "side": "long", "target_notional_usd": "200"}]
     art = _plan(sealed_target=_sealed(dup))
     assert art["verdict"] == d2.DRY_RUN_BLOCKED
-    assert any("sealed_target_duplicate_symbol:S00USDT" in b for b in art["blockers"])
+    assert any("sealed_target_intent_duplicate_symbol:S00USDT" in b for b in art["blockers"])
 
 
-@pytest.mark.parametrize("bad", ["NaN", "Infinity", "0"])
-def test_invalid_qty_blocked(bad):
-    art = _plan(sealed_target=_sealed(_allocs({"S00USDT": {"qty": bad}})),
-                production_target_recompute=_production(_allocs({"S00USDT": {"qty": bad}})))
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "0", None])
+def test_runtime_invalid_qty_blocked(bad):
+    art = _plan(production_target_recompute=_production(runtime=_runtime({"S00USDT": {"qty": bad}})))
     assert art["verdict"] == d2.DRY_RUN_BLOCKED
-    assert any("invalid_qty:S00USDT" in b for b in art["blockers"])
+    assert any("production_target_runtime_invalid_qty:S00USDT" in b for b in art["blockers"])
+
+
+@pytest.mark.parametrize("field", ["price_snapshot", "qty_step"])
+def test_runtime_invalid_price_or_step_blocked(field):
+    art = _plan(production_target_recompute=_production(runtime=_runtime({"S00USDT": {field: "0"}})))
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    assert any(f"production_target_runtime_invalid_{field}:S00USDT" in b for b in art["blockers"])
+
+
+# ============================================== FIX1: runtime qty = floor(notional/price/step)*step
+
+def _verify_single(notional, price, step, qty, side="long"):
+    intent = [{"symbol": "ABCUSDT", "side": side, "target_notional_usd": notional}]
+    runtime = [{"symbol": "ABCUSDT", "side": side, "target_notional_usd": notional,
+                "price_snapshot": price, "qty_step": step, "qty": qty}]
+    return d2.verify_production_target_provenance(
+        sealed_target=_sealed(intent),
+        production_recompute=_production(intent=intent, runtime=runtime),
+        pilot_id=PILOT, lifecycle_date=LIFE)
+
+
+def _rt_mismatch(reasons):
+    return any("runtime_qty_rounding_mismatch:ABCUSDT" in r for r in reasons)
+
+
+def test_arith_exact_valid_sizing_passes():                                    # (A)
+    ok, reasons, tbs, _sd, _rfp = _verify_single("200", "100", "0.001", "2")
+    assert ok, reasons
+    assert str(tbs["ABCUSDT"]["qty"]) == "2"
+
+
+def test_arith_positive_but_wrong_qty_blocked():                               # (B)
+    ok, reasons, *_ = _verify_single("200", "100", "0.001", "1.999")
+    assert not ok and _rt_mismatch(reasons)
+
+
+def test_arith_floor_to_step_boundary():                                       # (C)
+    assert _verify_single("200", "137", "0.01", "1.45")[0]                     # exact floor -> PASS
+    ok_hi, reasons_hi, *_ = _verify_single("200", "137", "0.01", "1.46")
+    assert not ok_hi and _rt_mismatch(reasons_hi)                              # one step high -> BLOCK
+
+
+def test_arith_fine_precision_no_float_artifact():                            # (D)
+    assert _verify_single("1", "3", "0.001", "0.333")[0]
+    ok_hi, reasons_hi, *_ = _verify_single("1", "3", "0.001", "0.334")
+    assert not ok_hi and _rt_mismatch(reasons_hi)
+
+
+@pytest.mark.parametrize("qty", ["1.454", "1.446"])
+def test_arith_off_grid_qty_within_half_step_blocked(qty):                     # FIX2 (A, B)
+    # 1.454 / 1.446 round to the nearest step 1.45 but are NOT on the 0.01 grid -> must BLOCK
+    # (no nearest-step tolerance).
+    ok, reasons, *_ = _verify_single("200", "137", "0.01", qty)
+    assert not ok
+    assert any("runtime_qty_not_on_step_grid:ABCUSDT" in r for r in reasons)
+    assert _rt_mismatch(reasons)
+
+
+def test_arith_off_grid_fine_step_blocked():                                   # FIX2 (D)
+    ok, reasons, *_ = _verify_single("1", "3", "0.001", "0.3334")
+    assert not ok and any("runtime_qty_not_on_step_grid:ABCUSDT" in r for r in reasons)
+
+
+def test_arith_raw_planner_float_artifact_rejected_by_validator():
+    # A raw float-artifact qty reaching the validator directly is NOT silently accepted.
+    ok, reasons, *_ = _verify_single("6", "20", "0.1", str(3 * 0.1))   # 0.30000000000000004
+    assert not ok and any("runtime_qty_not_on_step_grid:ABCUSDT" in r for r in reasons)
+
+
+def test_resolver_canonicalizes_planner_float_qty(tmp_path, monkeypatch):      # FIX2 (E)
+    root = _seed_forward_files(tmp_path)
+    tps = [{"symbol": "ABCUSDT", "side": "long", "target_notional": "6",
+            "qty": 3 * 0.1, "qty_step": "0.1", "price": "20"}]   # planner float 0.30000000000000004
+    _patch_chain(monkeypatch, plan=_real_plan(target_positions=tps))
+    args = _args(tmp_path)
+    args.forward_source_root = root
+    prod = d2run.resolve_production_forward_target(
+        args, provider=SimpleNamespace(network_audit_counters=lambda: _rc()))
+    assert prod["runtime_translation"][0]["qty"] == "0.3"     # canonical step-grid, not the artifact
+    reasons, _ = d2._validate_runtime_translation(prod["runtime_translation"], "production_target")
+    assert not any("runtime_qty" in r for r in reasons)      # validates exactly
+
+
+def test_runtime_fingerprint_stable_across_float_representation():              # FIX2 (F)
+    # The resolver canonicalizes the helper's float-artifact qty to "0.3"; the runtime fingerprint
+    # over the canonical value equals the fingerprint over a clean "0.3" -> no artifact drift.
+    intent = [{"symbol": "ABCUSDT", "side": "long", "target_notional_usd": "6"}]
+    sealed = _sealed(intent)
+    canon = d2run._verified_canonical_step_grid_qty(
+        round_qty_down(6 / 20, 0.1), "6", "20", "0.1", "ABCUSDT")
+    assert canon == "0.3"
+
+    def rt_fp(qty_str):
+        rt = [{"symbol": "ABCUSDT", "side": "long", "target_notional_usd": "6",
+               "price_snapshot": "20", "qty_step": "0.1", "qty": qty_str}]
+        ok, reasons, _tbs, _sd, rfp = d2.verify_production_target_provenance(
+            sealed_target=sealed, production_recompute=_production(intent=intent, runtime=rt),
+            pilot_id=PILOT, lifecycle_date=LIFE)
+        assert ok, reasons
+        return rfp
+
+    assert rt_fp(canon) == rt_fp("0.3")
+
+
+# ============================================ FIX3: verify raw planner qty before serialization
+
+def _resolve_qty(tmp_path, monkeypatch, raw_qty, notional="200", price="137", step="0.01"):
+    """Resolve a single target with an EXPLICIT raw planner qty (no helper substitution)."""
+    root = _seed_forward_files(tmp_path)
+    tps = [{"symbol": "ABCUSDT", "side": "long", "target_notional": notional, "qty": raw_qty,
+            "qty_step": step, "price": price}]
+    _patch_chain(monkeypatch, plan=_real_plan(target_positions=tps))
+    args = _args(tmp_path)
+    args.forward_source_root = root
+    return d2run.resolve_production_forward_target(
+        args, provider=SimpleNamespace(network_audit_counters=lambda: _rc()))
+
+
+def test_resolver_accepts_qty_equal_to_formal_helper(tmp_path, monkeypatch):   # FIX3 (A)
+    raw = round_qty_down(200 / 137, 0.01)          # the FORMAL helper output
+    prod = _resolve_qty(tmp_path, monkeypatch, raw)
+    rt = prod["runtime_translation"][0]
+    assert rt["qty"] == "1.45"
+    reasons, _ = d2._validate_runtime_translation(prod["runtime_translation"], "production_target")
+    assert not any("runtime_qty" in r for r in reasons)
+
+
+@pytest.mark.parametrize("bad", ["1.454", "1.446", "1.46"])
+def test_resolver_blocks_qty_not_matching_helper(tmp_path, monkeypatch, bad):  # FIX3 (B, C, D)
+    with pytest.raises(fs.ForwardSourceError, match="production_planner_qty_formula_mismatch"):
+        _resolve_qty(tmp_path, monkeypatch, bad)
+
+
+def test_resolver_accepts_real_helper_float_artifact(tmp_path, monkeypatch):   # FIX3 (E)
+    raw = round_qty_down(6 / 20, 0.1)              # 0.30000000000000004 straight from the helper
+    assert raw != 0.3                              # genuinely a float artifact
+    prod = _resolve_qty(tmp_path, monkeypatch, raw, notional="6", price="20", step="0.1")
+    assert prod["runtime_translation"][0]["qty"] == "0.3"
+    reasons, _ = d2._validate_runtime_translation(prod["runtime_translation"], "production_target")
+    assert not any("runtime_qty" in r for r in reasons)
+
+
+def test_resolver_blocks_qty_near_but_not_equal_to_helper(tmp_path, monkeypatch):  # FIX3 (F)
+    raw = round_qty_down(200 / 137, 0.01) + 1e-12  # infinitesimally off -> still must BLOCK
+    with pytest.raises(fs.ForwardSourceError, match="production_planner_qty_formula_mismatch"):
+        _resolve_qty(tmp_path, monkeypatch, raw)
+
+
+def test_resolver_cross_time_each_qty_verified_by_helper(tmp_path, monkeypatch):  # FIX3 (G)
+    t1 = _resolve_qty(tmp_path / "t1", monkeypatch, round_qty_down(200 / 100, 0.001),
+                      notional="200", price="100", step="0.001")
+    t2 = _resolve_qty(tmp_path / "t2", monkeypatch, round_qty_down(200 / 137, 0.01),
+                      notional="200", price="137", step="0.01")
+    assert t1["runtime_translation"][0]["qty"] == "2"
+    assert t2["runtime_translation"][0]["qty"] == "1.45"
+    sealed = _sealed_from_production(t1)   # same intent + source hashes as t1 (== t2, same content)
+
+    def ok_fp(prod):
+        ok, reasons, tbs, _sd, rfp = d2.verify_production_target_provenance(
+            sealed_target=sealed, production_recompute=prod, pilot_id=PILOT, lifecycle_date=LIFE)
+        assert ok, reasons
+        return rfp, tbs
+    fp1, _tbs1 = ok_fp(t1)
+    fp2, tbs2 = ok_fp(t2)
+    assert fp1 != fp2                                        # different runtime -> different fp
+    assert str(tbs2["ABCUSDT"]["qty"]) == "1.45"             # lifecycle uses T2 qty
+
+
+def test_resolver_no_nearest_round_acceptance_of_unverified_qty(tmp_path, monkeypatch):  # FIX3 (H)
+    # 1.454 rounds to the nearest step 1.45 but is NOT the helper output -> must NOT be accepted.
+    with pytest.raises(fs.ForwardSourceError, match="production_planner_qty_formula_mismatch"):
+        _resolve_qty(tmp_path, monkeypatch, "1.454")
+
+
+def test_arith_short_uses_positive_magnitude():                                # (E)
+    ok, reasons, *_ = _verify_single("200", "137", "0.01", "1.45", side="short")
+    assert ok, reasons
+    assert not _verify_single("200", "137", "0.01", "1.46", side="short")[0]
+
+
+def test_arith_cross_time_each_qty_matches_its_own_price():                    # (F)
+    # Same immutable intent (notional 200); different prices -> different valid qty; both PASS.
+    ok1, r1, tbs1, *_ = _verify_single("200", "100", "0.001", "2")
+    ok2, r2, tbs2, *_ = _verify_single("200", "137", "0.01", "1.45")
+    assert ok1 and ok2, (r1, r2)
+    assert str(tbs1["ABCUSDT"]["qty"]) == "2" and str(tbs2["ABCUSDT"]["qty"]) == "1.45"
+    # A T2 qty that matched T1's price but NOT T2's price must fail.
+    assert not _verify_single("200", "137", "0.01", "2")[0]
+
+
+def test_arith_lifecycle_uses_current_runtime_qty_not_sealed():               # (G)
+    # The sealed intent carries NO qty; the lifecycle target qty comes from the current runtime.
+    intent = _intent({"S00USDT": {"target_notional_usd": "200"}})
+    art = _plan(sealed_target=_sealed(intent),
+                production_target_recompute=_production(
+                    intent=intent,
+                    runtime=_runtime({"S00USDT": {"qty": "5", "price_snapshot": "40"}})))
+    assert art["verdict"] == d2.DRY_RUN_READY, art["blockers"]
+    assert _act(art, "S00USDT")["proposed_action"] == "INCREASE"   # target qty 5 > current 2
+    assert "qty" not in art["target_allocation_intent_fingerprint"]  # intent fp is not a qty carrier
+
+
+def test_intent_notional_non_finite_blocked():
+    art = _plan(sealed_target=_sealed(_intent({"S00USDT": {"target_notional_usd": "NaN"}})),
+                production_target_recompute=_production(
+                    intent=_intent({"S00USDT": {"target_notional_usd": "NaN"}}),
+                    runtime=_runtime({"S00USDT": {"target_notional_usd": "NaN"}})))
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    assert any("intent_invalid_notional:S00USDT" in b for b in art["blockers"])
 
 
 def test_unknown_lifecycle_policy_blocked():
@@ -388,10 +675,10 @@ def test_missing_mark_price_field_blocked():
 
 
 def test_high_precision_qty_not_mangled():
+    # A high-precision CURRENT position qty must survive canonicalization (no float round-trip)
+    # in the snapshot record; the runtime sizing stays the default valid qty.
     hp = "1.123456789012345678"
-    art = _plan(current_positions=_current({"S00USDT": {"size": hp}}),
-                sealed_target=_sealed(_allocs({"S00USDT": {"qty": hp}})),
-                production_target_recompute=_production(_allocs({"S00USDT": {"qty": hp}})))
+    art = _plan(current_positions=_current({"S00USDT": {"size": hp}}))
     assert _act(art, "S00USDT")["current_qty"] == hp
 
 
@@ -419,10 +706,11 @@ def _fake_loader(run_date, repo_root, forward_source_root):
 
 
 def _target_positions(n=N):
-    # PlannerResult keeps direction in the SIGN of target_notional (long > 0, short < 0).
+    # PlannerResult keeps direction in the SIGN of target_notional (long > 0, short < 0) and
+    # carries the runtime price used for sizing.
     return [{"symbol": SYMS[i], "side": SIDES_LS[i],
-             "target_notional": ("200" if i < 25 else "-200"), "qty": "2", "qty_step": "0.001"}
-            for i in range(n)]
+             "target_notional": ("200" if i < 25 else "-200"), "qty": "2", "qty_step": "0.001",
+             "price": "100"} for i in range(n)]
 
 
 def _real_plan(target_positions=None, status=None, verified=True):
@@ -535,33 +823,42 @@ def test_resolver_reads_target_positions_not_targets(tmp_path, monkeypatch):
     args.forward_source_root = root
     prod = d2run.resolve_production_forward_target(args, provider=SimpleNamespace(
         network_audit_counters=lambda: _rc()))
-    assert len(prod["allocations"]) == 3                       # one per target_positions row
-    a0 = prod["allocations"][0]
-    assert a0["symbol"] == "S00USDT" and a0["side"] == "long"
-    assert a0["target_notional_usd"] == "200" and a0["qty"] == "2" and a0["qty_step"] == "0.001"
+    assert len(prod["intent_allocations"]) == 3 and len(prod["runtime_translation"]) == 3
+    a0 = prod["intent_allocations"][0]
+    assert a0["symbol"] == "S00USDT" and a0["side"] == "long" and a0["target_notional_usd"] == "200"
+    assert "qty" not in a0 and "qty_step" not in a0 and "price_snapshot" not in a0   # intent only
+    r0 = prod["runtime_translation"][0]
+    assert r0["qty"] == "2" and r0["qty_step"] == "0.001" and r0["price_snapshot"] == "100"
 
 
 def test_resolver_allocations_map_each_target_position(tmp_path, monkeypatch):
     root = _seed_forward_files(tmp_path)
     tps = [{"symbol": "abcusdt", "side": "short", "target_notional": "-137.5", "qty": "1.25",
-            "qty_step": "0.01"},
+            "qty_step": "0.01", "price": "110"},
            {"symbol": "XYZUSDT", "side": "long", "target_notional": "200", "qty": "2",
-            "qty_step": "0.001"}]
+            "qty_step": "0.001", "price": "100"}]
     _patch_chain(monkeypatch, plan=_real_plan(target_positions=tps))
     args = _args(tmp_path)
     args.forward_source_root = root
     prod = d2run.resolve_production_forward_target(args, provider=SimpleNamespace(
         network_audit_counters=lambda: _rc()))
-    assert [a["symbol"] for a in prod["allocations"]] == ["ABCUSDT", "XYZUSDT"]   # upper-cased
-    assert prod["allocations"][0]["side"] == "short"                              # side unchanged
-    assert prod["allocations"][0]["target_notional_usd"] == "137.5"              # magnitude, positive
-    assert prod["allocations"][0]["qty"] == "1.25" and prod["allocations"][0]["qty_step"] == "0.01"
+    assert [a["symbol"] for a in prod["intent_allocations"]] == ["ABCUSDT", "XYZUSDT"]
+    assert prod["intent_allocations"][0]["side"] == "short"
+    assert prod["intent_allocations"][0]["target_notional_usd"] == "137.5"          # magnitude
+    rt0 = prod["runtime_translation"][0]
+    assert rt0["qty"] == "1.25" and rt0["qty_step"] == "0.01" and rt0["price_snapshot"] == "110"
 
 
-def _resolve_single(tmp_path, monkeypatch, side, target_notional):
+def _resolve_single(tmp_path, monkeypatch, side, target_notional, qty=None, price="100",
+                    step="0.001"):
     root = _seed_forward_files(tmp_path)
-    tps = [{"symbol": "ABCUSDT", "side": side, "target_notional": target_notional, "qty": "2",
-            "qty_step": "0.001"}]
+    if qty is None:   # default to the FORMAL helper output so the resolver's qty check passes
+        try:
+            qty = round_qty_down(abs(float(target_notional)) / float(price), float(step))
+        except (TypeError, ValueError):
+            qty = "2"     # invalid-notional tests: qty is irrelevant (notional blocks first)
+    tps = [{"symbol": "ABCUSDT", "side": side, "target_notional": target_notional, "qty": qty,
+            "qty_step": step, "price": price}]
     _patch_chain(monkeypatch, plan=_real_plan(target_positions=tps))
     args = _args(tmp_path)
     args.forward_source_root = root
@@ -573,29 +870,27 @@ def _resolve_single(tmp_path, monkeypatch, side, target_notional):
 
 def test_short_signed_notional_normalized_to_positive_magnitude(tmp_path, monkeypatch):
     prod = _resolve_single(tmp_path, monkeypatch, "short", "-200")
-    a = prod["allocations"][0]
-    assert a["side"] == "short"                        # direction preserved in side
-    assert a["target_notional_usd"] == "200"           # positive magnitude
-    assert a["target_notional_usd"] != "-200"
+    a = prod["intent_allocations"][0]
+    assert a["side"] == "short" and a["target_notional_usd"] == "200"
+    assert prod["runtime_translation"][0]["target_notional_usd"] == "200"
 
 
 def test_long_notional_preserved_positive(tmp_path, monkeypatch):
     prod = _resolve_single(tmp_path, monkeypatch, "long", "200")
-    assert prod["allocations"][0]["target_notional_usd"] == "200"
+    assert prod["intent_allocations"][0]["target_notional_usd"] == "200"
 
 
 def test_notional_magnitude_is_decimal_exact(tmp_path, monkeypatch):
     prod = _resolve_single(tmp_path, monkeypatch, "short", "-137.5000")
-    tn = prod["allocations"][0]["target_notional_usd"]
-    assert tn == "137.5"                               # Decimal-safe, no float artifact
-    assert "999" not in tn and "137.4" not in tn
+    tn = prod["intent_allocations"][0]["target_notional_usd"]
+    assert tn == "137.5" and "999" not in tn and "137.4" not in tn
 
 
 def _sealed_from_production(prod):
     return d2.seal_target_intent_artifact(
         pilot_id=PILOT, lifecycle_date=LIFE, signal_date=prod["signal_date"],
         source_identifier=prod["strategy"], source_artifacts=prod["source_artifacts"],
-        allocations=prod["allocations"])
+        intent_allocations=prod["intent_allocations"])
 
 
 def test_full_provenance_pass_with_long_and_short(tmp_path, monkeypatch):
@@ -605,9 +900,9 @@ def test_full_provenance_pass_with_long_and_short(tmp_path, monkeypatch):
     args.forward_source_root = root
     prod = d2run.resolve_production_forward_target(args, provider=SimpleNamespace(
         network_audit_counters=lambda: _rc()))
-    assert all(float(a["target_notional_usd"]) > 0 for a in prod["allocations"])   # all positive
+    assert all(float(a["target_notional_usd"]) > 0 for a in prod["intent_allocations"])
     sealed = _sealed_from_production(prod)
-    ok, reasons, _tbs, _sd = d2.verify_production_target_provenance(
+    ok, reasons, _tbs, _sd, _rfp = d2.verify_production_target_provenance(
         sealed_target=sealed, production_recompute=prod, pilot_id=PILOT, lifecycle_date=LIFE)
     assert ok, reasons
 
@@ -618,12 +913,11 @@ def test_invalid_notional_never_passes_via_abs(tmp_path, monkeypatch, bad):
     sealed = d2.seal_target_intent_artifact(
         pilot_id=PILOT, lifecycle_date=LIFE, signal_date=prod["signal_date"],
         source_identifier=prod["strategy"], source_artifacts=prod["source_artifacts"],
-        allocations=[{"symbol": "ABCUSDT", "side": "long", "target_notional_usd": "200",
-                      "qty": "2", "qty_step": "0.001"}])
-    ok, reasons, _tbs, _sd = d2.verify_production_target_provenance(
+        intent_allocations=[{"symbol": "ABCUSDT", "side": "long", "target_notional_usd": "200"}])
+    ok, reasons, _tbs, _sd, _rfp = d2.verify_production_target_provenance(
         sealed_target=sealed, production_recompute=prod, pilot_id=PILOT, lifecycle_date=LIFE)
     assert not ok
-    assert any("production_target_invalid_notional:ABCUSDT" in r for r in reasons)
+    assert any("production_target_intent_invalid_notional:ABCUSDT" in r for r in reasons)
 
 
 def test_planner_fixture_keeps_signed_strategy_contract():

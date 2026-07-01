@@ -27,17 +27,20 @@ import os
 import pathlib
 import sys
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+import math  # noqa: E402
+
 from src import demo_strategy_native_day2_lifecycle as d2  # noqa: E402
 from src import demo_strategy_pilot_action_planner as planner  # noqa: E402
 from src import demo_strategy_pilot_forward_source as fs  # noqa: E402
 from src import demo_strategy_pilot_native_execution as nx  # noqa: E402
+from src.demo_instrument_rules import round_qty_down  # noqa: E402
 from src.demo_readonly_client import DemoReadOnlyClient  # noqa: E402
 
 PROTECTED_SOURCE = "src.demo_strategy_pilot_native_execution.PROTECTED_SYMBOLS"
@@ -111,6 +114,43 @@ def _positive_notional_magnitude(raw):
     return format(mag.normalize() if mag != 0 else Decimal(0), "f")
 
 
+def _d2_dec(value):
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _verified_canonical_step_grid_qty(raw_qty, notional_magnitude, price, qty_step, symbol):
+    """VERIFY the raw planner qty against the formal sizing helper, THEN canonicalize it.
+
+    The Day-2 runtime qty must not silently repair a wrong planner output. Using the SAME formal
+    helper the planner uses (``round_qty_down``), recompute the expected raw qty from the same
+    inputs and require the raw planner qty to equal it EXACTLY (no isclose / epsilon / tolerance,
+    no nearest-round of the raw qty before comparison). Only a verified raw qty is then re-emitted
+    as the exact step-grid Decimal string (recovered from the VERIFIED value, never from an
+    unverified qty). A mismatch fails closed via fs.ForwardSourceError. When any input is not a
+    usable positive-finite number the check is skipped and the raw qty passes through, so the
+    downstream exact validator fails closed on the actually-invalid field instead."""
+    try:
+        n = abs(float(notional_magnitude))
+        p = float(price)
+        s = float(qty_step)
+        rq = float(raw_qty)
+    except (TypeError, ValueError):
+        return raw_qty
+    if not (math.isfinite(n) and n > 0 and math.isfinite(p) and p > 0
+            and math.isfinite(s) and s > 0 and math.isfinite(rq) and rq > 0):
+        return raw_qty
+    expected_raw = round_qty_down(n / p, s)
+    if rq != expected_raw:      # EXACT float equality -- no tolerance, no pre-rounding of raw qty
+        raise fs.ForwardSourceError(f"production_planner_qty_formula_mismatch:{symbol}")
+    step_d = _d2_dec(qty_step)
+    steps = (_d2_dec(expected_raw) / step_d).to_integral_value(rounding=ROUND_HALF_EVEN)
+    grid = steps * step_d
+    return format(grid.normalize() if grid != 0 else Decimal(0), "f")
+
+
 def _hash_source_artifacts(args) -> dict:
     """Hash EXACTLY the four canonical Forward source-artifact roles for ``lifecycle_date``. Each
     file must still exist and be a regular file at hash time; a missing role fails closed."""
@@ -153,16 +193,26 @@ def resolve_production_forward_target(args, *, provider=None) -> dict:
     plan = planner.plan_strategy_native_actions(forward_result=forward_result, provider=provider)
     if not getattr(plan, "available", False) or not plan.sizing_verification.get("verified", False):
         raise fs.ForwardSourceError(f"production planner unavailable/unverified: {plan.status}")
-    allocations = []
+    # v2 separation: the IMMUTABLE intent view (symbol/side/notional) and the volatile runtime
+    # sizing translation (price/qty/qty_step, from THIS run) are produced side by side. The
+    # planner's SIGNED notional is normalized to a positive magnitude (direction stays in ``side``).
+    obs_fn = getattr(provider, "price_observation", None)
+    intent_allocations = []
+    runtime_translation = []
     for tp in plan.target_positions:
-        allocations.append({
-            "symbol": str(tp.get("symbol", "")).strip().upper(),
-            "side": tp.get("side"),
-            # Planner notional is SIGNED (short < 0); the Day-2 schema keeps direction in ``side``
-            # and requires a positive magnitude here. Invalid values pass through -> fail closed.
-            "target_notional_usd": _positive_notional_magnitude(
-                tp.get("target_notional", tp.get("target_notional_usd"))),
-            "qty": tp.get("qty"), "qty_step": tp.get("qty_step")})
+        symbol = str(tp.get("symbol", "")).strip().upper()
+        side = tp.get("side")
+        notional = _positive_notional_magnitude(
+            tp.get("target_notional", tp.get("target_notional_usd")))
+        intent_allocations.append(
+            {"symbol": symbol, "side": side, "target_notional_usd": notional})
+        runtime_translation.append({
+            "symbol": symbol, "side": side, "target_notional_usd": notional,
+            "price_snapshot": tp.get("price"), "qty_step": tp.get("qty_step"),
+            # Verify raw planner qty against the formal round_qty_down helper, THEN canonicalize.
+            "qty": _verified_canonical_step_grid_qty(
+                tp.get("qty"), notional, tp.get("price"), tp.get("qty_step"), symbol),
+            "price_observation": obs_fn(symbol) if callable(obs_fn) else None})
     # Every provider network request (wallet / positions / market / instrument) must be counted.
     counters_fn = getattr(provider, "network_audit_counters", None)
     provider_counters = counters_fn() if callable(counters_fn) else None
@@ -175,9 +225,10 @@ def resolve_production_forward_target(args, *, provider=None) -> dict:
         "network_audit_counters": provider_counters,
         "provider_snapshot_evidence": {
             "read_only_provider": True,
-            "target_symbol_count": len(allocations),
+            "target_symbol_count": len(intent_allocations),
             "evidence": ["wallet_balance", "open_positions", "market_price", "instrument_rule"]},
-        "allocations": allocations}
+        "intent_allocations": intent_allocations,
+        "runtime_translation": runtime_translation}
 
 
 def _emit(obj: dict, code: int) -> int:

@@ -33,7 +33,7 @@ import json
 import os
 import re
 from collections import defaultdict
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
@@ -47,12 +47,16 @@ DRY_RUN_READY = "DAY2_LIFECYCLE_DRY_RUN_READY"
 DRY_RUN_BLOCKED = "DAY2_LIFECYCLE_DRY_RUN_BLOCKED"
 
 SCHEMA_VERSION = "demo_strategy_native_day2_lifecycle_dry_run_v1"
-TARGET_SCHEMA_VERSION = "demo_strategy_native_day2_target_intent_v1"
+# v2 separates the IMMUTABLE target intent (symbol/side/notional only) from the volatile runtime
+# sizing translation (price/qty/qty_step). v1 artifacts are NEVER silently upgraded (see ADR).
+TARGET_SCHEMA_VERSION = "demo_strategy_native_day2_target_intent_v2"
+TARGET_SCHEMA_VERSION_V1 = "demo_strategy_native_day2_target_intent_v1"
 ENVIRONMENT_DEMO = "BYBIT_DEMO"
 STRATEGY_CAPITAL_BASE_USD = "10000"
 COMPLETE_PAGINATION_TERMINATION = "empty_cursor"
 TARGET_DIGEST_FIELD = "target_digest"
 TARGET_FINGERPRINT_FIELD = "target_intent_fingerprint"
+RUNTIME_FINGERPRINT_FIELD = "runtime_translation_fingerprint"
 
 EXPECTED_STRATEGY_SYMBOLS = 50
 EXPECTED_SIDE_COUNT = 25
@@ -199,28 +203,59 @@ def _digest(obj: Any) -> str:
 
 
 # --------------------------------------------------------------------------- target artifact
-def _canon_allocations(allocations: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+def _canon_intent_allocations(intent_allocations: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+    """Canonical IMMUTABLE intent view: symbol / side / target_notional_usd ONLY. Deliberately
+    excludes price / qty / qty_step (those are volatile runtime translation, not intent)."""
     out = []
-    for a in allocations:
+    for a in intent_allocations:
         out.append({
             "symbol": str(a.get("symbol", "")).strip().upper(),
             "side": _norm_long_short(a.get("side")),
             "target_notional_usd": _canon(a.get("target_notional_usd")) or "",
-            "qty": _canon(a.get("qty")) or "",
-            "qty_step": _canon(a.get("qty_step")) if a.get("qty_step") is not None else "",
         })
     return sorted(out, key=lambda d: d["symbol"])
 
 
 def target_intent_fingerprint(*, pilot_id: str, lifecycle_date: str, signal_date: str,
                               source_identifier: str,
-                              allocations: Sequence[Mapping[str, Any]]) -> str:
+                              intent_allocations: Sequence[Mapping[str, Any]]) -> str:
+    """Immutable Day-2 target-intent fingerprint. Binds ONLY pilot/date/signal/capital/source and
+    the per-symbol side + quote-notional -- NEVER price, qty, qty_step, mark price, runtime
+    timestamp, current positions, or network counters. So a price/qty/qty_step change between
+    when the intent was sealed and when it is executed does NOT change this fingerprint."""
     return _digest({
-        "kind": "day2_target_allocation_intent", "pilot_id": str(pilot_id),
+        "kind": "day2_target_intent_v2", "pilot_id": str(pilot_id),
         "lifecycle_date": str(lifecycle_date), "signal_date": str(signal_date),
         "strategy_capital_base_usd": STRATEGY_CAPITAL_BASE_USD,
         "source_identifier": str(source_identifier),
-        "allocations": _canon_allocations(allocations)})
+        "intent_allocations": _canon_intent_allocations(intent_allocations)})
+
+
+def _canon_runtime_translation(runtime: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+    out = []
+    for r in runtime:
+        out.append({
+            "symbol": str(r.get("symbol", "")).strip().upper(),
+            "side": _norm_long_short(r.get("side")),
+            "target_notional_usd": _canon(r.get("target_notional_usd")) or "",
+            "price_snapshot": _canon(r.get("price_snapshot")) or "",
+            "qty_step": _canon(r.get("qty_step")) or "",
+            "qty": _canon(r.get("qty")) or "",
+        })
+    return sorted(out, key=lambda d: d["symbol"])
+
+
+def runtime_translation_fingerprint(*, pilot_id: str, lifecycle_date: str, signal_date: str,
+                                    target_intent_fingerprint: str,
+                                    runtime_translation: Sequence[Mapping[str, Any]]) -> str:
+    """Volatile runtime sizing-translation fingerprint. Binds the intent fingerprint plus the
+    per-symbol price_snapshot / qty_step / qty of THIS run, so it CHANGES whenever price or qty
+    changes -- the opposite of the immutable intent fingerprint."""
+    return _digest({
+        "kind": "day2_runtime_translation", "pilot_id": str(pilot_id),
+        "lifecycle_date": str(lifecycle_date), "signal_date": str(signal_date),
+        "target_intent_fingerprint": str(target_intent_fingerprint),
+        "runtime_translation": _canon_runtime_translation(runtime_translation)})
 
 
 def canonical_target_digest(artifact: Mapping[str, Any]) -> str:
@@ -229,9 +264,10 @@ def canonical_target_digest(artifact: Mapping[str, Any]) -> str:
 
 def seal_target_intent_artifact(*, pilot_id: str, lifecycle_date: str, signal_date: str,
                                 source_identifier: str, source_artifacts: Mapping[str, str],
-                                allocations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Build the immutable Day-2 target artifact (the formal Forward/planner producer seals this).
-    Integrity ONLY -- provenance is established later by exact-match against a production recompute."""
+                                intent_allocations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Build the IMMUTABLE Day-2 target-intent artifact (v2). It carries ONLY the intent view
+    (symbol/side/target_notional_usd) -- never price/qty/qty_step. Integrity only; provenance is
+    established later by exact intent-match against the current production recompute."""
     art = {
         "schema_version": TARGET_SCHEMA_VERSION, "pilot_id": pilot_id,
         "lifecycle_date": lifecycle_date, "signal_date": signal_date,
@@ -239,21 +275,25 @@ def seal_target_intent_artifact(*, pilot_id: str, lifecycle_date: str, signal_da
         "source_identifier": source_identifier,
         "source_artifacts": {str(k): dict(v) if isinstance(v, Mapping) else v
                              for k, v in dict(source_artifacts).items()},
-        "allocations": [dict(a) for a in allocations],
+        "intent_allocations": [dict(a) for a in intent_allocations],
     }
     art[TARGET_FINGERPRINT_FIELD] = target_intent_fingerprint(
         pilot_id=pilot_id, lifecycle_date=lifecycle_date, signal_date=signal_date,
-        source_identifier=source_identifier, allocations=allocations)
+        source_identifier=source_identifier, intent_allocations=intent_allocations)
     art[TARGET_DIGEST_FIELD] = canonical_target_digest(art)
     return art
 
 
-def _validate_target_integrity(artifact: Any, *, pilot_id: str, lifecycle_date: str) -> list[str]:
+def _validate_target_intent_integrity(artifact: Any, *, pilot_id: str, lifecycle_date: str) -> list[str]:
+    """Validate a sealed IMMUTABLE v2 target-intent artifact. A v1 (or any non-v2) artifact is
+    explicitly REJECTED (never silently upgraded)."""
     reasons: list[str] = []
     if not isinstance(artifact, Mapping):
         return ["target_artifact_not_object"]
-    if artifact.get("schema_version") != TARGET_SCHEMA_VERSION:
-        reasons.append("target_schema_version_invalid")
+    schema = artifact.get("schema_version")
+    if schema != TARGET_SCHEMA_VERSION:
+        reasons.append(f"unsupported_target_intent_schema_version:{schema}")
+        return reasons   # never inspect a non-v2 artifact further
     if str(artifact.get("pilot_id", "")) != str(pilot_id):
         reasons.append("target_pilot_id_mismatch")
     if str(artifact.get("lifecycle_date", "")) != str(lifecycle_date):
@@ -262,15 +302,17 @@ def _validate_target_integrity(artifact: Any, *, pilot_id: str, lifecycle_date: 
         reasons.append("target_capital_base_not_10000")
     if not _valid_date(artifact.get("signal_date")):
         reasons.append("target_signal_date_invalid")
-    allocations = artifact.get("allocations")
-    if not isinstance(allocations, list) or not allocations:
-        reasons.append("target_allocations_missing")
-        allocations = []
+    if "allocations" in artifact and "intent_allocations" not in artifact:
+        reasons.append("legacy_allocations_field_present")   # v1 qty-bearing field is not honoured
+    intent = artifact.get("intent_allocations")
+    if not isinstance(intent, list) or not intent:
+        reasons.append("target_intent_allocations_missing")
+        intent = []
     recomputed_fp = target_intent_fingerprint(
         pilot_id=str(artifact.get("pilot_id", "")),
         lifecycle_date=str(artifact.get("lifecycle_date", "")),
         signal_date=str(artifact.get("signal_date", "")),
-        source_identifier=str(artifact.get("source_identifier", "")), allocations=allocations)
+        source_identifier=str(artifact.get("source_identifier", "")), intent_allocations=intent)
     if str(artifact.get(TARGET_FINGERPRINT_FIELD, "")) != recomputed_fp:
         reasons.append("target_fingerprint_mismatch")
     stored_digest = artifact.get(TARGET_DIGEST_FIELD)
@@ -281,56 +323,107 @@ def _validate_target_integrity(artifact: Any, *, pilot_id: str, lifecycle_date: 
     return reasons
 
 
-def _validate_allocations(allocations: Any, prefix: str) -> tuple[list[str], dict[str, dict[str, str]]]:
-    """Validate an allocations list BEFORE any map is built: list of objects, unique non-empty
-    symbols, side in {long, short}, and finite-positive Decimal target_notional/qty/qty_step
-    (NaN / Infinity / <= 0 rejected). A duplicate symbol is a blocker (never a silent collapse)."""
+def _validate_intent_allocations(intent_allocations: Any, prefix: str
+                                 ) -> tuple[list[str], dict[str, dict[str, str]]]:
+    """Validate the IMMUTABLE intent view: unique symbol, side in {long, short}, finite-positive
+    target_notional_usd. NO qty/qty_step here (those belong to the runtime translation)."""
     reasons: list[str] = []
-    if not isinstance(allocations, list) or not allocations:
-        return [f"{prefix}_allocations_missing"], {}
+    if not isinstance(intent_allocations, list) or not intent_allocations:
+        return [f"{prefix}_intent_allocations_missing"], {}
     amap: dict[str, dict[str, str]] = {}
-    for a in allocations:
+    for a in intent_allocations:
         if not isinstance(a, Mapping):
-            reasons.append(f"{prefix}_allocation_not_object")
+            reasons.append(f"{prefix}_intent_allocation_not_object")
             continue
         sym = str(a.get("symbol", "")).strip().upper()
         if not sym:
-            reasons.append(f"{prefix}_allocation_empty_symbol")
+            reasons.append(f"{prefix}_intent_empty_symbol")
             continue
         if sym in amap:
-            reasons.append(f"{prefix}_duplicate_symbol:{sym}")
+            reasons.append(f"{prefix}_intent_duplicate_symbol:{sym}")
             continue
         side = _norm_long_short(a.get("side"))
         if side not in ("long", "short"):
-            reasons.append(f"{prefix}_invalid_side:{sym}")
+            reasons.append(f"{prefix}_intent_invalid_side:{sym}")
         tn = _dec(a.get("target_notional_usd"))
         if tn is None or not tn.is_finite() or tn <= 0:
-            reasons.append(f"{prefix}_invalid_notional:{sym}")
-        q = _dec(a.get("qty"))
-        if q is None or not q.is_finite() or q <= 0:
-            reasons.append(f"{prefix}_invalid_qty:{sym}")
-        step = _dec(a.get("qty_step"))
-        if step is None or not step.is_finite() or step <= 0:
-            reasons.append(f"{prefix}_invalid_qty_step:{sym}")
+            reasons.append(f"{prefix}_intent_invalid_notional:{sym}")
         amap[sym] = {"symbol": sym, "side": side,
-                     "target_notional_usd": _canon(tn) if tn is not None and tn.is_finite() else "",
-                     "qty": _canon(q) if q is not None and q.is_finite() else "",
-                     "qty_step": _canon(step) if step is not None and step.is_finite() else ""}
+                     "target_notional_usd": _canon(tn) if tn is not None and tn.is_finite() else ""}
     return reasons, amap
+
+
+def _validate_runtime_translation(runtime: Any, prefix: str
+                                  ) -> tuple[list[str], dict[str, dict[str, Any]]]:
+    """Validate the volatile runtime translation: unique symbol, side, and finite-positive
+    target_notional_usd / price_snapshot / qty_step / qty (NaN / Infinity / <= 0 rejected)."""
+    reasons: list[str] = []
+    if not isinstance(runtime, list) or not runtime:
+        return [f"{prefix}_runtime_translation_missing"], {}
+    rmap: dict[str, dict[str, Any]] = {}
+    for r in runtime:
+        if not isinstance(r, Mapping):
+            reasons.append(f"{prefix}_runtime_row_not_object")
+            continue
+        sym = str(r.get("symbol", "")).strip().upper()
+        if not sym:
+            reasons.append(f"{prefix}_runtime_empty_symbol")
+            continue
+        if sym in rmap:
+            reasons.append(f"{prefix}_runtime_duplicate_symbol:{sym}")
+            continue
+        side = _norm_long_short(r.get("side"))
+        if side not in ("long", "short"):
+            reasons.append(f"{prefix}_runtime_invalid_side:{sym}")
+        vals = {}
+        for field in ("target_notional_usd", "price_snapshot", "qty_step", "qty"):
+            d = _dec(r.get(field))
+            if d is None or not d.is_finite() or d <= 0:
+                reasons.append(f"{prefix}_runtime_invalid_{field}:{sym}")
+                vals[field] = None
+            else:
+                vals[field] = d
+        # ENFORCE the runtime sizing arithmetic EXACTLY (only once all four are finite-positive):
+        #   expected_qty = floor(target_notional_usd / price_snapshot / qty_step) * qty_step
+        # Pure Decimal, NO tolerance / epsilon / isclose / nearest-round: the runtime qty must be
+        # EXACTLY on the qty_step grid AND its canonical Decimal value must EXACTLY equal
+        # expected_qty. An off-grid value (e.g. 1.454 on a 0.01 step) fails -- it is not rounded
+        # to the nearest step before comparison. Direction stays in ``side`` (notional is the
+        # positive magnitude). The resolver writes canonical step-grid qty so float representation
+        # noise from the planner never reaches this exact comparison.
+        if all(vals[f] is not None for f in ("target_notional_usd", "price_snapshot",
+                                             "qty_step", "qty")):
+            step, qty = vals["qty_step"], vals["qty"]
+            exp_steps = (vals["target_notional_usd"] / vals["price_snapshot"]
+                         / step).to_integral_value(rounding=ROUND_DOWN)
+            expected_qty = exp_steps * step
+            q_over_step = qty / step
+            if q_over_step != q_over_step.to_integral_value(rounding=ROUND_DOWN):
+                reasons.append(f"{prefix}_runtime_qty_not_on_step_grid:{sym}")
+            if exp_steps <= 0 or qty != expected_qty:
+                reasons.append(f"{prefix}_runtime_qty_rounding_mismatch:{sym}")
+        rmap[sym] = {"symbol": sym, "side": side,
+                     "target_notional_usd": _canon(vals["target_notional_usd"]) if vals["target_notional_usd"] is not None else "",
+                     "price_snapshot": _canon(vals["price_snapshot"]) if vals["price_snapshot"] is not None else "",
+                     "qty_step": vals["qty_step"], "qty": vals["qty"]}
+    return reasons, rmap
 
 
 def verify_production_target_provenance(
     *, sealed_target: Any, production_recompute: Any, pilot_id: str, lifecycle_date: str,
-) -> tuple[bool, list[str], dict[str, dict[str, Any]], str]:
-    """Establish PROVENANCE for the Day-2 target. The authoritative target is the production
-    recompute (formal Forward call chain). The sealed artifact is accepted only if it EXACTLY
-    matches that recompute and the canonical source identity / signal date / source-artifact
-    hashes agree. Provenance relies on the formal loader's own validation evidence
-    (``loader_validation``), NOT on a resolver-supplied runner_status / safety_scan.
-    Returns (ok, reasons, target_by_symbol, signal_date)."""
+) -> tuple[bool, list[str], dict[str, dict[str, Any]], str, str]:
+    """Establish PROVENANCE for the Day-2 target (v2 intent / runtime separation).
+
+    The immutable INTENT (symbol/side/notional) is exact-matched between the sealed v2 artifact and
+    the current production recompute, together with strategy / dates / source-artifact hashes. The
+    volatile qty / qty_step / price are NOT compared across time; the runtime sizing used by the
+    lifecycle comes ONLY from THIS run's production ``runtime_translation`` (the sealed artifact
+    carries no qty). Returns (ok, reasons, target_by_symbol, signal_date, runtime_translation_fp)."""
     reasons: list[str] = []
-    if not isinstance(production_recompute, Mapping) or not production_recompute.get("allocations"):
-        return False, ["no_production_forward_target_recompute"], {}, ""
+    if not isinstance(production_recompute, Mapping) or \
+            not production_recompute.get("intent_allocations") or \
+            not production_recompute.get("runtime_translation"):
+        return False, ["no_production_forward_target_recompute"], {}, "", ""
 
     prod_strategy = str(production_recompute.get("strategy", ""))
     prod_signal = str(production_recompute.get("signal_date", ""))
@@ -346,20 +439,26 @@ def verify_production_target_provenance(
         reasons.append("production_signal_date_invalid")
     elif prod_signal > str(lifecycle_date):
         reasons.append("production_signal_date_in_future")
-    if prod_loader != "PASS":   # the formal fs loader accepted the source (validated runner/safety)
+    if prod_loader != "PASS":
         reasons.append(f"production_loader_validation_not_pass:{prod_loader or 'ABSENT'}")
     reasons.extend(_validate_source_artifacts(prod_sources, "production"))
 
-    prod_reasons, prod_allocs = _validate_allocations(
-        production_recompute.get("allocations"), "production_target")
-    reasons.extend(prod_reasons)
+    prod_intent_reasons, prod_intent = _validate_intent_allocations(
+        production_recompute.get("intent_allocations"), "production_target")
+    reasons.extend(prod_intent_reasons)
+    prod_rt_reasons, prod_runtime = _validate_runtime_translation(
+        production_recompute.get("runtime_translation"), "production_target")
+    reasons.extend(prod_rt_reasons)
 
-    # Sealed artifact integrity + canonical identity.
-    reasons.extend(_validate_target_integrity(sealed_target, pilot_id=pilot_id,
-                                              lifecycle_date=lifecycle_date))
+    # Sealed IMMUTABLE v2 intent integrity + canonical identity (v1 is rejected inside).
+    reasons.extend(_validate_target_intent_integrity(sealed_target, pilot_id=pilot_id,
+                                                     lifecycle_date=lifecycle_date))
     sealed = sealed_target if isinstance(sealed_target, Mapping) else {}
-    sealed_reasons, sealed_allocs = _validate_allocations(sealed.get("allocations"), "sealed_target")
-    reasons.extend(sealed_reasons)
+    sealed_is_v2 = sealed.get("schema_version") == TARGET_SCHEMA_VERSION
+    sealed_intent_reasons, sealed_intent = _validate_intent_allocations(
+        sealed.get("intent_allocations"), "sealed_target")
+    if sealed_is_v2:
+        reasons.extend(sealed_intent_reasons)
     if str(sealed.get("source_identifier", "")) not in RECOGNIZED_STRATEGY_SOURCES:
         reasons.append("sealed_source_identifier_not_canonical")
     if str(sealed.get("source_identifier", "")) != prod_strategy:
@@ -369,7 +468,6 @@ def verify_production_target_provenance(
     sealed_sources = sealed.get("source_artifacts") or {}
     sealed_source_reasons = _validate_source_artifacts(sealed_sources, "sealed")
     reasons.extend(sealed_source_reasons)
-    # Exact role-set + per-role sha256 match (only after both validate cleanly).
     if not sealed_source_reasons and set(prod_sources) == set(REQUIRED_SOURCE_ROLES):
         if set(sealed_sources) != set(prod_sources):
             reasons.append("source_artifact_role_set_mismatch")
@@ -379,21 +477,37 @@ def verify_production_target_provenance(
             if str(s.get("sha256", "")) != str(p.get("sha256", "")):
                 reasons.append(f"source_artifact_hash_mismatch:{role}")
 
-    # EXACT allocation match -- only after BOTH sides validated cleanly (no silent collapse).
-    if not prod_reasons and not sealed_reasons:
-        if set(sealed_allocs) != set(prod_allocs):
+    # EXACT INTENT match (symbol set + side + notional) -- NOT qty/qty_step/price.
+    if sealed_is_v2 and not sealed_intent_reasons and not prod_intent_reasons:
+        if set(sealed_intent) != set(prod_intent):
             reasons.append("target_symbol_set_mismatch_production")
-        for sym in sorted(set(sealed_allocs) & set(prod_allocs)):
-            s, p = sealed_allocs[sym], prod_allocs[sym]
-            for field in ("side", "target_notional_usd", "qty", "qty_step"):
+        for sym in sorted(set(sealed_intent) & set(prod_intent)):
+            s, p = sealed_intent[sym], prod_intent[sym]
+            for field in ("side", "target_notional_usd"):
                 if s.get(field) != p.get(field):
                     reasons.append(f"target_{field}_mismatch_production:{sym}")
 
-    target_by_symbol = {sym: {"symbol": sym, "side": a["side"],
-                              "target_notional_usd": a["target_notional_usd"],
-                              "qty": _dec(a["qty"]), "qty_step": a["qty_step"] or None}
-                        for sym, a in prod_allocs.items()}
-    return (not reasons), reasons, target_by_symbol, prod_signal
+    # The runtime translation must faithfully translate the SAME production intent (side/notional)
+    # for the SAME symbol set -- so no runtime row can smuggle a different symbol/side/notional.
+    if not prod_intent_reasons and not prod_rt_reasons:
+        if set(prod_runtime) != set(prod_intent):
+            reasons.append("runtime_symbol_set_mismatch_intent")
+        for sym in sorted(set(prod_runtime) & set(prod_intent)):
+            if prod_runtime[sym]["side"] != prod_intent[sym]["side"]:
+                reasons.append(f"runtime_side_mismatch_intent:{sym}")
+            if prod_runtime[sym]["target_notional_usd"] != prod_intent[sym]["target_notional_usd"]:
+                reasons.append(f"runtime_notional_mismatch_intent:{sym}")
+
+    # Runtime sizing (qty/qty_step) comes ONLY from THIS run's production runtime_translation.
+    target_by_symbol = {sym: {"symbol": sym, "side": r["side"],
+                              "target_notional_usd": r["target_notional_usd"],
+                              "qty": r["qty"], "qty_step": r["qty_step"]}
+                        for sym, r in prod_runtime.items()}
+    runtime_fp = runtime_translation_fingerprint(
+        pilot_id=pilot_id, lifecycle_date=lifecycle_date, signal_date=prod_signal,
+        target_intent_fingerprint=str(sealed.get(TARGET_FINGERPRINT_FIELD, "")),
+        runtime_translation=production_recompute.get("runtime_translation") or [])
+    return (not reasons), reasons, target_by_symbol, prod_signal, runtime_fp
 
 
 # --------------------------------------------------------------------------- Day-1 evidence
@@ -621,7 +735,7 @@ def _snapshot_fingerprint(current_rows) -> str:
     return _digest({"kind": "current_position_snapshot", "positions": canon})
 
 
-def _plan_fingerprint(pilot_id, lifecycle_date, snapshot_fp, target_fp, actions) -> str:
+def _plan_fingerprint(pilot_id, lifecycle_date, snapshot_fp, target_fp, runtime_fp, actions) -> str:
     canon = sorted(({
         "symbol": a["symbol"], "current_side": a["current_side"], "current_qty": a["current_qty"],
         "target_side": a["target_side"], "proposed_action": a["proposed_action"],
@@ -634,7 +748,8 @@ def _plan_fingerprint(pilot_id, lifecycle_date, snapshot_fp, target_fp, actions)
     return _digest({"kind": "day2_lifecycle_plan", "pilot_id": pilot_id,
                     "lifecycle_date": lifecycle_date,
                     "current_position_snapshot_fingerprint": snapshot_fp,
-                    "target_allocation_intent_fingerprint": target_fp, "actions": canon})
+                    "target_allocation_intent_fingerprint": target_fp,
+                    "runtime_translation_fingerprint": runtime_fp, "actions": canon})
 
 
 def build_day2_lifecycle_dry_run(
@@ -673,7 +788,7 @@ def build_day2_lifecycle_dry_run(
         blockers.extend(d1_reasons)
     day1_symbols = set(day1_sides)
 
-    t_ok, t_reasons, target_by_symbol, signal_date = verify_production_target_provenance(
+    t_ok, t_reasons, target_by_symbol, signal_date, runtime_fp = verify_production_target_provenance(
         sealed_target=sealed_target, production_recompute=production_target_recompute,
         pilot_id=pilot_id, lifecycle_date=lifecycle_date)
     if not t_ok:
@@ -776,11 +891,12 @@ def build_day2_lifecycle_dry_run(
     snapshot_fp = _snapshot_fingerprint(current_rows)
     target_fp = str(sealed_target.get(TARGET_FINGERPRINT_FIELD, "")) \
         if isinstance(sealed_target, Mapping) else ""
-    plan_fp = _plan_fingerprint(pilot_id, lifecycle_date, snapshot_fp, target_fp, actions) \
-        if actions else ""
+    plan_fp = _plan_fingerprint(pilot_id, lifecycle_date, snapshot_fp, target_fp, runtime_fp,
+                                actions) if actions else ""
     identity_core = {"pilot_id": pilot_id, "lifecycle_date": lifecycle_date,
                      "current_position_snapshot_fingerprint": snapshot_fp,
                      "target_allocation_intent_fingerprint": target_fp,
+                     "runtime_translation_fingerprint": runtime_fp,
                      "lifecycle_plan_fingerprint": plan_fp}
     exactly_once_identity = {
         **identity_core,
@@ -797,6 +913,7 @@ def build_day2_lifecycle_dry_run(
         "lifecycle_policy": lifecycle_policy, "signal_date": signal_date,
         "current_position_snapshot_fingerprint": snapshot_fp,
         "target_allocation_intent_fingerprint": target_fp,
+        "runtime_translation_fingerprint": runtime_fp,
         "lifecycle_plan_fingerprint": plan_fp,
         "exactly_once_identity_design": exactly_once_identity,
         "day1_evidence": {"validated": d1_ok, "day1_fingerprint": day1_fingerprint,
