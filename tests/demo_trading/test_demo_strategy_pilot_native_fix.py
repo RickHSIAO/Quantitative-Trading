@@ -23,7 +23,8 @@ from src import demo_strategy_pilot_native_execution as nx
 from src import demo_strategy_pilot_native_reporting as nrep
 from src import demo_strategy_pilot_readiness as rd
 from src.demo_instrument_rules import InstrumentRules
-from src.demo_portfolio_risk import DemoOpenPosition
+from src.demo_portfolio_risk import (
+    DemoOpenPosition, REJECT_MISSING_VALID_STOP, compute_existing_stop_risk)
 
 daily_cli = importlib.import_module("scripts.run_demo_strategy_pilot_native_daily")
 
@@ -381,3 +382,105 @@ def test_no_real_network_imports_in_planner_and_reporting():
             if s.startswith(("import ", "from ")):
                 assert "executors.bybit" not in s and "src.risk" not in s
                 assert not s.startswith("import main") and "BybitExecutor" not in s
+
+
+# ===========================================================================
+# TASK-014BY_FIX1: production provider must normalize a missing Demo stop_price
+# (Bybit returns None / "") to 0.0 without crashing, and WITHOUT relaxing the
+# missing-stop fail-closed risk semantics.
+# ===========================================================================
+
+from types import SimpleNamespace   # noqa: E402
+
+
+class _FakeRawPosition:
+    def __init__(self, symbol, side, quantity, entry_price, stop_price):
+        self.symbol = symbol
+        self.side = side
+        self.quantity = quantity
+        self.entry_price = entry_price
+        self.stop_price = stop_price
+
+
+class _FakeReadOnlyClient:
+    """Minimal read-only client surface the production provider consumes at build time."""
+
+    def __init__(self, positions):
+        self._positions = positions
+
+    def get_wallet_balance(self):
+        return SimpleNamespace(equity_usd=10000.0, available_balance_usd=10000.0)
+
+    def get_open_positions(self):
+        return self._positions
+
+    def get_instruments_info(self):
+        return {}
+
+    def get_account_info(self):
+        return SimpleNamespace()
+
+    def get_server_time(self):
+        return SimpleNamespace()
+
+
+def _provider_with(positions):
+    provider = daily_cli._build_production_provider(
+        _client=_FakeReadOnlyClient(positions), _guard=SimpleNamespace())
+    assert provider is not None      # provider builds; the crash was later in open_positions()
+    return provider
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (None, 0.0), ("", 0.0), ("   ", 0.0), ("95.5", 95.5), (95.5, 95.5), (0, 0.0), ("0", 0.0)])
+def test_normalize_stop_price_rules(raw, expected):
+    assert daily_cli._normalize_stop_price(raw) == expected
+
+
+def test_normalize_stop_price_non_empty_garbage_fails_closed():
+    # A non-empty, unparseable value is NOT silently accepted as a valid stop.
+    with pytest.raises(ValueError):
+        daily_cli._normalize_stop_price("not-a-number")
+
+
+def test_open_positions_none_stop_becomes_zero_without_crash():
+    prov = _provider_with([_FakeRawPosition("BTCUSDT", "long", 0.5, 100.0, None)])
+    out = prov.open_positions()      # previously raised TypeError: float(None)
+    assert len(out) == 1 and out[0].stop_price == 0.0
+    assert isinstance(out[0].stop_price, float)
+
+
+def test_open_positions_empty_string_stop_becomes_zero():
+    prov = _provider_with([_FakeRawPosition("ETHUSDT", "short", 1.0, 50.0, "")])
+    assert prov.open_positions()[0].stop_price == 0.0
+
+
+def test_open_positions_valid_stop_preserved_exactly():
+    prov = _provider_with([_FakeRawPosition("SOLUSDT", "long", 2.0, 100.0, "95.5")])
+    out = prov.open_positions()[0]
+    assert out.stop_price == 95.5 and out.entry_price == 100.0 and out.quantity == 2.0
+
+
+def test_normalized_zero_stop_still_fails_closed_in_risk_logic():
+    # The normalized 0.0 must still be treated as MISSING by the existing risk gate.
+    pos = DemoOpenPosition(symbol="BTCUSDT", side="long", quantity=0.5,
+                           entry_price=100.0, stop_price=daily_cli._normalize_stop_price(None))
+    assert pos.stop_price <= 0                     # canonical "missing stop" contract
+    total, warnings = compute_existing_stop_risk([pos])
+    assert any(w.code == REJECT_MISSING_VALID_STOP for w in warnings)
+    assert total == abs(pos.notional_usd)          # full notional treated as risk (fail-closed)
+
+
+def test_valid_stop_is_not_flagged_missing():
+    pos = DemoOpenPosition(symbol="BTCUSDT", side="long", quantity=0.5,
+                           entry_price=100.0, stop_price=daily_cli._normalize_stop_price("95"))
+    _total, warnings = compute_existing_stop_risk([pos])
+    assert not any(w.code == REJECT_MISSING_VALID_STOP for w in warnings)
+
+
+def test_account_read_stage_handles_fifty_missing_stops():
+    # The real-world case: 50 positions with no stop must NOT crash the account-read boundary.
+    positions = [_FakeRawPosition(f"S{i:02d}USDT", "long" if i < 25 else "short",
+                                  1.0, 100.0, None) for i in range(50)]
+    out = _provider_with(positions).open_positions()
+    assert len(out) == 50 and all(p.stop_price == 0.0 for p in out)

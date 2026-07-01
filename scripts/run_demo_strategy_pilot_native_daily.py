@@ -193,6 +193,24 @@ def _canonical_network_top_level(*, review, planner_phase_audit, instrument_meta
     return out
 
 
+def _normalize_stop_price(value: Any) -> float:
+    """Normalize a Demo position stop_price to the ``DemoOpenPosition.stop_price`` float contract.
+
+    Bybit reports NO stop-loss as ``None`` (or occasionally an empty string). Those map to ``0.0``
+    -- the canonical "missing stop" value, which the existing risk logic still treats as missing
+    and fails closed on (``stop_price <= 0``). This NEVER relaxes a stop or fabricates a price:
+    a non-empty but unparseable value is not silently accepted as a valid stop; ``float()`` raises
+    (fail closed) rather than inventing one."""
+    if value is None:
+        return 0.0
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return 0.0
+        return float(stripped)
+    return float(value)
+
+
 def _build_production_provider(_client=None, _guard=None):
     """Build the canonical account/market provider from the existing read-only
     Demo client + market guard + instrument rules. Fails closed (returns None) if
@@ -307,8 +325,11 @@ def _build_production_provider(_client=None, _guard=None):
             return float(self._wallet.available_balance_usd)
 
         def open_positions(self):
+            # stop_price is normalized at this boundary: Bybit's missing stop (None / "") -> 0.0
+            # (== missing stop, still fail-closed by the risk logic), never a fabricated price.
             return [DemoOpenPosition(symbol=p.symbol, side=p.side, quantity=float(p.quantity),
-                                     entry_price=float(p.entry_price), stop_price=float(p.stop_price))
+                                     entry_price=float(p.entry_price),
+                                     stop_price=_normalize_stop_price(p.stop_price))
                     for p in self._positions]
 
         def account_risk_snapshot(self) -> dict:
