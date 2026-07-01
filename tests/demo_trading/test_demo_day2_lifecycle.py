@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src import demo_pilot_protected_identity_bootstrap as pib
 from src import demo_strategy_native_day2_lifecycle as d2
 from src import demo_strategy_native_postfill_audit as au
 from src import demo_strategy_pilot_action_planner as ap
@@ -735,6 +736,90 @@ def test_open_eduusdt_blocks_no_immutable_identity_evidence():
     art = _plan(current_positions=_current(include_edu=True))
     assert art["verdict"] == d2.DRY_RUN_BLOCKED
     assert "day1_eduusdt_position_identity_evidence_unavailable" in art["blockers"]
+
+
+# ============================================ TASK-014CA: protected-identity evidence-chain integration
+NEWPILOT = "BYBIT_DEMO_PILOT_7D_202607_V2"
+
+
+def _protected_ctr():
+    return {"private_read_only_request_count": 1, "public_read_only_request_count": 0,
+            "private_mutating_request_count": 0}
+
+
+def _protected_prov(n):
+    return {"termination_reason": "empty_cursor", "page_count": 1,
+            "api_position_rows": n, "nonzero_position_count": n}
+
+
+def _protected_alloc(pilot_id, day1_date):
+    allocs = [{"symbol": SYMS[i], "side": SIDES_DISPLAY[i], "target_notional_usd": "200"}
+              for i in range(N)]
+    fp = crun.allocation_intent_fingerprint(
+        allocs, pilot_id=pilot_id, date=day1_date, strategy_capital_base_usd="10000")
+    return {"pilot_id": pilot_id, "date": day1_date, "strategy_capital_base_usd": "10000",
+            "order_payloads": allocs, "payload_fingerprint": fp, "allocation_intent_fingerprint": fp}
+
+
+def _protected_chain(pilot_id=NEWPILOT, day1_date=DAY1, edu_qty="5", edu_idx=0):
+    edu = [{"symbol": "EDUUSDT", "side": "Sell", "qty": edu_qty, "position_idx": edu_idx,
+            "entry_price": "9", "leverage": "3"}]
+    acct = {"account_mode": "demo", "demo_flag": True, "endpoint_family": "bybit_demo",
+            "live_endpoint_fallback_detected": False}
+    comps = {"protected_position_collector": _protected_ctr()}
+    snap = pib.build_pre_day1_protected_snapshot(
+        pilot_id=pilot_id, day1_date=day1_date, positions=edu, positions_provenance=_protected_prov(1),
+        network_counter_components=comps, account_evidence=acct,
+        source_endpoint="/v5/position/list", generated_at="2026-06-30T00:00:00+00:00")
+    alloc = _protected_alloc(pilot_id, day1_date)
+    binding = pib.build_day1_protected_binding(
+        pilot_id=pilot_id, day1_date=day1_date, day1_allocation_artifact=alloc, snapshot_artifact=snap)
+    cont = pib.verify_post_fill_protected_continuity(
+        pilot_id=pilot_id, day1_date=day1_date, snapshot_artifact=snap, binding_artifact=binding,
+        post_fill_positions=edu, post_fill_provenance=_protected_prov(1),
+        network_counter_components=comps, strategy_symbols=SYMS, generated_at="2026-06-30T23:00:00+00:00")
+    return snap, binding, cont, alloc
+
+
+def test_l_day2_new_pilot_chain_clears_edu_blocker():                          # FIX1 (L)
+    snap, binding, cont, alloc = _protected_chain(NEWPILOT, DAY1)
+    art = _plan(pilot_id=NEWPILOT, day1_allocation_intent=alloc,
+                current_positions=_current(include_edu=True),
+                day1_protected_snapshot=snap, day1_protected_binding=binding,
+                day1_protected_continuity=cont)
+    assert "day1_eduusdt_position_identity_evidence_unavailable" not in art["blockers"]
+    assert not any(b.startswith("day1_protected_chain:") for b in art["blockers"])
+    assert art["protected_identity_chain_verified"] is True
+
+
+def test_m_day2_no_chain_preserves_edu_blocker():                              # FIX1 (M)
+    art = _plan(current_positions=_current(include_edu=True))
+    assert "day1_eduusdt_position_identity_evidence_unavailable" in art["blockers"]
+    assert art["protected_identity_chain_verified"] is False
+
+
+def test_n_day2_retired_pilot_with_new_evidence_still_blocks():                # FIX1 (N)
+    # a chain captured for the NEW pilot cannot advance the retired pilot's Day-2.
+    snap, binding, cont, _alloc = _protected_chain(NEWPILOT, DAY1)
+    art = _plan(current_positions=_current(include_edu=True),
+                day1_protected_snapshot=snap, day1_protected_binding=binding,
+                day1_protected_continuity=cont)
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    assert any(b.startswith("day1_protected_chain:") for b in art["blockers"])
+    assert art["protected_identity_chain_verified"] is False
+
+
+def test_o_day2_edu_identity_change_blocks():                                  # FIX1 (O)
+    snap, binding, cont, alloc = _protected_chain(NEWPILOT, DAY1)
+    edu_changed = [{"symbol": "EDUUSDT", "side": "short", "size": "9", "position_idx": 0,
+                    "entry_price": "9", "unrealised_pnl": "-2", "mark_price": "10"}]
+    art = _plan(pilot_id=NEWPILOT, day1_allocation_intent=alloc,
+                current_positions=_current(extra=edu_changed),
+                day1_protected_snapshot=snap, day1_protected_binding=binding,
+                day1_protected_continuity=cont)
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    assert any("current_protected_identity_mismatch" in b for b in art["blockers"])
+    assert art["protected_identity_chain_verified"] is False
 
 
 def test_no_manual_edu_side_input_on_builder():

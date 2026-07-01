@@ -527,6 +527,19 @@ def _crun():
     return _CRUN
 
 
+_PIB = None
+
+
+def _pib():
+    """Lazy import of the protected-identity bootstrap (avoids an import cycle: that module imports
+    ``merge_network_counters`` from here at module load time)."""
+    global _PIB
+    if _PIB is None:
+        from src import demo_pilot_protected_identity_bootstrap as pib
+        _PIB = pib
+    return _PIB
+
+
 def _recompute_day1_fingerprint(order_payloads, pilot_id, date) -> str:
     """Recompute the Day-1 allocation-intent fingerprint from order_payloads using the EXACT
     production canonical fingerprint function (no string trust)."""
@@ -848,6 +861,9 @@ def build_day2_lifecycle_dry_run(
     source_paths: Mapping[str, Any] | None = None,
     generated_at: str = "",
     fingerprint_recompute_fn=None,
+    day1_protected_snapshot: Any = None,
+    day1_protected_binding: Any = None,
+    day1_protected_continuity: Any = None,
 ) -> dict[str, Any]:
     """Build the machine-readable Day-2 lifecycle dry-run plan (read-only, fail-closed). See module
     docstring -- there is no self-sealed / arbitrary-JSON / free-text path to READY."""
@@ -925,17 +941,37 @@ def build_day2_lifecycle_dry_run(
         if unauthorized:
             blockers.append(f"unauthorized_unexpected_open_symbols:{unauthorized}")
 
-    # EDUUSDT position-identity continuity CANNOT be proven: no immutable Day-1 position-snapshot
-    # artifact (with side/qty/position_idx bound to the Day-1 allocation fingerprint + digest)
-    # exists, and a manual JSON is not trustworthy evidence. The Day-1 post-fill audit only lists
-    # the ALLOWED protected symbol, not its side/qty. So while EDUUSDT is confirmed as the only
-    # permitted extra, its identity continuity is unverifiable -> fail closed.
+    # EDUUSDT position-identity continuity is proven ONLY by the formal immutable evidence chain
+    # (TASK-014CA): a sealed PRE_DAY1 protected snapshot + Day-1 allocation binding + post-fill
+    # continuity, self-recomputed and exactly bound to THIS pilot/date, with the CURRENT EDUUSDT
+    # identity equal to the sealed identity. Absent that chain the identity is unprovable (a manual
+    # JSON / raw SHA is not trustworthy evidence and the Day-1 post-fill audit lists only the allowed
+    # symbol, not its side/qty) -> fail closed with the canonical blocker.
     audit_allowed = set((day1_post_fill_audit or {}).get("allowed_preexisting_protected_symbols") or []) \
         if isinstance(day1_post_fill_audit, Mapping) else set()
+    protected_identity_chain_verified = False
     if ALLOWED_EXTRA_OPEN_SYMBOL in current_by_symbol:
-        if ALLOWED_EXTRA_OPEN_SYMBOL not in audit_allowed:
-            blockers.append("eduusdt_not_in_day1_audit_allowed_protected")
-        blockers.append("day1_eduusdt_position_identity_evidence_unavailable")
+        chain_supplied = any(x is not None for x in
+                             (day1_protected_snapshot, day1_protected_binding, day1_protected_continuity))
+        if chain_supplied:
+            current_protected_identities = {
+                (r["symbol"], r["position_idx"]): {"symbol": r["symbol"], "side": r["side"],
+                                                   "qty": r["qty"], "position_idx": r["position_idx"]}
+                for r in current_rows if r["symbol"] in PROTECTED_SYMBOLS}
+            chain_ok, chain_reasons = _pib().verify_day1_protected_identity_chain(
+                pilot_id=pilot_id, day1_date=day1_date,
+                snapshot=day1_protected_snapshot, binding=day1_protected_binding,
+                continuity=day1_protected_continuity,
+                current_protected_identities=current_protected_identities,
+                day1_allocation_intent=day1_allocation_intent)
+            if chain_ok:
+                protected_identity_chain_verified = True
+            else:
+                blockers.extend(f"day1_protected_chain:{r}" for r in chain_reasons)
+        else:
+            if ALLOWED_EXTRA_OPEN_SYMBOL not in audit_allowed:
+                blockers.append("eduusdt_not_in_day1_audit_allowed_protected")
+            blockers.append("day1_eduusdt_position_identity_evidence_unavailable")
 
     # Classification + per-action mark-priced estimates.
     actions: list[dict[str, Any]] = []
@@ -1018,6 +1054,7 @@ def build_day2_lifecycle_dry_run(
             "protected_symbols_source": protected_symbols_source,
             "protected_symbols": sorted(protected_set),
             "protected_positions_present": sorted(protected_present)},
+        "protected_identity_chain_verified": protected_identity_chain_verified,
         "action_counts": counts, "actions": actions,
         "gross_close_notional_estimate_usd": gross_close_s,
         "gross_open_notional_estimate_usd": gross_open_s,

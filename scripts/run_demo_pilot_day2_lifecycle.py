@@ -72,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--day1-allocation-intent-json", required=True)
     p.add_argument("--target-intent-artifact-json", required=True,
                    help="sealed Day-2 target; ACCEPTED only if it exact-matches the production recompute")
+    # TASK-014CA: optional immutable protected-identity evidence chain. Absent => the EDUUSDT
+    # identity stays unprovable and the canonical blocker is preserved (never guessed).
+    p.add_argument("--day1-protected-snapshot-json", default=None)
+    p.add_argument("--day1-protected-binding-json", default=None)
+    p.add_argument("--day1-protected-continuity-json", default=None)
     p.add_argument("--artifact-output-json", default=None)
     return p
 
@@ -248,6 +253,12 @@ def run_day2_lifecycle_dry_run(args, *, position_provider=None, forward_target_r
         day1_audit = _read_json(args.day1_post_fill_audit_json)
         day1_alloc = _read_json(args.day1_allocation_intent_json)
         sealed_target = _read_json(args.target_intent_artifact_json)
+        protected_snapshot = _read_json(args.day1_protected_snapshot_json) \
+            if args.day1_protected_snapshot_json else None
+        protected_binding = _read_json(args.day1_protected_binding_json) \
+            if args.day1_protected_binding_json else None
+        protected_continuity = _read_json(args.day1_protected_continuity_json) \
+            if args.day1_protected_continuity_json else None
     except (OSError, ValueError) as exc:
         return _emit({"verdict": d2.DRY_RUN_BLOCKED, "mode": "DAY2_LIFECYCLE_DRY_RUN",
                       "blockers": [f"input_unreadable:{type(exc).__name__}"],
@@ -297,7 +308,12 @@ def run_day2_lifecycle_dry_run(args, *, position_provider=None, forward_target_r
         protected_symbols=sorted(nx.PROTECTED_SYMBOLS), protected_symbols_source=PROTECTED_SOURCE,
         source_paths={"day1_post_fill_audit_json": args.day1_post_fill_audit_json,
                       "day1_allocation_intent_json": args.day1_allocation_intent_json,
-                      "target_intent_artifact_json": args.target_intent_artifact_json},
+                      "target_intent_artifact_json": args.target_intent_artifact_json,
+                      "day1_protected_snapshot_json": args.day1_protected_snapshot_json,
+                      "day1_protected_binding_json": args.day1_protected_binding_json,
+                      "day1_protected_continuity_json": args.day1_protected_continuity_json},
+        day1_protected_snapshot=protected_snapshot, day1_protected_binding=protected_binding,
+        day1_protected_continuity=protected_continuity,
         generated_at=_utc_now_iso())
     for extra_block in (forward_block, collector_blocked):
         if extra_block and extra_block not in artifact["blockers"]:
