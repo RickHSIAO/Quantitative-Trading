@@ -864,6 +864,7 @@ def build_day2_lifecycle_dry_run(
     day1_protected_snapshot: Any = None,
     day1_protected_binding: Any = None,
     day1_protected_continuity: Any = None,
+    day1_allocation_source_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Build the machine-readable Day-2 lifecycle dry-run plan (read-only, fail-closed). See module
     docstring -- there is no self-sealed / arbitrary-JSON / free-text path to READY."""
@@ -963,7 +964,8 @@ def build_day2_lifecycle_dry_run(
                 snapshot=day1_protected_snapshot, binding=day1_protected_binding,
                 continuity=day1_protected_continuity,
                 current_protected_identities=current_protected_identities,
-                day1_allocation_intent=day1_allocation_intent)
+                day1_allocation_intent=day1_allocation_intent,
+                allocation_source_sha256=day1_allocation_source_sha256)
             if chain_ok:
                 protected_identity_chain_verified = True
             else:

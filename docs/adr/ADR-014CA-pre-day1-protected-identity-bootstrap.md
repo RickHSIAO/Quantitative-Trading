@@ -69,6 +69,51 @@ changed-current-identity chain fails closed with a specific `day1_protected_chai
 retired Pilot supplies no chain, so its Day-2 result remains `DAY2_LIFECYCLE_DRY_RUN_BLOCKED` with the
 same core blocker; no old artifact is modified.
 
+## Snapshot evidence and continuity allowlist are replayed, not asserted (FIX4)
+
+FIX3 replayed readiness but still trusted the snapshot's own `snapshot_evidence_valid` /
+`evidence_blockers`, compared the protected/non-protected/all-observed groups only by count, and let
+the continuity's own `canonical_strategy_symbols` be the strategy allowlist. FIX4 closes these:
+
+- **Snapshot evidence is semantically replayed.** `derive_snapshot_evidence_semantics` re-derives
+  `expected_evidence_blockers` / `expected_snapshot_evidence_valid` / verdict purely from the stored
+  canonical evidence — identity (pilot/date/environment/retired), account evidence (re-validated,
+  `account_identity_digest` recomputed, `demo_runtime_proof` must not diverge), network (re-merged
+  from `component_breakdown` with exact top-level totals), pagination + page timing, per-row
+  validation, and the EXACT protected/non-protected partition recomputed from
+  `all_observed_nonzero_positions` (rows compared, not just counts, plus `protected_symbol_set` /
+  `protected_positions_summary` / `canonical_protected_anchor` / `position_mode_evidence` /
+  pagination nonzero). `_snapshot_is_sealed` exact-matches the stored evidence fields against the
+  replay, so forging `snapshot_evidence_valid=true` (with a zeroed mutating count while the breakdown
+  still shows a mutation), a live-endpoint fallback, an un-recomputed account digest, or moving a
+  non-canonical symbol (e.g. `RANDUSDT`) into the protected set all fail closed even after a full
+  re-seal.
+
+- **Binding is replayed against the formal snapshot + allocation.** `_binding_is_sealed` re-derives
+  `protected_symbols` from the sealed snapshot, `binding_evidence_valid` / `execution_ready` /
+  `readiness_blockers` from the snapshot's readiness, and (when the allocation artifact + file SHA
+  are supplied, as Day-2/CLI always do) re-validates the allocation and matches its recomputed
+  fingerprint + `allocation_artifact_source_sha256`. Tampering `protected_symbols`, swapping the
+  allocation fingerprint, or a file-SHA mismatch fail closed.
+
+- **Continuity binds the FORMAL allocation symbol set and exact outputs.** `_continuity_is_sealed`
+  re-validates the allocation, recomputes `canonical_strategy_symbols` from the validated
+  `order_payloads` (never the artifact's own list), and exact-matches the stored allocation
+  fingerprint + source SHA + strategy set. The semantic replay additionally exact-matches every
+  stored output — `strategy_position_count` / `strategy_positions_present` /
+  `protected_position_count` / `protected_positions_present` / `protected_continuity_evidence` /
+  `continuity_pass` / `verdict` / `blockers` — and the top-level network totals against the
+  re-merged `component_breakdown`.
+
+- **Multipage cursor chain is fully validated.** `validate_position_page_request_evidence` now
+  requires page 1 to carry no request cursor, every continuation page (>=2) to carry one, every
+  non-final page to hand out a next cursor, and the final page not to — in addition to the existing
+  row-count/timing checks.
+
+- **Day-2 supplies the allocation file SHA.** The Day-2 runner computes the allocation-intent file
+  SHA-256 and passes it into `verify_day1_protected_identity_chain`, which threads the allocation
+  artifact + SHA into the binding and continuity replays.
+
 ## Readiness and continuity are semantically self-verifying (FIX3)
 
 FIX2 stored `bootstrap_ready` / `execution_ready` as booleans that `_snapshot_is_sealed` /

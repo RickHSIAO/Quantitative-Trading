@@ -360,6 +360,230 @@ def test_17_continuity_cli_cross_pilot_allocation_blocks(tmp_path, capsys):
     assert "allocation_pilot_id_mismatch" in data["blockers"]
 
 
+# ================================================= FIX4: snapshot evidence semantic replay
+def test_f4_forged_mutating_snapshot_blocks():
+    inv = _snapshot(components=_components(_ctr(mut=1)))
+    t = copy.deepcopy(inv)
+    t["snapshot_evidence_valid"] = True
+    t["snapshot_evidence_verdict"] = pib.EVIDENCE_VALID
+    t["evidence_blockers"] = []
+    t["blockers"] = []
+    t["network_audit_counters"]["private_mutating_request_count"] = 0
+    t["private_mutating_request_count"] = 0
+    t["bootstrap_ready"] = True
+    t["bootstrap_verdict"] = pib.BOOTSTRAP_READY
+    _reseal_snapshot(t)   # breakdown still shows mutating=1
+    ok, reasons, *_ = pib._snapshot_is_sealed(t)
+    assert ok is False and "snapshot_evidence_valid_replay_mismatch" in reasons
+
+
+def test_f4_forged_live_fallback_snapshot_blocks():
+    inv = _snapshot(account=_account(live_endpoint_fallback_detected=True))
+    t = copy.deepcopy(inv)
+    t["snapshot_evidence_valid"] = True
+    t["snapshot_evidence_verdict"] = pib.EVIDENCE_VALID
+    t["evidence_blockers"] = []
+    t["blockers"] = []
+    t["bootstrap_ready"] = True
+    t["bootstrap_verdict"] = pib.BOOTSTRAP_READY
+    _reseal_snapshot(t)
+    ok, reasons, *_ = pib._snapshot_is_sealed(t)
+    assert ok is False and "snapshot_evidence_valid_replay_mismatch" in reasons
+
+
+def test_f4_account_digest_not_recomputed_blocks():
+    s = _snapshot()
+    t = copy.deepcopy(s)
+    t["account_identity_evidence"] = _account(account_mode="demo_tampered")
+    t["demo_runtime_proof"] = t["account_identity_evidence"]   # keep them consistent, wrong digest
+    _reseal_snapshot(t)
+    ok, reasons, *_ = pib._snapshot_is_sealed(t)
+    assert ok is False and "snapshot_evidence_blockers_replay_mismatch" in reasons
+
+
+def test_f4_move_nonprotected_to_protected_blocks():
+    s = _snapshot(positions=[_edu(), _pos("RANDUSDT", "Buy", "3", 0)],
+                  provenance=_prov([1, 2], pages=[_page(raw=2, nz=2)]))
+    t = copy.deepcopy(s)
+    row = t["preexisting_nonprotected_positions"].pop()
+    t["canonical_protected_positions"].append(row)
+    t["canonical_protected_positions"].sort(key=lambda r: (r["symbol"], r["position_idx"]))
+    t["protected_position_count"] = 2
+    t["preexisting_nonprotected_position_count"] = 0
+    t["protected_symbol_set"] = ["EDUUSDT", "RANDUSDT"]
+    t["protected_positions_summary"] = {"count": 2, "symbols": ["EDUUSDT", "RANDUSDT"]}
+    t["readiness_blockers"] = []
+    t["bootstrap_ready"] = True
+    t["bootstrap_verdict"] = pib.BOOTSTRAP_READY
+    t["blockers"] = []
+    _reseal_snapshot(t)
+    ok, reasons, *_ = pib._snapshot_is_sealed(t)
+    assert ok is False and "snapshot_evidence_blockers_replay_mismatch" in reasons
+
+
+def test_f4_partition_content_differs_same_length_blocks():
+    s = _snapshot(positions=[_edu()])
+    t = copy.deepcopy(s)
+    # replace the protected array with a NEW row that diverges from all_observed (same length)
+    t["canonical_protected_positions"] = [{**t["all_observed_nonzero_positions"][0], "qty": "7777"}]
+    _reseal_snapshot(t)
+    ok, reasons, *_ = pib._snapshot_is_sealed(t)
+    assert ok is False
+
+
+def test_f4_duplicate_composite_in_all_observed_blocks():
+    s = _snapshot(positions=[_edu()])
+    t = copy.deepcopy(s)
+    t["all_observed_nonzero_positions"].append(dict(t["all_observed_nonzero_positions"][0]))
+    _reseal_snapshot(t)
+    ok, reasons, *_ = pib._snapshot_is_sealed(t)
+    assert ok is False
+
+
+def test_f4_protected_audit_removed_blocks():
+    s = _snapshot()
+    t = copy.deepcopy(s)
+    edu_row = {k: v for k, v in t["all_observed_nonzero_positions"][0].items() if k != "entry_price"}
+    t["all_observed_nonzero_positions"] = [edu_row]
+    t["canonical_protected_positions"] = [dict(edu_row)]   # consistent, but audit is incomplete
+    _reseal_snapshot(t)
+    ok, reasons, *_ = pib._snapshot_is_sealed(t)
+    assert ok is False and "snapshot_evidence_blockers_replay_mismatch" in reasons
+
+
+# ================================================= FIX4: binding semantic replay
+def test_f4_binding_protected_symbols_tamper_blocks():
+    s = _snapshot()
+    b = _binding(s)
+    t = copy.deepcopy(b)
+    t["protected_symbols"] = ["EDUUSDT", "RANDUSDT"]
+    _reseal_binding(t)
+    ok, reasons = pib._binding_is_sealed(t, s)
+    assert ok is False and "binding_protected_symbols_mismatch" in reasons
+
+
+def test_f4_binding_allocation_fp_swap_blocks():
+    s = _snapshot()
+    b = _binding(s)
+    t = copy.deepcopy(b)
+    t["allocation_intent_fingerprint"] = "b" * 64
+    _reseal_binding(t)
+    ok, reasons = pib._binding_is_sealed(t, s, allocation=_alloc())
+    assert ok is False and "binding_allocation_fingerprint_mismatch" in reasons
+
+
+def test_f4_binding_allocation_sha_mismatch_blocks():
+    s = _snapshot()
+    b = _binding(s, alloc_sha=ZERO_SHA)
+    ok, reasons = pib._binding_is_sealed(b, s, allocation_source_sha256="sha256:" + "e" * 64)
+    assert ok is False and "binding_allocation_source_sha256_mismatch" in reasons
+
+
+# ================================================= FIX4: continuity allocation allowlist
+def test_f4_continuity_sealed_baseline_ok():
+    snap = _snapshot()
+    b = _binding(snap)
+    c = _continuity(snap, b)
+    ok, reasons = pib._continuity_is_sealed(c, snap, b, allocation=_alloc(), allocation_source_sha256=ZERO_SHA)
+    assert ok is True and reasons == []
+
+
+def test_f4_continuity_extra_strategy_symbol_blocks():
+    snap = _snapshot()
+    b = _binding(snap)
+    c = _continuity(snap, b)
+    t = copy.deepcopy(c)
+    t["canonical_strategy_symbols"] = sorted(t["canonical_strategy_symbols"] + ["RANDUSDT"])
+    _reseal_cont(t)
+    ok, reasons = pib._continuity_is_sealed(t, snap, b, allocation=_alloc())
+    assert ok is False and "continuity_strategy_symbols_mismatch" in reasons
+
+
+def test_f4_continuity_removed_strategy_symbol_blocks():
+    snap = _snapshot()
+    b = _binding(snap)
+    c = _continuity(snap, b)
+    t = copy.deepcopy(c)
+    t["canonical_strategy_symbols"] = t["canonical_strategy_symbols"][:-1]
+    _reseal_cont(t)
+    ok, reasons = pib._continuity_is_sealed(t, snap, b, allocation=_alloc())
+    assert ok is False and "continuity_strategy_symbols_mismatch" in reasons
+
+
+def test_f4_continuity_allocation_sha_mismatch_blocks():
+    snap = _snapshot()
+    b = _binding(snap)
+    c = _continuity(snap, b)
+    ok, reasons = pib._continuity_is_sealed(c, snap, b, allocation_source_sha256="sha256:" + "e" * 64)
+    assert ok is False and "continuity_allocation_source_sha256_mismatch" in reasons
+
+
+# ================================================= FIX4: continuity output exact match
+def test_f4_continuity_protected_present_tamper_blocks():
+    snap = _snapshot()
+    b = _binding(snap)
+    c = _continuity(snap, b, post_positions=[_edu(), _pos(STRATEGY[0], "Buy", "1", 0)],
+                    post_prov=_prov([1, 2], pages=[_page(raw=2, nz=2)]))
+    t = copy.deepcopy(c)
+    t["protected_positions_present"] = []
+    _reseal_cont(t)
+    ok, reasons = pib._continuity_is_sealed(t, snap, b, allocation=_alloc())
+    assert ok is False and "continuity_protected_present_mismatch" in reasons
+
+
+def test_f4_continuity_strategy_present_tamper_blocks():
+    snap = _snapshot()
+    b = _binding(snap)
+    c = _continuity(snap, b, post_positions=[_edu(), _pos(STRATEGY[0], "Buy", "1", 0)],
+                    post_prov=_prov([1, 2], pages=[_page(raw=2, nz=2)]))
+    t = copy.deepcopy(c)
+    t["strategy_positions_present"] = [STRATEGY[1]]   # count unchanged (1) but content wrong
+    _reseal_cont(t)
+    ok, reasons = pib._continuity_is_sealed(t, snap, b, allocation=_alloc())
+    assert ok is False and "continuity_strategy_present_mismatch" in reasons
+
+
+def test_f4_continuity_network_top_level_vs_breakdown_blocks():
+    snap = _snapshot()
+    b = _binding(snap)
+    c = _continuity(snap, b)
+    t = copy.deepcopy(c)
+    t["network_audit_counters"]["private_read_only_request_count"] = 99
+    _reseal_cont(t)
+    ok, reasons = pib._continuity_is_sealed(t, snap, b, allocation=_alloc())
+    assert ok is False and any("network_top_level_mismatch" in r for r in reasons)
+
+
+# ================================================= FIX4: multipage cursor chain
+def test_f4_two_page_first_page_next_false_blocks():
+    prov = _prov([1, 1], pages=[_page(raw=1, nz=1, cursor=False, nxt=False, page_number=1),
+                                _page(raw=1, nz=1, cursor=True, nxt=False, page_number=2)])
+    prov["api_position_rows"] = 2
+    prov["nonzero_position_count"] = 2
+    art = _snapshot(positions=[_edu(), _pos("RANDUSDT", "Buy", "1", 0)], provenance=prov)
+    assert art["snapshot_evidence_valid"] is False
+    assert any("nonfinal_next_cursor_absent" in x for x in art["evidence_blockers"])
+
+
+def test_f4_two_page_second_page_cursor_false_blocks():
+    prov = _prov([1, 1], pages=[_page(raw=1, nz=1, cursor=False, nxt=True, page_number=1),
+                                _page(raw=1, nz=1, cursor=False, nxt=False, page_number=2)])
+    prov["api_position_rows"] = 2
+    prov["nonzero_position_count"] = 2
+    art = _snapshot(positions=[_edu(), _pos("RANDUSDT", "Buy", "1", 0)], provenance=prov)
+    assert art["snapshot_evidence_valid"] is False
+    assert any("continuation_cursor_absent" in x for x in art["evidence_blockers"])
+
+
+def test_f4_valid_two_page_chain_passes():
+    prov = _prov([1, 1], pages=[_page(raw=1, nz=1, cursor=False, nxt=True, page_number=1),
+                                _page(raw=1, nz=1, cursor=True, nxt=False, page_number=2)])
+    prov["api_position_rows"] = 2
+    prov["nonzero_position_count"] = 2
+    art = _snapshot(positions=[_edu(), _pos("RANDUSDT", "Buy", "1", 0)], provenance=prov)
+    assert art["snapshot_evidence_valid"] is True   # (bootstrap not ready: RANDUSDT is nonprotected)
+
+
 # ================================================= carried-over core coverage
 def test_51_position_valid_evidence_not_ready():
     art = _snapshot(positions=_fifty_plus_edu())

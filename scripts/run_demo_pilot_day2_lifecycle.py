@@ -314,6 +314,9 @@ def run_day2_lifecycle_dry_run(args, *, position_provider=None, forward_target_r
                       "day1_protected_continuity_json": args.day1_protected_continuity_json},
         day1_protected_snapshot=protected_snapshot, day1_protected_binding=protected_binding,
         day1_protected_continuity=protected_continuity,
+        day1_allocation_source_sha256=(
+            _sha256_file(pathlib.Path(args.day1_allocation_intent_json))
+            if args.day1_allocation_intent_json else None),
         generated_at=_utc_now_iso())
     for extra_block in (forward_block, collector_blocked):
         if extra_block and extra_block not in artifact["blockers"]:

@@ -274,12 +274,17 @@ def validate_position_page_request_evidence(
             reasons.append(f"{tag}_nonzero_exceeds_raw")
         raw_sum += raw
         nonzero_sum += nz
-        if i == 0 and pg.get("request_cursor_present") is not False:
+        is_first, is_last = (i == 0), (i == n - 1)
+        # Full cursor-chain shape: page1 has no request cursor; every continuation page (>=2) does;
+        # every non-final page hands out a next cursor; the final page does not.
+        if is_first and pg.get("request_cursor_present") is not False:
             reasons.append(f"{tag}_first_page_cursor_present")
-        if i == n - 1 and pg.get("response_next_cursor_present") is not False:
+        if not is_first and pg.get("request_cursor_present") is not True:
+            reasons.append(f"{tag}_continuation_cursor_absent")
+        if is_last and pg.get("response_next_cursor_present") is not False:
             reasons.append(f"{tag}_final_page_next_cursor_present")
-        if 0 < i < n - 1 and pg.get("response_next_cursor_present") is not True:
-            reasons.append(f"{tag}_middle_page_next_cursor_absent")
+        if not is_last and pg.get("response_next_cursor_present") is not True:
+            reasons.append(f"{tag}_nonfinal_next_cursor_absent")
     if api_rows is not None and raw_sum != api_rows:
         reasons.append(f"{prefix}_page_raw_row_total_mismatch:{raw_sum}!={api_rows}")
     if nonzero_total_expected is not None and nonzero_sum != nonzero_total_expected:
@@ -315,6 +320,141 @@ def derive_snapshot_readiness(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     return {"expected_readiness_blockers": sorted(blockers),
             "expected_bootstrap_ready": ready,
             "expected_bootstrap_verdict": BOOTSTRAP_READY if ready else BOOTSTRAP_BLOCKED}
+
+
+def _revalidate_observed(all_observed: Sequence[Any]) -> tuple[list[str], list[dict], list[dict]]:
+    """Re-run the exact classification/validation of build_pre_day1_protected_snapshot over the
+    STORED ``all_observed_nonzero_positions`` rows. Returns (blockers, protected, nonprotected)."""
+    blockers: list[str] = []
+    protected: list[dict[str, Any]] = []
+    nonprotected: list[dict[str, Any]] = []
+    seen: set[tuple[str, Any]] = set()
+    for row in (all_observed or []):
+        if not isinstance(row, Mapping):
+            blockers.append("observed_row_not_object")
+            continue
+        sym = _sym(row.get("symbol"))
+        side = _norm_side(row.get("side"))
+        qty = _dec(row.get("qty"))
+        pidx = _as_int(row.get("position_idx"))
+        key = (sym, pidx)
+        if key in seen:
+            blockers.append(f"duplicate_position_composite_key:{sym or '?'}:{pidx}")
+            continue
+        seen.add(key)
+        miss_id: list[str] = []
+        if not sym:
+            miss_id.append("symbol")
+        if side not in ("long", "short"):
+            miss_id.append("side")
+        if qty is None or qty <= 0:
+            miss_id.append("qty")
+        if pidx is None:
+            miss_id.append("position_idx")
+        if sym in CANONICAL_PROTECTED_ANCHOR:
+            if miss_id:
+                blockers.append(f"protected_position_incomplete:{sym or '?'}:{'+'.join(miss_id)}")
+                continue
+            miss_audit: list[str] = []
+            if row.get("entry_price") is None:
+                miss_audit.append("entry_price")
+            if row.get("leverage") is None:
+                miss_audit.append("leverage")
+            if miss_audit:
+                blockers.append(f"protected_position_audit_incomplete:{sym}:{'+'.join(miss_audit)}")
+            protected.append(dict(row))
+        elif sym:
+            nonprotected.append(dict(row))
+        else:
+            blockers.append("observed_position_missing_symbol")
+    protected.sort(key=lambda r: (r["symbol"], r["position_idx"]))
+    nonprotected.sort(key=lambda r: (r["symbol"], r["position_idx"] if r["position_idx"] is not None else -1))
+    return blockers, protected, nonprotected
+
+
+def derive_snapshot_evidence_semantics(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    """Re-derive snapshot EVIDENCE validity purely from the artifact's stored canonical evidence --
+    identity, account, network (re-merged from the component breakdown), pagination + page timing,
+    per-row validation, and the EXACT protected/non-protected partition recomputed from
+    ``all_observed_nonzero_positions``. Never trusts the stored ``snapshot_evidence_valid``."""
+    b: list[str] = []
+    if not isinstance(snapshot, Mapping):
+        return {"expected_evidence_blockers": ["snapshot_not_object"],
+                "expected_snapshot_evidence_valid": False, "expected_snapshot_evidence_verdict": EVIDENCE_INVALID}
+    pilot_id = str(snapshot.get("pilot_id", "")).strip()
+    if not pilot_id:
+        b.append("pilot_id_missing")
+    if pilot_id in RETIRED_PILOT_IDS:
+        b.append(f"retired_pilot_cannot_bootstrap:{pilot_id}")
+    if not _valid_date(snapshot.get("day1_date")):
+        b.append("day1_date_invalid")
+    if snapshot.get("environment") != ENVIRONMENT:
+        b.append("snapshot_environment_unexpected")
+
+    # Account evidence (re-validate + re-digest; forbid double-truth with demo_runtime_proof).
+    acct = snapshot.get("account_identity_evidence")
+    safe, digest, _avail, acct_reasons = _account_audit_evidence(acct)
+    b.extend(acct_reasons)
+    if not acct_reasons and digest != str(snapshot.get("account_identity_digest", "")):
+        b.append("account_identity_digest_mismatch")
+    if snapshot.get("demo_runtime_proof") != (acct if isinstance(acct, Mapping) else None):
+        b.append("account_demo_runtime_proof_divergent")
+
+    # Network evidence: re-merge from the component breakdown and exact-match the top-level totals.
+    nac = snapshot.get("network_audit_counters") or {}
+    merged, net_blockers, _bd = merge_network_counters(nac.get("component_breakdown") or {})
+    b.extend(net_blockers)
+    for k in ("private_read_only_request_count", "public_read_only_request_count",
+              "private_mutating_request_count"):
+        if _as_int(nac.get(k)) != merged[k]:
+            b.append(f"network_counter_top_level_mismatch:{k}")
+    if _as_int(snapshot.get("private_mutating_request_count")) != merged["private_mutating_request_count"]:
+        b.append("private_mutating_top_level_mismatch")
+
+    # Pagination + page timing.
+    pag = snapshot.get("pagination_evidence") or {}
+    _pe, pag_blockers = _pagination_evidence(pag, prefix="protected_snapshot")
+    b.extend(pag_blockers)
+    b.extend(validate_position_page_request_evidence(
+        pag, snapshot.get("position_page_request_evidence"), prefix="protected_snapshot"))
+
+    # Exact canonical partition, recomputed from all_observed_nonzero_positions.
+    all_obs = snapshot.get("all_observed_nonzero_positions") or []
+    row_blockers, exp_protected, exp_nonprot = _revalidate_observed(all_obs)
+    b.extend(row_blockers)
+    stored_protected = snapshot.get("canonical_protected_positions") or []
+    stored_nonprot = snapshot.get("preexisting_nonprotected_positions") or []
+    if sorted(exp_protected, key=lambda r: (r["symbol"], r["position_idx"])) != \
+            sorted((dict(r) for r in stored_protected if isinstance(r, Mapping)),
+                   key=lambda r: (r["symbol"], r["position_idx"])):
+        b.append("canonical_protected_partition_mismatch")
+    if [dict(r) for r in exp_nonprot] != [dict(r) for r in stored_nonprot if isinstance(r, Mapping)]:
+        b.append("preexisting_nonprotected_partition_mismatch")
+
+    exp_symbols = sorted({r["symbol"] for r in exp_protected})
+    if _as_int(snapshot.get("protected_position_count")) != len(exp_protected):
+        b.append("protected_position_count_mismatch")
+    if _as_int(snapshot.get("preexisting_nonprotected_position_count")) != len(exp_nonprot):
+        b.append("preexisting_nonprotected_position_count_mismatch")
+    if _as_int(snapshot.get("all_observed_nonzero_count")) != len(all_obs):
+        b.append("all_observed_nonzero_count_mismatch")
+    if sorted(snapshot.get("protected_symbol_set") or []) != exp_symbols:
+        b.append("protected_symbol_set_mismatch")
+    if snapshot.get("protected_positions_summary") != {"count": len(exp_protected), "symbols": exp_symbols}:
+        b.append("protected_positions_summary_mismatch")
+    if sorted(snapshot.get("canonical_protected_anchor") or []) != sorted(CANONICAL_PROTECTED_ANCHOR):
+        b.append("canonical_protected_anchor_mismatch")
+    if snapshot.get("position_mode_evidence") != _position_mode_evidence(all_obs):
+        b.append("position_mode_evidence_mismatch")
+    if len(exp_protected) + len(exp_nonprot) != len(all_obs):
+        b.append("classification_count_inconsistent")
+    if _as_int(pag.get("nonzero_position_count")) != len(all_obs):
+        b.append("pagination_nonzero_mismatch")
+
+    valid = not b
+    return {"expected_evidence_blockers": sorted(b),
+            "expected_snapshot_evidence_valid": valid,
+            "expected_snapshot_evidence_verdict": EVIDENCE_VALID if valid else EVIDENCE_INVALID}
 
 
 def canonical_bootstrap_readiness_fingerprint(snapshot: Mapping[str, Any]) -> str:
@@ -623,6 +763,14 @@ def _snapshot_is_sealed(snapshot: Any) -> tuple[bool, list[str], str, str, bool]
             reasons.append("snapshot_pagination_nonzero_mismatch")
         reasons.extend(validate_position_page_request_evidence(
             pag, snapshot.get("position_page_request_evidence"), prefix="protected_snapshot"))
+        # RE-DERIVE evidence validity from the stored canonical evidence -- never trust the flags.
+        ev = derive_snapshot_evidence_semantics(snapshot)
+        if bool(snapshot.get("snapshot_evidence_valid")) != ev["expected_snapshot_evidence_valid"]:
+            reasons.append("snapshot_evidence_valid_replay_mismatch")
+        if str(snapshot.get("snapshot_evidence_verdict", "")) != ev["expected_snapshot_evidence_verdict"]:
+            reasons.append("snapshot_evidence_verdict_replay_mismatch")
+        if sorted(snapshot.get("evidence_blockers") or []) != ev["expected_evidence_blockers"]:
+            reasons.append("snapshot_evidence_blockers_replay_mismatch")
         # RE-DERIVE readiness -- never trust the stored flag
         der = derive_snapshot_readiness(snapshot)
         if bool(snapshot.get("bootstrap_ready")) != der["expected_bootstrap_ready"]:
@@ -691,20 +839,23 @@ def build_day1_protected_binding(
     return artifact
 
 
-def _binding_is_sealed(binding: Any, snapshot: Any, *, require_execution_ready: bool = True) -> tuple[bool, list[str]]:
-    """Validate a binding against the FORMAL snapshot artifact: the snapshot must itself be sealed,
-    and ``execution_ready`` / ``readiness_blockers`` are RE-DERIVED from the snapshot's readiness and
-    exact-matched (never trusted from the binding's stored booleans)."""
+def _binding_is_sealed(binding: Any, snapshot: Any, *, allocation: Any = None,
+                       allocation_source_sha256: str | None = None,
+                       require_execution_ready: bool = True) -> tuple[bool, list[str]]:
+    """Validate a binding against the FORMAL snapshot (and, when supplied, the FORMAL allocation
+    artifact). The snapshot must itself be sealed; ``protected_symbols`` / ``execution_ready`` /
+    ``readiness_blockers`` are RE-DERIVED and exact-matched (never trusted from the binding's stored
+    fields). When ``allocation`` is provided its recomputed fingerprint must equal the binding's, and
+    ``allocation_source_sha256`` (when provided) must equal the binding's recorded file SHA."""
     reasons: list[str] = []
     if not isinstance(binding, Mapping):
         return False, ["binding_not_object"]
     ok, snap_reasons, snapshot_fp, snapshot_digest, snap_ready = _snapshot_is_sealed(snapshot)
     if not ok:
         reasons.extend(f"binding_snapshot_{r}" for r in snap_reasons)
+    snap = snapshot if isinstance(snapshot, Mapping) else {}
     if binding.get("schema_version") != BINDING_SCHEMA_VERSION:
         reasons.append("binding_schema_version_unexpected")
-    if not binding.get("binding_evidence_valid") or binding.get("binding_evidence_verdict") != BINDING_EVIDENCE_VALID:
-        reasons.append("binding_evidence_invalid")
     if binding.get("environment") != ENVIRONMENT:
         reasons.append("binding_environment_unexpected")
     if str(binding.get("protected_position_snapshot_fingerprint", "")) != snapshot_fp:
@@ -713,12 +864,36 @@ def _binding_is_sealed(binding: Any, snapshot: Any, *, require_execution_ready: 
         reasons.append("binding_snapshot_digest_mismatch")
     if not _HEX64_RE.match(str(binding.get("allocation_intent_fingerprint", ""))):
         reasons.append("binding_allocation_fingerprint_missing")
-    der = derive_snapshot_readiness(snapshot if isinstance(snapshot, Mapping) else {})
+
+    # RE-DERIVE protected_symbols from the sealed snapshot (never the binding's own list).
+    expected_symbols = sorted(snap.get("protected_symbol_set") or []) if ok else []
+    if sorted(binding.get("protected_symbols") or []) != expected_symbols:
+        reasons.append("binding_protected_symbols_mismatch")
+
+    # Validate the FORMAL allocation artifact when supplied and match the binding's bound fp + sha.
+    if allocation is not None:
+        aok, areasons, afp = validate_day1_allocation_artifact(
+            allocation, pilot_id=str(binding.get("pilot_id", "")), day1_date=str(binding.get("day1_date", "")))
+        if not aok:
+            reasons.extend(f"binding_allocation_{r}" for r in areasons)
+        elif afp != str(binding.get("allocation_intent_fingerprint", "")):
+            reasons.append("binding_allocation_fingerprint_mismatch")
+    if allocation_source_sha256 is not None and \
+            str(allocation_source_sha256) != str(binding.get("allocation_artifact_source_sha256", "")):
+        reasons.append("binding_allocation_source_sha256_mismatch")
+
+    der = derive_snapshot_readiness(snap)
     if bool(binding.get("snapshot_bootstrap_ready")) != bool(ok and snap_ready):
         reasons.append("binding_snapshot_bootstrap_ready_mismatch")
     if sorted(binding.get("readiness_blockers") or []) != der["expected_readiness_blockers"]:
         reasons.append("binding_readiness_blockers_mismatch")
-    expected_exec = bool(binding.get("binding_evidence_valid")) and bool(ok and snap_ready)
+    # Re-derive binding evidence validity: valid ONLY when the snapshot sealed, symbols match, no
+    # retired pilot, and (if provided) the allocation is valid.
+    expected_evidence_valid = not [r for r in reasons if not r.startswith("binding_not_execution_ready")]
+    if bool(binding.get("binding_evidence_valid")) != expected_evidence_valid or \
+            binding.get("binding_evidence_verdict") != (BINDING_EVIDENCE_VALID if expected_evidence_valid else BINDING_EVIDENCE_INVALID):
+        reasons.append("binding_evidence_valid_mismatch")
+    expected_exec = expected_evidence_valid and bool(ok and snap_ready)
     if bool(binding.get("execution_ready")) != expected_exec:
         reasons.append("binding_execution_ready_mismatch")
     if require_execution_ready and not expected_exec:
@@ -737,17 +912,20 @@ def _derive_continuity_semantics(
     allocation_fp: str, canonical_post_fill: Sequence[Mapping[str, Any]],
     strategy_symbols: Sequence[str], pagination_evidence: Mapping[str, Any],
     page_request_evidence: Any, network_breakdown: Mapping[str, Any],
-) -> tuple[list[str], list[str], list[Any]]:
+    allocation: Any = None, allocation_source_sha256: str | None = None,
+) -> tuple[list[str], list[str], list[Any], dict[str, int]]:
     """Re-derive continuity blockers from CANONICAL evidence (identity comparison + unauthorized
     detection + pagination + page-evidence + network). Returns (blockers, strategy_present,
-    protected_present)."""
+    protected_present, merged_counters)."""
     blockers: list[str] = []
     if pilot_id in RETIRED_PILOT_IDS:
         blockers.append(f"retired_pilot_cannot_be_repaired:{pilot_id}")
     ok, snap_reasons, snapshot_fp, _sdig, _sready = _snapshot_is_sealed(snapshot)
     if not ok:
         blockers.extend(snap_reasons)
-    bok, bind_reasons = _binding_is_sealed(binding, snapshot, require_execution_ready=True)
+    bok, bind_reasons = _binding_is_sealed(binding, snapshot, allocation=allocation,
+                                           allocation_source_sha256=allocation_source_sha256,
+                                           require_execution_ready=True)
     if not bok:
         blockers.extend(bind_reasons)
     if allocation_fp and str((binding or {}).get("allocation_intent_fingerprint", "")) != allocation_fp:
@@ -800,7 +978,7 @@ def _derive_continuity_semantics(
 
     strategy_present = sorted({k[0] for k in current if k[0] in strategy_set})
     protected_present = sorted([k for k in current if k in expected_protected])
-    return sorted(set(blockers)), strategy_present, protected_present
+    return sorted(set(blockers)), strategy_present, protected_present, merged
 
 
 def verify_post_fill_protected_continuity(
@@ -836,7 +1014,7 @@ def verify_post_fill_protected_continuity(
     canonical_post_fill.sort(key=lambda r: (r["symbol"], r["position_idx"] if r["position_idx"] is not None else -1))
     canonical_strategy = sorted({_sym(s) for s in (strategy_symbols or [])})
 
-    semantic_blockers, strategy_present, protected_present = _derive_continuity_semantics(
+    semantic_blockers, strategy_present, protected_present, _merged = _derive_continuity_semantics(
         pilot_id=pilot_id, day1_date=day1_date, snapshot=snapshot_artifact, binding=binding_artifact,
         allocation_fp=str(allocation_intent_fingerprint or ""), canonical_post_fill=canonical_post_fill,
         strategy_symbols=canonical_strategy, pagination_evidence=pagination_evidence,
@@ -878,9 +1056,12 @@ def verify_post_fill_protected_continuity(
     return artifact
 
 
-def _continuity_is_sealed(continuity: Any, snapshot: Any, binding: Any) -> tuple[bool, list[str]]:
-    """Validate a PASS continuity artifact by recomputing fingerprint + digest AND replaying the
-    verdict from its canonical evidence (never trusting ``continuity_pass``)."""
+def _continuity_is_sealed(continuity: Any, snapshot: Any, binding: Any, *, allocation: Any = None,
+                          allocation_source_sha256: str | None = None) -> tuple[bool, list[str]]:
+    """Validate a PASS continuity artifact: recompute fingerprint + digest, bind the FORMAL
+    allocation (recomputed strategy allowlist + fingerprint + file SHA), replay the verdict from the
+    canonical evidence, and EXACT-match every stored output (counts / present sets / continuity rows /
+    blockers / verdict / top-level network totals)."""
     reasons: list[str] = []
     if not isinstance(continuity, Mapping):
         return False, ["continuity_not_object"]
@@ -893,13 +1074,34 @@ def _continuity_is_sealed(continuity: Any, snapshot: Any, binding: Any) -> tuple
     if canonical_continuity_digest(continuity) != str(continuity.get("post_fill_continuity_digest", "")):
         reasons.append("continuity_digest_mismatch")
 
+    # The strategy allowlist is the FORMAL allocation's 50 symbols, not the artifact's own list.
+    strategy_symbols = continuity.get("canonical_strategy_symbols") or []
+    if allocation is not None:
+        aok, areasons, afp = validate_day1_allocation_artifact(
+            allocation, pilot_id=str(continuity.get("pilot_id", "")),
+            day1_date=str(continuity.get("day1_date", "")))
+        if not aok:
+            reasons.extend(f"continuity_allocation_{r}" for r in areasons)
+        else:
+            derived_strategy = sorted({_sym(p.get("symbol")) for p in allocation.get("order_payloads") or []
+                                       if isinstance(p, Mapping)})
+            if sorted(strategy_symbols) != derived_strategy:
+                reasons.append("continuity_strategy_symbols_mismatch")
+            if afp != str(continuity.get("allocation_intent_fingerprint", "")):
+                reasons.append("continuity_allocation_fingerprint_mismatch")
+            strategy_symbols = derived_strategy
+    if allocation_source_sha256 is not None and \
+            str(allocation_source_sha256) != str(continuity.get("allocation_artifact_source_sha256", "")):
+        reasons.append("continuity_allocation_source_sha256_mismatch")
+
     # Semantic replay from canonical evidence -- a PASS must re-derive to zero blockers.
-    derived, strat, prot = _derive_continuity_semantics(
+    derived, strat, prot, merged = _derive_continuity_semantics(
         pilot_id=str(continuity.get("pilot_id", "")), day1_date=str(continuity.get("day1_date", "")),
-        snapshot=snapshot, binding=binding,
+        snapshot=snapshot, binding=binding, allocation=allocation,
+        allocation_source_sha256=allocation_source_sha256,
         allocation_fp=str(continuity.get("allocation_intent_fingerprint", "")),
         canonical_post_fill=continuity.get("canonical_post_fill_positions") or [],
-        strategy_symbols=continuity.get("canonical_strategy_symbols") or [],
+        strategy_symbols=strategy_symbols,
         pagination_evidence=continuity.get("pagination_evidence") or {},
         page_request_evidence=continuity.get("position_page_request_evidence"),
         network_breakdown=(continuity.get("network_audit_counters") or {}).get("component_breakdown") or {})
@@ -910,10 +1112,31 @@ def _continuity_is_sealed(continuity: Any, snapshot: Any, binding: Any) -> tuple
         reasons.append("continuity_not_pass")
     if sorted(continuity.get("blockers") or []) != []:
         reasons.append("continuity_stored_blockers_nonempty")
+
+    # EXACT-match every stored semantic output against the replay.
+    prot_symbols = [k[0] for k in prot]
+    prot_cores = sorted((c for c in (continuity.get("canonical_post_fill_positions") or [])
+                         if isinstance(c, Mapping) and (c["symbol"], c["position_idx"]) in set(prot)),
+                        key=lambda r: (r["symbol"], r["position_idx"]))
     if _as_int(continuity.get("strategy_position_count")) != len(strat):
         reasons.append("continuity_strategy_count_mismatch")
+    if list(continuity.get("strategy_positions_present") or []) != strat:
+        reasons.append("continuity_strategy_present_mismatch")
     if _as_int(continuity.get("protected_position_count")) != len(prot):
         reasons.append("continuity_protected_count_mismatch")
+    if list(continuity.get("protected_positions_present") or []) != prot_symbols:
+        reasons.append("continuity_protected_present_mismatch")
+    if [_identity_core(c) for c in (continuity.get("protected_continuity_evidence") or [])] != prot_cores:
+        reasons.append("continuity_protected_evidence_mismatch")
+
+    # Top-level network totals must equal the re-merged component breakdown.
+    nac = continuity.get("network_audit_counters") or {}
+    for k in ("private_read_only_request_count", "public_read_only_request_count",
+              "private_mutating_request_count"):
+        if _as_int(nac.get(k)) != merged[k]:
+            reasons.append(f"continuity_network_top_level_mismatch:{k}")
+    if _as_int(continuity.get("private_mutating_request_count")) != merged["private_mutating_request_count"]:
+        reasons.append("continuity_private_mutating_top_level_mismatch")
     return (not reasons), reasons
 
 
@@ -921,7 +1144,7 @@ def _continuity_is_sealed(continuity: Any, snapshot: Any, binding: Any) -> tuple
 def verify_day1_protected_identity_chain(
     *, pilot_id: str, day1_date: str, snapshot: Any, binding: Any, continuity: Any,
     current_protected_identities: Mapping[tuple[str, Any], Mapping[str, Any]],
-    day1_allocation_intent: Any = None,
+    day1_allocation_intent: Any = None, allocation_source_sha256: str | None = None,
 ) -> tuple[bool, list[str]]:
     """Re-validate the whole PRE_DAY1 -> binding -> continuity chain for Day-2. Every artifact is
     self-recomputed and semantically replayed; the binding must be EXECUTION-READY, the continuity
@@ -937,9 +1160,13 @@ def verify_day1_protected_identity_chain(
 
     ok, snap_reasons, snapshot_fp, _sd, _ready = _snapshot_is_sealed(snapshot)
     reasons.extend(snap_reasons)
-    bok, bind_reasons = _binding_is_sealed(binding, snapshot, require_execution_ready=True)
+    bok, bind_reasons = _binding_is_sealed(binding, snapshot, allocation=day1_allocation_intent,
+                                           allocation_source_sha256=allocation_source_sha256,
+                                           require_execution_ready=True)
     reasons.extend(bind_reasons)
-    cok, cont_reasons = _continuity_is_sealed(continuity, snapshot, binding)
+    cok, cont_reasons = _continuity_is_sealed(continuity, snapshot, binding,
+                                              allocation=day1_allocation_intent,
+                                              allocation_source_sha256=allocation_source_sha256)
     reasons.extend(cont_reasons)
 
     for name, art in (("snapshot", snapshot), ("binding", binding), ("continuity", continuity)):

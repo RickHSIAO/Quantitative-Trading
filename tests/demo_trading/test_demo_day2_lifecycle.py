@@ -888,6 +888,36 @@ def test_day2_forged_continuity_pass_still_blocks():                           #
     assert art["protected_identity_chain_verified"] is False
 
 
+def test_day2_forged_allocation_allowlist_blocks():                           # FIX4 (8B)
+    import copy
+    snap, binding, cont, alloc = _protected_chain(NEWPILOT, DAY1)
+    forged = copy.deepcopy(cont)
+    forged["canonical_strategy_symbols"] = sorted(forged["canonical_strategy_symbols"] + ["RANDUSDT"])
+    forged["post_fill_continuity_fingerprint"] = pib.canonical_continuity_fingerprint(forged)
+    forged["post_fill_continuity_digest"] = pib.canonical_continuity_digest(forged)
+    art = _plan(pilot_id=NEWPILOT, day1_allocation_intent=alloc,
+                current_positions=_current(include_edu=True),
+                day1_protected_snapshot=snap, day1_protected_binding=binding,
+                day1_protected_continuity=forged)
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    assert art["protected_identity_chain_verified"] is False
+
+
+def test_day2_forged_binding_protected_symbols_blocks():                      # FIX4 (8C)
+    import copy
+    snap, binding, cont, alloc = _protected_chain(NEWPILOT, DAY1)
+    forged = copy.deepcopy(binding)
+    forged["protected_symbols"] = ["EDUUSDT", "RANDUSDT"]
+    forged["binding_fingerprint"] = pib.canonical_binding_fingerprint(forged)
+    forged["binding_digest"] = pib.canonical_binding_digest(forged)
+    art = _plan(pilot_id=NEWPILOT, day1_allocation_intent=alloc,
+                current_positions=_current(include_edu=True),
+                day1_protected_snapshot=snap, day1_protected_binding=forged,
+                day1_protected_continuity=cont)
+    assert art["verdict"] == d2.DRY_RUN_BLOCKED
+    assert art["protected_identity_chain_verified"] is False
+
+
 def test_empty_protected_day2_no_edu_no_blocker():                             # FIX2 (14)
     # No EDUUSDT open at all: the identity block is not even reached; no EDU blocker is produced
     # and no fake EDU row is required.
