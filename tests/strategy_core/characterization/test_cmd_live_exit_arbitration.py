@@ -27,6 +27,9 @@ Config relied upon (current production values, not overridden):
 """
 from __future__ import annotations
 
+import src.strategy_core.exit_decision as exit_decision_module
+from src.strategy_core.exit_decision import ExitAction, ExitDecisionResult
+
 ENTRY_PX = 100.0
 BTC = "BYBIT:BTCUSDT.P"
 
@@ -161,3 +164,30 @@ def test_opposite_signal_flip_closes_long_and_reverses_short(run_one_cycle):
     assert reverse[0]["direction"] == -1
     assert reverse[0]["strategy"] == "trend"
     assert int(reverse[0]["score"]) == 5
+
+
+# ── SR-102B: main.cmd_live uses the shared exit core AUTHORITATIVELY ──────────
+def test_exit_core_is_authoritative_over_hard_stop_loss(run_one_cycle, monkeypatch):
+    # Replace the shared exit core with one that always returns HOLD, then drive a
+    # price sitting exactly at the hard stop loss (which the pre-extraction inline
+    # arbitration would unconditionally close as 'SL'). Because cmd_live now defers
+    # to the shared core, it must (1) consult it -- proven by the recorded call --
+    # and (2) obey its HOLD verdict: no close_position, no EXIT ledger row. This is
+    # only possible if no second independent SL/TP/FLIP copy remains in main.py.
+    consulted = []
+
+    def forced_hold(inp):
+        consulted.append(inp.symbol)
+        return ExitDecisionResult(ExitAction.HOLD, None, False, False, False, False)
+
+    monkeypatch.setattr(exit_decision_module, "decide_exit", forced_hold)
+    price = 90.0                                  # exactly at the hard SL (90 <= SL)
+    fake, ledger = run_one_cycle(
+        cryptos=[BTC],
+        signals={BTC: _FLAT},
+        positions=(_held_long(sl=90.0, tp=130.0, mark=price),),
+        live_price=price,
+    )
+    assert consulted == [BTC]                     # cmd_live consulted the shared core
+    assert fake.calls["close_position"] == []     # and obeyed HOLD despite hard SL
+    assert _exits(ledger) == []

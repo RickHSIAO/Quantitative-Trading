@@ -30,6 +30,12 @@ from src.strategy_core.entry_decision import (
     decide_entry,
     dominant_strategy_family,
 )
+from src.strategy_core.exit_decision import (
+    ExitAction,
+    ExitDecisionInput,
+    ExitDecisionResult,
+    decide_exit,
+)
 
 __all__ = [
     "CompletenessStatus",
@@ -51,4 +57,8 @@ __all__ = [
     "EntryReasonCode",
     "decide_entry",
     "dominant_strategy_family",
+    "ExitAction",
+    "ExitDecisionInput",
+    "ExitDecisionResult",
+    "decide_exit",
 ]

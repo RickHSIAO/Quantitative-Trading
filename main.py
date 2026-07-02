@@ -614,6 +614,11 @@ def cmd_live(args):
         EntryDecisionInput,
         decide_entry,
     )
+    from src.strategy_core.exit_decision import (
+        ExitAction,
+        ExitDecisionInput,
+        decide_exit,
+    )
 
     try:
         executor = BybitExecutor()
@@ -1977,11 +1982,6 @@ def cmd_live(args):
                         _remember_position(sym, pos)
                         print(f'  [TSL] {sym} stopLoss -> {sl_str}')
 
-                    hit_sl = (pos['dir'] == 1 and price <= pos['sl']) or \
-                             (pos['dir'] == -1 and price >= pos['sl'])
-                    hit_tp = (pos['dir'] == 1 and price >= pos['tp']) or \
-                             (pos['dir'] == -1 and price <= pos['tp'])
-
                     hold_days = 0
                     if pos.get('entry_dt'):
                         try:
@@ -2016,15 +2016,33 @@ def cmd_live(args):
                     if max_hold_class > 0 and hold_days >= max_hold_class:
                         early_exit = 'MAXHOLD'
 
-                    flip = min_hold_ok and latest_sig != 0 and latest_sig != pos['dir']
-                    if hit_sl or hit_tp or early_exit or flip:
+                    # Authoritative same-process exit arbitration via the shared
+                    # pure core. It receives the already-computed live price,
+                    # current (possibly trailed) SL/TP, latest combined signal,
+                    # the min-hold gate and the resolved early-exit label, and
+                    # returns HOLD or CLOSE with the exact production reason
+                    # ('SL' > 'TP' > early-exit label > 'FLIP'). Trailing-stop
+                    # mutation (above) and remote/backfill reconciliation stay
+                    # OUTSIDE the core; no second inline SL/TP/early/FLIP copy
+                    # remains here.
+                    exit_decision = decide_exit(ExitDecisionInput(
+                        symbol=sym,
+                        direction=pos['dir'],
+                        current_price=price,
+                        stop_loss=pos['sl'],
+                        take_profit=pos['tp'],
+                        combined_signal=latest_sig,
+                        min_hold_ok=min_hold_ok,
+                        early_exit=early_exit,
+                    ))
+                    if exit_decision.action is ExitAction.CLOSE:
                         close_res = executor.close_position(sym, pos['qty'], pos['dir']) or {}
                         if close_res.get('retCode') != 0:
                             print(f'  [CLOSE FAIL] {sym}: {close_res.get("retMsg", close_res)}')
                             continue
                         pnl = (price - pos['entry']) * pos['qty'] * pos['dir']
                         trade_history[sym].append(ClosedTradeStub(pnl))
-                        reason = 'SL' if hit_sl else ('TP' if hit_tp else (early_exit or 'FLIP'))
+                        reason = exit_decision.close_reason
                         _record_live_order(
                             'EXIT',
                             sym,
