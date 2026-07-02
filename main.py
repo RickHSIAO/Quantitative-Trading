@@ -608,6 +608,12 @@ def cmd_live(args):
         export_bybit_live_orders_to_excel,
         record_bybit_order,
     )
+    from dataclasses import replace as _dc_replace
+    from src.strategy_core.entry_decision import (
+        EntryAction,
+        EntryDecisionInput,
+        decide_entry,
+    )
 
     try:
         executor = BybitExecutor()
@@ -843,12 +849,21 @@ def cmd_live(args):
             f'持倉：{len(open_pos)} 個'
         )
 
-    def _dominant_live_strategy(sigs: dict, direction: int) -> str:
-        matched = [
-            name for name in ('trend', 'vp', 'bb')
-            if name in sigs and len(sigs[name]) and int(sigs[name].iloc[-1]) == direction
-        ]
-        return matched[0] if len(matched) == 1 else 'combined'
+    def _latest_family_signal(sigs: dict, name: str) -> int:
+        # Latest per-family signal for the shared entry-decision core. Mirrors the
+        # guarded access the old _dominant_live_strategy used: a missing/empty
+        # series yields 0, which never equals a +/-1 direction (so that family is
+        # excluded from dominance -- identical to the original behaviour). Any
+        # OTHER conversion failure (e.g. non-numeric latest value) is NOT
+        # swallowed here -- it propagates to the existing outer per-symbol
+        # try/except, exactly as the original int(sigs[name].iloc[-1]) call
+        # inside _dominant_live_strategy did.
+        if name not in sigs:
+            return 0
+        ser = sigs[name]
+        if len(ser) == 0:
+            return 0
+        return int(ser.iloc[-1])
 
     def _dominant_strategy_at(sigs: dict, dt: pd.Timestamp, direction: int) -> str:
         matched = []
@@ -2060,13 +2075,60 @@ def cmd_live(args):
                 if sym in remote_closed_symbols:
                     remote_closed_symbols.discard(sym)
                     _block_reentry(sym, dt_latest, 'remote position closed')
-                if (sym in crypto_tradable_symbols
-                        and sym not in open_pos and latest_sig != 0
-                        and score_val >= min_score_class
-                        and not _reentry_blocked(sym, dt_latest)
-                        and _sym_wr_ok(sym)):
-                    strat = _dominant_live_strategy(sigs, latest_sig)
-                    candidates.append((sym, latest_sig, score_val, strat))
+                # Authoritative per-symbol entry eligibility via the shared pure
+                # core, resolved in STAGES so later gates -- and the
+                # potentially-exception-raising family-signal reads -- are only
+                # touched once every earlier gate has already passed, exactly
+                # mirroring the original short-circuiting `and` chain:
+                #   tradable and not-open and signal!=0 and score>=min
+                #   and not reentry_blocked and sym_wr_ok
+                # Each stage calls the SAME decide_entry; unresolved fields carry
+                # neutral placeholders that can never themselves cause a HOLD
+                # (reentry_blocked=False, symbol_winrate_ok=True, family
+                # signals=0, cap=False), so a HOLD at any stage is genuinely
+                # attributable to an already-resolved gate. Portfolio caps remain
+                # cross-candidate state, applied at the phase-2 commit gate below.
+                stage_input = EntryDecisionInput(
+                    symbol=sym,
+                    asset_class='Crypto',
+                    combined_signal=latest_sig,
+                    score=score_val,
+                    trend_signal=0,
+                    volume_profile_signal=0,
+                    bollinger_signal=0,
+                    minimum_score=min_score_class,
+                    symbol_tradable=sym in crypto_tradable_symbols,
+                    has_open_position=sym in open_pos,
+                    reentry_blocked=False,
+                    symbol_winrate_ok=True,
+                    position_cap_reached=False,
+                )
+                # Stage 1: tradable / no existing position / signal / score.
+                if decide_entry(stage_input).action is not EntryAction.ENTER:
+                    continue
+                # Stage 2: re-entry block.
+                stage_input = _dc_replace(
+                    stage_input, reentry_blocked=_reentry_blocked(sym, dt_latest))
+                if decide_entry(stage_input).action is not EntryAction.ENTER:
+                    continue
+                # Stage 3: symbol win-rate gate.
+                stage_input = _dc_replace(
+                    stage_input, symbol_winrate_ok=_sym_wr_ok(sym))
+                if decide_entry(stage_input).action is not EntryAction.ENTER:
+                    continue
+                # Stage 4: strategy-family latest signals -- read only now, for a
+                # symbol that has already passed every earlier gate.
+                entry_input = _dc_replace(
+                    stage_input,
+                    trend_signal=_latest_family_signal(sigs, 'trend'),
+                    volume_profile_signal=_latest_family_signal(sigs, 'vp'),
+                    bollinger_signal=_latest_family_signal(sigs, 'bb'),
+                )
+                decision = decide_entry(entry_input)
+                if decision.action is EntryAction.ENTER:
+                    candidates.append(
+                        (sym, latest_sig, score_val,
+                         decision.strategy_family, entry_input))
             except Exception as exc:
                 print(f'  [ERROR] {sym}: {exc}')
 
@@ -2080,14 +2142,30 @@ def cmd_live(args):
         # Decrement locally as orders are placed within this cycle.
         cycle_available = getattr(executor, 'get_available_balance', executor.get_balance)()
 
-        for sym, latest_sig, score_val, strat in candidates:
-            if len(open_pos) >= crypto_max_positions:
-                break
-            if sym in open_pos:
-                continue
+        for sym, latest_sig, score_val, strat, entry_input in candidates:
+            # Authoritative commit gate: the SAME pure core, now with the
+            # cross-candidate portfolio caps resolved from current cycle state
+            # (global max positions OR per-family MAX_POS_PER_STRATEGY). A HOLD
+            # here means the caps rejected this candidate -- no order is placed.
+            # global_cap_reached and strategy_cap_reached are tracked SEPARATELY
+            # (only their OR is passed to the shared core, which remains the sole
+            # ENTER/HOLD authority) so the original control-flow distinction can
+            # be restored below: the global cap stops processing every remaining
+            # candidate (break), while a per-strategy cap only skips this one
+            # (continue) -- exactly as the pre-extraction inline code did.
+            global_cap_reached = len(open_pos) >= crypto_max_positions
             strat_limit = config.MAX_POS_PER_STRATEGY.get(strat) \
                           if config.MAX_POS_PER_STRATEGY else None
-            if strat_limit is not None and strat_counts.get(strat, 0) >= strat_limit:
+            strategy_cap_reached = (
+                strat_limit is not None
+                and strat_counts.get(strat, 0) >= strat_limit)
+            commit_decision = decide_entry(_dc_replace(
+                entry_input,
+                has_open_position=sym in open_pos,
+                position_cap_reached=global_cap_reached or strategy_cap_reached))
+            if commit_decision.action is not EntryAction.ENTER:
+                if global_cap_reached:
+                    break
                 continue
             try:
                 df = data[sym]

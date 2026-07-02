@@ -126,11 +126,16 @@ def _make_price_df(sym, *, close=100.0, atr=2.0, rows=260):
 
 def _make_signals(df, spec):
     """Build a signals dict aligned to df.index from a spec tuple
-    (combined, score, trend, vp, bb)."""
+    (combined, score, trend, vp, bb). A NaN component (a genuine data-quality
+    condition indicator computation can produce) is kept as a float series
+    instead of being forced through int(), so a test can characterize what
+    happens when a family signal's latest value is not integer-convertible."""
     combined, score, trend, vp, bb = spec
     n = len(df.index)
 
     def s(v):
+        if isinstance(v, float) and v != v:   # NaN
+            return pd.Series([v] * n, index=df.index, dtype=float)
         return pd.Series([int(v)] * n, index=df.index, dtype=int)
 
     return {"combined": s(combined), "score": s(score), "trend": s(trend),

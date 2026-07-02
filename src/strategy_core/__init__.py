@@ -22,6 +22,14 @@ from src.strategy_core.live_trade_history_adapter import (
     adapt_live_history_rows,
     adapt_same_process_close_events,
 )
+from src.strategy_core.entry_decision import (
+    EntryAction,
+    EntryDecisionInput,
+    EntryDecisionResult,
+    EntryReasonCode,
+    decide_entry,
+    dominant_strategy_family,
+)
 
 __all__ = [
     "CompletenessStatus",
@@ -37,4 +45,10 @@ __all__ = [
     "LiveTradeHistoryAdapterError",
     "adapt_live_history_rows",
     "adapt_same_process_close_events",
+    "EntryAction",
+    "EntryDecisionInput",
+    "EntryDecisionResult",
+    "EntryReasonCode",
+    "decide_entry",
+    "dominant_strategy_family",
 ]
