@@ -180,10 +180,18 @@ class Backtester:
                  profile_name: str = '',
                  max_total_positions: int | None = None,
                  max_position_pct: float | None = None,
-                 max_pos_per_class: dict[str, int] | None = None):
+                 max_pos_per_class: dict[str, int] | None = None,
+                 enable_circuit_breaker: bool | None = None):
         self.initial_capital = initial_capital
         self.silo_mode = silo_mode   # True → 艙位模式，資金耗盡前不限各類別張數
         self.profile_name = profile_name
+        # None → 沿用 config.ENABLE_CIRCUIT_BREAKER（既有泛用行為）；
+        # True/False → 明確覆寫，供呼叫端（如原始策略 backtest 路徑）指定。
+        self.enable_circuit_breaker = (
+            config.ENABLE_CIRCUIT_BREAKER
+            if enable_circuit_breaker is None
+            else bool(enable_circuit_breaker)
+        )
         self.max_total_positions = (
             config.MAX_TOTAL_POSITIONS
             if max_total_positions is None
@@ -278,7 +286,7 @@ class Backtester:
         self.capital += pnl
 
         # 熔斷統計：連虧計數 + 當日 PnL
-        if config.ENABLE_CIRCUIT_BREAKER:
+        if self.enable_circuit_breaker:
             self._cb_daily_pnl[exit_date] = self._cb_daily_pnl.get(exit_date, 0.0) + pnl
             if pnl < 0:
                 self._cb_consec_loss += 1
@@ -716,11 +724,11 @@ class Backtester:
 
                 daily_pnl    = self._cb_daily_pnl.get(date_str, 0.0)
                 daily_trades = self._cb_daily_trades.get(date_str, 0)
-                daily_loss_blocked = (config.ENABLE_CIRCUIT_BREAKER and
+                daily_loss_blocked = (self.enable_circuit_breaker and
                                       daily_pnl <= -config.CB_DAILY_LOSS_PCT * self.capital)
-                daily_count_blocked = (config.ENABLE_CIRCUIT_BREAKER and
+                daily_count_blocked = (self.enable_circuit_breaker and
                                        daily_trades >= config.CB_MAX_DAILY_TRADES)
-                cb_block_today = (config.ENABLE_CIRCUIT_BREAKER and
+                cb_block_today = (self.enable_circuit_breaker and
                                   (cb_paused or daily_loss_blocked or daily_count_blocked))
                 if cb_block_today and candidates:
                     self._entry_block_stats['circuit_breaker_blocked_candidates'] += len(candidates)
@@ -1046,7 +1054,7 @@ class Backtester:
             'entry_block_stats': dict(self._entry_block_stats),
             'features_enabled':  {
                 'score_tier_sizing': bool(config.ENABLE_SCORE_TIER_SIZING),
-                'circuit_breaker':   bool(config.ENABLE_CIRCUIT_BREAKER),
+                'circuit_breaker':   bool(self.enable_circuit_breaker),
                 'geometric_rr':      bool(config.ENABLE_GEOMETRIC_RR),
             },
         }
@@ -1159,6 +1167,7 @@ def run_silo_backtest(
         silo_classes: dict[str, list[str]],
         silo_capital: float,
         strategy_profiles: dict[str, dict] | None = None,
+        enable_circuit_breaker: bool | None = None,
 ) -> tuple[list[Trade], dict[str, dict]]:
     """
     各艙位獨立跑 Backtester，資金完全隔離。
@@ -1191,6 +1200,7 @@ def run_silo_backtest(
             max_total_positions=profile.get('max_total_positions'),
             max_position_pct=profile.get('max_position_pct'),
             max_pos_per_class=profile.get('max_pos_per_class', {}),
+            enable_circuit_breaker=enable_circuit_breaker,
         )
         trades = bt.run(s_data, s_sigs, asset_types)
         metrics = bt.get_metrics()

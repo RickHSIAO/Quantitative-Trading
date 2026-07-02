@@ -457,6 +457,7 @@ def cmd_backtest(args):
         trades, silo_results = run_silo_backtest(
             data, signals, type_map, silo_classes, silo_capital,
             strategy_profiles=strategy_profiles,
+            enable_circuit_breaker=False,
         )
 
         total_initial = sum(sr['bt'].initial_capital for sr in silo_results.values())
@@ -470,7 +471,8 @@ def cmd_backtest(args):
         )
 
         # 組合整體指標（利用虛擬 Backtester 計算 Sharpe / DD 等）
-        combined_bt = Backtester(initial_capital=total_initial)
+        combined_bt = Backtester(initial_capital=total_initial,
+                                  enable_circuit_breaker=False)
         combined_bt.trades       = trades
         combined_bt.capital      = total_final
         combined_bt.equity_curve = equity_curve
@@ -492,7 +494,8 @@ def cmd_backtest(args):
                       f"最大回撤 {m.get('max_drawdown_pct', 0):>6.2f}%")
         print('='*56)
     else:
-        bt     = Backtester(initial_capital=args.capital)
+        bt     = Backtester(initial_capital=args.capital,
+                            enable_circuit_breaker=False)
         trades = bt.run(data, signals, type_map)
         metrics = bt.get_metrics()
         equity_curve = bt.equity_curve
