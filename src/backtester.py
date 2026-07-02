@@ -6,7 +6,7 @@ Event-driven daily backtester.
   3. 記錄當日淨值
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _replace
 from typing import Optional
 import pandas as pd
 import numpy as np
@@ -14,6 +14,11 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import config
 from src.risk import estimate_kelly_from_history, position_size, calculate_stops
+from src.strategy_core.entry_decision import (
+    EntryAction,
+    EntryDecisionInput,
+    decide_entry,
+)
 
 
 # ─── 手續費 / 滑點 helpers ─────────────────────────────────────────────────────
@@ -538,9 +543,47 @@ class Backtester:
 
             # ── Step 2: 開新倉（依訊號共識度優先）────────────────────────
             if len(open_positions) < self.max_total_positions:
-                candidates: list[tuple[str, int, int, str]] = []
+                candidates: list[tuple[str, int, int, str, EntryDecisionInput]] = []
                 for sym in data:
-                    if sym in open_positions:
+                    atype_for_score = asset_types.get(sym, '')
+                    min_score_class = _cls_get('MIN_ENTRY_SCORE_BY_CLASS',
+                                                atype_for_score, config.MIN_ENTRY_SCORE)
+                    # ── Authoritative eligibility via the shared Entry Decision
+                    # Core, resolved in STAGES so each later gate -- and the data
+                    # it reads -- is only touched once every earlier gate has
+                    # passed (original short-circuit order: existing-position ->
+                    # signal -> score -> win-rate -> family). Portfolio caps are
+                    # cross-candidate state, applied at the phase-2 commit gate
+                    # below (position_cap_reached=False here).
+                    #
+                    # Stage 0: existing-position authority BEFORE any bar/signal
+                    # access. Neutral placeholders (combined_signal=1 non-zero,
+                    # score=minimum_score) make every gate EXCEPT EXISTING_POSITION
+                    # pass, so a HOLD here is attributable solely to
+                    # has_open_position -- reproducing the original
+                    # `if sym in open_positions: continue` through the shared core,
+                    # with NO second inline existing-position gate and the SAME
+                    # short-circuit (an already-open symbol's signals, win-rate and
+                    # family are never read). symbol_tradable=True and
+                    # reentry_blocked=False are faithful Backtest constants (the
+                    # backtester has no tradability filter and no re-entry
+                    # cooldown), NOT a claim of full Live/Backtest parity.
+                    stage_input = EntryDecisionInput(
+                        symbol=sym,
+                        asset_class=atype_for_score,
+                        combined_signal=1,
+                        score=min_score_class,
+                        trend_signal=0,
+                        volume_profile_signal=0,
+                        bollinger_signal=0,
+                        minimum_score=min_score_class,
+                        symbol_tradable=True,
+                        has_open_position=sym in open_positions,
+                        reentry_blocked=False,
+                        symbol_winrate_ok=True,
+                        position_cap_reached=False,
+                    )
+                    if decide_entry(stage_input).action is not EntryAction.ENTER:
                         continue
                     im = idx_map.get(sym)
                     if im is None or dt not in im:
@@ -552,34 +595,45 @@ class Backtester:
                     if si is None:
                         continue
                     sig_val = int(s_combined[sym][si])
-                    if sig_val == 0:
-                        continue
                     score_val = int(s_score[sym][si])
-                    atype_for_score = asset_types.get(sym, '')
-                    min_score_class = _cls_get('MIN_ENTRY_SCORE_BY_CLASS',
-                                                atype_for_score, config.MIN_ENTRY_SCORE)
-                    if score_val < min_score_class:
+                    # Stage 1: real signal / score carried onto the SAME input
+                    # (signal!=0 and score>=min). Only after this passes are the
+                    # win-rate history and the per-family signals read below.
+                    stage_input = _replace(stage_input,
+                                           combined_signal=sig_val, score=score_val)
+                    if decide_entry(stage_input).action is not EntryAction.ENTER:
                         continue
-                    # 個股勝率過濾：近 SYM_WR_WINDOW 筆勝率低於門檻則跳過
+                    # Stage 2: 個股勝率過濾（近 SYM_WR_WINDOW 筆勝率低於門檻則跳過）。
                     sym_min_wr = _cls_get('SYM_MIN_WINRATE_BY_CLASS',
                                           atype_for_score, config.SYM_MIN_WINRATE)
                     sym_wr_window = _cls_get('SYM_WR_WINDOW_BY_CLASS',
                                              atype_for_score, config.SYM_WR_WINDOW)
                     sym_wr_min_trades = _cls_get('SYM_WR_MIN_TRADES_BY_CLASS',
                                                  atype_for_score, config.SYM_WR_MIN_TRADES)
+                    symbol_winrate_ok = True
                     if sym_min_wr > 0:
                         hist = history_by_sym[sym][-sym_wr_window:]
                         if len(hist) >= sym_wr_min_trades:
                             wins = sum(1 for t in hist if t.pnl is not None and t.pnl > 0)
                             if wins / len(hist) < sym_min_wr:
-                                continue
-                    # Dominant strategy via cached arrays
-                    matched = []
-                    if int(s_trend[sym][si]) == sig_val: matched.append('trend')
-                    if int(s_vp[sym][si])    == sig_val: matched.append('vp')
-                    if int(s_bb[sym][si])    == sig_val: matched.append('bb')
-                    strat = matched[0] if len(matched) == 1 else 'combined'
-                    candidates.append((sym, sig_val, score_val, strat))
+                                symbol_winrate_ok = False
+                    stage_input = _replace(stage_input, symbol_winrate_ok=symbol_winrate_ok)
+                    if decide_entry(stage_input).action is not EntryAction.ENTER:
+                        continue
+                    # Stage 3: per-family latest signals (cached arrays are already
+                    # fillna(0)-cleaned int64, so these never raise). The shared
+                    # core selects the dominant family exactly as the old inline
+                    # `matched[0] if len(matched)==1 else 'combined'` did.
+                    entry_input = _replace(
+                        stage_input,
+                        trend_signal=int(s_trend[sym][si]),
+                        volume_profile_signal=int(s_vp[sym][si]),
+                        bollinger_signal=int(s_bb[sym][si]),
+                    )
+                    decision = decide_entry(entry_input)
+                    if decision.action is EntryAction.ENTER:
+                        candidates.append((sym, decision.direction, score_val,
+                                           decision.strategy_family, entry_input))
 
                 candidates.sort(key=lambda x: x[2], reverse=True)
 
@@ -606,26 +660,44 @@ class Backtester:
                     self._entry_block_stats['circuit_breaker_blocked_candidates'] += len(candidates)
 
                 active_candidates = candidates if not cb_block_today else []
-                for idx, (sym, sig_val, score_val, strat) in enumerate(active_candidates):
+                for idx, (sym, sig_val, score_val, strat, entry_input) in enumerate(active_candidates):
                     self._entry_block_stats['candidates_considered'] += 1
-                    if len(open_positions) >= self.max_total_positions:
-                        self._entry_block_stats['max_total_positions_hits'] += (
-                            len(active_candidates) - idx
-                        )
-                        break
-
+                    # Authoritative commit gate: the SAME shared core, now with
+                    # the cross-candidate portfolio caps resolved from current
+                    # cycle state. The three caps are tracked SEPARATELY (only
+                    # their OR is passed to decide_entry, which stays the sole
+                    # ENTER/HOLD authority) so the original control-flow + block-
+                    # stat distinction survives byte-for-byte: the GLOBAL cap
+                    # stops every remaining candidate (break); the per-CLASS and
+                    # per-STRATEGY caps skip only this one (continue). Precedence
+                    # global > class > strategy matches the pre-extraction order.
+                    global_cap_reached = len(open_positions) >= self.max_total_positions
                     atype       = asset_types.get(sym, '')
+                    class_cap_reached = False
                     if self.max_pos_per_class:
                         class_limit = self.max_pos_per_class.get(
                             atype, self.max_total_positions
                         )
-                        if class_counts.get(atype, 0) >= class_limit:
-                            self._entry_block_stats['class_limit_hits'] += 1
-                            continue
-
+                        class_cap_reached = class_counts.get(atype, 0) >= class_limit
                     strat_limit = config.MAX_POS_PER_STRATEGY.get(strat) \
                                   if config.MAX_POS_PER_STRATEGY else None
-                    if strat_limit is not None and strat_counts.get(strat, 0) >= strat_limit:
+                    strat_cap_reached = (
+                        strat_limit is not None
+                        and strat_counts.get(strat, 0) >= strat_limit)
+                    commit = decide_entry(_replace(
+                        entry_input,
+                        has_open_position=sym in open_positions,
+                        position_cap_reached=(
+                            global_cap_reached or class_cap_reached or strat_cap_reached)))
+                    if commit.action is not EntryAction.ENTER:
+                        if global_cap_reached:
+                            self._entry_block_stats['max_total_positions_hits'] += (
+                                len(active_candidates) - idx
+                            )
+                            break
+                        if class_cap_reached:
+                            self._entry_block_stats['class_limit_hits'] += 1
+                            continue
                         self._entry_block_stats['strategy_limit_hits'] += 1
                         continue
 
