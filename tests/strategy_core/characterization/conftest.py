@@ -40,8 +40,19 @@ class FakeExecutor:
     """In-memory stand-in for BybitExecutor. Records every order-ish call and
     performs no network I/O. All returns are deterministic."""
 
-    def __init__(self, *, positions=(), wallet=5000.0, available=3123.45, live_price=100.0):
+    def __init__(self, *, positions=(), wallet=5000.0, available=3123.45, live_price=100.0,
+                 positions_after_sync=None):
         self._positions = [dict(p) for p in positions]
+        # If given, returned by get_positions() from the SECOND call onward instead
+        # of `positions`. Models a real exchange-side change between the cmd_live
+        # startup sync call and the in-cycle _sync_remote_positions() reconciliation
+        # call (e.g. a position closed externally in between) -- not a fake code
+        # path, just a call-counted exchange snapshot.
+        self._positions_after_sync = (
+            None if positions_after_sync is None
+            else [dict(p) for p in positions_after_sync]
+        )
+        self._get_positions_calls = 0
         self._wallet = float(wallet)
         self._available = float(available)
         self._live_price = float(live_price)
@@ -60,6 +71,9 @@ class FakeExecutor:
         return self._available
 
     def get_positions(self):
+        self._get_positions_calls += 1
+        if self._positions_after_sync is not None and self._get_positions_calls > 1:
+            return [dict(p) for p in self._positions_after_sync]
         return [dict(p) for p in self._positions]
 
     def get_executions(self, *args, **kwargs):
@@ -156,10 +170,12 @@ def run_one_cycle(monkeypatch, tmp_path):
     import src.live_ledger as src_live_ledger
 
     def _run(*, cryptos, signals, positions=(), wallet=5000.0,
-             available=3123.45, live_price=100.0):
+             available=3123.45, live_price=100.0, close_event_observer=None,
+             positions_after_sync=None):
         # signals: {sym: (combined, score, trend, vp, bb)}
         fake = FakeExecutor(positions=positions, wallet=wallet,
-                            available=available, live_price=live_price)
+                            available=available, live_price=live_price,
+                            positions_after_sync=positions_after_sync)
         ledger_calls = []
         sleep_count = {"n": 0}
 
@@ -231,6 +247,10 @@ def run_one_cycle(monkeypatch, tmp_path):
         monkeypatch.setattr(src_live_ledger, "record_bybit_order", fake_record_bybit_order)
 
         args = _make_live_args()
+        # SR-101D2: optionally inject the observational close-event observer.
+        # Absent by default, so cmd_live's default behavior is exercised unchanged.
+        if close_event_observer is not None:
+            args._trade_history_close_event_observer = close_event_observer
         before = _fs_snapshot("data", "outputs")
 
         completed = False

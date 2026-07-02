@@ -577,6 +577,14 @@ def cmd_history(args):
         print('\n  提示：python main.py history --run-id <ID>  查看該次交易明細')
 
 
+def _shadow_close_event_now():
+    """Timezone-aware UTC clock for the optional same-process close-event
+    observation seam (SR-101D2). Module-level so tests can monkeypatch it to a
+    fixed aware UTC value. Not used by any trading/sizing logic."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc)
+
+
 def cmd_live(args):
     """
     即時交易迴圈：
@@ -2019,6 +2027,29 @@ def cmd_live(args):
                             fee=_taker_fee(pos.get('qty'), price),
                         )
                         print(f'  平倉 {sym} @ {price:.4f}  PnL={pnl:+.2f}  ({reason})')
+                        # SR-101D2 shadow parity seam (observational only). Emits
+                        # ONE authoritative same-process close event AFTER the
+                        # legacy EXIT ledger record + gross ClosedTradeStub are
+                        # already written. Default-disabled: does nothing unless an
+                        # observer is injected via args. Never influences close
+                        # execution, ledger reason, re-entry, or Kelly sizing.
+                        _close_event_observer = getattr(
+                            args, '_trade_history_close_event_observer', None)
+                        if callable(_close_event_observer):
+                            _cres = close_res.get('result') if isinstance(close_res, dict) else {}
+                            _order_id = _cres.get('orderId', '') if isinstance(_cres, dict) else ''
+                            _close_event_observer({
+                                'symbol': sym,
+                                'direction': pos['dir'],
+                                'quantity': pos['qty'],
+                                'entry_price': pos['entry'],
+                                'exit_price': price,
+                                'exit_timestamp': _shadow_close_event_now(),
+                                'close_reason': reason,
+                                'strategy_family': pos.get('strategy', ''),
+                                'fee': _taker_fee(pos.get('qty'), price),
+                                'order_id': _order_id,
+                            })
                         del open_pos[sym]
                         _forget_position(sym)
                         if reason != 'FLIP':
