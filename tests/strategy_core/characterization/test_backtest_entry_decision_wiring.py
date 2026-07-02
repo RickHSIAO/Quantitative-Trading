@@ -322,3 +322,195 @@ def test_existing_position_suppression_is_authoritative(monkeypatch):
         assert c.trend_signal == 0
         assert c.volume_profile_signal == 0
         assert c.bollinger_signal == 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SR-103B1: Backtest re-entry block must match Live exactly.
+# Live (main.py): after every successful close whose reason != 'FLIP',
+# `_block_reentry(sym, dt_latest, reason)` blocks re-entry until a strictly
+# later daily signal; FLIP is excluded so same-cycle reverse entry stays
+# possible. The backtester now records the close bar for blocking reasons and
+# passes reentry_blocked into decide_entry (the sole authority).
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _sorted(trades):
+    return sorted(trades, key=lambda t: (t.entry_date, t.exit_date or ""))
+
+
+def _same_bar_reentries(trades):
+    """Entry dates that coincide with the immediately-preceding close's exit
+    date -- i.e. a re-entry on the SAME signal bar as a close (what Live forbids
+    for non-FLIP closes)."""
+    ts = _sorted(trades)
+    return [b.entry_date for a, b in zip(ts, ts[1:]) if b.entry_date == a.exit_date]
+
+
+def _one_sl_dip_low(entry_bar_low=100.0, dip_bars=(6, 7)):
+    lows = [100.0] * N
+    for i in dip_bars:
+        lows[i] = 90.0            # drives a long SL (stop ~96 from entry 100)
+    return lows
+
+
+def _one_sl_spike_high(spike_bars=(6, 7)):
+    highs = [100.0] * N
+    for i in spike_bars:
+        highs[i] = 110.0          # drives a short SL
+    return highs
+
+
+# ── 1. Long SL close does not re-enter on the same signal bar ───────────────
+def test_long_sl_no_same_bar_reentry():
+    df = _df(close=[100.0] * N, high=[100.0] * N, low=_one_sl_dip_low())
+    _, trades = _run({"A": (df, _persistent(1, 6, trend=1), "Crypto")})
+    assert _same_bar_reentries(trades) == []          # Live rule
+    assert len(trades) >= 2                            # re-entry DID resume later
+
+
+# ── 2. Short SL close does not re-enter on the same signal bar ───────────────
+def test_short_sl_no_same_bar_reentry():
+    df = _df(close=[100.0] * N, high=_one_sl_spike_high(), low=[100.0] * N)
+    _, trades = _run({"A": (df, _persistent(-1, 6, trend=-1), "Crypto")})
+    assert _same_bar_reentries(trades) == []
+    assert len(trades) >= 2
+
+
+# ── 3. Long TP close does not re-enter on the same signal bar ───────────────
+def test_long_tp_no_same_bar_reentry():
+    highs = [100.0] * N
+    for i in range(6, N):
+        highs[i] = 200.0          # long TP (~108) reached repeatedly
+    df = _df(close=[100.0] * N, high=highs, low=[100.0] * N)
+    _, trades = _run({"A": (df, _persistent(1, 6, trend=1), "Crypto")})
+    assert _same_bar_reentries(trades) == []
+    assert len(trades) >= 2
+
+
+# ── 4. Short TP close does not re-enter on the same signal bar ───────────────
+def test_short_tp_no_same_bar_reentry():
+    lows = [100.0] * N
+    for i in range(6, N):
+        lows[i] = 40.0            # short TP reached repeatedly
+    df = _df(close=[100.0] * N, high=[100.0] * N, low=lows)
+    _, trades = _run({"A": (df, _persistent(-1, 6, trend=-1), "Crypto")})
+    assert _same_bar_reentries(trades) == []
+    assert len(trades) >= 2
+
+
+# ── 5. Early-exit (BB) close does not re-enter on the same signal bar ────────
+def test_bb_early_exit_no_same_bar_reentry():
+    # bb_mid below price -> a long 'bb' position hits the bb_mid early exit.
+    df = _df(close=[100.0] * N, high=[100.0] * N, low=[100.0] * N)
+    df["bb_mid"] = 95.0
+    _, trades = _run({"A": (df, _persistent(1, 6, bb=1), "Crypto")})
+    assert all(t.strategy == "bb" for t in trades)     # dominant family = bb
+    assert _same_bar_reentries(trades) == []
+    assert len(trades) >= 2
+
+
+# ── 6. FLIP still closes and reverses same-cycle (NOT blocked) ───────────────
+def test_flip_reverse_entry_still_allowed_same_bar():
+    sig = _sig({"combined": (2, 1), "score": (2, 6), "trend": (2, 1)}, stop=8)
+    for i in range(8, _STOP):        # opposite (short) signal, then off before EOD
+        sig["combined"].iloc[i] = -1.0
+        sig["score"].iloc[i] = 6.0
+        sig["trend"].iloc[i] = -1.0
+    _, trades = _run({"A": (_df(), sig, "Crypto")})
+    ts = _sorted(trades)
+    assert len(ts) == 2
+    assert ts[0].direction == 1 and ts[1].direction == -1
+    # FLIP reverse entry occurs on the SAME bar as the flip close (unblocked) --
+    # exactly Live's `reason != 'FLIP'` exclusion.
+    assert ts[1].entry_date == ts[0].exit_date
+
+
+# ── 7. A held (never-stopped) position creates no re-entry state ─────────────
+def test_no_close_creates_no_reentry_state():
+    # Brief signal -> one entry, flat price -> holds to EOD. The only close is
+    # EOD, which is NOT a blocking reason; nothing spurious is created. (The
+    # backtester has no failed-close path, so "failed/nonexistent close" reduces
+    # to: a non-blocking close never blocks.)
+    _, trades = _run({"A": (_df(), _persistent(1, 6, trend=1, start=2, stop=4), "Crypto")})
+    assert len(trades) == 1
+    assert _same_bar_reentries(trades) == []
+
+
+# ── 8. The block expires at the next bar (exact Live-equivalent point) ───────
+def test_block_expires_on_next_bar():
+    # One SL dip at bars 6-7 only; price recovers after. Entry -> SL close on the
+    # dip bar (blocked that bar) -> re-entry on the FOLLOWING bar (block cleared).
+    df = _df(close=[100.0] * N, high=[100.0] * N, low=_one_sl_dip_low(dip_bars=(6, 7)))
+    _, trades = _run({"A": (df, _persistent(1, 6, trend=1), "Crypto")})
+    ts = _sorted(trades)
+    assert len(ts) >= 2
+    first_exit = ts[0].exit_date
+    reentry = ts[1].entry_date
+    assert reentry > first_exit                        # strictly later bar
+    # and the re-entry is the VERY NEXT trading bar after the close
+    bars = list(IDX.strftime("%Y-%m-%d"))
+    assert bars.index(reentry) == bars.index(first_exit) + 1
+
+
+# ── 9. decide_entry receives reentry_blocked=True when applicable ───────────
+def test_decide_entry_receives_reentry_blocked_true(monkeypatch):
+    real = backtester_module.decide_entry
+    calls = []
+
+    def spy(inp):
+        calls.append(inp)
+        return real(inp)
+
+    monkeypatch.setattr(backtester_module, "decide_entry", spy)
+    df = _df(close=[100.0] * N, high=[100.0] * N, low=_one_sl_dip_low())
+    _run({"A": (df, _persistent(1, 6, trend=1), "Crypto")})
+    assert any(c.symbol == "A" and c.reentry_blocked for c in calls), \
+        "expected at least one decide_entry call with reentry_blocked=True"
+
+
+# ── 10. A REENTRY_BLOCKED HOLD short-circuits before family reads / sizing ───
+def test_reentry_blocked_hold_prevents_family_and_sizing(monkeypatch):
+    real = backtester_module.decide_entry
+    calls = []
+
+    def spy(inp):
+        calls.append(inp)
+        return real(inp)
+
+    monkeypatch.setattr(backtester_module, "decide_entry", spy)
+    df = _df(close=[100.0] * N, high=[100.0] * N, low=_one_sl_dip_low())
+    _run({"A": (df, _persistent(1, 6, trend=1), "Crypto")})
+    blocked_calls = [c for c in calls if c.reentry_blocked]
+    assert blocked_calls
+    for c in blocked_calls:
+        # the re-entry stage runs BEFORE the family stage: family signals are
+        # still the neutral placeholder 0, proving no family read happened before
+        # the REENTRY_BLOCKED HOLD (and thus no sizing followed).
+        assert c.trend_signal == 0
+        assert c.volume_profile_signal == 0
+        assert c.bollinger_signal == 0
+
+
+# ── 11-14 are covered by the existing suite + the isolated parity harness:
+#   11 existing-position short-circuit  -> test_existing_position_suppression_is_authoritative
+#   12 global/class/strategy caps       -> test_global_cap_break_*, test_strategy_cap_continue_*
+#   13 Kelly/sizing/fill unchanged      -> test_fill_price_and_sizing_are_unchanged
+# ── 14. Tradability is pinned to the ACTUAL Backtest universe semantics ──────
+def test_tradability_is_accurate_via_zero_signal_masking(monkeypatch):
+    # The real `main.py backtest` path enforces per-year universe membership by
+    # MASKING non-eligible symbol-days to combined_signal=0 (main._mask_crypto_
+    # signals_by_year), which decide_entry rejects via NO_SIGNAL -- a gate that
+    # precedes SYMBOL_NOT_TRADABLE. So symbol_tradable=True is an accurate
+    # representation: a masked/non-tradable day (combined=0) never enters, and
+    # every decide_entry call the backtester makes carries symbol_tradable=True.
+    real = backtester_module.decide_entry
+    calls = []
+
+    def spy(inp):
+        calls.append(inp)
+        return real(inp)
+
+    monkeypatch.setattr(backtester_module, "decide_entry", spy)
+    # A masked/non-tradable symbol-day is represented by combined_signal=0.
+    _, trades = _run({"A": (_df(), _persistent(0, 6, trend=1), "Crypto")})
+    assert trades == []                                   # masked day never enters
+    assert calls and all(c.symbol_tradable is True for c in calls)

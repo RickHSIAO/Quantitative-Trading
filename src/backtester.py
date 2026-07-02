@@ -154,6 +154,25 @@ def _exit_reason(code: str, r_mult: float) -> str:
     return mapping.get(code, code)
 
 
+# Backtest exit-reason codes that mirror Live's re-entry block. Live applies the
+# block after every successful close whose reason != 'FLIP'
+# (main.py: `if reason != 'FLIP': _block_reentry(sym, dt_latest, reason)`).
+# Mapped here by SEMANTICS, not string similarity:
+#   stop_loss / trailing_stop      -> Live 'SL'  (a trailing stop hit is reported
+#                                     as 'SL' in Live; both block)
+#   take_profit                    -> Live 'TP'
+#   bb_target_profit/bb_mid/bb_rsi -> Live 'BB-TGT'/'BB-MID'/'BB-RSI' early exits
+#   soft_stop                      -> Live 'SOFT'
+#   max_hold                       -> Live 'MAXHOLD'
+# EXCLUDED (must never block): 'signal_flip' is the Live FLIP path that enables
+# same-cycle reverse entry, and 'eod' has no Live equivalent (Live never
+# force-closes at end of data).
+_LIVE_REENTRY_BLOCKING_CODES = frozenset({
+    'stop_loss', 'trailing_stop', 'take_profit',
+    'bb_target_profit', 'bb_mid', 'bb_rsi', 'soft_stop', 'max_hold',
+})
+
+
 # ─── Backtester ────────────────────────────────────────────────────────────────
 class Backtester:
     def __init__(self, initial_capital: float = config.INITIAL_CAPITAL,
@@ -365,6 +384,31 @@ class Backtester:
         # without re-parsing pos.entry_date string each iteration).
         entry_dt_cache:  dict[str, pd.Timestamp] = {}
 
+        # Per-symbol re-entry block, an exact port of Live main.py
+        # _block_reentry / _reentry_blocked: a blocking close at bar `dt` records
+        # `dt`; the block stays active while the current bar <= the recorded bar
+        # and clears (returns False) once a strictly later bar arrives. Backtest
+        # bars are daily signal dates processed once each, so this reproduces
+        # Live's "block re-entry until the next daily signal" -- NOT a generic
+        # multi-day cooldown.
+        reentry_block: dict[str, pd.Timestamp] = {}
+
+        def _note_close_reentry(symbol: str, bar: pd.Timestamp, code: str) -> None:
+            # Mirror Live's `if reason != 'FLIP': _block_reentry(...)`. The
+            # blocking-code set is the single mapping authority; 'signal_flip'
+            # and 'eod' are absent from it and therefore never block.
+            if code in _LIVE_REENTRY_BLOCKING_CODES:
+                reentry_block[symbol] = bar
+
+        def _reentry_blocked_at(symbol: str, bar: pd.Timestamp) -> bool:
+            blocked = reentry_block.get(symbol)
+            if blocked is None:
+                return False
+            if bar <= blocked:
+                return True
+            del reentry_block[symbol]
+            return False
+
         for dt in all_dates:
             date_str = dt.strftime('%Y-%m-%d')
 
@@ -468,6 +512,7 @@ class Backtester:
                     history_by_sym[sym].append(pos)
                     del open_positions[sym]
                     entry_dt_cache.pop(sym, None)
+                    _note_close_reentry(sym, dt, code)
                     continue
 
                 # 持倉天數（用於 MIN_HOLD_DAYS 閘門 + SOFT_STOP / MAX_HOLD）
@@ -500,6 +545,7 @@ class Backtester:
                         history_by_sym[sym].append(pos)
                         del open_positions[sym]
                         entry_dt_cache.pop(sym, None)
+                        _note_close_reentry(sym, dt, early_code)
                         continue
 
                 # 軟停損：滿 MIN_HOLD_DAYS 後浮虧 ≥ SOFT_STOP_PCT 即出場
@@ -510,6 +556,7 @@ class Backtester:
                         history_by_sym[sym].append(pos)
                         del open_positions[sym]
                         entry_dt_cache.pop(sym, None)
+                        _note_close_reentry(sym, dt, 'soft_stop')
                         continue
 
                 # 最長持倉強制出場（不問盈虧，釋放卡死資金）
@@ -520,6 +567,7 @@ class Backtester:
                     history_by_sym[sym].append(pos)
                     del open_positions[sym]
                     entry_dt_cache.pop(sym, None)
+                    _note_close_reentry(sym, dt, 'max_hold')
                     continue
 
                 # 信號翻轉 → 平倉（受 MIN_HOLD_DAYS 限制）
@@ -533,6 +581,10 @@ class Backtester:
                             history_by_sym[sym].append(pos)
                             del open_positions[sym]
                             entry_dt_cache.pop(sym, None)
+                            # FLIP is NOT a blocking reason (no-op): this keeps
+                            # the same-cycle reverse entry possible, exactly like
+                            # Live's `reason != 'FLIP'` exclusion.
+                            _note_close_reentry(sym, dt, 'signal_flip')
 
                 # 資料截止自動平倉（始終允許）
                 if sym in open_positions and i == last_idx[sym]:
@@ -540,6 +592,9 @@ class Backtester:
                     history_by_sym[sym].append(pos)
                     del open_positions[sym]
                     entry_dt_cache.pop(sym, None)
+                    # EOD has no Live equivalent and is NOT a blocking reason
+                    # (no-op): Live never force-closes at end of data.
+                    _note_close_reentry(sym, dt, 'eod')
 
             # ── Step 2: 開新倉（依訊號共識度優先）────────────────────────
             if len(open_positions) < self.max_total_positions:
@@ -598,12 +653,23 @@ class Backtester:
                     score_val = int(s_score[sym][si])
                     # Stage 1: real signal / score carried onto the SAME input
                     # (signal!=0 and score>=min). Only after this passes are the
-                    # win-rate history and the per-family signals read below.
+                    # re-entry block, win-rate history and per-family signals read.
                     stage_input = _replace(stage_input,
                                            combined_signal=sig_val, score=score_val)
                     if decide_entry(stage_input).action is not EntryAction.ENTER:
                         continue
-                    # Stage 2: 個股勝率過濾（近 SYM_WR_WINDOW 筆勝率低於門檻則跳過）。
+                    # Stage 2: re-entry block (Live parity). A non-FLIP close on
+                    # this signal bar blocks re-entry until a strictly later bar,
+                    # mirroring Live's Stage-2 `_reentry_blocked` gate. decide_entry
+                    # remains the sole authority: REENTRY_BLOCKED precedes the
+                    # win-rate gate in its precedence, so a HOLD here short-circuits
+                    # BEFORE the win-rate history read and the per-family signal
+                    # reads below -- no second independent `if reentry_blocked`.
+                    stage_input = _replace(
+                        stage_input, reentry_blocked=_reentry_blocked_at(sym, dt))
+                    if decide_entry(stage_input).action is not EntryAction.ENTER:
+                        continue
+                    # Stage 3: 個股勝率過濾（近 SYM_WR_WINDOW 筆勝率低於門檻則跳過）。
                     sym_min_wr = _cls_get('SYM_MIN_WINRATE_BY_CLASS',
                                           atype_for_score, config.SYM_MIN_WINRATE)
                     sym_wr_window = _cls_get('SYM_WR_WINDOW_BY_CLASS',
@@ -620,7 +686,7 @@ class Backtester:
                     stage_input = _replace(stage_input, symbol_winrate_ok=symbol_winrate_ok)
                     if decide_entry(stage_input).action is not EntryAction.ENTER:
                         continue
-                    # Stage 3: per-family latest signals (cached arrays are already
+                    # Stage 4: per-family latest signals (cached arrays are already
                     # fillna(0)-cleaned int64, so these never raise). The shared
                     # core selects the dominant family exactly as the old inline
                     # `matched[0] if len(matched)==1 else 'combined'` did.
