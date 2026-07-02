@@ -16,6 +16,12 @@ from src.strategy_core.trade_history import (
     UnsupportedPnlBasisError,
     SCHEMA_VERSION_V1,
 )
+from src.strategy_core.live_trade_history_adapter import (
+    LiveSourceCompleteness,
+    LiveTradeHistoryAdapterError,
+    adapt_live_history_rows,
+    adapt_same_process_close_events,
+)
 
 __all__ = [
     "CompletenessStatus",
@@ -27,4 +33,8 @@ __all__ = [
     "TradeHistoryValidationError",
     "UnsupportedPnlBasisError",
     "SCHEMA_VERSION_V1",
+    "LiveSourceCompleteness",
+    "LiveTradeHistoryAdapterError",
+    "adapt_live_history_rows",
+    "adapt_same_process_close_events",
 ]
