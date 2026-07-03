@@ -554,6 +554,276 @@ def cmd_backtest(args):
     print(f'\n  [DB] 回測記錄已儲存  run_id={run_id}  version={version}  (python main.py history 查詢歷史)')
 
 
+def cmd_demo_plan(args):
+    """TASK-DEMO-ORIG-001: original-strategy Demo PLAN-ONLY bridge.
+
+    Runs the ORIGINAL strategy decision path (closed-bar signals -> shared Entry
+    Decision Core -> shared Exit Decision Core -> Kelly/original sizing ->
+    family-specific SL/TP) offline and emits a Bybit Demo execution PLAN. It
+    never sends, amends, cancels or closes an order. Fails closed on a live
+    endpoint, missing strategy identity, unavailable/stale market data,
+    unreconcilable position state, or invalid instrument rules.
+    """
+    import json as _json
+    import pandas as pd
+    from datetime import datetime, timezone
+    import config
+    from config import get_selected_assets
+    from src.database import get_all_symbols, load_prices
+    from src.indicators import compute_all_indicators
+    from src.strategies import apply_cross_asset_filters, generate_all_signals
+    from src.risk import calculate_stops
+    from src.demo_instrument_rules import InstrumentRules
+    from src.strategy_core.demo_plan import (
+        DEMO_ENDPOINT,
+        DEMO_ENVIRONMENT,
+        STRATEGY_ID,
+        DemoPlanError,
+        OriginalStrategyDemoSymbolInput,
+        assert_demo_execution_target,
+        assert_original_strategy_identity,
+        build_demo_plan,
+    )
+
+    strategy_id = STRATEGY_ID
+    environment = getattr(args, 'environment', None) or DEMO_ENVIRONMENT
+    endpoint = getattr(args, 'endpoint', None) or DEMO_ENDPOINT
+
+    # ── Fail-closed pre-flight: identity + demo-only execution target ────────
+    if getattr(args, 'live', False):
+        print('[FAIL-CLOSED] live trading is not permitted in demo-plan; aborting')
+        return 2
+    try:
+        assert_original_strategy_identity(strategy_id)
+        assert_demo_execution_target(environment=environment, endpoint=endpoint)
+    except Exception as exc:  # DemoPlanError / LiveEndpointDenied / rejection
+        print(f'[FAIL-CLOSED] {exc}')
+        return 2
+
+    # ── Optional injected position state (reconcile or fail closed) ──────────
+    positions: dict = {}
+    if getattr(args, 'positions_json', None):
+        try:
+            with open(args.positions_json, 'r', encoding='utf-8') as fh:
+                positions = _json.load(fh)
+            if not isinstance(positions, dict):
+                raise ValueError('positions file must be a JSON object')
+        except Exception as exc:
+            print(f'[FAIL-CLOSED] position state cannot be reconciled: {exc}')
+            return 2
+
+    # ── Optional injected instrument rules (missing -> blocked, never fallback)
+    rules_map: dict = {}
+    if getattr(args, 'instrument_rules_json', None):
+        try:
+            with open(args.instrument_rules_json, 'r', encoding='utf-8') as fh:
+                raw_rules = _json.load(fh)
+            if not isinstance(raw_rules, dict):
+                raise ValueError('instrument rules file must be a JSON object')
+            for sym, r in raw_rules.items():
+                rules_map[sym] = InstrumentRules(
+                    symbol=sym,
+                    qty_step=float(r['qty_step']),
+                    min_qty=float(r.get('min_qty', 0.0)),
+                    max_qty=float(r.get('max_qty', 0.0)),
+                    tick_size=float(r['tick_size']),
+                    min_notional=float(r.get('min_notional', 0.0)),
+                    price_precision=int(r.get('price_precision', 4)),
+                    qty_precision=int(r.get('qty_precision', 8)),
+                )
+        except Exception as exc:
+            print(f'[FAIL-CLOSED] invalid instrument rules file: {exc}')
+            return 2
+
+    # ── Offline crypto universe (no network) ────────────────────────────────
+    available = set(get_all_symbols())
+    if not available:
+        print('[FAIL-CLOSED] market data unavailable (empty database); '
+              'run: python main.py fetch')
+        return 2
+    assets = get_selected_assets(getattr(args, 'seed', 42))
+    cryptos = [s for s in assets['cryptos'] if s in available]
+    if not cryptos:
+        print('[FAIL-CLOSED] no crypto symbols available in database')
+        return 2
+
+    type_map = {s: 'Crypto' for s in cryptos}
+    max_staleness = int(getattr(args, 'max_staleness_days', 5))
+    utc_today = pd.Timestamp(datetime.now(timezone.utc).date())
+
+    data: dict = {}
+    signals: dict = {}
+    for sym in cryptos:
+        df = load_prices(sym)
+        if df is None or len(df) < config.EMA_PERIOD + 10:
+            continue
+        if df.index[-1] >= utc_today:          # drop still-forming UTC candle
+            df = df.loc[df.index < utc_today]
+        if df is None or len(df) < config.EMA_PERIOD + 10:
+            continue
+        if (utc_today - df.index[-1]).days > max_staleness:
+            continue                            # stale symbol; skip
+        try:
+            df = compute_all_indicators(df, include_vp=True)
+            sigs = generate_all_signals(
+                df, asset_type='Crypto', benchmark_df=None, moat_tf_only=True)
+            data[sym] = df
+            signals[sym] = sigs
+        except Exception as exc:
+            print(f'  [WARN] {sym}: {exc}')
+
+    if not data:
+        print('[FAIL-CLOSED] no fresh market data within staleness window '
+              f'({max_staleness}d); aborting')
+        return 2
+
+    apply_cross_asset_filters(data, signals, type_map)
+
+    capital = float(getattr(args, 'capital', 0.0) or 0.0)
+    crypto_profile = getattr(config, 'STRATEGY_PROFILES', {}).get('Crypto', {})
+    max_position_pct = float(
+        crypto_profile.get('max_position_pct', config.MAX_POSITION_PCT))
+    leverage = float(
+        getattr(config, 'LEVERAGE_BY_CLASS', {}).get('Crypto', 1.0) or 1.0)
+    min_score = int(getattr(config, 'MIN_ENTRY_SCORE_BY_CLASS', {}).get(
+        'Crypto', config.MIN_ENTRY_SCORE))
+    # Plan-level portfolio limits, from the SAME original-strategy profile Live
+    # uses (crypto silo max_total_positions; global MAX_POS_PER_STRATEGY family
+    # caps). Never hardcoded here.
+    max_total_positions = int(crypto_profile.get(
+        'max_total_positions', config.MAX_TOTAL_POSITIONS))
+    max_positions_per_family = dict(
+        getattr(config, 'MAX_POS_PER_STRATEGY', {}) or {})
+    crypto_tradable = set(cryptos)
+
+    def _fam(sigs: dict, name: str) -> int:
+        ser = sigs.get(name)
+        if ser is None or len(ser) == 0:
+            return 0
+        return int(ser.iloc[-1])
+
+    inputs = []
+    for sym in sorted(data):
+        df = data[sym]
+        sigs = signals[sym]
+        sig = sigs['combined']
+        if len(sig) == 0:
+            continue
+        latest_sig = int(sig.iloc[-1])
+        score_val = int(sigs.get('score', pd.Series([0])).iloc[-1])
+        dt_latest = df.index[-1]
+        ref_price = float(df['Close'].iloc[-1])
+        atr_raw = df['atr'].iloc[-1]
+        atr = (float(atr_raw) if atr_raw is not None and not pd.isna(atr_raw)
+               else ref_price * 0.02)
+
+        pos_raw = positions.get(sym, {})
+        pos = pos_raw if isinstance(pos_raw, dict) else {}
+        ex_dir = int(pos.get('direction') or pos.get('dir') or 0)
+        ex_qty = float(pos.get('quantity') or pos.get('qty') or 0.0)
+        ex_entry = float(pos.get('entry') or 0.0)
+        ex_sl = float(pos.get('stop_loss') or pos.get('sl') or 0.0)
+        ex_tp = float(pos.get('take_profit') or pos.get('tp') or 0.0)
+        ex_strat = pos.get('strategy', 'trend') or 'trend'
+        min_hold_ok = True
+        if ex_dir in (1, -1):
+            entry_dt = pos.get('entry_dt') or ''
+            if entry_dt:
+                try:
+                    hold_days = (dt_latest - pd.Timestamp(entry_dt)).days
+                except Exception:
+                    hold_days = 0
+                min_hold_ok = hold_days >= config.MIN_HOLD_DAYS
+            if (ex_sl <= 0 or ex_tp <= 0) and ex_entry > 0:
+                fb_sl, fb_tp = calculate_stops(
+                    ex_entry, ex_dir, atr, strategy=ex_strat, asset_type='Crypto')
+                if ex_sl <= 0:
+                    ex_sl = fb_sl
+                if ex_tp <= 0:
+                    ex_tp = fb_tp
+
+        inputs.append(OriginalStrategyDemoSymbolInput(
+            symbol=sym,
+            signal_timestamp=dt_latest.strftime('%Y-%m-%d'),
+            combined_signal=latest_sig,
+            score=score_val,
+            trend_signal=_fam(sigs, 'trend'),
+            volume_profile_signal=_fam(sigs, 'vp'),
+            bollinger_signal=_fam(sigs, 'bb'),
+            minimum_score=min_score,
+            symbol_tradable=sym in crypto_tradable,
+            reentry_blocked=False,
+            symbol_winrate_ok=True,
+            reference_price=ref_price,
+            atr=atr,
+            existing_position=ex_dir,
+            existing_quantity=ex_qty,
+            existing_stop_loss=ex_sl,
+            existing_take_profit=ex_tp,
+            existing_strategy_family=(ex_strat if ex_strat in
+                                      ('trend', 'vp', 'bb') else 'combined'),
+            min_hold_ok=min_hold_ok,
+            early_exit=None,
+            available_capital=capital,
+            max_position_pct=max_position_pct,
+            leverage=leverage,
+            closed_trade_pnls=(),
+            kelly_window=config.KELLY_WINDOW,
+            instrument_rules=rules_map.get(sym),
+            geometric_rr_ok=True,
+        ))
+
+    decision_ts = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    try:
+        plan = build_demo_plan(
+            inputs, decision_timestamp=decision_ts, strategy_id=strategy_id,
+            environment=environment, endpoint=endpoint,
+            starting_available_capital=capital,
+            max_total_positions=max_total_positions,
+            max_positions_per_family=max_positions_per_family)
+    except Exception as exc:
+        print(f'[FAIL-CLOSED] {exc}')
+        return 2
+
+    plan_dict = plan.to_dict()
+    out_path = getattr(args, 'output', None) or os.path.join(
+        'outputs', 'demo_trading', 'original_strategy_demo_plan',
+        f'demo_plan_{decision_ts.replace(":", "").replace("-", "")}.json')
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, 'w', encoding='utf-8') as fh:
+        _json.dump(plan_dict, fh, ensure_ascii=False, indent=2, sort_keys=True)
+
+    print('=' * 60)
+    print('  PLAN_ONLY — original-strategy Demo plan (no orders sent)')
+    print('=' * 60)
+    print(f'  strategy_id : {plan.strategy_id}')
+    print(f'  environment : {plan.environment}   endpoint: {plan.endpoint}')
+    print(f'  decision_ts : {plan.decision_timestamp}')
+    print(f'  symbols     : {plan_dict["total_symbols"]}   '
+          f'actionable: {plan_dict["actionable_count"]}   '
+          f'execution_allowed: {plan_dict["execution_allowed_count"]}')
+    print(f'  caps        : max_total={plan.max_total_positions}   '
+          f'per_family={plan.max_positions_per_family}   '
+          f'projected_open={plan.projected_open_count}')
+    print(f'  capital     : start={plan.starting_available_capital:.2f}   '
+          f'remaining={plan.projected_remaining_capital:.2f}   '
+          f'margin={plan.projected_total_margin:.2f}   '
+          f'notional={plan.projected_total_notional:.2f}')
+    for a in plan.actions:
+        if a.action == 'HOLD':
+            continue
+        flag = 'OK' if a.execution_allowed else f'BLOCKED:{a.execution_block_reason}'
+        print(f'    {a.symbol:<18} {a.action:<20} dir={a.direction:+d} '
+              f'fam={a.strategy_family:<8} qty={a.quantity:.8f} '
+              f'SL={a.stop_loss:.6f} TP={a.take_profit:.6f} '
+              f'[{flag}] ({a.reason_code})')
+    print('=' * 60)
+    print(f'  PLAN_ONLY — artifact: {out_path}')
+    print('  order_execution_authorized = False '
+          '(no order sent, amended, cancelled or closed)')
+    return 0
+
+
 def cmd_history(args):
     """列出歷史回測摘要，可加 --run-id 查看該次交易明細。"""
     from src.database import load_backtest_history, load_backtest_trades
@@ -2495,6 +2765,27 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=[LEGACY_CRYPTO_BASELINE] + sorted(CRYPTO_CANDIDATES.keys()),
                         help='Crypto strategy mode. Default is volume-top125-lb3-sym035; use config-baseline for the legacy config universe.')
 
+    p_plan = sub.add_parser(
+        'demo-plan',
+        help='原始策略 Bybit Demo 執行計畫（PLAN-ONLY，不下單）')
+    p_plan.add_argument('--seed', type=int, default=42, help='資產抽樣種子')
+    p_plan.add_argument('--capital', type=float, default=0.0,
+                        help='可用於 sizing 的 Demo 可用資金 (USDT)')
+    p_plan.add_argument('--output', type=str, default=None,
+                        help='計畫 JSON 輸出路徑（預設 outputs/demo_trading/...）')
+    p_plan.add_argument('--positions-json', type=str, default=None,
+                        help='現有倉位 JSON（symbol -> {direction, quantity, entry, sl, tp}）')
+    p_plan.add_argument('--instrument-rules-json', type=str, default=None,
+                        help='合約規則 JSON（symbol -> {qty_step, min_qty, tick_size, min_notional, ...}）')
+    p_plan.add_argument('--endpoint', type=str, default=None,
+                        help='Demo endpoint（預設 api-demo.bybit.com；live endpoint 會 fail closed）')
+    p_plan.add_argument('--environment', type=str, default=None,
+                        help='執行環境（僅允許 bybit_demo）')
+    p_plan.add_argument('--max-staleness-days', type=int, default=5,
+                        help='行情最大陳舊天數，超過即視為 stale 並排除')
+    p_plan.add_argument('--live', action='store_true',
+                        help='（保護開關）指定即 fail closed，demo-plan 永不啟用實盤')
+
     return parser
 
 
@@ -2518,6 +2809,10 @@ def main():
         except KeyboardInterrupt:
             print('\n[INFO] 已收到 Ctrl+C，live 模式已停止。')
             sys.exit(130)
+    elif args.command == 'demo-plan':
+        rc = cmd_demo_plan(args)
+        if rc:
+            sys.exit(rc)
     else:
         parser.print_help()
 
